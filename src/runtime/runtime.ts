@@ -42,6 +42,8 @@ export interface RuntimeEntity {
   climbing: boolean;
   coyote: number;
   jumpBuffer: number;
+  /** Seconds before a ladder can be grabbed again after stepping off it sideways. */
+  regrab: number;
   spawn: Vec2;
   /** How many times it fell out of the level and was put back. */
   respawns: number;
@@ -53,6 +55,8 @@ const MAX_STEPS_PER_FRAME = 12;
 const MAX_FALL_SPEED = 1400;
 const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
+/** After stepping off a ladder sideways, Up (still held) doesn't grab it again straight away. */
+const LADDER_REGRAB_DELAY = 0.3;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
 
@@ -93,6 +97,7 @@ function buildEntity(project: Project, scene: Scene, index: number, registry: Co
     climbing: false,
     coyote: 0,
     jumpBuffer: 0,
+    regrab: 0,
     spawn: { ...r.transform.position },
     respawns: 0,
   };
@@ -187,6 +192,8 @@ export class Runtime {
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
+        // Climbing down onto the floor (or standing on it) ends the climb.
+        if (e.climbing && e.grounded && e.vy >= 0) e.climbing = false;
       }
       if (e.y > this.fallLimit) this.respawn(e);
     }
@@ -199,17 +206,23 @@ export class Runtime {
     const box = boxOf(e);
     const ladder = box ? this.ladderAt({ ...box, hh: box.hh + 2, y: box.y + 2 }) : null;
 
-    // Climbing: hold up/down on a ladder. Jumping or leaving the ladder lets go.
-    if (ladder && !e.climbing && (input.isDown('up') || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
+    // Climbing: hold Up/Down on a ladder. Left/Right steps off it (you walk away, or fall if you're
+    // halfway up); jumping lets go; reaching the floor or the ladder's end ends the climb.
+    e.regrab = ladder ? Math.max(0, e.regrab - dt) : 0;
+    if (ladder && !e.climbing && e.regrab === 0 && (input.isDown('up') || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
       e.climbing = true;
       e.vx = 0;
+    }
+    if (e.climbing && dir !== 0) {
+      e.climbing = false;
+      e.regrab = LADDER_REGRAB_DELAY;
     }
     if (e.climbing && (!ladder || input.wasPressed('jump'))) e.climbing = false;
     if (e.climbing && ladder) {
       const climb = ladder.climbSpeed ?? 120;
       e.vy = ((input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0)) * climb;
-      e.vx = dir * c.speed * 0.4;
-      e.x += (ladder.x - e.x) * Math.min(1, dt * 12); // drift to the ladder's middle
+      e.vx = 0;
+      e.x += (ladder.x - e.x) * Math.min(1, dt * 12); // settle onto the ladder's middle
       e.grounded = false;
       return;
     }

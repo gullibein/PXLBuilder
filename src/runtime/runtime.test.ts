@@ -150,6 +150,73 @@ describe('runtime', () => {
     expect(p.y).toBeGreaterThan(-148 + 20);
   });
 
+  /** Player standing on the ground right at a 5-piece ladder (x=80, from the ground up to y=-128). */
+  function atLadder() {
+    const { project, sceneId } = level((p, sid) => {
+      const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+      for (let y = 16; y >= -112; y -= 32) m.addEntity(p, sid, instantiateDefinition(ladder, { x: 80, y }));
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    const p = rt.find('Player')!;
+    run(rt, input, 1);
+    input.press('right');
+    run(rt, input, 0.4, () => {
+      if (p.x > 76) input.release('right');
+    });
+    input.release('right');
+    return { rt, input, p };
+  }
+
+  it('climbing down to the floor ends the climb, and you can walk away', () => {
+    const { rt, input, p } = atLadder();
+    input.press('up');
+    run(rt, input, 0.5);
+    input.release('up');
+    expect(p.climbing).toBe(true);
+    input.press('down');
+    run(rt, input, 1.5);
+    input.release('down');
+    expect(p.climbing).toBe(false);
+    expect(p.grounded).toBe(true);
+    expect(p.y).toBeCloseTo(12, 0);
+    const x = p.x;
+    input.press('left');
+    run(rt, input, 0.5);
+    expect(p.x).toBeLessThan(x - 40);
+  });
+
+  it('Left/Right steps off the ladder halfway up: you leave it and fall', () => {
+    const { rt, input, p } = atLadder();
+    input.press('up');
+    run(rt, input, 0.6);
+    expect(p.climbing).toBe(true);
+    const yOnLadder = p.y;
+    expect(yOnLadder).toBeLessThan(-40);
+    input.press('right'); // Up still held, like a diagonal on a d-pad
+    run(rt, input, 0.25);
+    expect(p.climbing).toBe(false);
+    expect(p.x).toBeGreaterThan(80 + 20);
+    input.release('right');
+    input.release('up');
+    run(rt, input, 1);
+    expect(p.grounded).toBe(true);
+    expect(p.y).toBeCloseTo(12, 0); // fell back down to the floor
+  });
+
+  it('Left/Right at the bottom of the ladder walks off it', () => {
+    const { rt, input, p } = atLadder();
+    input.press('up');
+    run(rt, input, 0.1);
+    input.release('up');
+    expect(p.climbing).toBe(true);
+    input.press('left');
+    run(rt, input, 0.5);
+    expect(p.climbing).toBe(false);
+    expect(p.x).toBeLessThan(80 - 40);
+    expect(p.grounded).toBe(true);
+  });
+
   it('falling out of the level puts the player back at the start', () => {
     const { project, sceneId } = level();
     const rt = new Runtime(project, sceneId, registry);
