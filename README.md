@@ -42,7 +42,7 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **Sprites**: right-click an object in **Objects** → **Sprites**. Import a single image, or a sprite sheet: the grid is detected and every cell is numbered; adjust the grid if needed and click a cell to use it. Sprites stretch to the object's size. Right-click → **Inspector** shows all its properties.
 - **Size link**: in the Inspector, sprite and collider sizes are linked (changing one changes the other). Click **Linked** to size them separately.
 - **Background**: choose a color, upload an image (Fill or Repeat, and how much it moves with the level), or describe what you want ("the background should move sideways along with the level").
-- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders (you ease to the ladder's middle unless you also press Left/Right), `R` restarts, `Esc` stops. Playing never changes your level.
+- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders (you ease to the ladder's middle unless you also press Left/Right; you stop on the top; a ladder above a gap needs a jump), `R` restarts, `Esc` stops. Playing never changes your level.
 - **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
 - **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
 - **Move**: drag objects (tiles snap to whole tiles); arrows nudge; `Ctrl+D` duplicate; `Del` delete.

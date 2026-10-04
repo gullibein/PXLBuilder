@@ -276,6 +276,51 @@ describe('runtime', () => {
     expect(Math.abs(q.x - 80)).toBeGreaterThan(2);
   });
 
+  it('climbing to the top of a ladder stops there: no bounce, and holding Up does nothing more', () => {
+    const { rt, input, p } = atLadder();
+    input.press('up');
+    let highest = Infinity;
+    run(rt, input, 2.5, () => {
+      highest = Math.min(highest, p.y);
+    });
+    // Top at -128: the feet stop exactly there, never above it.
+    expect(highest).toBeGreaterThanOrEqual(-144 - 0.01);
+    expect(p.y).toBeCloseTo(-144, 1);
+    expect(p.vy).toBe(0);
+    expect(p.climbing).toBe(false);
+    expect(p.grounded).toBe(true);
+    input.release('up');
+    run(rt, input, 0.5);
+    expect(p.y).toBeCloseTo(-144, 1);
+  });
+
+  it('a ladder above a gap cannot be reached by climbing, only by jumping', () => {
+    // Lower ladder from the ground up to -64 (tops at -64), a gap of one tile, then one piece at -112 (-128..-96).
+    const { project, sceneId } = level((p, sid) => {
+      const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+      for (const y of [16, -16, -48, -112]) m.addEntity(p, sid, instantiateDefinition(ladder, { x: 0, y }));
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    const p = rt.find('Player')!;
+    run(rt, input, 1);
+    input.press('up');
+    let highest = Infinity;
+    run(rt, input, 2.5, () => {
+      highest = Math.min(highest, p.y);
+    });
+    expect(highest).toBeGreaterThanOrEqual(-64 - 16 - 0.01); // stopped on top of the lower ladder
+    expect(p.y).toBeCloseTo(-80, 1);
+    expect(p.climbing).toBe(false);
+    // Jumping (still holding Up) grabs the upper ladder.
+    input.press('jump');
+    run(rt, input, 0.3);
+    input.release('jump');
+    expect(p.climbing || p.y <= -128 - 16 + 0.01).toBe(true);
+    run(rt, input, 1);
+    expect(p.y).toBeCloseTo(-128 - 16, 1); // climbed it, standing on its top
+  });
+
   it('Up does not jump (it only climbs)', () => {
     const { project, sceneId } = level();
     const rt = new Runtime(project, sceneId, registry);

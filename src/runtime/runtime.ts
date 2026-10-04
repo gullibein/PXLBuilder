@@ -72,6 +72,25 @@ function zoneOf(e: RuntimeEntity): Box {
   return { x: e.x, y: e.y, hw: (size.x * Math.abs(scale.x)) / 2, hh: (size.y * Math.abs(scale.y)) / 2 };
 }
 
+interface Ladder {
+  x: number;
+  hw: number;
+  top: number;
+  bottom: number;
+}
+
+/** Joins ladder pieces stacked directly on top of each other (same column) into ladders. */
+function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
+  const zones = pieces.map(zoneOf).sort((a, b) => a.x - b.x || a.y - b.y);
+  const ladders: Ladder[] = [];
+  for (const z of zones) {
+    const above = ladders.find((l) => Math.abs(l.x - z.x) < 1 && Math.abs(l.hw - z.hw) < 1 && z.y - z.hh <= l.bottom + 1 && z.y + z.hh > l.bottom);
+    if (above) above.bottom = Math.max(above.bottom, z.y + z.hh);
+    else ladders.push({ x: z.x, hw: z.hw, top: z.y - z.hh, bottom: z.y + z.hh });
+  }
+  return ladders;
+}
+
 function buildEntity(project: Project, scene: Scene, index: number, registry: ComponentRegistry): RuntimeEntity {
   const r = resolveEntity(project, scene.entities[index], registry);
   const c = r.components;
@@ -118,9 +137,10 @@ export class Runtime {
   private accumulator = 0;
   /** Static solids never move: computed once. */
   private readonly staticSolids: Box[];
-  /** Tops of ladders: one-way platforms you can stand on and climb down from. */
+  /** Tops of ladders: one-way platforms. */
   private readonly ladderTops: Box[];
-  private readonly climbables: RuntimeEntity[];
+  /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
+  private readonly ladders: Ladder[];
   private readonly fallLimit: number;
   private readonly cameraTarget: RuntimeEntity | null;
   private readonly followStrength: number;
@@ -132,17 +152,9 @@ export class Runtime {
 
     const isSolid = (e: RuntimeEntity) => e.collider && !e.collider.trigger && (e.body === 'static' || e.body === 'none');
     this.staticSolids = this.entities.filter(isSolid).map((e) => boxOf(e)!);
-    this.climbables = this.entities.filter((e) => e.climbable);
-    // A ladder piece with no ladder piece directly above it has a walkable top.
-    this.ladderTops = this.climbables
-      .filter((l) => {
-        const z = zoneOf(l);
-        return !this.climbables.some((o) => o !== l && Math.abs(o.x - l.x) < 1 && Math.abs(zoneOf(o).y + zoneOf(o).hh - (z.y - z.hh)) < 1);
-      })
-      .map((l) => {
-        const z = zoneOf(l);
-        return { x: z.x, y: z.y - z.hh + 1, hw: z.hw, hh: 1 };
-      });
+    this.ladders = ladderColumns(this.entities.filter((e) => e.climbable));
+    // The top of each ladder is a one-way platform you can stand on and climb down from.
+    this.ladderTops = this.ladders.map((l) => ({ x: l.x, y: l.top + 1, hw: l.hw, hh: 1 }));
 
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
     this.fallLimit = (bottoms.length ? Math.max(...bottoms) : 0) + FALL_MARGIN;
@@ -215,21 +227,36 @@ export class Runtime {
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
     const ladder = this.ladderAt(e);
 
-    // Climbing: Up/Down on a ladder (at least half of you inside it), at running speed. Left/Right
-    // moves you along it; once less than half of you is on the ladder you let go (walk off, or fall
-    // if you're halfway up). Jumping lets go; reaching the floor ends the climb.
-    if (ladder && !e.climbing && (input.isDown('up') || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
+    // Climbing: Up/Down on a ladder (at least half of you inside it, by width), at running speed.
+    // Left/Right moves you along it; once less than half of you is on it you let go. Up does nothing
+    // when you already stand on the ladder's top; Down there climbs down. Jumping lets go; reaching
+    // the floor ends the climb. A ladder above a gap is out of reach until you jump up to it.
+    const me = zoneOf(e);
+    const atTop = ladder !== null && me.y + me.hh <= ladder.top + 0.5;
+    if (ladder && !e.climbing && ((input.isDown('up') && !atTop) || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
       e.climbing = true;
       e.vx = 0;
     }
-    if (e.climbing && (!ladder || input.wasPressed('jump'))) e.climbing = false;
-    if (e.climbing) {
+    if (e.climbing && input.wasPressed('jump')) e.climbing = false;
+    else if (e.climbing && !ladder) {
+      // Let go (moved off the side, or climbed down off its bottom): no climbing speed is kept.
+      e.climbing = false;
+      e.vy = 0;
+    }
+    if (e.climbing && ladder) {
       const vertical = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
       e.vy = vertical * c.speed;
       e.vx = dir * c.speed;
       // Climbing straight up or down eases you into the middle of the ladder; Left/Right overrides it.
-      if (ladder && vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
+      if (vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
       e.grounded = false;
+      // Reaching the top: stop there, standing on it.
+      if (vertical < 0 && me.y + me.hh + e.vy * dt <= ladder.top) {
+        e.y = ladder.top - me.hh;
+        e.vy = 0;
+        e.climbing = false;
+        e.grounded = true;
+      }
       return;
     }
 
@@ -254,18 +281,18 @@ export class Runtime {
   }
 
   /**
-   * The ladder a character can hold: at least half of the character (by width) inside the ladder
-   * tile, and touching it vertically (reaching 2px below the feet, so you can climb down from a top).
+   * The ladder a character can hold: at least half of the character (by width) inside it, the feet
+   * no higher than its top (standing on the top counts, so you can climb down), and the middle of
+   * the body no lower than its bottom.
    */
-  private ladderAt(e: RuntimeEntity): RuntimeEntity | null {
+  private ladderAt(e: RuntimeEntity): Ladder | null {
     const me = zoneOf(e);
-    const reach = { ...me, y: me.y + 1, hh: me.hh + 1 };
-    let best: RuntimeEntity | null = null;
+    const feet = me.y + me.hh;
+    let best: Ladder | null = null;
     let bestInside = -1;
-    for (const l of this.climbables) {
-      const z = zoneOf(l);
-      const inside = Math.min(me.x + me.hw, z.x + z.hw) - Math.max(me.x - me.hw, z.x - z.hw);
-      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && inside > bestInside && Math.abs(reach.y - z.y) < reach.hh + z.hh) {
+    for (const l of this.ladders) {
+      const inside = Math.min(me.x + me.hw, l.x + l.hw) - Math.max(me.x - me.hw, l.x - l.hw);
+      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && inside > bestInside && feet >= l.top - 1 && me.y <= l.bottom) {
         best = l;
         bestInside = inside;
       }

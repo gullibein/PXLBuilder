@@ -241,6 +241,11 @@ clears the selection, and selecting something closes it.
 - Climbing straight up or down eases the character to the ladder's middle
   (exponential, about 10/s); holding Left/Right while climbing overrides it.
   With ladders side by side, the one the character overlaps most is used.
+- Pieces stacked directly on each other form one ladder; a gap starts a new
+  one. You hold a ladder while your feet are no higher than its top and your
+  middle no lower than its bottom, so a ladder above a gap is reached only by
+  jumping. Climbing up stops dead at the top (standing on it, no leftover
+  speed); letting go any way but jumping drops the climbing speed.
 - Tuning: the starter Player is one tile (32px) tall, and jumpForce 295 at
   gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
   v3 applies this to older saves unless the user changed those values.
