@@ -136,7 +136,53 @@ try {
   };
   await drop('Player', -256, 0);
   await check(async () => (await page.getByTestId('library-panel').count()) === 0, 'library closes after placing, giving the canvas back');
-  await drop('Platform', -224, 64);
+  const entityCount = async () => Number(await canvas.getAttribute('data-entities'));
+
+  step = 'draw tiles with the brush';
+  await page.getByTestId('dock-library').click();
+  await page.screenshot({ path: `${OUT}/0-objects-panel.png` });
+  await page.getByTestId('definition-Ground').click();
+  await check(async () => (await page.getByTestId('brush-chip').isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks it up as a brush and gives the canvas back');
+  await check(async () => (await prompts.count()) === 0, 'drawing clears the selection, so no prompt is in the way');
+  let p0 = toScreen(-250, 40);
+  let p1 = toScreen(-90, 40);
+  await page.mouse.move(p0.x, p0.y);
+  await page.mouse.down();
+  await page.mouse.move(p1.x, p1.y, { steps: 3 });
+  await page.mouse.up();
+  await check(async () => (await entityCount()) === 1 + 6, 'one drag draws a continuous row of 6 tiles (no gaps even with a fast stroke)');
+  await page.mouse.move(p0.x, p0.y);
+  await page.mouse.down();
+  await page.mouse.move(p1.x, p1.y, { steps: 8 });
+  await page.mouse.up();
+  await check(async () => (await entityCount()) === 7, 'drawing over existing tiles does not stack duplicates');
+  const single = toScreen(40, 136);
+  await page.mouse.click(single.x, single.y);
+  await check(async () => (await entityCount()) === 8, 'a single click draws one tile');
+  await page.mouse.click(single.x, single.y, { button: 'right' });
+  await check(async () => (await entityCount()) === 7, 'right-click erases a tile');
+  await page.screenshot({ path: `${OUT}/0-drawn-tiles.png` });
+  await page.getByTestId('undo').click();
+  await check(async () => (await entityCount()) === 8, 'each stroke is one undo step');
+  await page.getByTestId('redo').click();
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('brush-chip').count()) === 0, 'Esc puts the brush away');
+
+  step = 'move one tile';
+  const tile = toScreen(-112, 48);
+  await page.mouse.click(tile.x, tile.y);
+  await check(async () => (await prompts.count()) === 1, 'clicking a drawn tile selects just that tile');
+  await page.mouse.move(tile.x, tile.y);
+  await page.mouse.down();
+  await page.mouse.move(tile.x + 20, tile.y - 50, { steps: 5 });
+  await page.mouse.up();
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('transform-position.x').inputValue()) === '-80' && (await page.getByTestId('transform-position.y').inputValue()) === '-16', 'dragging a tile moves it by whole cells (snaps to the tile grid)');
+  await page.getByTestId('close-details').click();
+  await page.getByTestId('undo').click();
+  await page.keyboard.press('Escape');
+
+  step = 'place characters';
   await drop('Enemy', -32, 0);
   await drop('Enemy', 96, 0);
   await drop('Door', 224, -16);
@@ -195,8 +241,8 @@ try {
   await page.screenshot({ path: `${OUT}/4-relationship.png` });
 
   step = 'golden test 6: group';
-  const a = toScreen(-80, -60);
-  const b = toScreen(140, 40);
+  const a = toScreen(-70, -60);
+  const b = toScreen(140, 20);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 6 });
@@ -214,6 +260,7 @@ try {
   step = 'golden test 5: world';
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
   await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'double-clicking empty space makes the level the context');
+  await page.screenshot({ path: `${OUT}/5b-world-context.png` });
   await ask('Make gravity 30% weaker.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'world change applied');
   await check(async () => (await result.innerText()).includes('980 → 686'), 'confirmation shows the gravity change');
@@ -240,7 +287,7 @@ try {
   await ask('Give the robot three hearts.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the new object can be changed like any other');
   await page.getByTestId('dock-library').click();
-  await page.locator('.chip', { hasText: 'Enemies' }).click();
+  await page.locator('.category', { hasText: 'Enemies' }).click();
   await check(async () => (await page.locator('[data-testid="object-library"] .tile').count()) === 2, 'the library files the robot under Enemies');
   await page.keyboard.press('Escape');
 
@@ -248,6 +295,55 @@ try {
   await page.getByTestId('tray-toggle').click();
   await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player three hearts.'), 'AI changes appear in History');
   await page.screenshot({ path: `${OUT}/7-history.png` });
+
+  step = 'navigation';
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  const cam = async () => (await canvas.getAttribute('data-camera')).split(',').map(Number);
+  const mid = toScreen(150, -220); // open sky, away from the tray and dock
+  await page.mouse.move(mid.x, mid.y);
+  let [x0, y0, z0] = await cam();
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(4, 6);
+  await check(async () => {
+    const [x, y, z] = await cam();
+    return z === z0 && Math.abs(x - x0 - 20) < 0.2 && Math.abs(y - y0 - 30) < 0.2;
+  }, 'two-finger trackpad scroll pans (x and y), without zooming');
+  await page.waitForTimeout(500);
+  [x0, y0, z0] = await cam();
+  await page.keyboard.down('Alt');
+  await page.mouse.wheel(0, -8);
+  await page.keyboard.up('Alt');
+  await check(async () => (await cam())[2] > z0, 'Alt + scroll zooms in');
+  [, , z0] = await cam();
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, 12);
+  await page.keyboard.up('Control');
+  await check(async () => (await cam())[2] < z0, 'pinch (reported as Ctrl + wheel) zooms out');
+  await page.waitForTimeout(500);
+  [, , z0] = await cam();
+  await page.mouse.wheel(0, -100);
+  await check(async () => (await cam())[2] > z0, 'a regular mouse wheel notch still zooms');
+  [x0, y0] = await cam();
+  await page.keyboard.down('Space');
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down();
+  await page.mouse.move(mid.x - 80, mid.y - 40, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up('Space');
+  await check(async () => {
+    const [x, y] = await cam();
+    return x > x0 && y > y0;
+  }, 'Space + drag pans the view');
+  [x0, y0] = await cam();
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(mid.x + 60, mid.y + 60, { steps: 4 });
+  await page.mouse.up({ button: 'middle' });
+  await check(async () => {
+    const [x, y] = await cam();
+    return x < x0 && y < y0;
+  }, 'middle-button drag pans the view');
+  await check(async () => (await prompts.count()) === 0, 'panning does not select anything');
 
   step = 'save and reload';
   await page.waitForTimeout(500);

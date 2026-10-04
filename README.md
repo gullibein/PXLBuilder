@@ -35,8 +35,10 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **Two objects** (Shift+click the second): one prompt about how they relate. **More**: one prompt for the group (or drag a box around them).
 - **The level**: double-click empty space. "Make gravity 30% weaker."
 - **Whole game**: the ✦ button in the top bar (Ctrl+K).
-- **Create**: the bottom dock's **+ Create** makes a new object from a description; **Library** holds everything you can drag into the level.
+- **Create**: the bottom dock's **+ Create** makes a new object from a description.
+- **Draw**: open **Objects**, click an object (e.g. *Ground*), then click or drag on the level to draw it, one per grid cell. Shift keeps a stroke straight, right-drag erases, Esc puts the brush away. Each stroke is one undo step. You can also drag objects in directly.
 - **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
 - **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
-- **Move / view**: drag objects; middle mouse or Space+drag to pan; wheel to zoom; `F` to frame; arrows nudge; `Ctrl+D` duplicate; `Del` delete.
+- **Move**: drag objects (tiles snap to whole tiles); arrows nudge; `Ctrl+D` duplicate; `Del` delete.
+- **View**: trackpad two-finger scroll pans, pinch or Alt+scroll zooms. Mouse: wheel zooms, Shift+wheel scrolls sideways, middle-button drag pans. Space+drag pans with either. `F` frames everything.
 - **Files**: menu (⋯) > Save downloads a `.pxlproj.json`; the project also autosaves in your browser.

@@ -137,6 +137,33 @@ contextual or opened on demand:
   (bottom-left tray), and a secondary global prompt (top bar, level or whole
   game scope).
 
+### Drawing and tiles
+- **Brush tool.** Clicking a library object arms it as a brush (`tool` in the
+  store). Click places one copy, drag paints: every grid cell the pointer
+  crosses gets one copy (Bresenham between pointer samples, so fast strokes
+  leave no gaps; existing copies are not duplicated). Right-drag erases. A
+  stroke is previewed as ghosts and committed on release as **one**
+  transaction. Drawing clears the selection, so no prompt is in the way.
+- **Placement cells** (`core/model/placement.ts`): an object's cell is its
+  size rounded up to whole grid steps. Objects drawn with the brush sit at
+  cell centers.
+- **Tiles** are ordinary entities whose definition has
+  `metadata.placement = "tile"` (starter *Ground* and *Stone*, 32×32). They
+  snap to whole cells when dropped or dragged, and the renderer joins
+  neighbouring tiles of the same kind into one surface (lighter top edge only
+  where nothing sits above). Keeping tiles as entities means each one can be
+  selected, moved, and used as AI context like any other object. A dedicated
+  tilemap layer can replace this later if levels get very large; no format
+  change was needed (`metadata` is already part of the format).
+
+### Navigation input
+`viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained
+or horizontal deltas are a trackpad and pan; a pinch arrives as Ctrl+wheel and
+zooms (Safari's gesture events are handled too); Alt/Cmd+scroll zooms; coarse
+whole-number vertical steps are a mouse wheel and zoom; once a trackpad
+gesture is seen, the next 400 ms keep panning so fast flicks don't turn into
+zooms. Space+drag and middle-button drag pan.
+
 ### AI pipeline
 ```
 prompt -> AIContext -> buildAIPayload (targets in full, others briefly, library)

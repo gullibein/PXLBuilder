@@ -20,13 +20,15 @@ export function App() {
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   return (
     <div className="editor">
-      <Viewport />
-      <ContextPrompt />
       <TopBar />
-      <GlobalPrompt />
-      <Dock />
-      <Tray />
-      {inspectorOpen && <Inspector />}
+      <main className="stage">
+        <Viewport />
+        <ContextPrompt />
+        <GlobalPrompt />
+        <Dock />
+        <Tray />
+        {inspectorOpen && <Inspector />}
+      </main>
     </div>
   );
 }
@@ -81,6 +83,7 @@ function useGlobalShortcuts() {
       } else if (e.key === 'Escape') {
         if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
+        else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {
           state.selectEntities([]);
           state.setWorldContext(false);

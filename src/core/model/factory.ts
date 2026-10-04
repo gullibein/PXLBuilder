@@ -11,7 +11,7 @@ export function createScene(name: string): Scene {
   return {
     id: generateId('scn'),
     name,
-    world: { gravity: { x: 0, y: 980 }, backgroundColor: '#1d2330' },
+    world: { gravity: { x: 0, y: 980 }, backgroundColor: '#8ecdf2' },
     entities: [],
   };
 }
@@ -56,7 +56,8 @@ export function createStarterDefinitions(registry: ComponentRegistry): ObjectDef
   const c = (type: string, props: Record<string, unknown> = {}) => registry.createDefault(type, props);
   const categories: Record<string, string> = {
     Player: 'Characters',
-    Platform: 'Platforms',
+    Ground: 'Platforms',
+    Stone: 'Platforms',
     Enemy: 'Enemies',
     Coin: 'Items',
     Door: 'Environment',
@@ -76,14 +77,24 @@ export function createStarterDefinitions(registry: ComponentRegistry): ObjectDef
       'The player-controlled character.',
     ),
     createDefinition(
-      'Platform',
+      'Ground',
       {
-        Sprite: c('Sprite', { width: 160, height: 24, color: '#6b7a8f' }),
-        Collider: c('Collider', { size: { x: 160, y: 24 } }),
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#5fa83f' }),
+        Collider: c('Collider', { size: { x: 32, y: 32 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
       },
-      ['platform'],
-      'Solid, static ground.',
+      ['platform', 'ground'],
+      'A square ground tile. Draw rows of them to build platforms.',
+    ),
+    createDefinition(
+      'Stone',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#8a8f9c' }),
+        Collider: c('Collider', { size: { x: 32, y: 32 } }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'stone'],
+      'A square stone tile for walls, ledges and floors.',
     ),
     createDefinition(
       'Enemy',
@@ -128,6 +139,7 @@ export function createStarterDefinitions(registry: ComponentRegistry): ObjectDef
     ),
   ];
   for (const def of defs) def.metadata.category = categories[def.name];
+  for (const def of defs) if (def.name === 'Ground' || def.name === 'Stone') def.metadata.placement = 'tile';
   return defs;
 }
 

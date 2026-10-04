@@ -37,6 +37,9 @@ export interface EditOptions {
 }
 
 export type DockPanel = 'library' | 'create' | null;
+
+/** Select (click, drag, box-select) or brush (draw copies of a library object onto the level). */
+export type Tool = { kind: 'select' } | { kind: 'brush'; definitionId: Id };
 export type TrayTab = 'history' | 'console';
 
 export interface EditorState {
@@ -59,6 +62,7 @@ export interface EditorState {
   inspectorOpen: boolean;
   tray: { open: boolean; tab: TrayTab };
   dock: DockPanel;
+  tool: Tool;
 
   /** Applies a change to the project as one undoable transaction. Returns false (and logs) if the change was rejected. */
   edit(label: string, recipe: (draft: Project) => void, opts?: EditOptions): boolean;
@@ -80,6 +84,7 @@ export interface EditorState {
   setInspectorOpen(open: boolean): void;
   setTray(tray: Partial<EditorState['tray']>): void;
   setDock(dock: DockPanel): void;
+  setTool(tool: Tool): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -96,6 +101,7 @@ function reconcile(s: EditorState, next: Project): Partial<EditorState> {
     activeSceneId: scene.id,
     selectedEntityIds: s.selectedEntityIds.filter((id) => existing.has(id)),
     selectedDefinitionId: defExists ? s.selectedDefinitionId : null,
+    tool: s.tool.kind === 'brush' && !next.definitions.some((d) => d.id === (s.tool as { definitionId: Id }).definitionId) ? { kind: 'select' } : s.tool,
     dirty: true,
   };
 }
@@ -118,6 +124,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     inspectorOpen: false,
     tray: { open: false, tab: 'history' },
     dock: null,
+    tool: { kind: 'select' },
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -240,6 +247,12 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setDock(dock) {
       set({ dock });
+    },
+
+    setTool(tool) {
+      // Drawing has no selection: the prompt steps aside until you go back to selecting.
+      if (tool.kind === 'brush') set({ tool, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null });
+      else set({ tool });
     },
 
     logMessage(level, message) {

@@ -11,11 +11,21 @@ export function Tray() {
 
   if (!tray.open) {
     return (
-      <button className="tray-toggle" data-testid="tray-toggle" onClick={() => setTray({ open: true })}>
-        History
-        {past.length > 0 && <span className="count">{past.length}</span>}
-        {errors > 0 && <span className="error-dot" title={`${errors} error(s) in the console`} />}
-      </button>
+      <div className="tray-chips">
+        <button className="tray-chip" data-testid="tray-toggle" onClick={() => setTray({ open: true, tab: 'history' })}>
+          <span className="spark-mini" aria-hidden="true">✦</span>
+          AI History
+          {past.length > 0 && <span className="count">{past.length}</span>}
+        </button>
+        <button className="tray-chip" data-testid="console-toggle" onClick={() => setTray({ open: true, tab: 'console' })}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <rect x="1.5" y="2.5" width="11" height="9" rx="1.8" fill="none" stroke="currentColor" strokeWidth="1.2" />
+            <path d="m4 6 1.8 1.5L4 9M7.5 9H10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          Console
+          {errors > 0 && <span className="error-dot" title={`${errors} error(s)`} />}
+        </button>
+      </div>
     );
   }
   return (
@@ -23,7 +33,7 @@ export function Tray() {
       <header className="tray-head">
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tray.tab === 'history'} className={tray.tab === 'history' ? 'on' : ''} onClick={() => setTray({ tab: 'history' })}>
-            History
+            AI History
           </button>
           <button role="tab" aria-selected={tray.tab === 'console'} className={tray.tab === 'console' ? 'on' : ''} data-testid="tab-console" onClick={() => setTray({ tab: 'console' })}>
             Console{errors > 0 && <span className="error-dot" />}

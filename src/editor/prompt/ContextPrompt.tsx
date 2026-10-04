@@ -66,7 +66,25 @@ export function ContextPrompt() {
   }, [key]);
 
   if (!ctx || !key) return null;
-  const { setInspectorOpen, selectEntities, setWorldContext } = useEditor.getState();
+  const { setInspectorOpen, selectEntities, setWorldContext, project } = useEditor.getState();
+  const scene = project.scenes.find((sc) => sc.id === ctx.sceneId);
+  const nameOf = (id: string) => scene?.entities.find((e) => e.id === id)?.name ?? '?';
+  const header =
+    ctx.kind === 'level' ? (
+      <>
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M1.8 8h12.4M8 1.8c-3.2 3.4-3.2 9 0 12.4M8 1.8c3.2 3.4 3.2 9 0 12.4" fill="none" stroke="currentColor" strokeWidth="1.1" />
+        </svg>
+        World
+      </>
+    ) : ctx.kind === 'pair' ? (
+      <>
+        {nameOf(ctx.entityIds[0])} <span className="arrow">→</span> {nameOf(ctx.entityIds[1])}
+      </>
+    ) : ctx.kind === 'group' ? (
+      <>{ctx.entityIds.length} objects</>
+    ) : undefined;
   return (
     <div className="context-layer">
       <svg className="connector" aria-hidden="true">
@@ -77,6 +95,7 @@ export function ContextPrompt() {
         <PromptBox
           key={key}
           ctx={ctx}
+          header={header}
           onDetails={() => setInspectorOpen(true)}
           onEscape={() => {
             selectEntities([]);

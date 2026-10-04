@@ -52,6 +52,8 @@ export interface PromptBoxProps {
   /** Extra content shown under an applied result (e.g. the new object to drag in). */
   renderApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => React.ReactNode;
   onEscape?: () => void;
+  /** Optional small title above the input (e.g. "World", "Enemy → Door"). Objects themselves need none. */
+  header?: React.ReactNode;
 }
 
 export function PromptBox(props: PromptBoxProps) {
@@ -67,7 +69,8 @@ export function PromptBox(props: PromptBoxProps) {
     if (!el) return;
     el.style.height = '0px';
     el.style.height = `${Math.min(el.scrollHeight, 4 * 20 + 14)}px`;
-  }, [text]);
+    // Re-measure when work starts/ends: while working, the request is shown as the placeholder.
+  }, [text, working]);
 
   useEffect(() => {
     if (props.autoFocus) inputRef.current?.focus();
@@ -81,7 +84,8 @@ export function PromptBox(props: PromptBoxProps) {
   };
 
   return (
-    <div className={`prompt${working ? ' is-working' : ''}`} data-testid={props.testId}>
+    <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId}>
+      {props.header && <div className="prompt-header">{props.header}</div>}
       <div className="prompt-field">
         <span className="spark" aria-hidden="true">
           ✦
@@ -121,6 +125,11 @@ export function PromptBox(props: PromptBoxProps) {
             </svg>
           </button>
         )}
+        <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={!text.trim() || working} onClick={submit}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
       {working && <div className="prompt-progress" aria-label="Working" />}
       {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onCancel={runner.reset} onUndo={() => { undo(); runner.reset(); }} renderApplied={props.renderApplied} />}

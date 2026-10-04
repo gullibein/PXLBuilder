@@ -13,6 +13,8 @@ export interface ResolvedEntity {
   overriddenFields: Set<string>;
   /** Component types added on the instance that the definition does not have. */
   instanceOnlyComponents: Set<string>;
+  /** Placed on a tile grid (see placement.ts): snaps to whole cells and is drawn as part of a continuous surface. */
+  tile: boolean;
 }
 
 export function findDefinition(project: Project, id: Id | null): ObjectDefinition | undefined {
@@ -60,5 +62,6 @@ export function resolveEntity(project: Project, entity: EntityInstance, registry
     tags,
     overriddenFields,
     instanceOnlyComponents,
+    tile: def?.metadata.placement === 'tile' || entity.metadata.placement === 'tile',
   };
 }

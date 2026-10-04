@@ -20,7 +20,7 @@ export function TopBar() {
       <div className="topbar-left">
         <span className="wordmark" aria-label="PXLBuilder">
           <span className="wordmark-mark" aria-hidden="true" />
-          PXL<span className="wordmark-thin">Builder</span>
+          <span>PXLBuilder</span>
         </span>
         <SceneSelector />
         <div className="icon-group">

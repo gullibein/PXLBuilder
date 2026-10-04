@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
-import { addEntity, moveEntities } from '../../core/model/mutations';
-import type { ResolvedEntity } from '../../core/model/resolve';
+import { addEntity, moveEntities, removeEntities } from '../../core/model/mutations';
+import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
+import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
+import { componentRegistry } from '../../core/components/builtin';
 import type { Id, Vec2 } from '../../core/types';
 import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ViewSize } from '../../render/renderer';
 import { setViewportSize } from '../actions';
@@ -10,21 +12,38 @@ import { publishAnchor } from '../prompt/anchor';
 import { resolveSceneEntities } from '../selectors';
 import { getActiveScene, useEditor } from '../store';
 import { theme } from '../theme';
+import { createWheelInterpreter } from './wheel';
 
 export const DEFINITION_DRAG_TYPE = 'application/x-pxlbuilder-definition';
 
 type Drag =
   | { kind: 'pan'; startScreen: Vec2; startCamera: Camera; moved: boolean }
-  | { kind: 'move'; startWorld: Vec2; anchor: Vec2; ids: Id[]; delta: Vec2 }
-  | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean };
+  | { kind: 'move'; startWorld: Vec2; anchor: Vec2; anchorId: Id; ids: Id[]; delta: Vec2 }
+  | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
+  /** A brush stroke: cells visited so far (painted on release as one undoable step). */
+  | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> };
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
 /** Screen space reserved by floating chrome, so the prompt avoids it. */
-export const CHROME_INSETS = { top: 64, bottom: 76 };
+export const CHROME_INSETS = { top: 4, bottom: 76 };
 
 function snap(value: number, grid: number): number {
   return Math.round(value / grid) * grid;
+}
+
+/** The brush's object, resolved as a fresh copy would be (for its size and look). */
+function brushPreview(definitionId: Id): ResolvedEntity | null {
+  const { project } = useEditor.getState();
+  const def = project.definitions.find((d) => d.id === definitionId);
+  if (!def) return null;
+  return resolveEntity(project, instantiateDefinition(def, { x: 0, y: 0 }), componentRegistry);
+}
+
+/** Where an entity lands when dropped or moved: tile objects snap to their cells, others to the grid. */
+export function snapPosition(p: Vec2, entity: ResolvedEntity | null, grid: number, enabled: boolean): Vec2 {
+  if (entity?.tile) return snapToCell(p, cellSize(getEntitySize(entity), grid));
+  return enabled ? { x: snap(p.x, grid), y: snap(p.y, grid) } : p;
 }
 
 export function Viewport() {
@@ -33,6 +52,8 @@ export function Viewport() {
   const viewRef = useRef<ViewSize>({ width: 1, height: 1 });
   const dragRef = useRef<Drag | null>(null);
   const hoverRef = useRef<Id | null>(null);
+  /** Pointer position in world space (for the brush ghost). */
+  const pointerWorldRef = useRef<Vec2 | null>(null);
   const spaceDownRef = useRef(false);
 
   // Canvas sizing.
@@ -77,10 +98,16 @@ export function Viewport() {
       const byId = new Map(entities.map((e) => [e.id, e]));
       const selected = state.selectedEntityIds.map((id) => byId.get(id)).filter((e): e is ResolvedEntity => !!e);
 
+      // Observable view state (used by tests and handy when debugging).
+      const camAttr = `${state.camera.x.toFixed(1)},${state.camera.y.toFixed(1)},${state.camera.zoom.toFixed(4)}`;
+      if (canvas.dataset.camera !== camAttr) canvas.dataset.camera = camAttr;
+      if (canvas.dataset.entities !== String(scene.entities.length)) canvas.dataset.entities = String(scene.entities.length);
+
       drawBackground(ctx, view, dpr, scene.world.backgroundColor);
       applyCamera(ctx, state.camera, view, dpr);
       if (state.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
       drawEntities(ctx, entities);
+      if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
@@ -128,17 +155,44 @@ export function Viewport() {
   // Wheel zoom (non-passive so the page doesn't scroll).
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const onWheel = (ev: WheelEvent) => {
-      ev.preventDefault();
+    const interpret = createWheelInterpreter();
+    const zoomAt = (screen: Vec2, factor: number) => {
       const { camera, setCamera } = useEditor.getState();
-      const screen = localPoint(canvas, ev);
-      const before = screenToWorld(camera, viewRef.current, screen);
-      const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * Math.exp(-ev.deltaY * 0.0015)));
       const view = viewRef.current;
+      const before = screenToWorld(camera, view, screen);
+      const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor));
+      // Keep the world point under the cursor fixed.
       setCamera({ zoom, x: before.x - (screen.x - view.width / 2) / zoom, y: before.y - (screen.y - view.height / 2) / zoom });
     };
+    const onWheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      const intent = interpret(ev);
+      if (intent.kind === 'zoom') {
+        zoomAt(localPoint(canvas, ev), intent.factor);
+      } else {
+        const { camera, setCamera } = useEditor.getState();
+        setCamera({ x: camera.x + intent.dx / camera.zoom, y: camera.y + intent.dy / camera.zoom });
+      }
+    };
+    // Safari reports trackpad pinches as gesture events instead of ctrl+wheel.
+    let gestureZoom = 1;
+    const onGestureStart = (ev: Event) => {
+      ev.preventDefault();
+      gestureZoom = useEditor.getState().camera.zoom;
+    };
+    const onGestureChange = (ev: Event) => {
+      ev.preventDefault();
+      const g = ev as Event & { scale: number; clientX: number; clientY: number };
+      zoomAt(localPoint(canvas, g), (gestureZoom * g.scale) / useEditor.getState().camera.zoom);
+    };
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
+    canvas.addEventListener('gesturestart', onGestureStart);
+    canvas.addEventListener('gesturechange', onGestureChange);
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('gesturestart', onGestureStart);
+      canvas.removeEventListener('gesturechange', onGestureChange);
+    };
   }, []);
 
   // Space-to-pan modifier.
@@ -146,11 +200,15 @@ export function Viewport() {
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isTextInput(e.target)) {
         spaceDownRef.current = true;
+        if (!dragRef.current && canvasRef.current) canvasRef.current.style.cursor = 'grab';
         if (e.target === document.body || e.target === canvasRef.current) e.preventDefault();
       }
     };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spaceDownRef.current = false;
+      if (e.code === 'Space') {
+        spaceDownRef.current = false;
+        if (dragRef.current?.kind !== 'pan' && canvasRef.current) canvasRef.current.style.cursor = '';
+      }
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
@@ -169,7 +227,15 @@ export function Viewport() {
     const state = useEditor.getState();
     if (state.dock) state.setDock(null);
     if (ev.button === 1 || (ev.button === 0 && spaceDownRef.current)) {
+      ev.preventDefault();
       dragRef.current = { kind: 'pan', startScreen: { x: ev.clientX, y: ev.clientY }, startCamera: { ...state.camera }, moved: false };
+      canvas.style.cursor = 'grabbing';
+    } else if (state.tool.kind === 'brush' && (ev.button === 0 || ev.button === 2)) {
+      // Brush: left button paints, right button erases.
+      const preview = brushPreview(state.tool.definitionId);
+      if (!preview) return;
+      const cell = cellAt(toWorld(ev), cellSize(getEntitySize(preview), state.project.settings.gridSize));
+      dragRef.current = { kind: 'paint', definitionId: state.tool.definitionId, erase: ev.button === 2, start: cell, last: cell, cells: new Map([[cellKey(cell), cell]]) };
     } else if (ev.button === 0) {
       const world = toWorld(ev);
       const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
@@ -180,7 +246,7 @@ export function Viewport() {
         else if (!selection.includes(hit.id)) selection = [hit.id];
         state.selectEntities(selection);
         if (selection.includes(hit.id)) {
-          dragRef.current = { kind: 'move', startWorld: world, anchor: hit.transform.position, ids: selection, delta: { x: 0, y: 0 } };
+          dragRef.current = { kind: 'move', startWorld: world, anchor: hit.transform.position, anchorId: hit.id, ids: selection, delta: { x: 0, y: 0 } };
         }
       } else {
         dragRef.current = { kind: 'marquee', startWorld: world, currentWorld: world, additive, baseSelection: additive ? state.selectedEntityIds : [], moved: false };
@@ -194,10 +260,25 @@ export function Viewport() {
   const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
     const state = useEditor.getState();
+    pointerWorldRef.current = toWorld(ev);
     if (!drag) {
+      if (state.tool.kind === 'brush') {
+        hoverRef.current = null;
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : 'crosshair';
+        return;
+      }
       const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev));
       hoverRef.current = hit?.id ?? null;
-      canvasRef.current!.style.cursor = hit ? 'pointer' : 'default';
+      canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : hit ? 'pointer' : 'default';
+      return;
+    }
+    if (drag.kind === 'paint') {
+      const preview = brushPreview(drag.definitionId);
+      if (!preview) return;
+      let cell = cellAt(toWorld(ev), cellSize(getEntitySize(preview), state.project.settings.gridSize));
+      if (ev.shiftKey) cell = constrainToAxis(drag.start, cell);
+      for (const c of cellsOnLine(drag.last, cell)) drag.cells.set(cellKey(c), c);
+      drag.last = cell;
       return;
     }
     if (drag.kind === 'pan') {
@@ -207,11 +288,10 @@ export function Viewport() {
       state.setCamera({ x: drag.startCamera.x - (ev.clientX - drag.startScreen.x) / z, y: drag.startCamera.y - (ev.clientY - drag.startScreen.y) / z });
     } else if (drag.kind === 'move') {
       const world = toWorld(ev);
-      let target = { x: drag.anchor.x + world.x - drag.startWorld.x, y: drag.anchor.y + world.y - drag.startWorld.y };
-      if (state.snapToGrid) {
-        const g = state.project.settings.gridSize;
-        target = { x: snap(target.x, g), y: snap(target.y, g) };
-      }
+      const raw = { x: drag.anchor.x + world.x - drag.startWorld.x, y: drag.anchor.y + world.y - drag.startWorld.y };
+      // The object under the cursor leads; the rest of the selection keeps its offsets.
+      const anchorEntity = resolveSceneEntities(state.project, state.activeSceneId).find((e) => e.id === drag.anchorId) ?? null;
+      const target = snapPosition(raw, anchorEntity, state.project.settings.gridSize, state.snapToGrid);
       drag.delta = { x: target.x - drag.anchor.x, y: target.y - drag.anchor.y };
     } else {
       drag.currentWorld = toWorld(ev);
@@ -230,8 +310,12 @@ export function Viewport() {
     const drag = dragRef.current;
     dragRef.current = null;
     if (canvasRef.current?.hasPointerCapture(ev.pointerId)) canvasRef.current.releasePointerCapture(ev.pointerId);
-    canvasRef.current!.style.cursor = 'default';
     const state = useEditor.getState();
+    canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : state.tool.kind === 'brush' ? 'crosshair' : 'default';
+    if (drag?.kind === 'paint') {
+      commitStroke(drag);
+      return;
+    }
     if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
       const label = drag.ids.length === 1 ? 'Move' : `Move ${drag.ids.length} objects`;
       state.edit(label, (p) => moveEntities(p, state.activeSceneId, drag.ids, drag.delta));
@@ -244,6 +328,7 @@ export function Viewport() {
 
   const onDoubleClick = (ev: React.MouseEvent<HTMLCanvasElement>) => {
     const state = useEditor.getState();
+    if (state.tool.kind === 'brush') return;
     const world = toWorld(ev);
     if (!pick(resolveSceneEntities(state.project, state.activeSceneId), world)) state.setWorldContext(world);
   };
@@ -276,6 +361,8 @@ export function Viewport() {
         onPointerCancel={onPointerUp}
         onPointerLeave={() => (hoverRef.current = null)}
         onDoubleClick={onDoubleClick}
+        onMouseDown={(e) => e.button === 1 && e.preventDefault() /* no autoscroll on middle-drag */}
+        onContextMenu={(e) => e.preventDefault() /* right-drag erases while drawing */}
       />
     </div>
   );
@@ -286,14 +373,78 @@ export function placeDefinition(definitionId: Id, world: Vec2): Id | null {
   const state = useEditor.getState();
   const def = state.project.definitions.find((d) => d.id === definitionId);
   if (!def) return null;
-  const g = state.project.settings.gridSize;
-  const pos = state.snapToGrid ? { x: snap(world.x, g), y: snap(world.y, g) } : world;
+  const pos = snapPosition(world, brushPreview(def.id), state.project.settings.gridSize, state.snapToGrid);
   const scene = getActiveScene(state);
   const count = scene.entities.filter((e) => e.definitionId === def.id).length;
   const entity = instantiateDefinition(def, pos, count === 0 ? def.name : `${def.name} ${count + 1}`);
   if (!state.edit(`Place ${def.name}`, (p) => addEntity(p, scene.id, entity))) return null;
   state.selectEntities([entity.id]);
   return entity.id;
+}
+
+/**
+ * Commits a brush stroke as one undoable step: one copy per visited cell that
+ * doesn't already hold this object (paint), or removes the copies in those
+ * cells (erase).
+ */
+function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
+  const state = useEditor.getState();
+  const def = state.project.definitions.find((d) => d.id === stroke.definitionId);
+  const preview = brushPreview(stroke.definitionId);
+  if (!def || !preview) return;
+  const cell = cellSize(getEntitySize(preview), state.project.settings.gridSize);
+  const scene = getActiveScene(state);
+  const occupied = new Map<string, Id[]>();
+  for (const e of scene.entities) {
+    if (e.definitionId !== def.id) continue;
+    const key = cellKey(cellAt(e.transform.position, cell));
+    occupied.set(key, [...(occupied.get(key) ?? []), e.id]);
+  }
+  if (stroke.erase) {
+    const ids = [...stroke.cells.keys()].flatMap((k) => occupied.get(k) ?? []);
+    if (ids.length) state.edit(`Erase ${ids.length} ${def.name}`, (p) => removeEntities(p, scene.id, ids));
+    return;
+  }
+  const free = [...stroke.cells.entries()].filter(([k]) => !occupied.has(k)).map(([, c]) => c);
+  if (!free.length) return;
+  let n = scene.entities.filter((e) => e.definitionId === def.id).length;
+  const created = free.map((c) => instantiateDefinition(def, cellCenter(c, cell), n++ === 0 ? def.name : `${def.name} ${n}`));
+  state.edit(created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`, (p) => {
+    for (const e of created) addEntity(p, scene.id, e);
+  });
+}
+
+/** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
+function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag | null, pointer: Vec2 | null, grid: number, zoom: number): void {
+  const preview = brushPreview(definitionId);
+  if (!preview) return;
+  const cell = cellSize(getEntitySize(preview), grid);
+  const stroke = drag?.kind === 'paint' ? drag : null;
+  const cells = stroke ? [...stroke.cells.values()] : pointer ? [cellAt(pointer, cell)] : [];
+  ctx.save();
+  if (stroke?.erase) {
+    ctx.strokeStyle = theme.erase;
+    ctx.lineWidth = 2 / zoom;
+    for (const c of cells) {
+      const p = cellCenter(c, cell);
+      ctx.strokeRect(p.x - cell.x / 2 + 2 / zoom, p.y - cell.y / 2 + 2 / zoom, cell.x - 4 / zoom, cell.y - 4 / zoom);
+    }
+  } else {
+    ctx.globalAlpha = 0.55;
+    drawEntities(
+      ctx,
+      cells.map((c) => ({ ...preview, transform: { ...preview.transform, position: cellCenter(c, cell) } })),
+    );
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = theme.select;
+    ctx.lineWidth = 1 / zoom;
+    ctx.setLineDash([4 / zoom, 3 / zoom]);
+    for (const c of cells) {
+      const p = cellCenter(c, cell);
+      ctx.strokeRect(p.x - cell.x / 2, p.y - cell.y / 2, cell.x, cell.y);
+    }
+  }
+  ctx.restore();
 }
 
 function localPoint(canvas: HTMLCanvasElement, ev: { clientX: number; clientY: number }): Vec2 {
@@ -356,13 +507,29 @@ function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: numbe
 
 function drawSelected(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: number, time: number): void {
   const breathe = 0.75 + 0.25 * Math.sin(time / 600);
+  const size = getEntitySize(e);
+  const { position, rotation, scale } = e.transform;
+  const pad = 4 / zoom;
+  const w = size.x * Math.abs(scale.x) + pad * 2;
+  const h = size.y * Math.abs(scale.y) + pad * 2;
   ctx.save();
-  traceShape(ctx, e, 4 / zoom);
+  ctx.translate(position.x, position.y);
+  ctx.rotate((rotation * Math.PI) / 180);
+  // Soft glow, thin outline, and small corner handles: the object is "active".
   ctx.shadowColor = theme.selectGlow;
-  ctx.shadowBlur = 18 * breathe;
+  ctx.shadowBlur = 16 * breathe;
   ctx.strokeStyle = theme.select;
-  ctx.lineWidth = 2 / zoom;
-  ctx.stroke();
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.shadowBlur = 0;
+  const s = 5 / zoom;
+  ctx.fillStyle = theme.handle;
+  ctx.strokeStyle = theme.select;
+  ctx.lineWidth = 1 / zoom;
+  for (const [cx, cy] of [[-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2]]) {
+    ctx.fillRect(cx - s / 2, cy - s / 2, s, s);
+    ctx.strokeRect(cx - s / 2, cy - s / 2, s, s);
+  }
   ctx.restore();
 }
 
@@ -419,10 +586,12 @@ function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: Resol
 function drawLabel(ctx: CanvasRenderingContext2D, text: string, toScreen: (p: Vec2) => Vec2, bounds: Rect): void {
   const p = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY });
   ctx.save();
-  ctx.font = `600 10px ${theme.uiFont}`;
+  ctx.font = `700 10px ${theme.uiFont}`;
   ctx.letterSpacing = '1.2px';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
+  ctx.shadowColor = theme.labelShadow;
+  ctx.shadowBlur = 4;
   ctx.fillStyle = theme.label;
   ctx.fillText(text.toUpperCase(), p.x, p.y + 10);
   ctx.restore();
