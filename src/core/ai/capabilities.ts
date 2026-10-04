@@ -76,7 +76,7 @@ Operations
 - create_definition: give the object a clear name, a one-line description, a category (one of Characters, Enemies, Platforms, Items, Environment, Effects, UI, Custom), tags, and components. Give new objects a Sprite with a fitting size and color (placeholder art), a Collider, and a PhysicsBody when they should collide or fall (gravityScale 0 for things that float or fly). place_instance only when the user asks to put it in the level.
 
 How the game runs (Play mode)
-- Entities with a CharacterController are player-controlled: arrows/WASD run, Space/Up jumps, Up/Down climb anything Climbable they overlap. speed, acceleration, jumpForce (initial upward speed; jump height ≈ jumpForce²/(2·gravity)) and airControl are simulated.
+- Entities with a CharacterController are player-controlled: arrows/WASD run, Space jumps (Up never jumps), Up/Down climb anything Climbable when at least half of the character is inside it, at the character's running speed; moving sideways off the ladder lets go. speed, acceleration, jumpForce (initial upward speed; jump height ≈ jumpForce²/(2·gravity); the default 295 reaches one 32px tile row up, not two) and airControl are simulated.
 - PhysicsBody: dynamic bodies fall with world gravity × gravityScale and collide with solids; static bodies and colliders without a PhysicsBody are solid ground/walls; kinematic bodies move by their velocity only. Colliders with isTrigger are not solid.
 - The camera follows the entity with a CameraTarget (followStrength = smoothing). Falling below the level puts an entity back at its start.
 - Not simulated yet: damage, health, collecting, enemies moving on their own (see "Not available yet").

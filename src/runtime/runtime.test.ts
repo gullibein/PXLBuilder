@@ -38,7 +38,7 @@ describe('runtime', () => {
     run(rt, new InputState(), 1.5);
     expect(player.grounded).toBe(true);
     expect(player.vy).toBe(0);
-    expect(player.y).toBeCloseTo(32 - 20, 5); // tile top 32, player half-height 20
+    expect(player.y).toBeCloseTo(32 - 16, 5); // tile top 32; the player is one tile (32px) tall
   });
 
   it('weaker gravity makes the fall slower', () => {
@@ -76,7 +76,7 @@ describe('runtime', () => {
     input.press('jump');
     let top = floorY;
     run(rt, input, 1.2, () => (top = Math.min(top, p.y)));
-    const expected = (450 * 450) / (2 * 980);
+    const expected = (p.controller!.jumpForce ** 2) / (2 * 980);
     expect(floorY - top).toBeGreaterThan(expected * 0.9);
     expect(floorY - top).toBeLessThan(expected * 1.05);
     expect(p.grounded).toBe(true);
@@ -141,13 +141,13 @@ describe('runtime', () => {
     run(rt, input, 2.5);
     input.release('up');
     run(rt, input, 0.5);
-    // Top of the ladder is at -128; standing on it puts the player's center 20px above.
+    // Top of the ladder is at -128; standing on it puts the player's center 16px above.
     expect(p.climbing).toBe(false);
-    expect(p.y).toBeCloseTo(-128 - 20, 0);
+    expect(p.y).toBeCloseTo(-128 - 16, 0);
     input.press('down');
-    run(rt, input, 0.4);
+    run(rt, input, 0.3);
     expect(p.climbing).toBe(true);
-    expect(p.y).toBeGreaterThan(-148 + 20);
+    expect(p.y).toBeGreaterThan(-144 + 20);
   });
 
   /** Player standing on the ground right at a 5-piece ladder (x=80, from the ground up to y=-128). */
@@ -179,29 +179,34 @@ describe('runtime', () => {
     input.release('down');
     expect(p.climbing).toBe(false);
     expect(p.grounded).toBe(true);
-    expect(p.y).toBeCloseTo(12, 0);
+    expect(p.y).toBeCloseTo(16, 0);
     const x = p.x;
     input.press('left');
     run(rt, input, 0.5);
     expect(p.x).toBeLessThan(x - 40);
   });
 
-  it('Left/Right steps off the ladder halfway up: you leave it and fall', () => {
+  it('a small sideways move keeps you on the ladder; moving half off it lets go and you fall', () => {
     const { rt, input, p } = atLadder();
     input.press('up');
-    run(rt, input, 0.6);
-    expect(p.climbing).toBe(true);
-    const yOnLadder = p.y;
-    expect(yOnLadder).toBeLessThan(-40);
-    input.press('right'); // Up still held, like a diagonal on a d-pad
-    run(rt, input, 0.25);
-    expect(p.climbing).toBe(false);
-    expect(p.x).toBeGreaterThan(80 + 20);
-    input.release('right');
+    run(rt, input, 0.4);
     input.release('up');
+    expect(p.climbing).toBe(true);
+    const y = p.y;
+    expect(y).toBeLessThan(-40);
+    input.press('right');
+    run(rt, input, 1 / 30); // a tap
+    input.release('right');
+    run(rt, input, 0.2);
+    expect(p.climbing).toBe(true);
+    expect(p.y).toBeCloseTo(y, 0); // still holding on, not falling
+    input.press('right');
+    run(rt, input, 0.15);
+    input.release('right');
+    expect(p.climbing).toBe(false); // less than half of the player is on the ladder now
     run(rt, input, 1);
     expect(p.grounded).toBe(true);
-    expect(p.y).toBeCloseTo(12, 0); // fell back down to the floor
+    expect(p.y).toBeCloseTo(16, 0); // fell to the floor
   });
 
   it('Left/Right at the bottom of the ladder walks off it', () => {
@@ -215,6 +220,82 @@ describe('runtime', () => {
     expect(p.climbing).toBe(false);
     expect(p.x).toBeLessThan(80 - 40);
     expect(p.grounded).toBe(true);
+  });
+
+  it('climbs at the same speed as it runs', () => {
+    const { rt, input, p } = atLadder();
+    input.press('up');
+    run(rt, input, 0.2);
+    expect(p.climbing).toBe(true);
+    expect(Math.abs(p.vy)).toBe(p.controller!.speed);
+  });
+
+  it('grabs a ladder only when at least half of the player is inside the ladder tile', () => {
+    // Ladder tile at x=80 covers 64..96; the player is 28px wide.
+    const grabAt = (x: number) => {
+      const { project, sceneId } = level((p, sid) => {
+        const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+        for (let y = 16; y >= -48; y -= 32) m.addEntity(p, sid, instantiateDefinition(ladder, { x: 80, y }));
+        const player = p.scenes[0].entities.find((e) => e.name === 'Player')!;
+        player.transform.position = { x, y: 0 };
+      });
+      const rt = new Runtime(project, sceneId, registry);
+      const input = new InputState();
+      run(rt, input, 0.5);
+      input.press('up');
+      run(rt, input, 0.2);
+      return rt.find('Player')!.climbing;
+    };
+    expect(grabAt(64)).toBe(true); // exactly half inside (64..78 of 50..78)
+    expect(grabAt(80)).toBe(true);
+    expect(grabAt(59)).toBe(false); // only 9px of 28 inside
+    expect(grabAt(101)).toBe(false);
+  });
+
+  it('Up does not jump (it only climbs)', () => {
+    const { project, sceneId } = level();
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    run(rt, input, 1);
+    const p = rt.find('Player')!;
+    const y = p.y;
+    input.press('up');
+    run(rt, input, 0.5);
+    expect(p.y).toBe(y);
+    expect(p.grounded).toBe(true);
+  });
+
+  it('jumps onto a platform one row higher, but not two rows', () => {
+    const endX = (rows: number) => {
+      const { project, sceneId } = level((p, sid) => {
+        const stone = p.definitions.find((d) => d.name === 'Stone')!;
+        for (let r = 1; r <= rows; r++) for (const x of [112, 144]) m.addEntity(p, sid, instantiateDefinition(stone, { x, y: 48 - 32 * r }));
+      });
+      const rt = new Runtime(project, sceneId, registry);
+      const input = new InputState();
+      run(rt, input, 1);
+      const p = rt.find('Player')!;
+      input.press('right');
+      let held = 0;
+      run(rt, input, 1, () => {
+        // One full jump: press when close to the step, hold for a third of a second, then stop running.
+        if (held === 0 && p.x > 60 && p.grounded) {
+          input.press('jump');
+          held = 1;
+        } else if (held > 0 && ++held === 20) {
+          input.release('jump');
+        } else if (held > 0 && p.x > 112) {
+          input.release('right');
+        }
+      });
+      return { x: p.x, y: p.y, grounded: p.grounded };
+    };
+    const one = endX(1);
+    expect(one.x).toBeGreaterThan(96); // up on the step
+    expect(one.y).toBeCloseTo(16 - 32, 0);
+    expect(one.grounded).toBe(true);
+    const two = endX(2);
+    expect(two.x).toBeLessThanOrEqual(96 - 14 + 0.01); // stopped by the two-row wall
   });
 
   it('falling out of the level puts the player back at the start', () => {

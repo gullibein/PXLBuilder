@@ -54,7 +54,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {
       speed: { kind: 'number', default: 200, min: 0, step: 10, description: 'Max horizontal speed (px/s)' },
       acceleration: { kind: 'number', default: 1500, min: 0, step: 50, description: 'Horizontal acceleration (px/s²)' },
-      jumpForce: { kind: 'number', default: 450, min: 0, step: 10, description: 'Initial jump velocity (px/s)' },
+      jumpForce: { kind: 'number', default: 295, min: 0, step: 5, description: 'Initial jump speed (px/s). Jump height ≈ jumpForce² / (2 × gravity): 295 at gravity 980 is about 1.4 tiles, enough to reach the next row up' },
       airControl: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.05, description: 'Fraction of control while airborne' },
     },
   },
@@ -109,11 +109,9 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Climbable',
     label: 'Climbable',
-    description: 'Characters can climb this (ladders, vines, ropes).',
+    description: 'Characters can climb this (ladders, vines, ropes) with Up/Down, at their running speed.',
     category: 'Movement',
-    fields: {
-      climbSpeed: { kind: 'number', default: 120, min: 0, step: 10, description: 'Climbing speed (px/s)' },
-    },
+    fields: {},
   },
   {
     type: 'CameraTarget',

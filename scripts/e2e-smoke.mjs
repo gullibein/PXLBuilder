@@ -437,8 +437,15 @@ try {
   const ps = async () => ((await play.getAttribute('data-player')) ?? '').split(',').map(Number);
   await check(async () => {
     const [, y, grounded] = await ps();
-    return grounded === 1 && Math.abs(y - 12) < 0.5;
-  }, 'the player falls and lands on the drawn platform (y = 12)');
+    return grounded === 1 && Math.abs(y - 16) < 0.5;
+  }, 'the player (one tile tall) falls and lands on the drawn platform (y = 16)');
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('ArrowUp');
+  await check(async () => {
+    const [, y, grounded] = await ps();
+    return grounded === 1 && Math.abs(y - 16) < 0.5;
+  }, 'Up does not jump');
   const [startX] = await ps();
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(500);
@@ -449,10 +456,10 @@ try {
   let jumped = false;
   for (let i = 0; i < 30 && !jumped; i++) {
     await page.waitForTimeout(20);
-    jumped = (await ps())[1] < 12 - 40;
+    jumped = (await ps())[1] < 16 - 32;
   }
   await page.keyboard.up('Space');
-  await check(jumped, 'Space jumps (the player rises more than 40px)');
+  await check(jumped, 'Space jumps higher than one tile');
   await check(async () => (await ps())[2] === 1, 'and lands again');
   await page.screenshot({ path: `${OUT}/12-play.png` });
   await page.keyboard.press('Escape');

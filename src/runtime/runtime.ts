@@ -12,7 +12,7 @@ import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { Id, Project, Scene, Vec2 } from '../core/types';
 import type { Camera } from '../render/renderer';
 import type { InputState } from './input';
-import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
+import { moveAndCollide, standingOn, type Box } from './physics';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
@@ -37,13 +37,12 @@ export interface RuntimeEntity {
   /** Collision box relative to the position (null: no collider). */
   collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean } | null;
   controller: Controller | null;
-  climbSpeed: number | null; // set on climbable things (ladders)
+  /** Ladders, vines…: things a character can climb. */
+  climbable: boolean;
   grounded: boolean;
   climbing: boolean;
   coyote: number;
   jumpBuffer: number;
-  /** Seconds before a ladder can be grabbed again after stepping off it sideways. */
-  regrab: number;
   spawn: Vec2;
   /** How many times it fell out of the level and was put back. */
   respawns: number;
@@ -55,13 +54,20 @@ const MAX_STEPS_PER_FRAME = 12;
 const MAX_FALL_SPEED = 1400;
 const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
-/** After stepping off a ladder sideways, Up (still held) doesn't grab it again straight away. */
-const LADDER_REGRAB_DELAY = 0.3;
+/** How much of a character must be inside a ladder (horizontally) to climb it. */
+const LADDER_GRIP = 0.5;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
 
 function boxOf(e: RuntimeEntity): Box | null {
   return e.collider ? { x: e.x + e.collider.ox, y: e.y + e.collider.oy, hw: e.collider.hw, hh: e.collider.hh } : null;
+}
+
+/** The area an entity covers on screen (its sprite), used for ladders: you climb the tile you see. */
+function zoneOf(e: RuntimeEntity): Box {
+  const size = getEntitySize(e.base);
+  const scale = e.base.transform.scale;
+  return { x: e.x, y: e.y, hw: (size.x * Math.abs(scale.x)) / 2, hh: (size.y * Math.abs(scale.y)) / 2 };
 }
 
 function buildEntity(project: Project, scene: Scene, index: number, registry: ComponentRegistry): RuntimeEntity {
@@ -92,12 +98,11 @@ function buildEntity(project: Project, scene: Scene, index: number, registry: Co
     gravityScale: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     collider,
     controller: cc ? { speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
-    climbSpeed: c.Climbable ? Number(c.Climbable.climbSpeed) : null,
+    climbable: !!c.Climbable,
     grounded: false,
     climbing: false,
     coyote: 0,
     jumpBuffer: 0,
-    regrab: 0,
     spawn: { ...r.transform.position },
     respawns: 0,
   };
@@ -125,13 +130,16 @@ export class Runtime {
 
     const isSolid = (e: RuntimeEntity) => e.collider && !e.collider.trigger && (e.body === 'static' || e.body === 'none');
     this.staticSolids = this.entities.filter(isSolid).map((e) => boxOf(e)!);
-    this.climbables = this.entities.filter((e) => e.climbSpeed !== null && e.collider);
+    this.climbables = this.entities.filter((e) => e.climbable);
     // A ladder piece with no ladder piece directly above it has a walkable top.
     this.ladderTops = this.climbables
-      .filter((l) => !this.climbables.some((o) => o !== l && Math.abs(o.x - l.x) < 1 && Math.abs(o.y + o.collider!.hh * 2 - l.y) < 1))
+      .filter((l) => {
+        const z = zoneOf(l);
+        return !this.climbables.some((o) => o !== l && Math.abs(o.x - l.x) < 1 && Math.abs(zoneOf(o).y + zoneOf(o).hh - (z.y - z.hh)) < 1);
+      })
       .map((l) => {
-        const b = boxOf(l)!;
-        return { x: b.x, y: b.y - b.hh + 1, hw: b.hw, hh: 1 };
+        const z = zoneOf(l);
+        return { x: z.x, y: z.y - z.hh + 1, hw: z.hw, hh: 1 };
       });
 
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
@@ -203,26 +211,19 @@ export class Runtime {
   private control(e: RuntimeEntity, input: InputState, dt: number): void {
     const c = e.controller!;
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
-    const box = boxOf(e);
-    const ladder = box ? this.ladderAt({ ...box, hh: box.hh + 2, y: box.y + 2 }) : null;
+    const ladder = this.ladderAt(e);
 
-    // Climbing: hold Up/Down on a ladder. Left/Right steps off it (you walk away, or fall if you're
-    // halfway up); jumping lets go; reaching the floor or the ladder's end ends the climb.
-    e.regrab = ladder ? Math.max(0, e.regrab - dt) : 0;
-    if (ladder && !e.climbing && e.regrab === 0 && (input.isDown('up') || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
+    // Climbing: Up/Down on a ladder (at least half of you inside it), at running speed. Left/Right
+    // moves you along it; once less than half of you is on the ladder you let go (walk off, or fall
+    // if you're halfway up). Jumping lets go; reaching the floor ends the climb.
+    if (ladder && !e.climbing && (input.isDown('up') || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
       e.climbing = true;
       e.vx = 0;
     }
-    if (e.climbing && dir !== 0) {
-      e.climbing = false;
-      e.regrab = LADDER_REGRAB_DELAY;
-    }
     if (e.climbing && (!ladder || input.wasPressed('jump'))) e.climbing = false;
-    if (e.climbing && ladder) {
-      const climb = ladder.climbSpeed ?? 120;
-      e.vy = ((input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0)) * climb;
-      e.vx = 0;
-      e.x += (ladder.x - e.x) * Math.min(1, dt * 12); // settle onto the ladder's middle
+    if (e.climbing) {
+      e.vy = ((input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0)) * c.speed;
+      e.vx = dir * c.speed;
       e.grounded = false;
       return;
     }
@@ -233,7 +234,8 @@ export class Runtime {
     e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
 
     // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
-    if (input.wasPressed('jump') || (input.wasPressed('up') && !ladder)) e.jumpBuffer = JUMP_BUFFER;
+    // Only the jump button jumps; Up is for climbing.
+    if (input.wasPressed('jump')) e.jumpBuffer = JUMP_BUFFER;
     else e.jumpBuffer = Math.max(0, e.jumpBuffer - dt);
     e.coyote = e.grounded ? COYOTE_TIME : Math.max(0, e.coyote - dt);
     if (e.jumpBuffer > 0 && e.coyote > 0) {
@@ -243,11 +245,22 @@ export class Runtime {
       e.grounded = false;
     }
     // Releasing jump early makes a shorter hop.
-    if ((input.wasReleased('jump') || input.wasReleased('up')) && e.vy < 0) e.vy *= 0.5;
+    if (input.wasReleased('jump') && e.vy < 0) e.vy *= 0.5;
   }
 
-  private ladderAt(box: Box): RuntimeEntity | null {
-    return this.climbables.find((l) => overlaps(box, boxOf(l)!)) ?? null;
+  /**
+   * The ladder a character can hold: at least half of the character (by width) inside the ladder
+   * tile, and touching it vertically (reaching 2px below the feet, so you can climb down from a top).
+   */
+  private ladderAt(e: RuntimeEntity): RuntimeEntity | null {
+    const me = zoneOf(e);
+    const reach = { ...me, y: me.y + 1, hh: me.hh + 1 };
+    for (const l of this.climbables) {
+      const z = zoneOf(l);
+      const inside = Math.min(me.x + me.hw, z.x + z.hw) - Math.max(me.x - me.hw, z.x - z.hw);
+      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && Math.abs(reach.y - z.y) < reach.hh + z.hh) return l;
+    }
+    return null;
   }
 
   /** Standing on solid ground with the ladder going up: pressing down shouldn't start a climb into the floor. */

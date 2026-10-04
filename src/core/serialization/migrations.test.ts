@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { resolveEntity } from '../model/resolve';
-import { projectFromFiles } from './serialize';
+import { createProject } from '../model/factory';
+import { projectFromFiles, projectToFiles } from './serialize';
 import { FORMAT_VERSION } from './version';
 
 const registry = createBuiltinRegistry();
@@ -70,5 +71,38 @@ describe('format v1 -> v2', () => {
     expect(ladder.components.Climbable).toBeDefined();
     expect(project.assets.find((a) => a.id === ladder.components.Sprite.assetId)?.data).toMatch(/^data:image\/svg\+xml/);
     expect(project.definitions.some((d) => d.name === 'Stone')).toBe(true);
+  });
+});
+
+describe('format v2 -> v3', () => {
+  /** A v2 save: the starter Player was 28x40 with jumpForce 450, ladders had climbSpeed. */
+  function v2Files(playerTweaked = false) {
+    const files = projectToFiles(createProject(registry)) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    files['project.json'].formatVersion = 2;
+    for (const [path, def] of Object.entries(files)) {
+      if (!path.startsWith('objects/')) continue;
+      if (def.name === 'Player') {
+        def.components.Sprite.height = 40;
+        def.components.Collider.size = { x: 28, y: 40 };
+        def.components.CharacterController.jumpForce = playerTweaked ? 600 : 450;
+      }
+      if (def.name === 'Ladder') def.components.Climbable = { climbSpeed: 120 };
+    }
+    return files;
+  }
+
+  it('makes the starter player one tile tall with a one-row jump, and drops climbSpeed', () => {
+    const { project, warnings } = projectFromFiles(v2Files(), registry);
+    expect(warnings).toEqual([]);
+    const player = project.definitions.find((d) => d.name === 'Player')!;
+    expect(player.components.Sprite).toMatchObject({ width: 28, height: 32 });
+    expect(player.components.Collider.size).toEqual({ x: 28, y: 32 });
+    expect(player.components.CharacterController.jumpForce).toBe(295);
+    expect(project.definitions.find((d) => d.name === 'Ladder')!.components.Climbable).toEqual({});
+  });
+
+  it('keeps values the user changed', () => {
+    const { project } = projectFromFiles(v2Files(true), registry);
+    expect(project.definitions.find((d) => d.name === 'Player')!.components.CharacterController.jumpForce).toBe(600);
   });
 });

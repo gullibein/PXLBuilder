@@ -224,9 +224,15 @@ clears the selection, and selecting something closes it.
   solid; kinematic moves by velocity), `Collider` (box/circle as a box,
   offset, triggers aren't solid), `CharacterController` (input-driven run
   with acceleration and air control, jump with jumpForce, coyote time, jump
-  buffering, shorter hop on early release), `Climbable` (Up/Down climbs;
-  the top of a ladder is a one-way platform you can stand on and climb down
-  from), `CameraTarget` (smoothed follow).
+  buffering, shorter hop on early release), `Climbable` (Up/Down climbs at
+  the character's running speed once at least half of the character is
+  inside the ladder tile; sideways moves slide along it and you let go when
+  less than half remains; reaching the floor ends the climb; the top of a
+  ladder is a one-way platform you can stand on and climb down from; Up
+  never jumps), `CameraTarget` (smoothed follow).
+- Tuning: the starter Player is one tile (32px) tall, and jumpForce 295 at
+  gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
+  v3 applies this to older saves unless the user changed those values.
 - Falling far below the level puts an entity back at its start.
 - `input.ts` maps keys to actions (arrows/WASD, Space/Z jump); the runtime
   only sees actions.

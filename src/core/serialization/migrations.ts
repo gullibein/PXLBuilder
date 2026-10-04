@@ -93,7 +93,35 @@ function platformToTiles(e: Raw): Raw[] {
   }));
 }
 
-export const MIGRATIONS: Migration[] = [{ from: 1, to: 2, migrate: migrateV1toV2 }];
+/**
+ * v2 -> v3: play tuning.
+ * - The starter Player becomes one tile tall (28x32, was 28x40) and jumps
+ *   about 1.4 tiles high (jumpForce 295, was 450), if those values were never
+ *   changed by the user.
+ * - Climbable no longer has climbSpeed (characters climb at their running speed).
+ */
+function migrateV2toV3(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  for (const def of project.definitions ?? []) {
+    const c = def.components ?? {};
+    if (c.Climbable) delete c.Climbable.climbSpeed;
+    if (def.name !== 'Player') continue;
+    if (c.Sprite?.width === 28 && c.Sprite?.height === 40) {
+      c.Sprite.height = 32;
+      if (c.Collider?.size?.x === 28 && c.Collider?.size?.y === 40) c.Collider.size = { x: 28, y: 32 };
+    }
+    if (c.CharacterController?.jumpForce === 450) c.CharacterController.jumpForce = 295;
+  }
+  for (const scene of project.scenes ?? []) {
+    for (const e of scene.entities ?? []) if (e.components?.Climbable) delete e.components.Climbable.climbSpeed;
+  }
+  return project;
+}
+
+export const MIGRATIONS: Migration[] = [
+  { from: 1, to: 2, migrate: migrateV1toV2 },
+  { from: 2, to: 3, migrate: migrateV2toV3 },
+];
 
 export class MigrationError extends Error {
   constructor(message: string) {

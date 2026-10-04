@@ -98,8 +98,9 @@ export function createStarterDefinitions(registry: ComponentRegistry, ladderAsse
     createDefinition(
       'Player',
       {
-        Sprite: c('Sprite', { width: 28, height: 40, color: '#4fa3ff' }),
-        Collider: c('Collider', { size: { x: 28, y: 40 } }),
+        // As tall as a tile, so one-row-high steps and ladders line up.
+        Sprite: c('Sprite', { width: 28, height: 32, color: '#4fa3ff' }),
+        Collider: c('Collider', { size: { x: 28, y: 32 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
         CharacterController: c('CharacterController'),
         CameraTarget: c('CameraTarget'),
