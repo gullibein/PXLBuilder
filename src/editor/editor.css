@@ -18,6 +18,7 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); }
 button { font: inherit; color: inherit; }
 input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 5px; min-width: 0; }
 input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
