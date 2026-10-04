@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FieldSchema } from '../../core/components/schema';
 import type { Vec2 } from '../../core/types';
+import { useEditor } from '../store';
 
 /** Number input that keeps a local draft and commits on Enter/blur. */
 export function NumberInput(props: { value: number; onCommit: (v: number) => void; step?: number; testId?: string }) {
@@ -100,8 +101,8 @@ export function FieldEditor(props: { schema: FieldSchema; value: unknown; onComm
     case 'vec2':
       return <Vec2Input value={(value as Vec2) ?? schema.default} testId={testId} onCommit={onCommit} />;
     case 'assetRef':
-      // No asset library yet (assets arrive in a later phase); show the reference read-only.
-      return <span className="muted">{value ? String(value) : 'none'}</span>;
+      // Chosen in the Sprites panel; shown here by name.
+      return <AssetName id={typeof value === 'string' ? value : null} />;
     case 'stringList':
       return <ListInput value={Array.isArray(value) ? (value as string[]) : []} testId={testId} onCommit={onCommit} />;
   }
@@ -132,4 +133,9 @@ function normalizeColor(value: unknown): string {
   if (/^#[0-9a-fA-F]{3}$/.test(value)) return '#' + [...value.slice(1)].map((c) => c + c).join('');
   if (/^#[0-9a-fA-F]{8}$/.test(value)) return value.slice(0, 7);
   return '#000000';
+}
+
+function AssetName({ id }: { id: string | null }) {
+  const name = useEditor((s) => (id ? s.project.assets.find((a) => a.id === id)?.name : undefined));
+  return <span className="muted">{id ? (name ?? 'missing image') : 'none (plain color)'}</span>;
 }

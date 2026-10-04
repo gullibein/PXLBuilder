@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ObjectDefinition } from '../../core/types';
 import { CATEGORIES, categoryOf } from '../categories';
 import { PromptBox } from '../prompt/PromptBox';
+import { SpriteImage } from '../SpriteImage';
 import { getActiveScene, useEditor } from '../store';
 import { DEFINITION_DRAG_TYPE } from '../viewport/Viewport';
 
@@ -16,7 +18,6 @@ export function Dock() {
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
       {dock === 'library' && <ObjectsPanel />}
-      <BrushChip />
       <nav className="dock" aria-label="Create and objects">
         <button className={`dock-btn primary${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -38,11 +39,11 @@ export function Dock() {
 /** A small preview of an object: its placeholder sprite, to scale within the tile. */
 export function Thumb({ def, size = 34 }: { def: ObjectDefinition; size?: number }) {
   const sprite = def.components.Sprite ?? {};
-  const image = useEditor((s) => (typeof sprite.assetId === 'string' ? s.project.assets.find((a) => a.id === sprite.assetId)?.data : undefined));
-  if (image) {
+  const asset = useEditor((s) => (typeof sprite.assetId === 'string' ? s.project.assets.find((a) => a.id === sprite.assetId) : undefined));
+  if (asset) {
     return (
       <span className="thumb" aria-hidden="true">
-        <img src={image} alt="" width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
+        <SpriteImage asset={asset} frame={typeof sprite.frame === 'number' ? sprite.frame : 1} size={size} />
       </span>
     );
   }
@@ -69,14 +70,15 @@ export function Thumb({ def, size = 34 }: { def: ObjectDefinition; size?: number
 function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnClick?: boolean }) {
   const tool = useEditor((s) => s.tool);
   const armed = tool.kind === 'brush' && tool.definitionId === def.id;
-  const { setTool, setDock, selectDefinition, setInspectorOpen } = useEditor.getState();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const { setTool, setDock, selectDefinition, setInspectorOpen, openSprites } = useEditor.getState();
   return (
     <button
       className={`tile${armed ? ' armed' : ''}`}
       draggable
       aria-pressed={armed}
       data-testid={`definition-${def.name}`}
-      title={`${def.description || def.name}\nClick to draw it onto the level, or drag it in. Right-click for details.`}
+      title={`${def.description || def.name}\nClick to draw it onto the level, or drag it in. Right-click for more.`}
       onClick={() => {
         if (!armOnClick) return;
         if (armed) setTool({ kind: 'select' });
@@ -91,13 +93,85 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        selectDefinition(def.id);
-        setInspectorOpen(true);
+        setMenu({ x: e.clientX, y: e.clientY });
       }}
     >
       <Thumb def={def} />
       <span className="tile-name">{def.name}</span>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              label: 'Inspector',
+              testId: 'menu-inspector',
+              run: () => {
+                selectDefinition(def.id);
+                setInspectorOpen(true);
+                setDock(null);
+              },
+            },
+            { label: 'Sprites', testId: 'menu-sprites', run: () => openSprites(def.id) },
+          ]}
+        />
+      )}
     </button>
+  );
+}
+
+/** A small menu at the pointer. Closes on outside click, Escape, or after choosing. */
+function ContextMenu(props: { x: number; y: number; items: { label: string; testId?: string; run: () => void }[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) props.onClose();
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose();
+    window.addEventListener('pointerdown', close, true);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('pointerdown', close, true);
+      window.removeEventListener('keydown', esc);
+    };
+  });
+  // Portal to <body>: the dock is transformed, which would make `position: fixed` relative to it. Kept on screen.
+  const left = Math.min(props.x, window.innerWidth - 180);
+  const top = Math.min(props.y, window.innerHeight - 20 - props.items.length * 36);
+  return createPortal(
+    <div
+      ref={ref}
+      className="context-menu"
+      role="menu"
+      data-testid="object-menu"
+      style={{ left, top }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {props.items.map((item) => (
+        <span
+          key={item.label}
+          role="menuitem"
+          tabIndex={0}
+          className="menu-row"
+          data-testid={item.testId}
+          onClick={() => {
+            props.onClose();
+            item.run();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              props.onClose();
+              item.run();
+            }
+          }}
+        >
+          {item.label}
+        </span>
+      ))}
+    </div>,
+    document.body,
   );
 }
 
@@ -125,26 +199,6 @@ function ObjectsPanel() {
         <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
       </div>
     </section>
-  );
-}
-
-/** Shows what you're drawing with while the brush is active, and how to stop. */
-function BrushChip() {
-  const tool = useEditor((s) => s.tool);
-  const def = useEditor((s) => (s.tool.kind === 'brush' ? s.project.definitions.find((d) => d.id === (s.tool as { definitionId: string }).definitionId) : undefined));
-  const setTool = useEditor((s) => s.setTool);
-  if (tool.kind !== 'brush' || !def) return null;
-  return (
-    <div className="brush-chip" data-testid="brush-chip">
-      <Thumb def={def} size={18} />
-      <span>
-        Drawing <strong>{def.name}</strong>
-      </span>
-      <span className="brush-help">drag for a row · Shift keeps it straight · right-drag erases</span>
-      <button className="text-btn" data-testid="brush-done" onClick={() => setTool({ kind: 'select' })}>
-        Done <kbd>Esc</kbd>
-      </button>
-    </div>
   );
 }
 

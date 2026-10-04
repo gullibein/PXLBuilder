@@ -113,7 +113,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, ladderAsse
       'Ladder',
       {
         Sprite: c('Sprite', { width: 32, height: 32, color: '#a0703f', assetId: ladderAsset.id }),
-        Collider: c('Collider', { size: { x: 20, y: 32 }, isTrigger: true }),
+        Collider: c('Collider', { size: { x: 20, y: 32 }, isTrigger: true, matchSprite: false }),
         Climbable: c('Climbable'),
       },
       ['ladder', 'climbable'],

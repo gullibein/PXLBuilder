@@ -12,7 +12,8 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     description: 'Visual representation. Draws the referenced image asset, or a solid rectangle in `color` if no asset is set.',
     category: 'Rendering',
     fields: {
-      assetId: { kind: 'assetRef', assetKind: 'image', default: null, description: 'Image asset to draw' },
+      assetId: { kind: 'assetRef', assetKind: 'image', default: null, description: 'Image or sprite sheet to draw, stretched to width x height' },
+      frame: { kind: 'number', default: 1, min: 1, step: 1, integer: true, description: 'Cell number when the image is a sprite sheet (1 = top-left, counting across rows)' },
       width: { kind: 'number', default: 32, min: 0, step: 1, description: 'Width in pixels' },
       height: { kind: 'number', default: 32, min: 0, step: 1, description: 'Height in pixels' },
       color: { kind: 'color', default: '#cccccc', description: 'Fill color used when no asset is set' },
@@ -29,6 +30,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       size: { kind: 'vec2', default: { x: 32, y: 32 }, description: 'Box size, or circle diameter in x' },
       offset: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Offset from the entity position' },
       isTrigger: { kind: 'boolean', default: false },
+      matchSprite: { kind: 'boolean', default: true, description: 'Keep the collider the same size as the sprite (changing either changes both)' },
     },
   },
   {

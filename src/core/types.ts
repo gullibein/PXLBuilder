@@ -83,6 +83,18 @@ export interface Scene {
 
 export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music';
 
+/** How a sprite sheet is cut into numbered cells (numbered from 1, left to right, then top to bottom). */
+export interface SpriteGrid {
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  offsetX: number;
+  offsetY: number;
+  spacingX: number;
+  spacingY: number;
+}
+
 export interface AssetRecord {
   id: Id;
   name: string;
@@ -94,6 +106,8 @@ export interface AssetRecord {
   /** Pixel size, for images. */
   width: number;
   height: number;
+  /** Cell layout, for sprite sheets. */
+  grid?: SpriteGrid;
 }
 
 export interface ProjectSettings {

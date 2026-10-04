@@ -7,7 +7,8 @@
 import type { ComponentRegistry } from '../components/registry';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import type { AssetRecord, BackgroundSettings, EntityInstance, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
+import { validateGrid } from './spriteGrid';
+import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
 
 export class ModelError extends Error {
@@ -187,6 +188,32 @@ export function setEntityTags(project: Project, sceneId: Id, entityId: Id, tags:
  * value is stored as an instance override (and dropped again if it equals the
  * inherited value); otherwise it is stored directly.
  */
+/**
+ * Fields that move together. While Collider.matchSprite is on, the sprite's
+ * size and the collider's size are the same thing: changing one changes the
+ * other, and turning the link back on snaps the collider to the sprite.
+ */
+export function linkedWrites(components: Record<string, Record<string, unknown>>, type: string, field: string, value: unknown): [string, string, unknown][] {
+  const sprite = components.Sprite;
+  const collider = components.Collider;
+  if (!sprite || !collider) return [];
+  if (type === 'Collider' && field === 'matchSprite') {
+    return value === true ? [['Collider', 'size', { x: sprite.width, y: sprite.height }]] : [];
+  }
+  if (collider.matchSprite === false) return [];
+  if (type === 'Sprite' && (field === 'width' || field === 'height')) {
+    return [['Collider', 'size', { x: field === 'width' ? value : sprite.width, y: field === 'height' ? value : sprite.height }]];
+  }
+  if (type === 'Collider' && field === 'size') {
+    const size = value as Vec2;
+    return [
+      ['Sprite', 'width', Math.max(0, size.x)],
+      ['Sprite', 'height', Math.max(0, size.y)],
+    ];
+  }
+  return [];
+}
+
 export function setEntityComponentField(
   project: Project,
   sceneId: Id,
@@ -200,6 +227,15 @@ export function setEntityComponentField(
   const entity = getEntity(project, sceneId, entityId);
   const resolved = resolveEntity(project, entity, registry);
   if (!(type in resolved.components)) throw new ModelError(`Entity "${entity.name}" has no ${type} component`);
+  writeEntityField(project, entity, resolved.components, type, field, value);
+  for (const [t, f, v] of linkedWrites(resolved.components, type, field, value)) {
+    checkField(registry, t, f, v);
+    writeEntityField(project, entity, resolveEntity(project, entity, registry).components, t, f, v);
+  }
+}
+
+function writeEntityField(project: Project, entity: EntityInstance, resolvedComponents: Record<string, Record<string, unknown>>, type: string, field: string, value: unknown): void {
+  const resolved = { components: resolvedComponents };
 
   const inherited = findDefinition(project, entity.definitionId)?.components[type];
   if (inherited && !entity.removedComponents.includes(type)) {
@@ -303,7 +339,56 @@ export function setDefinitionComponentField(
   const def = getDefinition(project, definitionId);
   const props = def.components[type];
   if (!props) throw new ModelError(`Object "${def.name}" has no ${type} component`);
+  const before = Object.fromEntries(Object.entries(def.components).map(([t, p]) => [t, registry.has(t) ? registry.createDefault(t, p) : p]));
   props[field] = cloneValue(value);
+  for (const [t, f, v] of linkedWrites(before, type, field, value)) {
+    checkField(registry, t, f, v);
+    def.components[t][f] = cloneValue(v);
+  }
+}
+
+// ---------------------------------------------------------------- sprites
+
+/** A sprite an object can use: a whole image, or one numbered cell of a sprite sheet. */
+export interface SpriteRef {
+  assetId: Id;
+  frame: number;
+}
+
+/** The sprites collected for an object (its sprite choices), kept in definition metadata. */
+export function getDefinitionSprites(def: ObjectDefinition): SpriteRef[] {
+  const list = def.metadata.sprites;
+  return Array.isArray(list) ? list.filter((r): r is SpriteRef => typeof r?.assetId === 'string' && typeof r?.frame === 'number') : [];
+}
+
+export function addDefinitionSprite(project: Project, definitionId: Id, ref: SpriteRef): void {
+  const def = getDefinition(project, definitionId);
+  if (!project.assets.some((a) => a.id === ref.assetId)) throw new ModelError(`Image "${ref.assetId}" not found`);
+  const list = getDefinitionSprites(def);
+  if (!list.some((r) => r.assetId === ref.assetId && r.frame === ref.frame)) def.metadata.sprites = [...list, { ...ref }];
+}
+
+export function removeDefinitionSprite(project: Project, definitionId: Id, ref: SpriteRef): void {
+  const def = getDefinition(project, definitionId);
+  def.metadata.sprites = getDefinitionSprites(def).filter((r) => !(r.assetId === ref.assetId && r.frame === ref.frame));
+}
+
+/** Makes a sprite the one the object is drawn with (adding a Sprite component if needed). Its size is kept: the image stretches to it. */
+export function useDefinitionSprite(project: Project, definitionId: Id, ref: SpriteRef, registry: ComponentRegistry): void {
+  addDefinitionSprite(project, definitionId, ref);
+  const def = getDefinition(project, definitionId);
+  if (!def.components.Sprite) def.components.Sprite = registry.createDefault('Sprite');
+  def.components.Sprite.assetId = ref.assetId;
+  def.components.Sprite.frame = ref.frame;
+}
+
+export function setAssetGrid(project: Project, assetId: Id, grid: SpriteGrid): void {
+  const asset = project.assets.find((a) => a.id === assetId);
+  if (!asset) throw new ModelError(`Image "${assetId}" not found`);
+  const errors = validateGrid(grid, asset.width, asset.height);
+  if (errors.length) throw new ModelError(`Sprite grid: ${errors[0]}`);
+  asset.kind = 'spritesheet';
+  asset.grid = { ...grid };
 }
 
 export function addDefinitionComponent(project: Project, definitionId: Id, type: string, registry: ComponentRegistry, props: Record<string, unknown> = {}): void {

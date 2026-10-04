@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
+import { baseName, readImageFile } from '../imageFiles';
 import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
@@ -14,31 +15,6 @@ const SWATCHES = [
   { name: 'Snow', color: '#e8f1f8' },
   { name: 'Black', color: '#000000' },
 ];
-
-const MAX_SIDE = 2048;
-
-/** Reads an image file; very large images are scaled down so the project stays light. */
-async function readImage(file: File): Promise<{ data: string; width: number; height: number; ext: string }> {
-  const data = await new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(file);
-  });
-  const img = new Image();
-  img.src = data;
-  await img.decode();
-  const ext = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1]?.replace('svg+xml', 'svg') || 'png';
-  const big = Math.max(img.naturalWidth, img.naturalHeight);
-  if (big <= MAX_SIDE || ext === 'svg') return { data, width: img.naturalWidth, height: img.naturalHeight, ext };
-  const k = MAX_SIDE / big;
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(img.naturalWidth * k);
-  canvas.height = Math.round(img.naturalHeight * k);
-  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const jpeg = ext === 'jpg';
-  return { data: canvas.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.9), width: canvas.width, height: canvas.height, ext: jpeg ? 'jpg' : 'png' };
-}
 
 /**
  * The level background: color, image, how the image fits and moves, and a
@@ -60,8 +36,8 @@ export function BackgroundPanel() {
       return;
     }
     try {
-      const img = await readImage(file);
-      const asset = createImageAsset(file.name.replace(/\.[^.]+$/, ''), img.data, img.width, img.height, img.ext);
+      const img = await readImageFile(file, { maxSide: 2048 });
+      const asset = createImageAsset(baseName(file.name), img.data, img.width, img.height, img.ext);
       edit('Set background image', (p) => {
         addAsset(p, asset);
         setBackground(p, sid, { imageAssetId: asset.id });

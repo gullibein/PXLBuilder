@@ -145,7 +145,8 @@ try {
   await page.getByTestId('dock-library').click();
   await page.screenshot({ path: `${OUT}/0-objects-panel.png` });
   await page.getByTestId('definition-Platform').click();
-  await check(async () => (await page.getByTestId('brush-chip').isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks it up as a brush and gives the canvas back');
+  await check(async () => (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true' && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks up the pen with it and gives the canvas back');
+  await check(async () => (await page.locator('.brush-chip').count()) === 0, 'no instructions panel while drawing');
   await check(async () => (await prompts.count()) === 0, 'drawing clears the selection, so no prompt is in the way');
   let p0 = toScreen(-250, 40);
   let p1 = toScreen(-90, 40);
@@ -168,9 +169,9 @@ try {
   await check(async () => (await entityCount()) === 8, 'each stroke is one undo step');
   await page.getByTestId('redo').click();
   await page.getByTestId('tool-select').click();
-  await check(async () => (await page.getByTestId('brush-chip').count()) === 0, 'the arrow tool puts the pen away');
+  await check(async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true', 'the arrow tool puts the pen away');
   await page.getByTestId('tool-pen').click();
-  await check(async () => (await page.getByTestId('brush-chip').innerText()).includes('Platform'), 'the pen picks up the last object drawn with');
+  await check(async () => (await page.getByTestId('tool-brush-pick').getAttribute('title')).includes('Platform'), 'the pen picks up the last object drawn with');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true', 'Esc returns to the arrow');
 
@@ -311,6 +312,71 @@ try {
   await check(async () => (await page.locator('[data-testid="object-library"] .tile').count()) === 2, 'the library files the robot under Enemies');
   await page.keyboard.press('Escape');
 
+  step = 'sprites';
+  await page.keyboard.press('Escape');
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('definition-Enemy').click({ button: 'right' });
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Sprites', 'right-clicking an object offers Inspector and Sprites');
+  await page.getByTestId('menu-sprites').click();
+  const sp = page.getByTestId('sprites-panel');
+  await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
+  // A 4x2 sheet of 16px cells: transparent background, sprites of two sizes centered in their cells.
+  const sheetPng = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 32;
+    const g = c.getContext('2d');
+    const colors = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#ecf0f1'];
+    for (let i = 0; i < 8; i++) {
+      const size = i % 2 ? 8 : 12;
+      g.fillStyle = colors[i];
+      g.fillRect((i % 4) * 16 + (16 - size) / 2, Math.floor(i / 4) * 16 + (16 - size) / 2, size, size);
+    }
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await sp.getByTestId('sprite-sheet-file').setInputFiles({ name: 'robots.png', mimeType: 'image/png', buffer: Buffer.from(sheetPng, 'base64') });
+  const cells = sp.locator('.sheet-cell');
+  await check(async () => (await cells.count()) === 8, 'importing a sprite sheet detects its 4×2 grid of numbered cells');
+  await check(async () => (await sp.getByTestId('grid-cellWidth').inputValue()) === '16' && (await sp.getByTestId('grid-columns').inputValue()) === '4', 'the detected cells are 16px, 4 columns');
+  await page.screenshot({ path: `${OUT}/10-sprite-sheet.png` });
+  await sp.getByTestId('cell-6').click();
+  await check(async () => (await sp.getByTestId('cell-6').getAttribute('class')).includes('on'), 'clicking cell 6 makes it the object\'s sprite');
+  await check(async () => (await sp.getByTestId('sprite-list').innerText()).includes('robots #6'), 'the chosen cell is added to the object\'s sprites');
+  await sp.getByTestId('grid-columns').fill('2');
+  await check(async () => (await cells.count()) === 4, 'the grid can be placed by hand (2 columns → 4 cells)');
+  await sp.getByTestId('detect-grid').click();
+  await check(async () => (await cells.count()) === 8, 'Detect grid restores the detected layout');
+  await sp.getByTestId('sprite-image-file').setInputFiles({ name: 'robot-single.png', mimeType: 'image/png', buffer: Buffer.from(sheetPng, 'base64') });
+  await check(async () => (await sp.getByTestId('sprite-list').innerText()).includes('robot-single'), 'a single image can be imported as a sprite');
+  await sp.locator('.sprite-use', { hasText: 'robots #6' }).click();
+  await page.keyboard.press('Escape');
+  await check(async () => (await sp.count()) === 0, 'Esc closes the Sprites panel');
+
+  step = 'sprite and collider size link';
+  await clickWorld(-32, 0);
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('size-link').first().getAttribute('aria-pressed')) === 'true', 'sprite and collider sizes start linked');
+  await page.getByTestId('field-Sprite.width').fill('48');
+  await page.getByTestId('field-Sprite.width').press('Enter');
+  await check(async () => (await page.getByTestId('field-Collider.size.x').inputValue()) === '48', 'changing the sprite width changes the collider width');
+  await page.getByTestId('field-Collider.size.y').fill('20');
+  await page.getByTestId('field-Collider.size.y').press('Enter');
+  await check(async () => (await page.getByTestId('field-Sprite.height').inputValue()) === '20', 'changing the collider height changes the sprite height');
+  await page.screenshot({ path: `${OUT}/11-linked-inspector.png` });
+  await page.getByTestId('size-link').first().click();
+  await check(async () => (await page.getByTestId('size-link').first().getAttribute('aria-pressed')) === 'false', 'the link can be broken');
+  await page.getByTestId('field-Sprite.width').fill('64');
+  await page.getByTestId('field-Sprite.width').press('Enter');
+  await check(async () => (await page.getByTestId('field-Collider.size.x').inputValue()) === '48', 'unlinked, the collider keeps its own size');
+  await check(async () => (await page.getByTestId('field-Sprite.frame').inputValue()) === '6', 'the placed enemy uses sprite #6 from its object');
+  await page.getByTestId('close-details').click();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('definition-Enemy').click({ button: 'right' });
+  await page.getByTestId('menu-inspector').click();
+  await check(async () => (await page.getByTestId('definition-inspector').isVisible()) && (await page.getByTestId('definition-name').inputValue()) === 'Enemy', 'Inspector opens the object\'s details');
+  await page.getByTestId('close-details').click();
+
   step = 'history';
   await page.getByTestId('tray-toggle').click();
   await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player three hearts.'), 'AI changes appear in History');
@@ -324,7 +390,7 @@ try {
   await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');
   // A small generated image stands in for a user's picture.
-  const png = await page.evaluate(() => {
+  const bgPng = await page.evaluate(() => {
     const c = document.createElement('canvas');
     c.width = 64;
     c.height = 32;
@@ -335,7 +401,7 @@ try {
     g.fillRect(8, 8, 12, 6);
     return c.toDataURL('image/png').split(',')[1];
   });
-  await bgPanel.getByTestId('bg-file').setInputFiles({ name: 'mountains.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  await bgPanel.getByTestId('bg-file').setInputFiles({ name: 'mountains.png', mimeType: 'image/png', buffer: Buffer.from(bgPng, 'base64') });
   await check(async () => (await bgPanel.locator('.bg-image img').count()) === 1 && (await bgPanel.innerText()).includes('64×32'), 'an uploaded image becomes the background');
   await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 1, 'fit and movement controls appear for the image');
   await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').fill('The background should move sideways along with the level.');

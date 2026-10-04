@@ -176,6 +176,28 @@ contextual or opened on demand:
   new starter objects (Stone, Ladder). Tested with a real v1 file and an old
   autosave in the browser.
 
+### Sprites and sprite sheets
+- An object is drawn with `Sprite.assetId` (an image or a sprite sheet),
+  stretched to `Sprite.width × height`. For sheets, `Sprite.frame` is a cell
+  number (1 = top-left, across then down), the same number the user sees.
+- A sheet is an asset with `kind: "spritesheet"` and a `grid` (columns, rows,
+  cell size, offset, spacing). `core/model/spriteGrid.ts` (pure, unit-tested)
+  detects it: empty columns/rows (transparent, or the corner pixel's color)
+  separate sprites; their center-to-center pitch gives the cells; evenly
+  divided sheets keep each cell's padding; otherwise it falls back to square
+  cells. The user can adjust every value; invalid grids are rejected.
+- Each object keeps the sprites collected for it in `metadata.sprites`
+  (`{assetId, frame}[]`), so they can be switched later (and by the AI).
+- Opened from the Objects panel's right-click menu (Inspector / Sprites).
+
+### Sprite and collider size link
+`Collider.matchSprite` (default true) ties the two sizes together. The rule
+lives in the mutation layer (`linkedWrites`), so the inspector, AI operations
+and any future tool behave the same: changing Sprite width/height resizes the
+collider, changing the collider resizes the sprite, and turning the link back
+on snaps the collider to the sprite. Existing objects keep their sizes until
+edited. The starter Ladder ships unlinked (its collider is narrower than its art).
+
 ### Tools
 A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
 `B`; draws with the last used object, shown under the pen), and opens the

@@ -67,6 +67,8 @@ export interface EditorState {
   lastBrushId: Id | null;
   /** The background card is open (it is the active context; no object prompt then). */
   backgroundOpen: boolean;
+  /** Object whose Sprites panel is open. */
+  spritesFor: Id | null;
 
   /** Applies a change to the project as one undoable transaction. Returns false (and logs) if the change was rejected. */
   edit(label: string, recipe: (draft: Project) => void, opts?: EditOptions): boolean;
@@ -92,6 +94,7 @@ export interface EditorState {
   /** Switches to drawing with the last used object (or the first tile object). */
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
+  openSprites(definitionId: Id | null): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -108,6 +111,7 @@ function reconcile(s: EditorState, next: Project): Partial<EditorState> {
     activeSceneId: scene.id,
     selectedEntityIds: s.selectedEntityIds.filter((id) => existing.has(id)),
     selectedDefinitionId: defExists ? s.selectedDefinitionId : null,
+    spritesFor: next.definitions.some((d) => d.id === s.spritesFor) ? s.spritesFor : null,
     tool: s.tool.kind === 'brush' && !next.definitions.some((d) => d.id === (s.tool as { definitionId: Id }).definitionId) ? { kind: 'select' } : s.tool,
     dirty: true,
   };
@@ -134,6 +138,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     tool: { kind: 'select' },
     lastBrushId: null,
     backgroundOpen: false,
+    spritesFor: null,
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -223,6 +228,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         worldContext: unique.length ? null : get().worldContext,
         selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
         backgroundOpen: unique.length ? false : get().backgroundOpen,
+        spritesFor: unique.length ? null : get().spritesFor,
       });
     },
 
@@ -279,8 +285,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (pick) get().setTool({ kind: 'brush', definitionId: pick.id });
     },
 
+    openSprites(definitionId) {
+      if (definitionId) set({ spritesFor: definitionId, dock: null, backgroundOpen: false, selectedEntityIds: [], worldContext: null, tool: { kind: 'select' } });
+      else set({ spritesFor: null });
+    },
+
     setBackgroundOpen(open) {
-      if (open) set({ backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      if (open) set({ spritesFor: null, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ backgroundOpen: false });
     },
 

@@ -8,6 +8,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import { getEntitySize } from '../model/geometry';
+import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
 import type { Id, Project, Scene, Vec2 } from '../types';
 
@@ -95,7 +96,16 @@ export interface AIPayload {
   /** All other entities in the level, briefly, so the user can refer to them by name. */
   otherEntities: EntityBrief[];
   /** Object library. */
-  library: { id: Id; name: string; category: string; tags: string[]; components: string[]; placedCount: number }[];
+  library: {
+    id: Id;
+    name: string;
+    category: string;
+    tags: string[];
+    components: string[];
+    placedCount: number;
+    /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
+    sprites: { assetId: Id; image: string; frame: number; sheet: boolean }[];
+  }[];
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
   coordinateSystem: string;
@@ -183,6 +193,10 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       tags: d.tags,
       components: Object.keys(d.components),
       placedCount: placed(d.id),
+      sprites: getDefinitionSprites(d).map((r) => {
+        const a = project.assets.find((x) => x.id === r.assetId);
+        return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, sheet: a?.kind === 'spritesheet' };
+      }),
     })),
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)

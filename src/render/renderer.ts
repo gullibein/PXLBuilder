@@ -4,10 +4,17 @@
  */
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
-import type { Vec2, WorldSettings } from '../core/types';
+import { cellRect } from '../core/model/spriteGrid';
+import type { SpriteGrid, Vec2, WorldSettings } from '../core/types';
+
+/** A decoded image, plus its cell grid when it is a sprite sheet. */
+export interface LoadedImage {
+  source: CanvasImageSource;
+  grid?: SpriteGrid;
+}
 
 /** Resolves an asset id to a drawable image, or null while it isn't loaded (callers fall back to color). */
-export type ImageLookup = (assetId: string) => CanvasImageSource | null;
+export type ImageLookup = (assetId: string) => LoadedImage | null;
 const noImages: ImageLookup = () => null;
 
 function imageSize(img: CanvasImageSource): { w: number; h: number } {
@@ -58,7 +65,7 @@ export function drawBackground(
   ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
   const { imageAssetId, fit, parallax } = world.background;
-  const img = imageAssetId ? images(imageAssetId) : null;
+  const img = imageAssetId ? images(imageAssetId)?.source : null;
   if (!img) return;
   const { w: iw, h: ih } = imageSize(img);
   if (!iw || !ih) return;
@@ -111,9 +118,14 @@ export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEn
     ctx.fillStyle = color;
     const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
     if (img) {
-      // Pixel art stays crisp.
+      // Pixel art stays crisp. The image (or sheet cell) stretches to the sprite size.
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, -size.x / 2, -size.y / 2, size.x, size.y);
+      if (img.grid) {
+        const r = cellRect(img.grid, typeof sprite.frame === 'number' ? sprite.frame : 1);
+        ctx.drawImage(img.source, r.x, r.y, r.w, r.h, -size.x / 2, -size.y / 2, size.x, size.y);
+      } else {
+        ctx.drawImage(img.source, -size.x / 2, -size.y / 2, size.x, size.y);
+      }
     } else if (entity.tile) {
       const w = size.x;
       const h = size.y;

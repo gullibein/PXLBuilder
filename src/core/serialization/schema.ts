@@ -51,6 +51,18 @@ export const assetSchema = z.object({
   data: z.string().startsWith('data:'),
   width: z.number().nonnegative(),
   height: z.number().nonnegative(),
+  grid: z
+    .object({
+      columns: z.number().int().positive(),
+      rows: z.number().int().positive(),
+      cellWidth: z.number().positive(),
+      cellHeight: z.number().positive(),
+      offsetX: z.number().nonnegative(),
+      offsetY: z.number().nonnegative(),
+      spacingX: z.number().nonnegative(),
+      spacingY: z.number().nonnegative(),
+    })
+    .optional(),
 });
 
 export const projectSchema = z.object({

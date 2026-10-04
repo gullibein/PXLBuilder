@@ -80,8 +80,31 @@ function ComponentList(props: {
   onRevert?: (type: string, field: string) => void;
   onAdd: (type: string) => void;
   onRemove: (type: string) => void;
+  /** Opens the object's Sprites panel (shown in the Sprite section). */
+  onSprites?: () => void;
 }) {
   const types = Object.keys(props.components);
+  const linkable = 'Sprite' in props.components && 'Collider' in props.components;
+  const linked = linkable && props.components.Collider.matchSprite !== false;
+  const linkToggle = linkable && (
+    <button
+      className={`link-toggle${linked ? ' on' : ''}`}
+      title={linked ? 'Sprite and collider sizes are linked. Click to size them separately.' : 'Sizes are separate. Click to link them (the collider takes the sprite size).'}
+      aria-label={linked ? 'Unlink sprite and collider size' : 'Link sprite and collider size'}
+      aria-pressed={linked}
+      data-testid="size-link"
+      onClick={() => props.onSet('Collider', 'matchSprite', !linked)}
+    >
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+        {linked ? (
+          <path d="M6.5 9.5l3-3M5.2 7.6 3.9 8.9a2.5 2.5 0 0 0 3.5 3.5l1.3-1.3M10.8 8.4l1.3-1.3a2.5 2.5 0 0 0-3.5-3.5L7.3 4.9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        ) : (
+          <path d="M5.2 7.6 3.9 8.9a2.5 2.5 0 0 0 3.5 3.5l1.3-1.3M10.8 8.4l1.3-1.3a2.5 2.5 0 0 0-3.5-3.5L7.3 4.9M3 3l1.5 1.5M13 13l-1.5-1.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        )}
+      </svg>
+      {linked ? 'Linked' : 'Unlinked'}
+    </button>
+  );
   const available = componentRegistry.list().filter((c) => !(c.type in props.components));
   return (
     <>
@@ -94,13 +117,24 @@ function ComponentList(props: {
             title={schema?.label ?? type}
             testId={`component-${type}`}
             actions={
-              <button className="icon-btn" title={`Remove ${type}`} data-testid={`remove-component-${type}`} onClick={() => props.onRemove(type)}>
-                ✕
-              </button>
+              <>
+                {type === 'Sprite' && props.onSprites && (
+                  <button className="link-toggle" data-testid="open-sprites" onClick={props.onSprites}>
+                    Sprites…
+                  </button>
+                )}
+                {(type === 'Sprite' || type === 'Collider') && linkToggle}
+                <button className="icon-btn" title={`Remove ${type}`} data-testid={`remove-component-${type}`} onClick={() => props.onRemove(type)}>
+                  ✕
+                </button>
+              </>
             }
           >
             {schema ? (
-              Object.entries(schema.fields).map(([field, fieldSchema]) => {
+              Object.entries(schema.fields)
+                // The size link has its own toggle in the section headers.
+                .filter(([field]) => !(type === 'Collider' && field === 'matchSprite'))
+                .map(([field, fieldSchema]) => {
                 const key = `${type}.${field}`;
                 const overridden = props.overridden?.has(key) ?? false;
                 return (
@@ -218,6 +252,7 @@ function EntityInspector({ scene, entityId }: { scene: Scene; entityId: Id }) {
         onRevert={(type, field) => edit(`Revert ${type}.${field}`, (p) => m.revertEntityComponentField(p, sid, entityId, type, field))}
         onAdd={(type) => edit(`Add ${type}`, (p) => m.addEntityComponent(p, sid, entityId, type, componentRegistry))}
         onRemove={(type) => edit(`Remove ${type}`, (p) => m.removeEntityComponent(p, sid, entityId, type))}
+        onSprites={def ? () => useEditor.getState().openSprites(def.id) : undefined}
       />
     </div>
   );
@@ -284,6 +319,7 @@ function DefinitionInspector({ def }: { def: ObjectDefinition }) {
         }
         onAdd={(type) => edit(`Add ${type} to ${def.name}`, (p) => m.addDefinitionComponent(p, def.id, type, componentRegistry))}
         onRemove={(type) => edit(`Remove ${type} from ${def.name}`, (p) => m.removeDefinitionComponent(p, def.id, type))}
+        onSprites={() => useEditor.getState().openSprites(def.id)}
       />
       <button
         className="danger"

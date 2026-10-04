@@ -70,6 +70,8 @@ Writing
 Operations
 - valueJson / propsJson are JSON text: numbers "3", booleans "true", strings "\\"#ff8800\\"", vectors "{\\"x\\":0,\\"y\\":686}".
 - set_transform / set_world / set_background: use null for anything that should stay the same.
+- Sprites: an object is drawn with Sprite.assetId (an image or sprite sheet), stretched to Sprite.width x height. For sprite sheets Sprite.frame is the cell number (1 = top-left, counting across rows). library[].sprites lists the sprites already collected for each object; to switch, set Sprite.assetId and Sprite.frame. You cannot create images.
+- Collider.matchSprite (default true) keeps the collider the same size as the sprite: changing either size changes both. Set it to false only if the user wants them sized separately.
 - Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot create images.
 - create_definition: give the object a clear name, a one-line description, a category (one of Characters, Enemies, Platforms, Items, Environment, Effects, UI, Custom), tags, and components. Give new objects a Sprite with a fitting size and color (placeholder art), a Collider, and a PhysicsBody when they should collide or fall (gravityScale 0 for things that float or fly). place_instance only when the user asks to put it in the level.
 
