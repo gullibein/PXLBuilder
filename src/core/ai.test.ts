@@ -68,7 +68,7 @@ describe('operations', () => {
               { component: 'PhysicsBody', propsJson: '{"gravityScale":0}' },
             ],
           },
-          { op: 'place_instance', sceneId, definitionRef: 'robot', x: 100, y: -100, name: null },
+          { op: 'place_instance', sceneId, definitionRef: 'robot', x: 100, y: -100, name: null, ref: null },
         ],
         registry,
       );
@@ -177,5 +177,76 @@ describe('AI context', () => {
     expect(prompt).toContain('maxHealth: integer (min 1)');
     expect(prompt).toMatch(/Not available yet/);
     expect(prompt).toMatch(/patrolling/);
+  });
+});
+
+describe('logic operations (the relationships proof of concept, without a model)', () => {
+  function keyDoorSwitch() {
+    const base = level();
+    const key = instantiateDefinition(base.def('Key'), { x: 100, y: 0 }, 'Blue Key');
+    const sw = instantiateDefinition(base.def('Switch'), { x: 300, y: 0 }, 'Switch');
+    const project = produce(base.project, (d) => {
+      m.addEntity(d, base.sceneId, key);
+      m.addEntity(d, base.sceneId, sw);
+    });
+    return { ...base, project, key, sw };
+  }
+
+  it('"Make the blue key open the blue door" -> requires; "make this switch open the door" -> controls; "only if the player has the key" -> a condition', () => {
+    const { project, sceneId, door, sw, def } = keyDoorSwitch();
+    let p = apply(project, [
+      { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'requires', source: { kind: 'entity', id: door.id }, target: { kind: 'object', id: def('Key').id } }) },
+      { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'controls', source: { kind: 'entity', id: sw.id }, target: { kind: 'entity', id: door.id } }) },
+    ]);
+    const controls = p.scenes[0].relationships.find((r) => r.type === 'controls')!;
+    p = apply(p, [{ op: 'update_relationship', sceneId, id: controls.id, patchJson: JSON.stringify({ conditions: [{ type: 'has_item', entity: { kind: 'other' }, item: 'key' }] }) }]);
+    const payload = buildAIPayload(p, { kind: 'pair', sceneId, entityIds: [sw.id, door.id] }, registry);
+    expect(payload.logic.relationships.map((r) => r.text)).toEqual(['Door requires every Key', 'Switch controls Door, only if whoever uses it has key']);
+    expect(() => apply(p, [{ op: 'update_relationship', sceneId, id: controls.id, patchJson: '{"type":"damages"}' }])).toThrow(/cannot set "type"/);
+  });
+
+  it('rules, and references to things created earlier in the same reply', () => {
+    const { project, sceneId, player } = level();
+    let created!: ReturnType<typeof applyOperations>;
+    const p = produce(project, (d) => {
+      created = applyOperations(
+        d,
+        [
+          { op: 'create_definition', ref: 'flag', name: 'Flag', description: 'Goal', category: 'Environment', tags: ['goal'], components: [{ component: 'Collider', propsJson: '{"isTrigger":true}' }] },
+          { op: 'place_instance', sceneId, definitionRef: 'flag', x: 900, y: 0, name: 'Goal Flag', ref: 'goal' },
+          {
+            op: 'create_rule',
+            sceneId,
+            ruleJson: JSON.stringify({
+              name: 'Win',
+              when: { event: 'touch_started', subject: { kind: 'entity', id: player.id }, other: { kind: 'entity', id: 'goal' } },
+              actions: [{ type: 'show_message', text: 'You win!' }, { type: 'spawn', object: 'flag', at: null, x: 0, y: 0 }],
+            }),
+          },
+        ],
+        registry,
+      );
+    });
+    const rule = p.scenes[0].rules[0];
+    expect(rule.when.other).toEqual({ kind: 'entity', id: created.createdEntityIds[0] });
+    expect(rule.actions[1]).toMatchObject({ type: 'spawn', object: created.createdDefinitionIds[0] });
+    expect(created.createdRuleIds).toEqual([rule.id]);
+    const payload = buildAIPayload(p, { kind: 'level', sceneId, point: null }, registry);
+    expect(payload.logic.rules[0].text).toBe('When Player touches Goal Flag: show "You win!" and spawn a Flag at 0, 0.');
+    const after = apply(p, [{ op: 'set_rule_enabled', sceneId, id: rule.id, enabled: false }, { op: 'remove_rule', sceneId, id: rule.id }]);
+    expect(after.scenes[0].rules).toEqual([]);
+  });
+
+  it('invalid logic is rejected with a useful message', () => {
+    const { project, sceneId, door } = level();
+    expect(() => apply(project, [{ op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'opens', source: { kind: 'entity', id: door.id }, target: { kind: 'entity', id: door.id } }) }])).toThrow(/Unknown relationship type "opens"/);
+    expect(() => apply(project, [{ op: 'create_rule', sceneId, ruleJson: JSON.stringify({ when: { event: 'on_fire' }, actions: [{ type: 'restart_level' }] }) }])).toThrow(/Unknown event/);
+    expect(() => apply(project, [{ op: 'create_rule', sceneId, ruleJson: '{oops' }])).toThrow(/not valid JSON/);
+  });
+
+  it('the system prompt lists relationship types, events, conditions and actions', () => {
+    const prompt = buildSystemPrompt(registry);
+    for (const t of ['controls', 'requires', 'damages', 'collects', 'switch_activated', 'touch_started', 'has_item', 'restart_level', 'show_message']) expect(prompt).toContain(`  ${t}`);
+    expect(prompt).toMatch(/targets \(recorded in the design only; NOT simulated/);
   });
 });

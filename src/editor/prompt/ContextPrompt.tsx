@@ -32,7 +32,8 @@ export function ContextPrompt() {
       const dot = dotRef.current;
       if (!wrap || !line || !dot) return;
       const anchor = lastAnchor;
-      if (!anchor || !anchor.visible) {
+      // Until the viewport has drawn this context, the anchor still describes the previous one.
+      if (!anchor || !anchor.visible || anchor.key !== key) {
         wrap.style.visibility = 'hidden';
         line.style.visibility = 'hidden';
         dot.style.visibility = 'hidden';

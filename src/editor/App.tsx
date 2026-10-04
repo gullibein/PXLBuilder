@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
+import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
 import { SpritesPanel } from './chrome/SpritesPanel';
 import { GlobalPrompt } from './chrome/GlobalPrompt';
@@ -42,6 +43,7 @@ export function App() {
         <ContextPrompt />
         <ToolPanel />
         <BackgroundPanel />
+        <LogicPanel />
         <SpritesPanel />
         <GlobalPrompt />
         <Dock />
@@ -116,6 +118,7 @@ function useGlobalShortcuts() {
         if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
         else if (state.backgroundOpen) state.setBackgroundOpen(false);
+        else if (state.logicOpen) state.setLogicOpen(false);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {

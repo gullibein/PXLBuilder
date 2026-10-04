@@ -6,10 +6,11 @@ the renderer, the future play-mode runtime and the future AI layer all read
 it, and all of them change it through the same validated mutation functions.
 The LLM will *propose* operations; the application validates and applies them.
 
-Status: **Phase 1 (foundation)**, the **command/transaction system** (Phase 4
-core), the **AI foundation** (Phase 5), and the **contextual-AI interaction
-redesign** are implemented. Behaviors, relationships, rules and play mode are
-not built yet. See "Roadmap" at the end.
+Status: **Phase 1 (foundation)**, **Phase 2 (runtime / Play)**, **Phase 3
+(graph: relationships, events, rules, graph queries, entity references)**, the
+**command/transaction system** (Phase 4 core), the **AI foundation** (Phase 5),
+and the **contextual-AI interaction redesign** are implemented. Behaviors
+(enemies moving on their own, timers) are not built yet. See "Roadmap" at the end.
 
 ## Stack
 
@@ -39,6 +40,12 @@ src/core/            pure TypeScript, no React/DOM — the game model
     protocol.ts      request/response schema shared by client and server
     provider.ts      AIProvider interface + HTTP provider
   ids.ts             stable ids ("ent_3f9a1c2b7d4e")
+  logic/
+    vocabulary.ts    event + relationship-type registries, condition/action/rule schemas
+    refs.ts          entity references: match, resolve, check, describe, prune
+    mutations.ts     validated relationship and rule edits
+    describe.ts      relationships and rules as plain sentences
+  graph/graph.ts     the game graph (nodes + typed edges) and graph queries
   components/        component schemas + registry (extensible)
   model/
     factory.ts       constructors + starter definitions
@@ -46,13 +53,15 @@ src/core/            pure TypeScript, no React/DOM — the game model
     mutations.ts     ALL validated model changes (future command executors)
     geometry.ts      bounds / hit testing
   serialization/     file layout, zod schemas, versioning, migrations
-src/render/          scene renderer shared by editor and (future) runtime
+src/render/          scene renderer shared by editor and runtime
+src/runtime/         Play: physics, movement, and gameplay.ts (events, rules, systems)
 src/editor/          React UI
   store.ts           editor state; edit() = one validated transaction
   viewport/          the canvas: selection, relation arrow, level marker
   prompt/            contextual prompt, placement, per-frame anchor channel
   ai/runPrompt.ts    prompt -> context -> provider -> operations -> transaction
   chrome/            top bar, dock (create + library), tray, global prompt
+  logic/             Logic card + connections section of the details drawer
   panels/            details drawer (the former inspector)
 server/              dev/preview server endpoint POST /api/ai (Anthropic SDK)
 scripts/e2e-smoke.mjs   browser end-to-end test
@@ -209,7 +218,7 @@ objects. Exposed in the project menu and in the Objects right-click menu.
 ### Tools
 A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
 `B`; draws with the last used object, shown under the pen), and opens the
-**Background** card. Only one card is ever open: opening the background card
+**Background** and **Logic** cards. Only one card is ever open: opening a card
 clears the selection, and selecting something closes it.
 
 ### Runtime (Play mode)
@@ -255,8 +264,75 @@ clears the selection, and selecting something closes it.
 - `PlayView` draws the runtime with the same renderer as the editor
   (background, parallax, tiles, sprites). Play hides all editor tools; Esc,
   Stop or Ctrl+Enter returns to editing; R restarts.
-- Not simulated yet (Phase 3, with events and rules): damage, health,
-  death, collecting, enemy behaviors.
+- Gameplay (health, damage, collecting, doors, switches) and the level's
+  relationships and rules run in `gameplay.ts`; see "Game logic" below.
+- Not simulated yet: enemy behaviors (patrol, chase, shoot), timers.
+
+### Game logic (Phase 3): relationships, events, rules, graph
+The design principle: logic is **data in the project**, built from a small
+vocabulary, never generated code. Everything lives per level
+(`scene.relationships`, `scene.rules`, format v4) and goes through validated
+mutations (`core/logic/mutations.ts`), so the inspector, the AI and tests use
+the same checks.
+
+- **Entity references** (`EntityRef`): one entity (`entity`), every copy of a
+  library object (`object`, so copies placed later are included), a `tag`,
+  the event's `subject` / `other`, or `any` (only as a rule filter). They are
+  checked on every edit (the entity must be in that level, the object must
+  exist). Deleting an entity or an object removes the relationships and
+  rules that name it, in the same undoable step (`pruneLogic`).
+- **Relationships** (`{ type, source, target, params, conditions }`) are typed
+  edges from a registry (`RelationshipRegistry`, extensible: register a type
+  with its verb, description and parameter schema). Built in, with meaning
+  in play: `controls` (a switch opens/closes its target), `requires` (a door
+  opens for whoever touches it carrying the target's item; `consume`),
+  `damages` (touching the source hurts the target), `collects`. Recorded in
+  the design only (marked so in the UI and for the AI): `targets`, `follows`,
+  `protects`, `contains`. A relationship's `conditions` gate it ("the switch
+  only works if the player has the key").
+- **Events** come from a registry too (`level_started`, `touch_started/ended`,
+  `collected`, `damaged`, `died`, `respawned`, `switch_activated`, `opened`,
+  `closed`, `spawned`), each with a defined `subject` and `other`.
+- **Rules**: `WHEN event (subject/other filters) AND conditions DO actions`.
+  Conditions: `has_item`, `health`, `is_open`, `switch_on` (each can be
+  negated). Actions: open/close/toggle, remove, spawn, damage, heal,
+  give/take item, respawn, restart_level, show_message. Rules can be
+  switched off.
+- **During play** (`runtime/gameplay.ts`) systems turn physics into events:
+  touches (overlap, standing on, bumping; moving entities only), picking up
+  Collectibles (needs an Inventory or a `collects` relationship), damage
+  (Damage + a matching DamageReceiver tag, or `damages`; invincibility and
+  knock-back after a hit; at 0 health a player-controlled entity respawns,
+  anything else is removed), switches (E, or by touch). Events are processed
+  in order once per step: built-in relationship reactions first, then rules,
+  whose actions may emit more events; a step handles at most 200 events, so
+  a rule that triggers itself is stopped (and logged) instead of freezing the
+  game. Every event is logged (`runtime.eventLog`; the newest 300). Open
+  things stop blocking and draw faded, a switch that is on draws mirrored.
+  The HUD shows hearts, items and rule messages.
+- **The game graph** (`core/graph/graph.ts`) is built on demand from the
+  model (the model stays the source of truth): nodes for the project, levels,
+  entities, objects, components, assets, tags, items, rules and events;
+  structure edges (`contains`, `instance_of`, `has_component`, `has_tag`,
+  `uses_asset`, `gives_item`, `carries`), relationship edges named by type,
+  and rule edges (`listens_to`, `triggered_by`, `checks`, `acts_on`,
+  `spawns`). Queries answer design questions without reading JSON:
+  `findRelationships` ("all doors requiring the red key", "everything
+  Switch 1 controls"), `findEntities` (by name, tag, component, object, level),
+  `relationshipsOf` / `rulesAbout` (an entity's connections, including through
+  its object or tags), `sourcesOfItem` ("where does the player get the key?").
+- **Editor**: the Logic card lists the level's connections and rules as
+  sentences (`describe.ts`), with remove and on/off, plus a prompt; the
+  details drawer shows an entity's connections and a small form to add one;
+  the canvas draws existing connections as labelled arrows (for the
+  selection, or all while the Logic card is open).
+- **AI**: the payload includes the level's logic (sentences + data, ids for
+  editing); operations `create_relationship`, `update_relationship`,
+  `remove_relationship`, `create_rule`, `remove_rule`, `set_rule_enabled`
+  (JSON payloads validated by the same schemas); `place_instance.ref` and
+  `create_definition.ref` let one reply create things and wire them up. The
+  system prompt lists relationship types, events, conditions and actions from
+  the registries, so it can't drift from the engine.
 
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained
@@ -277,9 +353,9 @@ prompt -> AIContext -> buildAIPayload (targets in full, others briefly, library)
 - The model never sees raw project JSON and never mutates state; it returns
   operations that go through the same validated mutation layer as the
   inspector. An invalid operation rejects the whole list.
-- The capability description is generated from the component registry, and
-  explicitly lists what is **not available yet** (behaviors, relationships,
-  rules, play mode, ...). The model is instructed to say so ("unsupported") or
+- The capability description is generated from the component, relationship
+  and event registries, and explicitly lists what is **not available yet**
+  (behaviors, timers, level transitions, ...). The model is instructed to say so ("unsupported") or
   to preview only the possible part, rather than invent features.
 - Instance vs definition is explicit in every operation (`target`), so "this
   robot" and "all robots" map to different changes.
@@ -330,7 +406,11 @@ props are reported as **warnings** and kept, so data from newer or extended
 versions is never silently destroyed.
 
 ### Versioning
-`FORMAT_VERSION` (currently 1) is written to `project.json`.
+`FORMAT_VERSION` (currently 4) is written to `project.json`. v2: assets and
+backgrounds, tiles. v3: play tuning. v4: scenes get `relationships` and
+`rules`; the starter Player gets Health, a Damage Receiver and an Inventory,
+the Door becomes Openable, the Coin is kept as an item, and the Key and Switch
+starters are added.
 `migrateProject` applies registered `Migration { from, to, migrate }` steps
 one version at a time, and refuses files from a newer editor.
 
@@ -350,7 +430,7 @@ one version at a time, and refuses files from a newer editor.
 
 1. **Foundation**: done.
 2. Runtime: **done** (game loop, arcade physics, collisions, running, jumping, ladders, camera follow, Play/Stop with runtime state separate from the project).
-3. Graph: relationships, events, rules, graph queries. Once relationships exist, the details drawer should show them ("requires -> Blue Key") and the AI gets relationship operations.
+3. Graph: **done** (relationship model, event system with a log, rule system, graph queries, entity references; shown in the editor and available to the AI).
 4. Commands: **done** (operations, transactions, undo/redo).
 5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.

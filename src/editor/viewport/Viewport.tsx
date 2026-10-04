@@ -5,13 +5,17 @@ import { addEntity, moveEntities, removeEntities } from '../../core/model/mutati
 import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { componentRegistry } from '../../core/components/builtin';
-import type { Id, Vec2 } from '../../core/types';
+import type { Id, Project, Scene, Vec2 } from '../../core/types';
+import { refCovers } from '../../core/graph/graph';
+import { resolveRef } from '../../core/logic/refs';
+import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
 import { resolveSceneEntities } from '../selectors';
-import { getActiveScene, useEditor } from '../store';
+import { getActiveScene, getSelectionContext, useEditor } from '../store';
+import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
 import { createWheelInterpreter } from './wheel';
 
@@ -114,12 +118,16 @@ export function Viewport() {
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
       for (const e of selected) drawSelected(ctx, e, state.camera.zoom, time);
+      // Existing connections: those of the selection, or all of them while the Logic card is open.
+      const links = state.logicOpen || selected.length ? linksToShow(state.project, scene, byId, state.logicOpen ? null : new Set(state.selectedEntityIds)) : [];
+      for (const l of links) drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, faded: !l.simulated });
       if (selected.length === 2) drawRelation(ctx, selected[0], selected[1], state.camera.zoom);
       if (drag?.kind === 'marquee' && drag.moved) drawMarquee(ctx, drag.startWorld, drag.currentWorld, state.camera.zoom);
 
       // Screen-space labels and the prompt anchor.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const toScreen = (p: Vec2) => worldToScreen(state.camera, view, p);
+      for (const l of links) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)));
       if (selected.length === 1) drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
       if (selected.length === 2) {
         drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
@@ -127,6 +135,8 @@ export function Viewport() {
       }
 
       const viewWH = { w: view.width, h: view.height };
+      const selectionCtx = getSelectionContext(state);
+      const anchorKey = selectionCtx ? contextKey(selectionCtx) : '';
       if (selected.length > 0) {
         let rect: Rect;
         if (selected.length === 2) {
@@ -138,11 +148,11 @@ export function Viewport() {
         }
         const a = toScreen({ x: rect.minX, y: rect.minY });
         const b = toScreen({ x: rect.maxX, y: rect.maxY });
-        publishAnchor({ rect: { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y }, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
+        publishAnchor({ key: anchorKey, rect: { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y }, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
       } else if (state.worldContext) {
         const p = state.worldContext.point ? toScreen(state.worldContext.point) : { x: view.width / 2, y: view.height / 2 };
         drawWorldMarker(ctx, p, scene.name, time);
-        publishAnchor({ rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: true });
+        publishAnchor({ key: anchorKey, rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: true });
       } else {
         publishAnchor(null);
       }
@@ -554,8 +564,55 @@ function curveMidpoint(a: ResolvedEntity, b: ResolvedEntity): Vec2 {
   return { x: 0.25 * from.x + 0.5 * ctrl.x + 0.25 * to.x, y: 0.25 * from.y + 0.5 * ctrl.y + 0.25 * to.y };
 }
 
-/** Two selected objects: an arrow from the first to the second shows the relationship being described. */
-function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number): void {
+interface Link {
+  a: ResolvedEntity;
+  b: ResolvedEntity;
+  verb: string;
+  simulated: boolean;
+}
+
+const MAX_LINKS = 120;
+
+/** Entity-to-entity arrows for the level's relationships; with `only`, just those touching those entities. */
+function linksToShow(project: Project, scene: Scene, byId: Map<Id, ResolvedEntity>, only: Set<Id> | null): Link[] {
+  const links: Link[] = [];
+  for (const r of scene.relationships) {
+    if (only && !scene.entities.some((e) => only.has(e.id) && (refCovers(project, r.source, e) || refCovers(project, r.target, e)))) continue;
+    const t = relationshipRegistry.get(r.type);
+    for (const s of resolveRef(project, scene, r.source)) {
+      for (const d of resolveRef(project, scene, r.target)) {
+        if (s.id === d.id || (only && !only.has(s.id) && !only.has(d.id))) continue;
+        const a = byId.get(s.id);
+        const b = byId.get(d.id);
+        if (a && b) links.push({ a, b, verb: t?.verb ?? r.type, simulated: t?.simulated === true });
+        if (links.length >= MAX_LINKS) return links;
+      }
+    }
+  }
+  return links;
+}
+
+function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2): void {
+  ctx.save();
+  ctx.font = `700 10px ${theme.uiFont}`;
+  const w = ctx.measureText(text).width + 10;
+  ctx.fillStyle = theme.logic;
+  ctx.beginPath();
+  ctx.roundRect(p.x - w / 2, p.y - 8, w, 16, 8);
+  ctx.fill();
+  ctx.fillStyle = '#1a1430';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, p.x, p.y + 0.5);
+  ctx.restore();
+}
+
+/**
+ * An arrow from `a` to `b`: dashed in the selection color for two selected
+ * objects (the relationship being described), or solid in the logic color
+ * for an existing connection (faded when it does nothing in play yet).
+ */
+function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number, style: { color: string; dashed: boolean; faded?: boolean } = { color: theme.select, dashed: true }): void {
   const { from, to, ctrl } = curveControl(a, b);
   const ra = Math.max(getEntitySize(a).x, getEntitySize(a).y) / 2 + 10 / zoom;
   const rb = Math.max(getEntitySize(b).x, getEntitySize(b).y) / 2 + 12 / zoom;
@@ -566,10 +623,11 @@ function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: Resol
   const start = trim(from, ctrl, ra);
   const end = trim(to, ctrl, rb);
   ctx.save();
-  ctx.strokeStyle = theme.select;
-  ctx.fillStyle = theme.select;
+  ctx.strokeStyle = style.color;
+  ctx.fillStyle = style.color;
+  if (style.faded) ctx.globalAlpha = 0.5;
   ctx.lineWidth = 2 / zoom;
-  ctx.setLineDash([6 / zoom, 5 / zoom]);
+  if (style.dashed) ctx.setLineDash([6 / zoom, 5 / zoom]);
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);
   ctx.quadraticCurveTo(ctrl.x, ctrl.y, end.x, end.y);

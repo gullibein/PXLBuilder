@@ -144,7 +144,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 .scope-toggle button.on { background: var(--accent-soft); color: #d4ceff; }
 
 /* ---------------------------------------------------------------- dock */
-.dock-wrap { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 15; width: min(640px, calc(100% - 32px)); pointer-events: none; }
+.dock-wrap { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 15; width: min(720px, calc(100% - 32px)); pointer-events: none; }
 .dock-wrap > * { pointer-events: auto; }
 .dock { display: flex; gap: 6px; padding: 6px; }
 .dock-btn { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 18px; border: none; border-radius: 11px; background: none; font-weight: 600; color: var(--text); }
@@ -335,3 +335,27 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .menu-row.stacked { flex-direction: column; align-items: stretch; gap: 2px; }
 .menu-row-main { display: flex; align-items: center; gap: 8px; }
 .menu-detail { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+
+/* ---------------------------------------------------------------- logic (connections and rules) */
+.tool { position: relative; }
+.tool-badge { position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent-hi); color: #fff; font: 700 9.5px/15px var(--font-ui); }
+.logic-panel { width: min(340px, calc(100% - 96px)); }
+.logic-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.logic-item { display: flex; align-items: flex-start; gap: 6px; padding: 7px 4px 7px 9px; border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.4; }
+.section .logic-item { background: rgba(0, 0, 0, 0.18); }
+.logic-item.off .logic-text { opacity: 0.5; text-decoration: line-through; }
+.logic-item input[type='checkbox'] { margin: 2px 0 0; accent-color: var(--accent); }
+.logic-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.logic-note { color: var(--muted); font-size: 11px; }
+.logic-remove { width: 22px; height: 22px; flex: none; }
+.logic-none { margin: 2px 0 6px; font-size: 12px; }
+.logic-add { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; margin-top: 6px; }
+.logic-add select { min-width: 0; font-size: 12px; }
+
+/* ---------------------------------------------------------------- play HUD */
+.hud { position: absolute; left: 16px; top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; z-index: 5; }
+.hud-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.72); color: #fff; font: 600 13px var(--font-ui); }
+.hud-hearts { color: #ff6b81; letter-spacing: 1px; font-size: 15px; }
+.hud-hearts .empty { color: rgba(255, 255, 255, 0.25); }
+.hud-message { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 12px 22px; border-radius: 14px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 700 20px var(--font-ui); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); }
+.hud-keys { position: absolute; right: 16px; bottom: 16px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.6); color: rgba(255, 255, 255, 0.8); font: 12px var(--font-ui); pointer-events: none; z-index: 5; }

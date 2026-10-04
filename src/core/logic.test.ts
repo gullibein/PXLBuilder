@@ -76,7 +76,7 @@ describe('relationships', () => {
     const p = edit(project, (d) => {
       logic.addRelationship(d, sceneId, rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door']), { conditions: [{ type: 'has_item', entity: { kind: 'other' }, item: 'key', count: 1, not: false }] }));
     });
-    expect(describeRelationship(p, p.scenes[0], p.scenes[0].relationships[0])).toBe('Switch 1 controls Blue Door, only if who uses it has key');
+    expect(describeRelationship(p, p.scenes[0], p.scenes[0].relationships[0])).toBe('Switch 1 controls Blue Door, only if whoever uses it has key');
   });
 
   it('can be updated and removed', () => {

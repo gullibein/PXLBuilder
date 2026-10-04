@@ -7,10 +7,11 @@
  * The model never receives the raw project file.
  */
 import type { ComponentRegistry } from '../components/registry';
+import { describeRelationship, describeRule } from '../logic/describe';
 import { getEntitySize } from '../model/geometry';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
-import type { Id, Project, Scene, Vec2 } from '../types';
+import type { Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
 
 export type AIContext =
   /** One selected entity. */
@@ -106,16 +107,22 @@ export interface AIPayload {
     /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
     sprites: { assetId: Id; image: string; frame: number; sheet: boolean }[];
   }[];
+  /** The level's relationships and rules: in words, plus their data (for editing or removing by id). */
+  logic: {
+    relationships: { id: Id; text: string; type: string; source: EntityRef; target: EntityRef; params: Record<string, unknown>; conditions: Condition[] }[];
+    rules: { id: Id; text: string; name: string; enabled: boolean; when: Rule['when']; conditions: Condition[]; actions: RuleAction[] }[];
+  };
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
   coordinateSystem: string;
 }
 
 const MAX_BRIEFS = 200;
+const MAX_LOGIC = 100;
 
 const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   entity: 'The user selected one entity (see targets). Phrases like "the player", "this", "it" most likely refer to it, but the user may also mention other entities by name.',
-  pair: 'The user selected two entities, in this order: targets[0] then targets[1]. The request is most likely about how they relate.',
+  pair: 'The user selected two entities, in this order: targets[0] then targets[1]. The request is most likely about how they relate: usually a relationship between them (create_relationship), sometimes a rule. See logic for what already connects them.',
   group: 'The user selected several entities (see targets) and is addressing them together ("these", "them", "all of them").',
   level: 'The user is addressing the level itself: its world settings and its contents. "here" refers to `point` if set.',
   background:
@@ -198,6 +205,10 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, sheet: a?.kind === 'spritesheet' };
       }),
     })),
+    logic: {
+      relationships: scene.relationships.slice(0, MAX_LOGIC).map((r: Relationship) => ({ id: r.id, text: describeRelationship(project, scene, r), type: r.type, source: r.source, target: r.target, params: r.params, conditions: r.conditions })),
+      rules: scene.rules.slice(0, MAX_LOGIC).map((r) => ({ id: r.id, text: describeRule(project, scene, r), name: r.name, enabled: r.enabled, when: r.when, conditions: r.conditions, actions: r.actions })),
+    },
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => (ctx.kind === 'project' ? { id: s.id, name: s.name, entities: briefs(s, new Set()) } : { id: s.id, name: s.name })),

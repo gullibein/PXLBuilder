@@ -6,6 +6,8 @@
 import type { ScreenRect } from './placement';
 
 export interface Anchor {
+  /** The context (contextKey) these bounds belong to, so a prompt never uses bounds drawn for the previous selection. */
+  key: string;
   rect: ScreenRect;
   view: { w: number; h: number };
   /** False when the anchored thing is scrolled out of view. */
@@ -20,6 +22,7 @@ function same(a: Anchor | null, b: Anchor | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
   return (
+    a.key === b.key &&
     a.visible === b.visible &&
     a.view.w === b.view.w &&
     a.view.h === b.view.h &&

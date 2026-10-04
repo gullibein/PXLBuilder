@@ -5,9 +5,11 @@ changes a structured game model, which then drives the editor and the runtime.
 
 **Current status:** the game world is the interface. Click an object and a
 prompt appears next to it; describe the change; the AI turns it into validated,
-undoable operations. Press **Play** to run the level. Behaviors (patrol,
-shoot, ...), relationships, damage and collecting are not built yet, and the AI
-says so when a request needs them.
+undoable operations. Press **Play** to run the level. Objects can be connected
+("this switch opens this door", "the blue key opens the blue door") and levels
+can have rules ("when the player picks up the key, show a message"). Behaviors
+(patrol, shoot, ...) and timers are not built yet, and the AI says so when a
+request needs them.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run
@@ -33,7 +35,8 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 ## Using it
 
 - **Click something** in your game. A prompt appears next to it. Press Enter (or click the prompt) and describe what you want: "Give the player three hearts."
-- **Two objects** (Shift+click the second): one prompt about how they relate. **More**: one prompt for the group (or drag a box around them).
+- **Two objects** (Shift+click the second): one prompt about how they relate ("make this switch open this door"). **More**: one prompt for the group (or drag a box around them).
+- **Logic** (left panel, the connected-dots button): the level's connections and rules as sentences. Switch rules off, remove things, or describe new logic ("when the player has 3 coins, open the exit"). Existing connections show as arrows on the level. An object's details also list its connections, with a small form to add one.
 - **The level**: double-click empty space. "Make gravity 30% weaker."
 - **Whole game**: the ✦ button in the top bar (Ctrl+K).
 - **Create**: the bottom dock's **+ Create** makes a new object from a description.
@@ -42,7 +45,7 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **Sprites**: right-click an object in **Objects** → **Sprites**. Import a single image, or a sprite sheet: the grid is detected and every cell is numbered; adjust the grid if needed and click a cell to use it. Sprites stretch to the object's size. Right-click → **Inspector** shows all its properties.
 - **Size link**: in the Inspector, sprite and collider sizes are linked (changing one changes the other). Click **Linked** to size them separately.
 - **Background**: choose a color, upload an image (Fill or Repeat, and how much it moves with the level), or describe what you want ("the background should move sideways along with the level").
-- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders (you ease to the ladder's middle unless you also press Left/Right; you stop on the top; a ladder above a gap needs a jump), `R` restarts, `Esc` stops. Playing never changes your level.
+- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders (you ease to the ladder's middle unless you also press Left/Right; you stop on the top; a ladder above a gap needs a jump), `E` uses a switch, `R` restarts, `Esc` stops. The player picks up coins and keys, loses a heart touching hazards and enemies, and starts over when out of hearts; the top-left shows hearts and items. Playing never changes your level.
 - **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
 - **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
 - **Move**: drag objects (tiles snap to whole tiles); arrows nudge; `Ctrl+D` duplicate; `Del` delete.

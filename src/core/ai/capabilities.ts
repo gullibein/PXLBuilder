@@ -6,6 +6,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import type { FieldSchema } from '../components/schema';
+import { ACTION_HELP, CONDITION_HELP, eventRegistry, relationshipRegistry } from '../logic/vocabulary';
 
 function describeField(name: string, f: FieldSchema): string {
   let type: string = f.kind;
@@ -33,12 +34,49 @@ export function describeComponents(registry: ComponentRegistry): string {
     .join('\n');
 }
 
+/** Relationship types, events, conditions and actions, from the same registries the engine uses. */
+export function describeLogic(): string {
+  const rels = relationshipRegistry
+    .list()
+    .map((t) => {
+      const params = Object.entries(t.params).map(([n, f]) => describeField(n, f).trim());
+      return `  ${t.type}${t.simulated ? '' : ' (recorded in the design only; NOT simulated in play yet)'}: ${t.description}${params.length ? ` Params: ${params.join('; ')}` : ''}`;
+    })
+    .join('\n');
+  const events = eventRegistry
+    .list()
+    .map((e) => `  ${e.type}: ${e.description}${e.subject ? ` subject = ${e.subject}` : ''}${e.other ? `; other = ${e.other}` : ''}`)
+    .join('\n');
+  const conditions = Object.entries(CONDITION_HELP).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+  const actions = Object.entries(ACTION_HELP).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+  return `Entity references (EntityRef), used everywhere in relationships and rules:
+  {"kind":"entity","id":"<entity id>"} one placed entity ("this door")
+  {"kind":"object","id":"<library object id>"} every copy of a library object ("coins", "the player" when you mean any Player)
+  {"kind":"tag","tag":"enemy"} everything with that tag
+  {"kind":"subject"} / {"kind":"other"} the entities of the event being reacted to (only inside conditions and actions)
+  {"kind":"any"} no filter (only in a rule's "when")
+
+Relationship types
+${rels}
+
+Events (what rules react to)
+${events}
+
+Conditions (all must hold; every condition has "not": false|true; has_item also "count")
+${conditions}
+  JSON examples: {"type":"has_item","entity":{"kind":"subject"},"item":"key","count":1,"not":false}, {"type":"health","entity":{"kind":"object","id":"def_x"},"compare":"<=","value":1,"not":false}, {"type":"is_open","entity":{"kind":"entity","id":"ent_x"},"not":true}
+
+Actions
+${actions}
+  JSON examples: {"type":"open","target":{"kind":"entity","id":"ent_door"}}, {"type":"spawn","object":"def_enemy","at":{"kind":"entity","id":"ent_spot"},"x":0,"y":0}, {"type":"show_message","text":"You win!","seconds":3}, {"type":"restart_level"}`;
+}
+
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
   'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, jetpacks, health regeneration.',
-  'Relationships between objects (controls, requires, opens, protects, targets, damages-specific-entity) and conditions/rules ("when X then Y").',
-  'Events, win/lose conditions, checkpoints logic, level transitions.',
-  'During play, damage, losing health, dying, and collecting items are not simulated yet: Health, Damage, DamageReceiver, Collectible and Inventory store values that the coming rules/events system will act on.',
+  'Timers and delays ("after 3 seconds", "every 2 seconds"), counters/variables other than inventory items and health, score.',
+  'Moving to another level, checkpoints, a game-over screen (a rule can show a message and restart the level).',
+  'Relationship types marked "NOT simulated" (targets, follows, protects, contains) only record the design; nothing happens in play.',
   'Camera settings, lighting, day/night, music, sound, particles, generated art or animation, backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 
@@ -79,7 +117,23 @@ How the game runs (Play mode)
 - Entities with a CharacterController are player-controlled: arrows/WASD run, Space jumps (Up never jumps), Up/Down climb anything Climbable when at least half of the character is inside it, at the character's running speed; moving sideways off the ladder lets go; climbing stops on the ladder's top; stacked pieces form one ladder and one above a gap is reached only by jumping. speed, acceleration, jumpForce (initial upward speed; jump height ≈ jumpForce²/(2·gravity); the default 295 reaches one 32px tile row up, not two) and airControl are simulated.
 - PhysicsBody: dynamic bodies fall with world gravity × gravityScale and collide with solids; static bodies and colliders without a PhysicsBody are solid ground/walls; kinematic bodies move by their velocity only. Colliders with isTrigger are not solid.
 - The camera follows the entity with a CameraTarget (followStrength = smoothing). Falling below the level puts an entity back at its start.
-- Not simulated yet: damage, health, collecting, enemies moving on their own (see "Not available yet").
+- Touching: things touch when they overlap, stand on each other or bump into each other (only moving entities start touches).
+- Collecting: an entity with an Inventory picks up Collectibles it touches (they leave the level); "addToInventory" keeps the item (named by Collectible.itemId, or the object name in lower case). Items can be checked with has_item. To make different keys, give each key object its own itemId ("blue key", "red key").
+- Damage: an entity with Damage hurts an entity with Health whose DamageReceiver.damageSources contains one of its tags (the starter Player accepts "hazard" and "enemy"), or that a "damages" relationship points at. After a hit it is invincible for DamageReceiver.invincibilityDuration seconds and knocked back. At 0 health it dies: a player-controlled entity respawns at its start with full health, anything else is removed.
+- Doors: anything can be opened/closed; open things do not block and are drawn faded. Openable.startsOpen sets the start state.
+- Switches: Switch.activation "interact" = press E while touching it, "touch" = walking into it. Each use flips it on/off and fires switch_activated.
+- R restarts the level; rules can too.
+- Not simulated yet: enemies moving on their own (see "Not available yet").
+
+Game logic: relationships and rules (scene-level, see context.logic)
+- Relationships wire objects together: "make this switch open this door" -> create_relationship controls (switch -> door). "the blue key opens the blue door" -> requires (door -> the key object). "this hazard only hurts the player" -> damages.
+- Put "only if ..." on the relationship's conditions. In a relationship's conditions, subject/other are the entities of the event that triggers it: controls -> subject = the switch, other = who used it; requires -> subject = who touched the door, other = the door; damages -> subject = who gets hurt, other = the attacker; collects -> subject = the collector, other = the item. E.g. "the switch only works if the player has the key" -> condition {"type":"has_item","entity":{"kind":"other"},"item":"key","count":1,"not":false}.
+- Rules are "WHEN event (filtered by subject/other) AND conditions DO actions" for anything else: "when the player picks up all 3 coins, open the door", "when the player dies, restart the level", "when the player touches the flag, show You win!".
+- To change one, use update_relationship / set_rule_enabled, or remove it and create a new one. Remove by id from context.logic.
+- New entities placed in the same reply can be referenced through place_instance.ref; new objects through create_definition.ref.
+- In "changes" describe logic in words ("Switch 1 now opens the Blue Door").
+
+${describeLogic()}
 
 Available components
 ${describeComponents(registry)}

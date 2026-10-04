@@ -47,6 +47,10 @@ function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
   const t = body.context.targets;
+  if (req.includes('five hearts')) {
+    const set = (field) => ({ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Health', field, valueJson: '5' });
+    return { kind: 'apply', message: 'Gave the player 5 hearts.', changes: [`${t[0].name}: 5 hearts`], operations: [set('maxHealth'), set('currentHealth')] };
+  }
   if (req.includes('three hearts')) {
     return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
   }
@@ -86,8 +90,22 @@ function stubModel(body) {
   if (req.includes('move sideways') || req.includes('background')) {
     return { kind: 'apply', message: 'The background now scrolls slowly with the level.', changes: ['Background moves 50% with the level'], operations: [{ op: 'set_background', sceneId: body.context.level.id, color: null, fit: null, parallax: 0.5, removeImage: false }] };
   }
+  if (req.includes('open this door') && t[0]?.components.Switch) {
+    const relationship = { type: 'controls', source: { kind: 'entity', id: t[0].id }, target: { kind: 'entity', id: t[1].id } };
+    return { kind: 'apply', message: `${t[0].name} now opens ${t[1].name}.`, changes: [`${t[0].name} controls ${t[1].name}`], operations: [{ op: 'create_relationship', sceneId: body.context.level.id, relationshipJson: JSON.stringify(relationship) }] };
+  }
+  if (req.includes('only if the player has the key')) {
+    const rel = body.context.logic.relationships[0];
+    const patch = { conditions: [{ type: 'has_item', entity: { kind: 'other' }, item: 'key', count: 1, not: false }] };
+    return { kind: 'apply', message: 'The switch only works once the player has the key.', changes: ['Switch needs the key'], operations: [{ op: 'update_relationship', sceneId: body.context.level.id, id: rel.id, patchJson: JSON.stringify(patch) }] };
+  }
+  if (req.includes('picks up the key')) {
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const rule = { name: 'Key found', when: { event: 'collected', subject: { kind: 'object', id: lib('Player') }, other: { kind: 'object', id: lib('Key') } }, actions: [{ type: 'show_message', text: 'Got the key!', seconds: 3 }] };
+    return { kind: 'apply', message: 'Added a rule.', changes: ['When the player picks up a key: show "Got the key!"'], operations: [{ op: 'create_rule', sceneId: body.context.level.id, ruleJson: JSON.stringify(rule) }] };
+  }
   if (req.includes('open the door')) {
-    return { kind: 'unsupported', message: `Linking ${t[0]?.name} to ${t[1]?.name} needs relationships, which aren't in this version yet.`, changes: [], operations: [] };
+    return { kind: 'clarify', message: `${t[0]?.name} can't open things. Did you mean a switch or a key?`, changes: [], operations: [] };
   }
   return { kind: 'clarify', message: 'What would you like to change about it?', changes: [], operations: [] };
 }
@@ -217,30 +235,32 @@ try {
   await check(async () => (await prompts.getAttribute('data-context')) === 'entity', 'the prompt is bound to the selected entity');
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) !== 'TEXTAREA', 'the first click selects without stealing focus');
   await check(async () => (await promptInput.getAttribute('placeholder')) === 'Type a command…', 'the prompt is a plain input with a minimal placeholder');
-  const pBox = await prompts.boundingBox();
   const player = toScreen(-256, 0);
-  await check(pBox.y + pBox.height < player.y && Math.abs(pBox.x + pBox.width / 2 - player.x) < 40, 'the prompt sits just above the Player, centered on it');
+  await check(async () => {
+    const pBox = await prompts.boundingBox();
+    return !!pBox && pBox.y + pBox.height < player.y && Math.abs(pBox.x + pBox.width / 2 - player.x) < 40;
+  }, 'the prompt sits just above the Player, centered on it');
   await page.screenshot({ path: `${OUT}/2-player-selected.png` });
   await canvas.focus();
   await page.keyboard.press('Enter');
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Enter moves focus into the prompt');
-  await ask('Give the player three hearts.');
+  await ask('Give the player five hearts.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the AI change is applied');
-  await check(async () => (await result.innerText()).includes('Player: 3 hearts'), 'a short confirmation lists what changed');
+  await check(async () => (await result.innerText()).includes('Player: 5 hearts'), 'a short confirmation lists what changed');
   const last = aiRequests.at(-1);
   await check(last.context.scope === 'entity' && last.context.targets[0].name === 'Player', 'the AI received the selected Player as context');
   await check(last.context.otherEntities.some((e) => e.name === 'Door'), 'other objects are available to the AI by name');
   await page.screenshot({ path: `${OUT}/3-applied.png` });
   await prompts.getByTestId('prompt-details').click();
-  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '3', 'the details drawer shows the new Health component (max 3)');
+  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '5', 'the details drawer shows the new health (max 5)');
   await page.getByTestId('close-details').click();
 
   step = 'undo/redo';
   await page.getByTestId('undo').click();
   await prompts.getByTestId('prompt-details').click();
-  await check(async () => (await page.getByTestId('component-Health').count()) === 0, 'Undo removes the AI change as one step');
+  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '3' && (await page.getByTestId('field-Health.currentHealth').inputValue()) === '3', 'Undo reverts the whole AI change as one step');
   await page.getByTestId('redo').click();
-  await check(async () => (await page.getByTestId('component-Health').count()) === 1, 'Redo restores it');
+  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '5', 'Redo restores it');
   await page.getByTestId('close-details').click();
 
   step = 'golden test 2: enemy';
@@ -379,7 +399,7 @@ try {
 
   step = 'history';
   await page.getByTestId('tray-toggle').click();
-  await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player three hearts.'), 'AI changes appear in History');
+  await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player five hearts.'), 'AI changes appear in History');
   await page.screenshot({ path: `${OUT}/7-history.png` });
 
   step = 'background';
@@ -425,7 +445,11 @@ try {
   }, 'switching console tabs and minimising leaves the editor in place');
 
   step = 'play';
+  // Settle the pointer on the Player first (it just came from the tray's Close button).
+  await page.mouse.move(toScreen(-256, 0).x, toScreen(-256, 0).y, { steps: 3 });
+  await page.waitForTimeout(50);
   await clickWorld(-256, 0);
+  await check(async () => (await prompts.count()) === 1, 'clicking the Player selects it');
   await prompts.getByTestId('prompt-details').click();
   const posBefore = [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()];
   await page.getByTestId('close-details').click();
@@ -612,6 +636,113 @@ try {
   await check(async () => (await oldPage.getByTestId('definition-Ladder').count()) === 1 && (await oldPage.getByTestId('definition-Stone').count()) === 1, 'the upgraded project gets the new Ladder and Stone objects');
   await oldPage.screenshot({ path: `${OUT}/9-upgraded-autosave.png` });
   await old.close();
+
+  step = 'logic: connections, rules and play';
+  const lc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const lp = await lc.newPage();
+  lp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  lp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  await lp.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
+  await lp.goto(URL);
+  const lCanvas = lp.getByTestId('viewport-canvas');
+  const lBox = await lCanvas.boundingBox();
+  const lAt = (wx, wy) => ({ x: lBox.x + lBox.width / 2 + wx, y: lBox.y + lBox.height / 2 + wy });
+  const lDrop = async (name, wx, wy) => {
+    if ((await lp.getByTestId('library-panel').count()) === 0) await lp.getByTestId('dock-library').click();
+    await lp.dragAndDrop(`[data-testid="definition-${name}"]`, '[data-testid="viewport-canvas"]', { targetPosition: { x: lBox.width / 2 + wx, y: lBox.height / 2 + wy } });
+  };
+  const lClick = async (wx, wy, shift = false) => {
+    const q = lAt(wx, wy);
+    if (shift) await lp.keyboard.down('Shift');
+    await lp.mouse.click(q.x, q.y);
+    if (shift) await lp.keyboard.up('Shift');
+  };
+  const lPrompt = lp.getByTestId('context-prompt');
+  const lAsk = async (text, where = lPrompt) => {
+    const input = where.getByTestId('prompt-input');
+    await input.click();
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  // Ground from x=-208 to 208, then Player, Key, Switch and Door standing on it.
+  await lp.getByTestId('dock-library').click();
+  await lp.getByTestId('definition-Platform').click();
+  const g0 = lAt(-208, 48);
+  const g1 = lAt(208, 48);
+  await lp.mouse.move(g0.x, g0.y);
+  await lp.mouse.down();
+  await lp.mouse.move(g1.x, g1.y, { steps: 6 });
+  await lp.mouse.up();
+  await lp.getByTestId('tool-select').click();
+  await lDrop('Player', -176, 0);
+  await lDrop('Key', -128, 16);
+  await lDrop('Switch', -64, 16);
+  await lDrop('Door', 64, 0);
+  await check(async () => (await lp.getByTestId('tool-logic').innerText()) === '', 'a new level has no connections (no count on the Logic button)');
+
+  await lClick(-64, 16);
+  await lClick(64, 0, true);
+  await check(async () => (await lPrompt.getAttribute('data-context')) === 'pair', 'switch + door gives one relationship prompt');
+  await lAsk('Make this switch open this door.');
+  await check(async () => (await lPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"make this switch open this door" creates a connection');
+  await check(async () => (await lp.getByTestId('tool-logic').innerText()) === '1', 'the Logic button counts it');
+  await lAsk('Only if the player has the key.');
+  await check(async () => (await lPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a follow-up adds a condition to the same connection');
+  await lp.screenshot({ path: `${OUT}/13-connection.png` });
+
+  await lp.getByTestId('tool-logic').click();
+  const logicPanel = lp.getByTestId('logic-panel');
+  await check(async () => (await logicPanel.getByTestId('relationship-item').innerText()).includes('Switch controls Door, only if whoever uses it has key'), 'the Logic card lists the connection as a sentence');
+  await lAsk('When the player picks up the key, say Got the key!', logicPanel);
+  await check(async () => (await logicPanel.getByTestId('rule-item').innerText()).includes('When every Player picks up every Key: show "Got the key!"'), 'a rule described in the Logic card appears as a sentence');
+  await check(async () => (await lp.getByTestId('tool-logic').innerText()) === '2', 'the count includes rules');
+  await lp.screenshot({ path: `${OUT}/14-logic-panel.png` });
+  await lp.keyboard.press('Escape');
+  await check(async () => (await logicPanel.count()) === 0, 'Esc closes the Logic card');
+
+  await lClick(64, 0);
+  await lPrompt.getByTestId('prompt-details').click();
+  await check(async () => (await lp.getByTestId('connections').innerText()).includes('Switch controls Door'), "the door's details show what controls it");
+  await lp.getByTestId('close-details').click();
+
+  await lp.getByTestId('play').click();
+  const lPlay = lp.getByTestId('play-canvas');
+  const lps = async () => ((await lPlay.getAttribute('data-player')) ?? '').split(',').map(Number);
+  const evs = async () => (await lPlay.getAttribute('data-events')) ?? '';
+  await check(async () => (await lps())[2] === 1, 'play: the player lands');
+  await check(async () => (await lp.getByTestId('hud-health').getAttribute('aria-label')) === 'Health 3 of 3', 'the HUD shows the player\'s hearts');
+  const walkUntil = async (x) => {
+    await lp.keyboard.down('ArrowRight');
+    for (let i = 0; i < 150 && (await lps())[0] < x; i++) await lp.waitForTimeout(20);
+    await lp.keyboard.up('ArrowRight');
+  };
+  await walkUntil(-80);
+  await check(async () => (await lp.getByTestId('hud-item').innerText()) === 'key', 'walking over the key picks it up (HUD shows it)');
+  await check(async () => (await lp.getByTestId('hud-message').innerText()) === 'Got the key!', 'the rule shows its message');
+  await lp.waitForTimeout(150);
+  await lp.keyboard.press('KeyE');
+  await check(async () => (await evs()).includes('opened:Door>Switch'), 'pressing E at the switch opens the door (the key condition holds)');
+  await walkUntil(120);
+  await check(async () => (await lps())[0] >= 120, 'the player walks through the open door');
+  await lp.screenshot({ path: `${OUT}/15-play-logic.png` });
+  await lp.keyboard.press('Escape');
+
+  await lp.getByTestId('tool-logic').click();
+  await logicPanel.getByTestId('relationship-item').getByRole('button', { name: 'Remove connection' }).click();
+  await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await lp.getByTestId('tool-logic').innerText()) === '1', 'a connection can be removed');
+  await lp.getByTestId('undo').click();
+  await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 1, 'and Undo brings it back');
+  await logicPanel.getByTestId('rule-enabled').click();
+  await check(async () => (await logicPanel.getByTestId('rule-item').getAttribute('class')).includes('off'), 'a rule can be switched off');
+  await lp.keyboard.press('Escape');
+  await lClick(64, 0);
+  await lp.keyboard.press('Delete');
+  await lp.getByTestId('tool-logic').click();
+  await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
+  await lc.close();
 
   step = 'console errors';
   await check(errors.length === 0, `no page/console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);

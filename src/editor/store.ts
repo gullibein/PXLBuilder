@@ -69,6 +69,8 @@ export interface EditorState {
   backgroundOpen: boolean;
   /** Object whose Sprites panel is open. */
   spritesFor: Id | null;
+  /** The level's Logic card (connections and rules) is open. */
+  logicOpen: boolean;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
   mode: 'edit' | 'play';
 
@@ -96,6 +98,7 @@ export interface EditorState {
   /** Switches to drawing with the last used object (or the first tile object). */
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
+  setLogicOpen(open: boolean): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
   logMessage(level: LogLevel, message: string): void;
@@ -142,6 +145,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     lastBrushId: null,
     backgroundOpen: false,
     spritesFor: null,
+    logicOpen: false,
     mode: 'edit',
 
     edit(label, recipe, opts = {}) {
@@ -233,6 +237,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
         backgroundOpen: unique.length ? false : get().backgroundOpen,
         spritesFor: unique.length ? null : get().spritesFor,
+        logicOpen: unique.length ? false : get().logicOpen,
       });
     },
 
@@ -242,7 +247,7 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setWorldContext(point) {
       if (point === false) set({ worldContext: null });
-      else set({ worldContext: { point }, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false });
+      else set({ worldContext: { point }, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
     setGlobalPrompt(open, scope) {
@@ -292,18 +297,23 @@ export const useEditor = create<EditorState>()((set, get) => {
     setMode(mode) {
       // Play takes the whole stage: close every card and panel.
       if (mode === 'play') {
-        set({ mode, dock: null, backgroundOpen: false, spritesFor: null, inspectorOpen: false, globalPrompt: { ...get().globalPrompt, open: false }, tray: { ...get().tray, open: false } });
+        set({ mode, dock: null, backgroundOpen: false, logicOpen: false, spritesFor: null, inspectorOpen: false, globalPrompt: { ...get().globalPrompt, open: false }, tray: { ...get().tray, open: false } });
       } else set({ mode });
     },
 
     openSprites(definitionId) {
-      if (definitionId) set({ spritesFor: definitionId, dock: null, backgroundOpen: false, selectedEntityIds: [], worldContext: null, tool: { kind: 'select' } });
+      if (definitionId) set({ spritesFor: definitionId, dock: null, backgroundOpen: false, logicOpen: false, selectedEntityIds: [], worldContext: null, tool: { kind: 'select' } });
       else set({ spritesFor: null });
     },
 
     setBackgroundOpen(open) {
-      if (open) set({ spritesFor: null, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      if (open) set({ spritesFor: null, logicOpen: false, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ backgroundOpen: false });
+    },
+
+    setLogicOpen(open) {
+      if (open) set({ spritesFor: null, backgroundOpen: false, logicOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      else set({ logicOpen: false });
     },
 
     logMessage(level, message) {

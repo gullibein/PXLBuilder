@@ -1,12 +1,17 @@
 import { useEditor } from '../store';
 import { Thumb } from './Dock';
 
-/** Left tool panel: Select (arrow), Draw (pen), and the level background. */
+/** Left tool panel: Select (arrow), Draw (pen), the level background, and the level's logic. */
 export function ToolPanel() {
   const tool = useEditor((s) => s.tool);
   const backgroundOpen = useEditor((s) => s.backgroundOpen);
+  const logicOpen = useEditor((s) => s.logicOpen);
+  const logicCount = useEditor((s) => {
+    const scene = s.project.scenes.find((x) => x.id === s.activeSceneId) ?? s.project.scenes[0];
+    return scene.relationships.length + scene.rules.length;
+  });
   const brush = useEditor((s) => (s.tool.kind === 'brush' ? s.project.definitions.find((d) => d.id === (s.tool as { definitionId: string }).definitionId) : undefined));
-  const { setTool, usePen, setBackgroundOpen, setDock } = useEditor.getState();
+  const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock } = useEditor.getState();
   return (
     <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel">
       <button
@@ -52,6 +57,22 @@ export function ToolPanel() {
           <path d="m3 13 4-4.2 3 3 1.8-1.8L15 13.4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
           <circle cx="11.8" cy="6.6" r="1.4" fill="currentColor" />
         </svg>
+      </button>
+      <button
+        className={`tool${logicOpen ? ' on' : ''}`}
+        title="Logic: how things are connected, and the level's rules"
+        aria-label="Logic"
+        aria-pressed={logicOpen}
+        data-testid="tool-logic"
+        onClick={() => setLogicOpen(!logicOpen)}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <circle cx="4.5" cy="4.5" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <circle cx="13.5" cy="9" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <circle cx="4.5" cy="13.5" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M6.5 5.5 11.4 8M6.5 12.5l4.9-2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        {logicCount > 0 && <span className="tool-badge">{logicCount}</span>}
       </button>
     </nav>
   );

@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, instantiateDefinition } from '../model/factory';
+import * as logic from '../logic/mutations';
 import * as m from '../model/mutations';
 import type { Id, Project } from '../types';
 
@@ -89,6 +90,39 @@ export const operationSchema = z.union([
     x: z.number(),
     y: z.number(),
     name: z.string().nullable(),
+    ref: z.string().nullable().describe('Temporary name for the placed entity, usable as an entity id in later relationships/rules in this list; null if not needed'),
+  }),
+  z.object({
+    op: z.literal('create_relationship'),
+    sceneId: z.string(),
+    relationshipJson: z.string().describe('JSON {"type", "source": EntityRef, "target": EntityRef, "params": {}, "conditions": [Condition]}'),
+  }),
+  z.object({
+    op: z.literal('update_relationship'),
+    sceneId: z.string(),
+    id: z.string(),
+    patchJson: z.string().describe('JSON with any of "params", "conditions", "source", "target" (each replaces the old value)'),
+  }),
+  z.object({
+    op: z.literal('remove_relationship'),
+    sceneId: z.string(),
+    id: z.string(),
+  }),
+  z.object({
+    op: z.literal('create_rule'),
+    sceneId: z.string(),
+    ruleJson: z.string().describe('JSON {"name", "when": {"event", "subject": EntityRef, "other": EntityRef}, "conditions": [Condition], "actions": [Action]}'),
+  }),
+  z.object({
+    op: z.literal('remove_rule'),
+    sceneId: z.string(),
+    id: z.string(),
+  }),
+  z.object({
+    op: z.literal('set_rule_enabled'),
+    sceneId: z.string(),
+    id: z.string(),
+    enabled: z.boolean(),
   }),
 ]);
 
@@ -97,6 +131,24 @@ export type Operation = z.infer<typeof operationSchema>;
 export interface ApplyResult {
   createdDefinitionIds: Id[];
   createdEntityIds: Id[];
+  createdRelationshipIds: Id[];
+  createdRuleIds: Id[];
+}
+
+/**
+ * Replaces temporary names from earlier operations in this list with the real
+ * ids: {"kind":"entity","id":<place ref>}, {"kind":"object","id":<definition ref>}
+ * and a spawn action's "object".
+ */
+function substituteRefs(value: unknown, entities: Map<string, Id>, objects: Map<string, Id>): unknown {
+  if (Array.isArray(value)) return value.map((v) => substituteRefs(v, entities, objects));
+  if (typeof value !== 'object' || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = substituteRefs(v, entities, objects);
+  if (out.kind === 'entity' && typeof out.id === 'string') out.id = entities.get(out.id) ?? out.id;
+  if (out.kind === 'object' && typeof out.id === 'string') out.id = objects.get(out.id) ?? out.id;
+  if (out.type === 'spawn' && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
+  return out;
 }
 
 function parseJson(text: string, what: string): unknown {
@@ -126,7 +178,9 @@ function sceneOfEntity(project: Project, entityId: Id): Id {
  */
 export function applyOperations(project: Project, ops: Operation[], registry: ComponentRegistry): ApplyResult {
   const refs = new Map<string, Id>();
-  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [] };
+  const entityRefs = new Map<string, Id>();
+  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [] };
+  const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
   for (const op of ops) {
     switch (op.op) {
@@ -199,9 +253,37 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         const def = m.getDefinition(project, defId);
         const entity = instantiateDefinition(def, { x: op.x, y: op.y }, op.name ?? def.name);
         m.addEntity(project, op.sceneId, entity);
+        if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);
         break;
       }
+      case 'create_relationship': {
+        const id = logic.addRelationship(project, op.sceneId, logicJson(op.relationshipJson, 'Relationship') as unknown as Parameters<typeof logic.addRelationship>[2]);
+        result.createdRelationshipIds.push(id);
+        break;
+      }
+      case 'update_relationship': {
+        const patch = logicJson(op.patchJson, 'Relationship change');
+        const allowed = ['params', 'conditions', 'source', 'target'];
+        const extra = Object.keys(patch).find((k) => !allowed.includes(k));
+        if (extra) throw new m.ModelError(`Relationship change cannot set "${extra}" (only ${allowed.join(', ')})`);
+        logic.updateRelationship(project, op.sceneId, op.id, patch);
+        break;
+      }
+      case 'remove_relationship':
+        logic.removeRelationship(project, op.sceneId, op.id);
+        break;
+      case 'create_rule': {
+        const id = logic.addRule(project, op.sceneId, logicJson(op.ruleJson, 'Rule') as unknown as Parameters<typeof logic.addRule>[2]);
+        result.createdRuleIds.push(id);
+        break;
+      }
+      case 'remove_rule':
+        logic.removeRule(project, op.sceneId, op.id);
+        break;
+      case 'set_rule_enabled':
+        logic.setRuleEnabled(project, op.sceneId, op.id, op.enabled);
+        break;
     }
   }
   return result;

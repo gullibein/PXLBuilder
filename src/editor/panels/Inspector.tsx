@@ -4,6 +4,7 @@ import { resolveEntity } from '../../core/model/resolve';
 import type { ComponentMap, Id, ObjectDefinition, Scene } from '../../core/types';
 import { CATEGORIES, categoryOf } from '../categories';
 import { getActiveScene, useEditor } from '../store';
+import { EntityLogic } from '../logic/LogicPanel';
 import { FieldEditor, ListInput, NumberInput, TextInput, Vec2Input } from './FieldEditor';
 
 export function Inspector() {
@@ -241,6 +242,10 @@ function EntityInspector({ scene, entityId }: { scene: Scene; entityId: Id }) {
         <Row label={def ? 'instance' : 'tags'}>
           <ListInput value={entity.tags} placeholder="e.g. boss, tutorial" testId="entity-tags" onCommit={(tags) => edit('Set tags', (p) => m.setEntityTags(p, sid, entityId, tags))} />
         </Row>
+      </Section>
+
+      <Section title="Connections & rules" testId="connections">
+        <EntityLogic scene={scene} entityId={entityId} />
       </Section>
 
       <ComponentList

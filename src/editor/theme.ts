@@ -12,4 +12,6 @@ export const theme = {
   marqueeFill: 'rgba(139, 123, 255, 0.12)',
   marqueeStroke: 'rgba(139, 123, 255, 0.9)',
   erase: '#ff5d73',
+  /** Existing connections between objects (relationships). */
+  logic: '#ffc65c',
 };

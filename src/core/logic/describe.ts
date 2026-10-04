@@ -79,7 +79,7 @@ export function describeRule(project: Project, scene: Scene | null, rule: Rule):
 /** "Switch controls Door", plus parameters and conditions. */
 export function describeRelationship(project: Project, scene: Scene | null, rel: Relationship): string {
   const t = relationshipRegistry.get(rel.type);
-  const roles: Roles = rel.type === 'controls' ? { other: 'who uses it' } : rel.type === 'requires' ? { subject: 'who touches it' } : {};
+  const roles: Roles = rel.type === 'controls' ? { other: 'whoever uses it' } : rel.type === 'requires' ? { subject: 'whoever touches it' } : {};
   let text = `${describeRef(project, scene, rel.source)} ${t?.verb ?? rel.type} ${describeRef(project, scene, rel.target)}`;
   const params = Object.entries(rel.params).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(t?.params[k]?.default));
   if (params.length) text += ` (${params.map(([k, v]) => `${k}: ${String(v)}`).join(', ')})`;

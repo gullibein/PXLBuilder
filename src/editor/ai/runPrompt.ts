@@ -67,7 +67,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
 /** Applies AI operations as one transaction. Invalid operations reject the whole set. */
 export function applyAIOperations(request: string, message: string, changes: string[], operations: Operation[]): PromptOutcome {
   const { edit, logMessage } = useEditor.getState();
-  let result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [] };
+  let result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [] };
   const ok = edit(
     `✨ ${labelFor(request)}`,
     (p) => {

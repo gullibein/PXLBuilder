@@ -73,9 +73,8 @@ export function createLadderAsset(): AssetRecord {
 
 /** Starter art: a floor lever, handle leaning left. Drawn mirrored while the switch is on. */
 const LEVER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
-<rect x="14" y="10" width="3" height="3" fill="#6b6f7a"/><rect x="12" y="13" width="3" height="3" fill="#6b6f7a"/><rect x="10" y="16" width="3" height="3" fill="#6b6f7a"/>
-<rect x="15" y="19" width="3" height="5" fill="#6b6f7a"/>
-<rect x="11" y="6" width="5" height="5" fill="#e5534b"/><rect x="12" y="7" width="2" height="2" fill="#ff8f86"/>
+<rect x="14" y="20" width="4" height="4" fill="#6b6f7a"/><rect x="12" y="17" width="4" height="4" fill="#6b6f7a"/><rect x="10" y="14" width="4" height="4" fill="#6b6f7a"/><rect x="8" y="11" width="4" height="4" fill="#6b6f7a"/>
+<rect x="4" y="5" width="7" height="7" fill="#e5534b"/><rect x="5" y="6" width="3" height="2" fill="#ff8f86"/>
 <rect x="6" y="24" width="20" height="8" fill="#4b4f5c"/><rect x="6" y="24" width="20" height="2" fill="#7a7f8f"/>
 </svg>`;
 
