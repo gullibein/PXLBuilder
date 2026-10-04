@@ -7,10 +7,13 @@
  * separate demo logic. Rendering uses the shared renderer.
  */
 import type { ComponentRegistry } from '../core/components/registry';
+import { itemNameOf } from '../core/graph/graph';
+import { instantiateDefinition } from '../core/model/factory';
 import { getEntitySize } from '../core/model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
-import type { Id, Project, Scene, Vec2 } from '../core/types';
-import type { Camera } from '../render/renderer';
+import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
+import type { Camera, RenderEntity } from '../render/renderer';
+import { Gameplay } from './gameplay';
 import type { InputState } from './input';
 import { moveAndCollide, standingOn, type Box } from './physics';
 
@@ -26,8 +29,12 @@ export interface Controller {
 export interface RuntimeEntity {
   id: Id;
   name: string;
+  definitionId: Id | null;
+  tags: string[];
   /** Resolved editor state at Play time (components, look). Runtime-only changes go in the fields below. */
   base: ResolvedEntity;
+  /** False once collected, killed or removed: it no longer moves, collides or draws. */
+  alive: boolean;
   x: number;
   y: number;
   vx: number;
@@ -44,8 +51,22 @@ export interface RuntimeEntity {
   coyote: number;
   jumpBuffer: number;
   spawn: Vec2;
-  /** How many times it fell out of the level and was put back. */
+  /** How many times it was put back at its start (fell out of the level, or died). */
   respawns: number;
+  /** Opened (doors…): it no longer blocks and is drawn faded. */
+  open: boolean;
+  switch: { activation: 'interact' | 'touch'; once: boolean; on: boolean; used: boolean } | null;
+  health: { current: number; max: number } | null;
+  receiver: { sources: string[]; invincibility: number } | null;
+  /** Damage dealt on contact (Damage.amount), or null. */
+  damage: number | null;
+  /** Seconds left without taking damage. */
+  invincible: number;
+  /** Item name -> count, or null without an Inventory. */
+  inventory: Map<string, number> | null;
+  collectible: { item: string; keep: boolean } | null;
+  /** Ids of the entities it touches right now (moving entities only). */
+  touching: Set<Id>;
 }
 
 /** Fixed simulation step: stable physics regardless of display refresh rate. */
@@ -91,8 +112,8 @@ function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
   return ladders;
 }
 
-function buildEntity(project: Project, scene: Scene, index: number, registry: ComponentRegistry): RuntimeEntity {
-  const r = resolveEntity(project, scene.entities[index], registry);
+function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
+  const r = resolveEntity(project, instance, registry);
   const c = r.components;
   const pb = c.PhysicsBody;
   const col = c.Collider;
@@ -107,10 +128,20 @@ function buildEntity(project: Project, scene: Scene, index: number, registry: Co
   }
   const cc = c.CharacterController;
   const vel = (pb?.velocity as Vec2 | undefined) ?? { x: 0, y: 0 };
+  const objectName = project.definitions.find((d) => d.id === r.definitionId)?.name ?? r.name;
+  const item = itemNameOf(c, objectName);
+  let inventory: Map<string, number> | null = null;
+  if (c.Inventory) {
+    inventory = new Map();
+    for (const name of (c.Inventory.items as string[]) ?? []) inventory.set(name, (inventory.get(name) ?? 0) + 1);
+  }
   return {
     id: r.id,
     name: r.name,
+    definitionId: r.definitionId,
+    tags: r.tags,
     base: r,
+    alive: true,
     x: r.transform.position.x,
     y: r.transform.position.y,
     vx: vel.x,
@@ -126,32 +157,55 @@ function buildEntity(project: Project, scene: Scene, index: number, registry: Co
     jumpBuffer: 0,
     spawn: { ...r.transform.position },
     respawns: 0,
+    open: c.Openable?.startsOpen === true,
+    switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
+    health: c.Health ? { current: Number(c.Health.currentHealth), max: Number(c.Health.maxHealth) } : null,
+    receiver: c.DamageReceiver ? { sources: (c.DamageReceiver.damageSources as string[]) ?? [], invincibility: Number(c.DamageReceiver.invincibilityDuration) } : null,
+    damage: c.Damage ? Number(c.Damage.amount) : null,
+    invincible: 0,
+    inventory,
+    collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume' } : null,
+    touching: new Set(),
   };
 }
 
 export class Runtime {
-  readonly entities: RuntimeEntity[];
+  entities: RuntimeEntity[] = [];
   readonly gravity: Vec2;
   readonly camera: Camera;
+  /** Events, rules and gameplay systems. */
+  readonly gameplay: Gameplay;
   time = 0;
   private accumulator = 0;
-  /** Static solids never move: computed once. */
-  private readonly staticSolids: Box[];
+  /** Solids that never move: recomputed only when something opens, closes, appears or goes away. */
+  private staticSolids: Box[] = [];
+  private solidsDirty = true;
   /** Tops of ladders: one-way platforms. */
-  private readonly ladderTops: Box[];
+  private ladderTops: Box[] = [];
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
-  private readonly ladders: Ladder[];
-  private readonly fallLimit: number;
-  private readonly cameraTarget: RuntimeEntity | null;
-  private readonly followStrength: number;
+  private ladders: Ladder[] = [];
+  private fallLimit = 0;
+  private cameraTarget: RuntimeEntity | null = null;
+  private followStrength = 0.15;
+  private readonly scene: Scene;
 
-  constructor(project: Project, sceneId: Id, registry: ComponentRegistry, opts: { zoom?: number } = {}) {
-    const scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
-    this.entities = scene.entities.map((_, i) => buildEntity(project, scene, i, registry));
-    this.gravity = { ...scene.world.gravity };
+  constructor(
+    private readonly project: Project,
+    sceneId: Id,
+    private readonly registry: ComponentRegistry,
+    opts: { zoom?: number } = {},
+  ) {
+    this.scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
+    this.gravity = { ...this.scene.world.gravity };
+    this.camera = { x: 0, y: 0, zoom: opts.zoom ?? 1 };
+    this.gameplay = new Gameplay(this, project, this.scene);
+    this.load();
+  }
 
-    const isSolid = (e: RuntimeEntity) => e.collider && !e.collider.trigger && (e.body === 'static' || e.body === 'none');
-    this.staticSolids = this.entities.filter(isSolid).map((e) => boxOf(e)!);
+  /** (Re)builds the level from the project: everything back at its start. */
+  private load(): void {
+    this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
+    this.solidsDirty = true;
     this.ladders = ladderColumns(this.entities.filter((e) => e.climbable));
     // The top of each ladder is a one-way platform you can stand on and climb down from.
     this.ladderTops = this.ladders.map((l) => ({ x: l.x, y: l.top + 1, hw: l.hw, hh: 1 }));
@@ -162,7 +216,14 @@ export class Runtime {
     this.cameraTarget = this.entities.find((e) => e.base.components.CameraTarget) ?? this.entities.find((e) => e.controller) ?? null;
     const fs = this.cameraTarget?.base.components.CameraTarget?.followStrength;
     this.followStrength = typeof fs === 'number' ? fs : 0.15;
-    this.camera = { x: this.cameraTarget?.x ?? 0, y: this.cameraTarget?.y ?? 0, zoom: opts.zoom ?? 1 };
+    this.camera.x = this.cameraTarget?.x ?? 0;
+    this.camera.y = this.cameraTarget?.y ?? 0;
+    this.gameplay.reset();
+  }
+
+  /** Starts the level again from the beginning (a rule action, or R in play). */
+  restart(): void {
+    this.load();
   }
 
   /** Advances by a frame's worth of real time using fixed steps. */
@@ -183,18 +244,22 @@ export class Runtime {
 
   step(dt: number, input: InputState): void {
     this.time += dt;
+    if (this.solidsDirty) {
+      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
+      this.solidsDirty = false;
+    }
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
-      if (e.body === 'kinematic') {
+      if (e.body === 'kinematic' && e.alive) {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (e.collider && !e.collider.trigger) kinematicSolids.push(boxOf(e)!);
+        if (this.isSolid(e)) kinematicSolids.push(boxOf(e)!);
       }
     }
     const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
 
     for (const e of this.entities) {
-      if (e.body !== 'dynamic') continue;
+      if (e.body !== 'dynamic' || !e.alive) continue;
       if (e.controller) this.control(e, input, dt);
       if (!e.climbing) {
         e.vx += this.gravity.x * e.gravityScale * dt;
@@ -219,6 +284,34 @@ export class Runtime {
       }
       if (e.y > this.fallLimit) this.respawn(e);
     }
+    this.gameplay.update(dt, input);
+  }
+
+  private isSolid(e: RuntimeEntity): boolean {
+    return e.alive && !e.open && !!e.collider && !e.collider.trigger;
+  }
+
+  /** Something opened, closed, appeared or went away. */
+  markSolidsDirty(): void {
+    this.solidsDirty = true;
+  }
+
+  boxOf(e: RuntimeEntity): Box | null {
+    return boxOf(e);
+  }
+
+  byId(id: Id): RuntimeEntity | undefined {
+    return this.entities.find((e) => e.id === id);
+  }
+
+  /** Adds a new instance of a library object during play. */
+  spawn(definitionId: Id, at: Vec2): RuntimeEntity | null {
+    const def = this.project.definitions.find((d) => d.id === definitionId);
+    if (!def) return null;
+    const e = buildEntity(this.project, instantiateDefinition(def, at), this.registry);
+    this.entities.push(e);
+    this.solidsDirty = true;
+    return e;
   }
 
   /** Player-style movement for entities with a CharacterController. */
@@ -305,13 +398,21 @@ export class Runtime {
     return e.grounded && !this.ladderTops.some((t) => standingOn(boxOf(e)!, [t]));
   }
 
-  private respawn(e: RuntimeEntity): void {
+  /** Puts an entity back at its start with full health (after falling out of the level or dying). */
+  respawn(e: RuntimeEntity): void {
     e.x = e.spawn.x;
     e.y = e.spawn.y;
     e.vx = 0;
     e.vy = 0;
     e.climbing = false;
+    e.touching = new Set();
+    if (e.health) e.health.current = e.health.max;
+    if (!e.alive) {
+      e.alive = true;
+      this.solidsDirty = true;
+    }
     e.respawns++;
+    this.gameplay.emit('respawned', e);
   }
 
   private followCamera(dt: number): void {
@@ -322,12 +423,37 @@ export class Runtime {
     this.camera.y += (t.y - this.camera.y) * k;
   }
 
-  /** Entities as the renderer expects them, at their current runtime positions. */
-  renderList(): ResolvedEntity[] {
-    return this.entities.map((e) => (e.x === e.base.transform.position.x && e.y === e.base.transform.position.y ? e.base : { ...e.base, transform: { ...e.base.transform, position: { x: e.x, y: e.y } } }));
+  /**
+   * Entities as the renderer expects them, at their current runtime positions.
+   * Open things are faded, a switch that is on is drawn mirrored, and a
+   * character that was just hurt blinks.
+   */
+  renderList(): RenderEntity[] {
+    const out: RenderEntity[] = [];
+    for (const e of this.entities) {
+      if (!e.alive) continue;
+      const t = e.base.transform;
+      const mirrored = e.switch?.on === true;
+      const moved = e.x !== t.position.x || e.y !== t.position.y;
+      let r: RenderEntity = moved || mirrored ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } } : e.base;
+      const alpha = e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1;
+      if (alpha !== 1) r = { ...r, alpha };
+      out.push(r);
+    }
+    return out;
+  }
+
+  /** On-screen messages from rules ("You win!"). */
+  get messages(): string[] {
+    return this.gameplay.messages.map((m) => m.text);
+  }
+
+  /** What happened so far (most recent last). */
+  get eventLog() {
+    return this.gameplay.log;
   }
 
   find(name: string): RuntimeEntity | undefined {
-    return this.entities.find((e) => e.name === name);
+    return this.entities.find((e) => e.name === name && e.alive) ?? this.entities.find((e) => e.name === name);
   }
 }

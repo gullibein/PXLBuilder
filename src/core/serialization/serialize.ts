@@ -17,6 +17,7 @@ import type { ComponentRegistry } from '../components/registry';
 import type { Project } from '../types';
 import { migrateProject } from './migrations';
 import { projectIndexSchema, projectSchema } from './schema';
+import { validateRelationship, validateRule } from '../logic/mutations';
 import { FORMAT_VERSION } from './version';
 
 export type ProjectFiles = Record<string, unknown>;
@@ -96,7 +97,7 @@ export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistr
 
   const integrity = checkIntegrity(project);
   if (integrity.length) throw new ProjectLoadError(integrity.join('; '));
-  return { project, warnings: checkComponents(project, registry) };
+  return { project, warnings: [...checkComponents(project, registry), ...checkLogic(project)] };
 }
 
 export function projectToBundle(project: Project): ProjectBundle {
@@ -159,6 +160,28 @@ export function checkComponents(project: Project, registry: ComponentRegistry): 
   for (const s of project.scenes) {
     for (const e of s.entities) {
       for (const [type, props] of Object.entries(e.components)) check(`Entity "${e.name}" in "${s.name}"`, type, props, true);
+    }
+  }
+  return warnings;
+}
+
+/** Relationship and rule checks, as warnings (they are kept; play ignores what it cannot use). */
+export function checkLogic(project: Project): string[] {
+  const warnings: string[] = [];
+  for (const s of project.scenes) {
+    for (const r of s.relationships) {
+      try {
+        validateRelationship(project, s.id, r);
+      } catch (e) {
+        warnings.push(`"${s.name}": ${(e as Error).message}`);
+      }
+    }
+    for (const r of s.rules) {
+      try {
+        validateRule(project, s.id, r);
+      } catch (e) {
+        warnings.push(`"${s.name}": ${(e as Error).message}`);
+      }
     }
   }
   return warnings;

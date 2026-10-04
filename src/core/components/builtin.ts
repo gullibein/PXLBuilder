@@ -61,7 +61,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Health',
     label: 'Health',
-    description: 'Hit points.',
+    description: 'Hit points. During play, damage lowers currentHealth; at 0 the entity dies (a player-controlled one respawns at its start with full health, anything else is removed).',
     category: 'Gameplay',
     fields: {
       maxHealth: { kind: 'number', default: 3, min: 1, step: 1, integer: true },
@@ -71,7 +71,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'DamageReceiver',
     label: 'Damage Receiver',
-    description: 'Can receive damage from entities carrying any of the listed tags.',
+    description: 'Takes damage from entities that have a Damage component and carry any of the listed tags (or that a "damages" relationship points from). Needs Health.',
     category: 'Gameplay',
     fields: {
       damageSources: { kind: 'stringList', default: ['hazard', 'enemy'], description: 'Tags of entities that can deal damage' },
@@ -81,7 +81,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Damage',
     label: 'Damage',
-    description: 'Deals damage on contact.',
+    description: 'Deals damage on contact to entities whose Damage Receiver accepts this entity (by tag).',
     category: 'Gameplay',
     fields: {
       amount: { kind: 'number', default: 1, min: 0, step: 1 },
@@ -90,20 +90,40 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Inventory',
     label: 'Inventory',
-    description: 'Items held by the entity.',
+    description: 'Lets the entity pick up Collectibles by touching them. `items` are the items it starts with (repeat a name to start with several).',
     category: 'Gameplay',
     fields: {
-      items: { kind: 'stringList', default: [] },
+      items: { kind: 'stringList', default: [], description: 'Items held at the start' },
     },
   },
   {
     type: 'Collectible',
     label: 'Collectible',
-    description: 'Can be picked up by an entity with an Inventory.',
+    description: 'Picked up (and removed from the level) when an entity with an Inventory touches it.',
     category: 'Gameplay',
     fields: {
-      collectionBehavior: { kind: 'enum', options: ['addToInventory', 'consume'], default: 'consume' },
-      itemId: { kind: 'string', default: '', description: 'Item name added to the collector inventory' },
+      collectionBehavior: { kind: 'enum', options: ['addToInventory', 'consume'], default: 'addToInventory', description: 'addToInventory: the collector keeps it as an item. consume: it is used up at once (only the "collected" event happens)' },
+      itemId: { kind: 'string', default: '', description: 'Item name added to the collector inventory (empty: the object name in lower case)' },
+    },
+  },
+  {
+    type: 'Openable',
+    label: 'Openable',
+    description: 'Something that opens and closes, like a door. While open it does not block and is drawn faded. Switches, keys ("requires") and rules open it.',
+    category: 'Gameplay',
+    fields: {
+      startsOpen: { kind: 'boolean', default: false },
+    },
+  },
+  {
+    type: 'Switch',
+    label: 'Switch',
+    description: 'A lever or button. Using it flips it on/off and fires "switch_activated"; whatever it "controls" opens or closes.',
+    category: 'Gameplay',
+    fields: {
+      activation: { kind: 'enum', options: ['interact', 'touch'], default: 'interact', description: 'interact: press E while touching it. touch: used by walking into it' },
+      once: { kind: 'boolean', default: false, description: 'Can only be used once' },
+      startsOn: { kind: 'boolean', default: false },
     },
   },
   {

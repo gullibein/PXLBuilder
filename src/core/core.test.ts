@@ -85,17 +85,17 @@ describe('definitions and instances', () => {
 
   it('rejects invalid values without mutating', () => {
     const { project, sceneId, entityId } = withPlayer();
-    expect(() => produce(project, (d) => m.setEntityComponentField(d, sceneId, entityId, 'Health', 'maxHealth', 3, registry))).toThrow(/no Health/);
+    expect(() => produce(project, (d) => m.setEntityComponentField(d, sceneId, entityId, 'Damage', 'amount', 3, registry))).toThrow(/no Damage/);
     expect(() => produce(project, (d) => m.setEntityComponentField(d, sceneId, entityId, 'Sprite', 'width', 'big', registry))).toThrow(/number/);
     expect(() => produce(project, (d) => m.setEntityComponentField(d, sceneId, entityId, 'Sprite', 'nope', 1, registry))).toThrow(/no field/);
   });
 
   it('adds and removes components on instances', () => {
     const { project, sceneId, entityId } = withPlayer();
-    let p = produce(project, (d) => m.addEntityComponent(d, sceneId, entityId, 'Health', registry, { maxHealth: 5 }));
+    let p = produce(project, (d) => m.addEntityComponent(d, sceneId, entityId, 'Damage', registry, { amount: 5 }));
     let r = resolveEntity(p, m.getEntity(p, sceneId, entityId), registry);
-    expect(r.components.Health).toEqual({ maxHealth: 5, currentHealth: 3 });
-    expect(r.instanceOnlyComponents.has('Health')).toBe(true);
+    expect(r.components.Damage).toEqual({ amount: 5 });
+    expect(r.instanceOnlyComponents.has('Damage')).toBe(true);
 
     p = produce(p, (d) => m.removeEntityComponent(d, sceneId, entityId, 'CameraTarget'));
     r = resolveEntity(p, m.getEntity(p, sceneId, entityId), registry);

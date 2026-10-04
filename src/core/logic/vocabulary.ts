@@ -1,0 +1,225 @@
+/**
+ * The game-logic vocabulary: which events happen during play, which
+ * relationship types exist, and the shape of conditions and actions.
+ *
+ * Events and relationship types live in registries, so new ones are added by
+ * registering them, not by editing the engine. The same descriptions feed the
+ * editor, validation and the AI's capability list.
+ */
+import { z } from 'zod';
+import { cloneDefault, validateField, type FieldSchema } from '../components/schema';
+
+// ---------------------------------------------------------------- events
+
+export interface EventType {
+  type: string;
+  description: string;
+  /** What `subject` and `other` mean for this event (null: not used). */
+  subject: string | null;
+  other: string | null;
+  /** Sentence for "When ...": {subject} and {other} are replaced by the rule's filters. */
+  phrase: string;
+}
+
+export const BUILTIN_EVENTS: EventType[] = [
+  { type: 'level_started', description: 'The level starts (also after a restart).', subject: null, other: null, phrase: 'the level starts' },
+  { type: 'touch_started', description: 'Something starts touching something else (overlapping it, standing on it or bumping into it).', subject: 'the moving entity that touched', other: 'what it touched', phrase: '{subject} touches {other}' },
+  { type: 'touch_ended', description: 'Two things stop touching.', subject: 'the moving entity', other: 'what it was touching', phrase: '{subject} stops touching {other}' },
+  { type: 'collected', description: 'An item is picked up.', subject: 'who picked it up', other: 'the item', phrase: '{subject} picks up {other}' },
+  { type: 'damaged', description: 'Something loses health.', subject: 'who was hurt', other: 'what hurt it', phrase: '{subject} is hurt by {other}' },
+  { type: 'died', description: 'Something runs out of health.', subject: 'who died', other: 'what dealt the last hit', phrase: '{subject} dies' },
+  { type: 'respawned', description: 'Something is put back at its start (after dying or falling out of the level).', subject: 'who respawned', other: null, phrase: '{subject} respawns' },
+  { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
+  { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
+  { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },
+  { type: 'spawned', description: 'A new entity appears (by a spawn action).', subject: 'the new entity', other: null, phrase: '{subject} appears' },
+];
+
+export class EventRegistry {
+  private readonly types = new Map<string, EventType>();
+  constructor(types: EventType[] = BUILTIN_EVENTS) {
+    for (const t of types) this.register(t);
+  }
+  register(t: EventType): void {
+    this.types.set(t.type, t);
+  }
+  get(type: string): EventType | undefined {
+    return this.types.get(type);
+  }
+  has(type: string): boolean {
+    return this.types.has(type);
+  }
+  list(): EventType[] {
+    return [...this.types.values()];
+  }
+}
+
+export const eventRegistry = new EventRegistry();
+
+// ---------------------------------------------------------------- relationship types
+
+export interface RelationshipType {
+  type: string;
+  /** Verb phrase for sentences: "Switch controls Door". */
+  verb: string;
+  description: string;
+  /** True when Play acts on it; false when it only records the design (for now). */
+  simulated: boolean;
+  params: Record<string, FieldSchema>;
+}
+
+export const BUILTIN_RELATIONSHIP_TYPES: RelationshipType[] = [
+  {
+    type: 'controls',
+    verb: 'controls',
+    description: 'When the source (a switch) is used, the target opens or closes.',
+    simulated: true,
+    params: { action: { kind: 'enum', options: ['toggle', 'open', 'close'], default: 'toggle', description: 'What using the switch does to the target' } },
+  },
+  {
+    type: 'requires',
+    verb: 'requires',
+    description: 'The source (e.g. a door) opens when something carrying the target item touches it. The target is the item (usually a collectible object like a key).',
+    simulated: true,
+    params: { consume: { kind: 'boolean', default: false, description: 'Use up the item when opening' } },
+  },
+  {
+    type: 'damages',
+    verb: 'damages',
+    description: 'Touching the source hurts the target (whatever its Damage Receiver says).',
+    simulated: true,
+    params: { amount: { kind: 'number', default: 1, min: 0, step: 1, description: 'Health lost per hit' } },
+  },
+  {
+    type: 'collects',
+    verb: 'collects',
+    description: 'The source picks up the target (a collectible) when touching it, even without an Inventory component.',
+    simulated: true,
+    params: {},
+  },
+  { type: 'targets', verb: 'targets', description: 'The source is after the target (e.g. an enemy targeting the player).', simulated: false, params: {} },
+  { type: 'follows', verb: 'follows', description: 'The source follows the target.', simulated: false, params: {} },
+  { type: 'protects', verb: 'protects', description: 'The source protects the target.', simulated: false, params: {} },
+  { type: 'contains', verb: 'contains', description: 'The source holds the target (e.g. a chest containing a key).', simulated: false, params: {} },
+];
+
+export class RelationshipRegistry {
+  private readonly types = new Map<string, RelationshipType>();
+  constructor(types: RelationshipType[] = BUILTIN_RELATIONSHIP_TYPES) {
+    for (const t of types) this.register(t);
+  }
+  register(t: RelationshipType): void {
+    this.types.set(t.type, t);
+  }
+  get(type: string): RelationshipType | undefined {
+    return this.types.get(type);
+  }
+  has(type: string): boolean {
+    return this.types.has(type);
+  }
+  list(): RelationshipType[] {
+    return [...this.types.values()];
+  }
+  /** Fills in defaults and checks every parameter; returns the full params or an error message. */
+  normalizeParams(type: string, params: Record<string, unknown>): { params: Record<string, unknown> } | { error: string } {
+    const t = this.types.get(type);
+    if (!t) return { error: `Unknown relationship type "${type}"` };
+    const out: Record<string, unknown> = {};
+    for (const [name, field] of Object.entries(t.params)) {
+      const value = name in params ? params[name] : cloneDefault(field);
+      const err = validateField(field, value);
+      if (err) return { error: `${type}.${name} ${err}` };
+      out[name] = value;
+    }
+    const unknown = Object.keys(params).find((k) => !(k in t.params));
+    if (unknown) return { error: `Relationship "${type}" has no parameter "${unknown}"` };
+    return { params: out };
+  }
+}
+
+export const relationshipRegistry = new RelationshipRegistry();
+
+// ---------------------------------------------------------------- shapes
+
+const id = z.string().min(1);
+
+export const entityRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('entity'), id }),
+  z.object({ kind: z.literal('object'), id }),
+  z.object({ kind: z.literal('tag'), tag: z.string().min(1) }),
+  z.object({ kind: z.literal('subject') }),
+  z.object({ kind: z.literal('other') }),
+  z.object({ kind: z.literal('any') }),
+]);
+
+const not = z.boolean().default(false);
+
+export const conditionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('has_item'), entity: entityRefSchema, item: z.string().min(1), count: z.number().int().min(1).default(1), not }),
+  z.object({ type: z.literal('health'), entity: entityRefSchema, compare: z.enum(['<', '<=', '==', '>=', '>']), value: z.number().finite(), not }),
+  z.object({ type: z.literal('is_open'), entity: entityRefSchema, not }),
+  z.object({ type: z.literal('switch_on'), entity: entityRefSchema, not }),
+]);
+
+const amount = z.number().finite().min(0);
+const count = z.number().int().min(1).default(1);
+
+export const actionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('open'), target: entityRefSchema }),
+  z.object({ type: z.literal('close'), target: entityRefSchema }),
+  z.object({ type: z.literal('toggle'), target: entityRefSchema }),
+  z.object({ type: z.literal('remove'), target: entityRefSchema }),
+  z.object({ type: z.literal('spawn'), object: id, at: entityRefSchema.nullable().default(null), x: z.number().finite().default(0), y: z.number().finite().default(0) }),
+  z.object({ type: z.literal('damage'), target: entityRefSchema, amount: amount.default(1) }),
+  z.object({ type: z.literal('heal'), target: entityRefSchema, amount: amount.default(1) }),
+  z.object({ type: z.literal('give_item'), target: entityRefSchema, item: z.string().min(1), count }),
+  z.object({ type: z.literal('take_item'), target: entityRefSchema, item: z.string().min(1), count }),
+  z.object({ type: z.literal('respawn'), target: entityRefSchema }),
+  z.object({ type: z.literal('restart_level') }),
+  z.object({ type: z.literal('show_message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(3) }),
+]);
+
+export const ruleSchema = z.object({
+  id,
+  name: z.string().default(''),
+  enabled: z.boolean().default(true),
+  when: z.object({
+    event: z.string().min(1),
+    subject: entityRefSchema.default({ kind: 'any' }),
+    other: entityRefSchema.default({ kind: 'any' }),
+  }),
+  conditions: z.array(conditionSchema).default([]),
+  actions: z.array(actionSchema).min(1),
+});
+
+export const relationshipSchema = z.object({
+  id,
+  type: z.string().min(1),
+  source: entityRefSchema,
+  target: entityRefSchema,
+  params: z.record(z.string(), z.unknown()).default({}),
+  conditions: z.array(conditionSchema).default([]),
+});
+
+/** Plain descriptions of conditions and actions, for the editor and the AI. */
+export const CONDITION_HELP: Record<string, string> = {
+  has_item: 'entity carries at least `count` of `item` (an item name, as in Collectible.itemId)',
+  health: 'entity health compared with `value`',
+  is_open: 'entity (e.g. a door) is open',
+  switch_on: 'entity (a switch) is on',
+};
+
+export const ACTION_HELP: Record<string, string> = {
+  open: 'open target (it stops blocking and fades)',
+  close: 'close target',
+  toggle: 'open target if closed, close it if open',
+  remove: 'take target out of play',
+  spawn: 'create an instance of `object` (a library object id) at the position of `at`, or at x,y when `at` is null',
+  damage: 'take `amount` health from target',
+  heal: 'give `amount` health to target (up to its maximum)',
+  give_item: 'add `count` of `item` to target',
+  take_item: 'remove `count` of `item` from target',
+  respawn: 'put target back at its start with full health',
+  restart_level: 'start the level again from the beginning',
+  show_message: 'show `text` on screen for `seconds`',
+};

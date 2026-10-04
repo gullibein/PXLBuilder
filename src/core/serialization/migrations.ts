@@ -1,6 +1,6 @@
 import { componentRegistry } from '../components/builtin';
 import { generateId } from '../ids';
-import { createLadderAsset, createStarterDefinitions } from '../model/factory';
+import { createStarterAssets, createStarterDefinitions } from '../model/factory';
 import { FORMAT_VERSION } from './version';
 
 /**
@@ -52,8 +52,9 @@ function migrateV1toV2(raw: Raw): Raw {
 
   const has = (name: string) => defs.some((d) => d.name === name);
   if (!has('Stone') || !has('Ladder')) {
-    const ladder = createLadderAsset();
-    const starters = createStarterDefinitions(componentRegistry, ladder);
+    const starterAssets = createStarterAssets();
+    const ladder = starterAssets.ladder;
+    const starters = createStarterDefinitions(componentRegistry, starterAssets);
     if (!has('Stone')) defs.push(starters.find((d) => d.name === 'Stone')!);
     if (!has('Ladder')) {
       defs.push(starters.find((d) => d.name === 'Ladder')!);
@@ -118,9 +119,50 @@ function migrateV2toV3(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v3 -> v4: game logic.
+ * - Scenes get relationships and rules (empty).
+ * - The starter Player gets Health (3), a Damage Receiver and an Inventory, so
+ *   hazards hurt it and it picks things up; the starter Door becomes Openable;
+ *   the starter Coin is kept as an item. Only objects still recognisably the
+ *   starter ones are touched, and components already there are left alone.
+ * - The new starter objects (Key, Switch) are added when missing.
+ */
+function migrateV3toV4(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  for (const scene of project.scenes ?? []) {
+    scene.relationships ??= [];
+    scene.rules ??= [];
+  }
+  const starterAssets = createStarterAssets();
+  const starters = createStarterDefinitions(componentRegistry, starterAssets);
+  const fresh = (name: string) => starters.find((d) => d.name === name)!;
+  const defs: Raw[] = project.definitions ?? [];
+  const starterNamed = (name: string) => defs.find((d) => (d.metadata?.starter ?? d.name) === name);
+
+  const player = starterNamed('Player');
+  if (player?.components?.CharacterController) {
+    for (const type of ['Health', 'DamageReceiver', 'Inventory']) player.components[type] ??= structuredClone(fresh('Player').components[type]);
+  }
+  const door = starterNamed('Door');
+  if (door?.components) door.components.Openable ??= structuredClone(fresh('Door').components.Openable);
+  const coin = starterNamed('Coin');
+  if (coin?.components?.Collectible?.collectionBehavior === 'consume') coin.components.Collectible.collectionBehavior = 'addToInventory';
+
+  for (const name of ['Key', 'Switch']) {
+    if (starterNamed(name)) continue;
+    const def = fresh(name);
+    defs.push(def);
+    if (name === 'Switch') project.assets = [...(project.assets ?? []), starterAssets.lever];
+  }
+  project.definitions = defs;
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
+  { from: 3, to: 4, migrate: migrateV3toV4 },
 ];
 
 export class MigrationError extends Error {

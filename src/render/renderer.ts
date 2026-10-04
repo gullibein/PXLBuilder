@@ -94,6 +94,9 @@ export function shade(hex: string, amount: number): string {
   return `rgb(${ch((n >> 16) & 255)}, ${ch((n >> 8) & 255)}, ${ch(n & 255)})`;
 }
 
+/** An entity to draw; `alpha` fades it (open doors, blinking after a hit). */
+export type RenderEntity = ResolvedEntity & { alpha?: number };
+
 const tileKey = (definitionId: string | null, x: number, y: number) => `${definitionId}|${Math.round(x)}|${Math.round(y)}`;
 
 /**
@@ -101,7 +104,7 @@ const tileKey = (definitionId: string | null, x: number, y: number) => `${defini
  * Tile objects of the same kind join into one surface: a lighter top edge only
  * where nothing sits above, a darker base only where nothing sits below.
  */
-export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEntity[], images: ImageLookup = noImages): void {
+export function drawEntities(ctx: CanvasRenderingContext2D, entities: RenderEntity[], images: ImageLookup = noImages): void {
   const tiles = new Set<string>();
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
 
@@ -112,6 +115,7 @@ export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEn
     const { position, rotation, scale } = entity.transform;
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
     ctx.save();
+    if (entity.alpha !== undefined) ctx.globalAlpha = entity.alpha;
     ctx.translate(position.x, position.y);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(scale.x, scale.y);

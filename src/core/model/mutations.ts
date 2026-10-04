@@ -7,10 +7,11 @@
 import type { ComponentRegistry } from '../components/registry';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import { createLadderAsset, createStarterDefinitions } from './factory';
+import { createStarterAssets, createStarterDefinitions, type StarterAssets } from './factory';
 import { validateGrid } from './spriteGrid';
 import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
+import { pruneLogic } from '../logic/refs';
 
 export class ModelError extends Error {
   constructor(message: string) {
@@ -142,6 +143,8 @@ export function removeEntities(project: Project, sceneId: Id, entityIds: Id[]): 
   const scene = getScene(project, sceneId);
   const ids = new Set(entityIds);
   scene.entities = scene.entities.filter((e) => !ids.has(e.id));
+  // Relationships and rules about a deleted entity go with it (undo brings them back).
+  pruneLogic(scene, (ref) => ref.kind === 'entity' && ids.has(ref.id));
 }
 
 /** Copies entities (with new ids) offset by `offset`. Returns the new ids in order. */
@@ -358,10 +361,15 @@ export function starterKeyOf(def: ObjectDefinition, starters: ObjectDefinition[]
 
 /** Fresh starter definitions whose image assets reuse identical ones already in the project. */
 function freshStarters(project: Project, registry: ComponentRegistry): { defs: ObjectDefinition[]; newAssets: AssetRecord[] } {
-  const ladder = createLadderAsset();
-  const existing = project.assets.find((a) => a.data === ladder.data);
-  const defs = createStarterDefinitions(registry, existing ?? ladder);
-  return { defs, newAssets: existing ? [] : [ladder] };
+  const fresh = createStarterAssets();
+  const newAssets: AssetRecord[] = [];
+  const reuse = (a: AssetRecord) => {
+    const existing = project.assets.find((x) => x.data === a.data);
+    if (!existing) newAssets.push(a);
+    return existing ?? a;
+  };
+  const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever) };
+  return { defs: createStarterDefinitions(registry, assets), newAssets };
 }
 
 function applyStarter(project: Project, def: ObjectDefinition, starter: ObjectDefinition, newAssets: AssetRecord[]): void {
@@ -485,6 +493,7 @@ export function deleteDefinition(project: Project, definitionId: Id, registry: C
     }
   }
   project.definitions = project.definitions.filter((d) => d.id !== definitionId);
+  for (const scene of project.scenes) pruneLogic(scene, (ref) => ref.kind === 'object' && ref.id === definitionId);
 }
 
 export function countInstances(project: Project, definitionId: Id): number {

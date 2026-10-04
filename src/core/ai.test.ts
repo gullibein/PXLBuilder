@@ -30,11 +30,11 @@ function level() {
 const apply = (project: Project, ops: Operation[]) => produce(project, (d) => void applyOperations(d, ops, registry));
 
 describe('operations', () => {
-  it('"Give the player three hearts" -> add Health on the instance', () => {
+  it('"Make the player hurt enemies" -> add Damage on the instance', () => {
     const { project, sceneId, player } = level();
-    const next = apply(project, [{ op: 'add_component', target: 'instance', id: player.id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }]);
+    const next = apply(project, [{ op: 'add_component', target: 'instance', id: player.id, component: 'Damage', propsJson: '{"amount":2}' }]);
     const r = resolveEntity(next, m.getEntity(next, sceneId, player.id), registry);
-    expect(r.components.Health).toEqual({ maxHealth: 3, currentHealth: 3 });
+    expect(r.components.Damage).toEqual({ amount: 2 });
   });
 
   it('"Make gravity 30% weaker" -> set_world', () => {

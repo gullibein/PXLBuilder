@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
 
 /** Structural schemas for the current format version (component props are checked against the component registry separately). */
 
@@ -32,6 +33,8 @@ export const sceneSchema = z.object({
     background: z.object({ imageAssetId: id.nullable(), fit: z.enum(['cover', 'tile']), parallax: z.number().min(0).max(1) }),
   }),
   entities: z.array(entitySchema),
+  relationships: z.array(relationshipSchema),
+  rules: z.array(ruleSchema),
 });
 
 export const definitionSchema = z.object({

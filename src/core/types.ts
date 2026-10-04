@@ -73,12 +73,75 @@ export interface WorldSettings {
   background: BackgroundSettings;
 }
 
+/**
+ * A reference to entities in a scene. Relationships and rules refer to things
+ * through these, so "every Coin" or "anything tagged enemy" works for copies
+ * placed later. `subject` / `other` mean the entities of the event a rule is
+ * reacting to (e.g. for "touch": who touched, and what they touched).
+ */
+export type EntityRef =
+  | { kind: 'entity'; id: Id }
+  | { kind: 'object'; id: Id }
+  | { kind: 'tag'; tag: string }
+  | { kind: 'subject' }
+  | { kind: 'other' }
+  | { kind: 'any' };
+
+/** A check that must hold for a rule (or a relationship) to take effect. */
+export type Condition =
+  | { type: 'has_item'; entity: EntityRef; item: string; count: number; not: boolean }
+  | { type: 'health'; entity: EntityRef; compare: '<' | '<=' | '==' | '>=' | '>'; value: number; not: boolean }
+  | { type: 'is_open'; entity: EntityRef; not: boolean }
+  | { type: 'switch_on'; entity: EntityRef; not: boolean };
+
+/** Something a rule does. */
+export type RuleAction =
+  | { type: 'open'; target: EntityRef }
+  | { type: 'close'; target: EntityRef }
+  | { type: 'toggle'; target: EntityRef }
+  | { type: 'remove'; target: EntityRef }
+  | { type: 'spawn'; object: Id; at: EntityRef | null; x: number; y: number }
+  | { type: 'damage'; target: EntityRef; amount: number }
+  | { type: 'heal'; target: EntityRef; amount: number }
+  | { type: 'give_item'; target: EntityRef; item: string; count: number }
+  | { type: 'take_item'; target: EntityRef; item: string; count: number }
+  | { type: 'respawn'; target: EntityRef }
+  | { type: 'restart_level' }
+  | { type: 'show_message'; text: string; seconds: number };
+
+/** WHEN event (about `subject` and `other`) AND all conditions DO actions. */
+export interface Rule {
+  id: Id;
+  name: string;
+  enabled: boolean;
+  when: { event: string; subject: EntityRef; other: EntityRef };
+  conditions: Condition[];
+  actions: RuleAction[];
+}
+
+/**
+ * A typed edge between things in a scene: "Switch controls Door", "Door
+ * requires Blue Key". Types come from the relationship registry; some have
+ * built-in meaning during play, others only describe the design.
+ */
+export interface Relationship {
+  id: Id;
+  type: string;
+  source: EntityRef;
+  target: EntityRef;
+  params: Record<string, unknown>;
+  /** All must hold for the relationship to take effect (e.g. "only if the player has the key"). */
+  conditions: Condition[];
+}
+
 export interface Scene {
   id: Id;
   name: string;
   world: WorldSettings;
   /** Ordered: later entities draw on top. */
   entities: EntityInstance[];
+  relationships: Relationship[];
+  rules: Rule[];
 }
 
 export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music';

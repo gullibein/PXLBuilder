@@ -18,7 +18,7 @@ function edited() {
     m.setDefinitionComponentField(d, player.id, 'CharacterController', 'jumpForce', 900, registry);
     m.setDefinitionComponentField(d, player.id, 'Sprite', 'height', 64, registry);
     m.renameDefinition(d, player.id, 'Knight');
-    m.addDefinitionComponent(d, player.id, 'Health', registry);
+    m.addDefinitionComponent(d, player.id, 'Damage', registry);
     m.addEntity(d, sceneId, placed);
     m.setEntityComponentField(d, sceneId, placed.id, 'CharacterController', 'speed', 50, registry);
     m.addDefinition(d, custom, registry);
