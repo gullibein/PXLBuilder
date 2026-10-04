@@ -26,7 +26,11 @@ export const entitySchema = z.object({
 export const sceneSchema = z.object({
   id,
   name: z.string(),
-  world: z.object({ gravity: vec2, backgroundColor: z.string() }),
+  world: z.object({
+    gravity: vec2,
+    backgroundColor: z.string(),
+    background: z.object({ imageAssetId: id.nullable(), fit: z.enum(['cover', 'tile']), parallax: z.number().min(0).max(1) }),
+  }),
   entities: z.array(entitySchema),
 });
 
@@ -44,6 +48,9 @@ export const assetSchema = z.object({
   name: z.string(),
   kind: z.enum(['image', 'spritesheet', 'sound', 'music']),
   path: z.string(),
+  data: z.string().startsWith('data:'),
+  width: z.number().nonnegative(),
+  height: z.number().nonnegative(),
 });
 
 export const projectSchema = z.object({

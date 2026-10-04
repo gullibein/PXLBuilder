@@ -148,13 +148,39 @@ contextual or opened on demand:
   size rounded up to whole grid steps. Objects drawn with the brush sit at
   cell centers.
 - **Tiles** are ordinary entities whose definition has
-  `metadata.placement = "tile"` (starter *Ground* and *Stone*, 32×32). They
+  `metadata.placement = "tile"` (starter *Platform*, *Stone* and *Ladder*, 32×32). They
   snap to whole cells when dropped or dragged, and the renderer joins
   neighbouring tiles of the same kind into one surface (lighter top edge only
   where nothing sits above). Keeping tiles as entities means each one can be
   selected, moved, and used as AI context like any other object. A dedicated
   tilemap layer can replace this later if levels get very large; no format
   change was needed (`metadata` is already part of the format).
+
+### Assets and backgrounds (format v2)
+- `AssetRecord` carries its file contents as a data URL (`data`) plus pixel
+  size. On disk each asset is its own file (`assets/<id>.<ext>`); project.json
+  lists metadata only. Uploaded images over 2048 px are scaled down.
+- Each scene's `world.background` = `{ imageAssetId, fit: cover|tile,
+  parallax 0..1 }` on top of `backgroundColor`. The shared renderer draws it
+  (cover = fill view height and repeat sideways; tile = repeat at image size;
+  parallax 0 = fixed on screen, 1 = moves with the level), so play mode will
+  look the same. The AI edits it with the `set_background` operation and has
+  a `background` context; it cannot create pictures.
+- Sprites with `assetId` draw their image (pixel-crisp); the starter Ladder
+  uses a built-in SVG asset.
+- Autosave moved to IndexedDB (projects with images outgrow localStorage);
+  an older localStorage autosave is still read once.
+- **Migration v1 -> v2** adds background settings and asset data, turns the
+  old wide starter Platform (160x24) into a 32x32 tile and replaces each
+  placed wide platform with a row of tiles over the same span, and adds the
+  new starter objects (Stone, Ladder). Tested with a real v1 file and an old
+  autosave in the browser.
+
+### Tools
+A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
+`B`; draws with the last used object, shown under the pen), and opens the
+**Background** card. Only one card is ever open: opening the background card
+clears the selection, and selecting something closes it.
 
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained

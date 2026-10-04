@@ -36,7 +36,9 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **The level**: double-click empty space. "Make gravity 30% weaker."
 - **Whole game**: the ✦ button in the top bar (Ctrl+K).
 - **Create**: the bottom dock's **+ Create** makes a new object from a description.
-- **Draw**: open **Objects**, click an object (e.g. *Ground*), then click or drag on the level to draw it, one per grid cell. Shift keeps a stroke straight, right-drag erases, Esc puts the brush away. Each stroke is one undo step. You can also drag objects in directly.
+- **Tools** (left panel): the arrow selects and moves (`V`), the pen draws (`B`), and the picture button opens the level background.
+- **Draw**: pick an object in **Objects** (e.g. *Platform* or *Ladder*), or press the pen to draw with the last one used. Click or drag on the level to draw it, one per grid cell. Shift keeps a stroke straight, right-drag erases, Esc or the arrow goes back to selecting. Each stroke is one undo step. You can also drag objects in directly.
+- **Background**: choose a color, upload an image (Fill or Repeat, and how much it moves with the level), or describe what you want ("the background should move sideways along with the level").
 - **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
 - **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
 - **Move**: drag objects (tiles snap to whole tiles); arrows nudge; `Ctrl+D` duplicate; `Del` delete.

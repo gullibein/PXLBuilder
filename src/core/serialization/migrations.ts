@@ -1,3 +1,6 @@
+import { componentRegistry } from '../components/builtin';
+import { generateId } from '../ids';
+import { createLadderAsset, createStarterDefinitions } from '../model/factory';
 import { FORMAT_VERSION } from './version';
 
 /**
@@ -11,7 +14,86 @@ export interface Migration {
   migrate(raw: Record<string, unknown>): Record<string, unknown>;
 }
 
-export const MIGRATIONS: Migration[] = [];
+type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/**
+ * v1 -> v2
+ * - Scenes get background settings (image, fit, parallax).
+ * - Assets carry their file contents (`data`) and pixel size.
+ * - The old wide starter "Platform" (160x24) becomes a 32x32 tile; each placed
+ *   wide platform is replaced by a row of tiles covering the same span, so
+ *   existing levels keep their shape.
+ * - The new starter objects (Stone, Ladder) are added when missing.
+ */
+function migrateV1toV2(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  for (const scene of project.scenes ?? []) {
+    scene.world.background ??= { imageAssetId: null, fit: 'cover', parallax: 0.3 };
+  }
+  project.assets = (project.assets ?? []).filter((a: Raw) => typeof a.data === 'string').map((a: Raw) => ({ width: 0, height: 0, ...a }));
+
+  const defs: Raw[] = project.definitions ?? [];
+  const oldPlatform = defs.find(
+    (d) => d.name === 'Platform' && d.metadata?.placement !== 'tile' && d.components?.Sprite?.width === 160 && d.components?.Sprite?.height === 24,
+  );
+  if (oldPlatform) {
+    const sprite = oldPlatform.components.Sprite;
+    sprite.width = 32;
+    sprite.height = 32;
+    if (sprite.color === '#6b7a8f') sprite.color = '#5fa83f';
+    if (oldPlatform.components.Collider) oldPlatform.components.Collider.size = { x: 32, y: 32 };
+    oldPlatform.metadata = { ...oldPlatform.metadata, placement: 'tile', category: 'Platforms' };
+    oldPlatform.description = 'A square ground tile. Draw rows of them to build platforms.';
+    if (!oldPlatform.tags.includes('ground')) oldPlatform.tags.push('ground');
+    for (const scene of project.scenes ?? []) {
+      scene.entities = scene.entities.flatMap((e: Raw) => (e.definitionId === oldPlatform.id ? platformToTiles(e) : [e]));
+    }
+  }
+
+  const has = (name: string) => defs.some((d) => d.name === name);
+  if (!has('Stone') || !has('Ladder')) {
+    const ladder = createLadderAsset();
+    const starters = createStarterDefinitions(componentRegistry, ladder);
+    if (!has('Stone')) defs.push(starters.find((d) => d.name === 'Stone')!);
+    if (!has('Ladder')) {
+      defs.push(starters.find((d) => d.name === 'Ladder')!);
+      project.assets.push(ladder);
+    }
+  }
+  project.definitions = defs;
+  return project;
+}
+
+/** One wide v1 platform instance -> a row of 32px tile instances over the same span. */
+function platformToTiles(e: Raw): Raw[] {
+  const TILE = 32;
+  const scaleX = Math.abs(e.transform?.scale?.x ?? 1) || 1;
+  const width = (typeof e.components?.Sprite?.width === 'number' ? e.components.Sprite.width : 160) * scaleX;
+  const count = Math.max(1, Math.round(width / TILE));
+  const left = e.transform.position.x - width / 2;
+  const firstCell = Math.round(left / TILE);
+  const y = Math.floor(e.transform.position.y / TILE) * TILE + TILE / 2;
+  // Size overrides no longer apply to a tile; other overrides (e.g. color) carry over.
+  const components = structuredClone(e.components ?? {});
+  if (components.Sprite) {
+    delete components.Sprite.width;
+    delete components.Sprite.height;
+    if (!Object.keys(components.Sprite).length) delete components.Sprite;
+  }
+  if (components.Collider) {
+    delete components.Collider.size;
+    if (!Object.keys(components.Collider).length) delete components.Collider;
+  }
+  return Array.from({ length: count }, (_, k) => ({
+    ...structuredClone(e),
+    id: k === 0 ? e.id : generateId('ent'),
+    name: k === 0 ? e.name : `${e.name} ${k + 1}`,
+    transform: { position: { x: (firstCell + k) * TILE + TILE / 2, y }, rotation: 0, scale: { x: 1, y: 1 } },
+    components: structuredClone(components),
+  }));
+}
+
+export const MIGRATIONS: Migration[] = [{ from: 1, to: 2, migrate: migrateV1toV2 }];
 
 export class MigrationError extends Error {
   constructor(message: string) {

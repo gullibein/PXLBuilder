@@ -4,7 +4,16 @@
  */
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
-import type { Vec2 } from '../core/types';
+import type { Vec2, WorldSettings } from '../core/types';
+
+/** Resolves an asset id to a drawable image, or null while it isn't loaded (callers fall back to color). */
+export type ImageLookup = (assetId: string) => CanvasImageSource | null;
+const noImages: ImageLookup = () => null;
+
+function imageSize(img: CanvasImageSource): { w: number; h: number } {
+  const i = img as { naturalWidth?: number; naturalHeight?: number; width: number; height: number };
+  return { w: i.naturalWidth || Number(i.width), h: i.naturalHeight || Number(i.height) };
+}
 
 export interface Camera {
   /** World point at the center of the view. */
@@ -31,10 +40,40 @@ export function applyCamera(ctx: CanvasRenderingContext2D, camera: Camera, view:
   ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * (view.width / 2 - camera.x * camera.zoom), dpr * (view.height / 2 - camera.y * camera.zoom));
 }
 
-export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dpr: number, color: string): void {
+/**
+ * Background: a color, optionally an image on top.
+ * - cover: image fills the view height and repeats sideways.
+ * - tile: image repeats in both directions at its own size (scaled with zoom).
+ * parallax 0 keeps it fixed on screen; 1 moves it exactly with the level.
+ */
+export function drawBackground(
+  ctx: CanvasRenderingContext2D,
+  view: ViewSize,
+  dpr: number,
+  world: WorldSettings,
+  camera: Camera,
+  images: ImageLookup = noImages,
+): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = color;
+  ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
+  const { imageAssetId, fit, parallax } = world.background;
+  const img = imageAssetId ? images(imageAssetId) : null;
+  if (!img) return;
+  const { w: iw, h: ih } = imageSize(img);
+  if (!iw || !ih) return;
+  const scale = fit === 'cover' ? view.height / ih : camera.zoom;
+  const tw = iw * scale;
+  const th = ih * scale;
+  const mod = (a: number, n: number) => ((a % n) + n) % n;
+  // Screen position of the world origin, scaled by how much the background follows the level.
+  const ox = mod(view.width / 2 - camera.x * camera.zoom * parallax, tw);
+  const oy = fit === 'cover' ? 0 : mod(view.height / 2 - camera.y * camera.zoom * parallax, th);
+  ctx.imageSmoothingEnabled = scale < 1;
+  for (let x = ox - tw; x < view.width; x += tw) {
+    if (fit === 'cover') ctx.drawImage(img, x, 0, tw, th);
+    else for (let y = oy - th; y < view.height; y += th) ctx.drawImage(img, x, y, tw, th);
+  }
 }
 
 /** Mixes a hex color toward white (amount > 0) or black (amount < 0). */
@@ -55,7 +94,7 @@ const tileKey = (definitionId: string | null, x: number, y: number) => `${defini
  * Tile objects of the same kind join into one surface: a lighter top edge only
  * where nothing sits above, a darker base only where nothing sits below.
  */
-export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEntity[]): void {
+export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEntity[], images: ImageLookup = noImages): void {
   const tiles = new Set<string>();
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
 
@@ -70,7 +109,12 @@ export function drawEntities(ctx: CanvasRenderingContext2D, entities: ResolvedEn
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(scale.x, scale.y);
     ctx.fillStyle = color;
-    if (entity.tile) {
+    const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
+    if (img) {
+      // Pixel art stays crisp.
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, -size.x / 2, -size.y / 2, size.x, size.y);
+    } else if (entity.tile) {
       const w = size.x;
       const h = size.y;
       ctx.fillRect(-w / 2, -h / 2, w, h);

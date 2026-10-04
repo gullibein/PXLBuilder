@@ -7,7 +7,7 @@
 import type { ComponentRegistry } from '../components/registry';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import type { EntityInstance, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
+import type { AssetRecord, BackgroundSettings, EntityInstance, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
 
 export class ModelError extends Error {
@@ -103,6 +103,28 @@ export function setWorldSettings(project: Project, sceneId: Id, patch: Partial<W
     throw new ModelError('Background color must be a hex color');
   }
   Object.assign(scene.world, cloneValue(patch));
+}
+
+export function setBackground(project: Project, sceneId: Id, patch: Partial<BackgroundSettings>): void {
+  const scene = getScene(project, sceneId);
+  if (patch.imageAssetId !== undefined && patch.imageAssetId !== null) {
+    const asset = project.assets.find((a) => a.id === patch.imageAssetId);
+    if (!asset) throw new ModelError(`Image "${patch.imageAssetId}" not found`);
+    if (asset.kind !== 'image') throw new ModelError(`"${asset.name}" is not an image`);
+  }
+  if (patch.fit !== undefined && patch.fit !== 'cover' && patch.fit !== 'tile') throw new ModelError('Background fit must be "cover" or "tile"');
+  if (patch.parallax !== undefined && !(Number.isFinite(patch.parallax) && patch.parallax >= 0 && patch.parallax <= 1)) {
+    throw new ModelError('Background movement must be between 0 and 1');
+  }
+  Object.assign(scene.world.background, patch);
+}
+
+// ---------------------------------------------------------------- assets
+
+export function addAsset(project: Project, asset: AssetRecord): void {
+  if (project.assets.some((a) => a.id === asset.id)) throw new ModelError(`Asset "${asset.id}" already exists`);
+  if (!asset.data.startsWith('data:')) throw new ModelError('Asset data must be a data URL');
+  project.assets.push(cloneValue(asset));
 }
 
 // ---------------------------------------------------------------- entities

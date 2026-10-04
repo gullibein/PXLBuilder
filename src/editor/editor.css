@@ -37,7 +37,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; overflow: hidden; }
+/* clip (not hidden): these must never become scroll containers, or programmatic scrolling could shift the whole editor. */
+html, body, #root { margin: 0; height: 100%; overflow: clip; }
 body { background: var(--ink); color: var(--text); }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:disabled { cursor: default; }
@@ -57,8 +58,8 @@ code { font-family: var(--font-data); font-size: 11px; }
   border-radius: var(--radius);
 }
 
-.editor { display: grid; grid-template-rows: 60px 1fr; width: 100%; height: 100%; overflow: hidden; }
-.stage { position: relative; min-height: 0; overflow: hidden; }
+.editor { display: grid; grid-template-rows: 60px 1fr; width: 100%; height: 100%; overflow: clip; }
+.stage { position: relative; min-height: 0; overflow: clip; }
 
 /* ---------------------------------------------------------------- canvas */
 .viewport { position: absolute; inset: 0; background: var(--ink); }
@@ -249,3 +250,40 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------------------------------------------------------------- tool panel (left) */
+.tool-panel { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; z-index: 15; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.tool { display: grid; place-items: center; width: 42px; height: 42px; border: none; border-radius: 11px; background: none; color: var(--muted); }
+.tool:hover { color: var(--text); background: var(--surface-2); }
+.tool.on { color: #fff; background: var(--accent); }
+.tool.brush-pick { width: 42px; height: 34px; }
+.tool.brush-pick .thumb { width: 26px; height: 26px; border-radius: 7px; }
+.tool-sep { width: 24px; height: 1px; margin: 3px 0; background: var(--line); }
+
+/* ---------------------------------------------------------------- background card */
+.background-panel { position: absolute; left: 80px; top: 16px; width: min(300px, calc(100% - 96px)); max-height: calc(100% - 100px); overflow: auto; display: grid; gap: 14px; padding: 14px; z-index: 16; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); animation: pop-in 140ms ease-out; }
+.bg-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }
+.bg-head > span { display: flex; align-items: center; gap: 8px; }
+.bg-head svg { color: #7fb6ff; }
+.bg-section { display: grid; gap: 8px; }
+.bg-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.bg-label .muted { font-family: var(--font-data); letter-spacing: 0; text-transform: none; }
+.swatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.swatch-btn { position: relative; aspect-ratio: 1; min-width: 0; border: 2px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 0; cursor: pointer; }
+.swatch-btn[aria-checked='true'] { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.swatch-btn.custom { background: conic-gradient(#ff6b6b, #ffd93d, #6bcb77, #4d96ff, #b06bff, #ff6b6b); overflow: hidden; }
+.swatch-btn.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.upload { padding: 14px; border: 1.5px dashed rgba(255, 255, 255, 0.2); border-radius: 12px; background: var(--surface-2); color: var(--text); font-weight: 600; }
+.upload:hover { border-color: var(--accent-hi); }
+.bg-image { display: grid; gap: 8px; }
+.bg-image img { width: 100%; max-height: 120px; object-fit: cover; border-radius: 10px; }
+.bg-image-meta { display: flex; gap: 8px; font-size: 12px; }
+.bg-image-actions { display: flex; gap: 6px; }
+.chip-btn { border: none; padding: 5px 12px; border-radius: 8px; background: var(--surface-2); font-weight: 600; font-size: 12px; }
+.chip-btn:hover { background: var(--surface-3); }
+.segmented { display: flex; padding: 3px; border-radius: 10px; background: rgba(0, 0, 0, 0.25); }
+.segmented button { flex: 1; border: none; padding: 5px; border-radius: 8px; background: none; color: var(--muted); font-weight: 600; }
+.segmented button.on { color: #fff; background: var(--accent); }
+input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; border: none; background: none; }
+.bg-hint { font-size: 11.5px; color: var(--muted); }
+.bg-prompt .prompt { box-shadow: none; }

@@ -105,6 +105,15 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'Climbable',
+    label: 'Climbable',
+    description: 'Characters can climb this (ladders, vines, ropes).',
+    category: 'Movement',
+    fields: {
+      climbSpeed: { kind: 'number', default: 120, min: 0, step: 10, description: 'Climbing speed (px/s)' },
+    },
+  },
+  {
     type: 'CameraTarget',
     label: 'Camera Target',
     description: 'The camera follows this entity during play.',

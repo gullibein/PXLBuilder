@@ -6,7 +6,8 @@ import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, sn
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { componentRegistry } from '../../core/components/builtin';
 import type { Id, Vec2 } from '../../core/types';
-import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ViewSize } from '../../render/renderer';
+import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
+import { imageLookup } from '../images';
 import { setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
 import { resolveSceneEntities } from '../selectors';
@@ -103,11 +104,12 @@ export function Viewport() {
       if (canvas.dataset.camera !== camAttr) canvas.dataset.camera = camAttr;
       if (canvas.dataset.entities !== String(scene.entities.length)) canvas.dataset.entities = String(scene.entities.length);
 
-      drawBackground(ctx, view, dpr, scene.world.backgroundColor);
+      const images = imageLookup(state.project);
+      drawBackground(ctx, view, dpr, scene.world, state.camera, images);
       applyCamera(ctx, state.camera, view, dpr);
       if (state.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
-      drawEntities(ctx, entities);
-      if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom);
+      drawEntities(ctx, entities, images);
+      if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
@@ -415,7 +417,7 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
-function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag | null, pointer: Vec2 | null, grid: number, zoom: number): void {
+function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag | null, pointer: Vec2 | null, grid: number, zoom: number, images: ImageLookup): void {
   const preview = brushPreview(definitionId);
   if (!preview) return;
   const cell = cellSize(getEntitySize(preview), grid);
@@ -434,6 +436,7 @@ function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag |
     drawEntities(
       ctx,
       cells.map((c) => ({ ...preview, transform: { ...preview.transform, position: cellCenter(c, cell) } })),
+      images,
     );
     ctx.globalAlpha = 1;
     ctx.strokeStyle = theme.select;

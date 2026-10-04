@@ -57,10 +57,20 @@ export interface EntityInstance {
   metadata: Record<string, unknown>;
 }
 
+export interface BackgroundSettings {
+  /** Image asset drawn behind the level, or null for a plain color. */
+  imageAssetId: Id | null;
+  /** cover: fills the view's height and repeats sideways. tile: repeats at the image's own size. */
+  fit: 'cover' | 'tile';
+  /** How much the background moves with the level: 0 = fixed to the screen, 1 = moves exactly with the level. */
+  parallax: number;
+}
+
 export interface WorldSettings {
   /** Gravity in world units (pixels) per second squared. */
   gravity: Vec2;
   backgroundColor: string;
+  background: BackgroundSettings;
 }
 
 export interface Scene {
@@ -77,8 +87,13 @@ export interface AssetRecord {
   id: Id;
   name: string;
   kind: AssetKind;
-  /** Project-relative path, e.g. "assets/player.png". */
+  /** Project-relative path of the file, e.g. "assets/ast_1a2b3c.png". */
   path: string;
+  /** File contents as a data URL (kept in memory; written to `path` when saved). */
+  data: string;
+  /** Pixel size, for images. */
+  width: number;
+  height: number;
 }
 
 export interface ProjectSettings {

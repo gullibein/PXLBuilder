@@ -83,6 +83,9 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('move sideways') || req.includes('background')) {
+    return { kind: 'apply', message: 'The background now scrolls slowly with the level.', changes: ['Background moves 50% with the level'], operations: [{ op: 'set_background', sceneId: body.context.level.id, color: null, fit: null, parallax: 0.5, removeImage: false }] };
+  }
   if (req.includes('open the door')) {
     return { kind: 'unsupported', message: `Linking ${t[0]?.name} to ${t[1]?.name} needs relationships, which aren't in this version yet.`, changes: [], operations: [] };
   }
@@ -141,7 +144,7 @@ try {
   step = 'draw tiles with the brush';
   await page.getByTestId('dock-library').click();
   await page.screenshot({ path: `${OUT}/0-objects-panel.png` });
-  await page.getByTestId('definition-Ground').click();
+  await page.getByTestId('definition-Platform').click();
   await check(async () => (await page.getByTestId('brush-chip').isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks it up as a brush and gives the canvas back');
   await check(async () => (await prompts.count()) === 0, 'drawing clears the selection, so no prompt is in the way');
   let p0 = toScreen(-250, 40);
@@ -161,12 +164,29 @@ try {
   await check(async () => (await entityCount()) === 8, 'a single click draws one tile');
   await page.mouse.click(single.x, single.y, { button: 'right' });
   await check(async () => (await entityCount()) === 7, 'right-click erases a tile');
-  await page.screenshot({ path: `${OUT}/0-drawn-tiles.png` });
   await page.getByTestId('undo').click();
   await check(async () => (await entityCount()) === 8, 'each stroke is one undo step');
   await page.getByTestId('redo').click();
+  await page.getByTestId('tool-select').click();
+  await check(async () => (await page.getByTestId('brush-chip').count()) === 0, 'the arrow tool puts the pen away');
+  await page.getByTestId('tool-pen').click();
+  await check(async () => (await page.getByTestId('brush-chip').innerText()).includes('Platform'), 'the pen picks up the last object drawn with');
   await page.keyboard.press('Escape');
-  await check(async () => (await page.getByTestId('brush-chip').count()) === 0, 'Esc puts the brush away');
+  await check(async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true', 'Esc returns to the arrow');
+
+  step = 'ladder';
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('definition-Ladder').click();
+  const l0 = toScreen(-80, -48);
+  const l1 = toScreen(-80, 16);
+  await page.mouse.move(l0.x, l0.y);
+  await page.mouse.down();
+  await page.mouse.move(l1.x, l1.y, { steps: 4 });
+  await page.mouse.up();
+  await check(async () => (await entityCount()) === 7 + 3, 'dragging down with the pen draws a 3-segment ladder');
+  await page.screenshot({ path: `${OUT}/0-drawn-tiles.png` });
+  await page.getByTestId('undo').click();
+  await page.getByTestId('tool-select').click();
 
   step = 'move one tile';
   const tile = toScreen(-112, 48);
@@ -296,6 +316,48 @@ try {
   await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player three hearts.'), 'AI changes appear in History');
   await page.screenshot({ path: `${OUT}/7-history.png` });
 
+  step = 'background';
+  await page.getByTestId('tray').getByRole('button', { name: 'Close' }).click();
+  await page.getByTestId('tool-background').click();
+  const bgPanel = page.getByTestId('background-panel');
+  await check(async () => (await bgPanel.isVisible()) && (await prompts.count()) === 0, 'the background card opens (and is the only card)');
+  await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
+  await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');
+  // A small generated image stands in for a user's picture.
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 32;
+    const g = c.getContext('2d');
+    g.fillStyle = '#334488';
+    g.fillRect(0, 0, 64, 32);
+    g.fillStyle = '#ffffff';
+    g.fillRect(8, 8, 12, 6);
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await bgPanel.getByTestId('bg-file').setInputFiles({ name: 'mountains.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  await check(async () => (await bgPanel.locator('.bg-image img').count()) === 1 && (await bgPanel.innerText()).includes('64×32'), 'an uploaded image becomes the background');
+  await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 1, 'fit and movement controls appear for the image');
+  await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').fill('The background should move sideways along with the level.');
+  await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').press('Enter');
+  await check(async () => (await bgPanel.getByTestId('bg-parallax').inputValue()) === '50', 'a background prompt changes how it moves (50%)');
+  await check(aiRequests.at(-1).context.scope === 'background' && aiRequests.at(-1).context.level.background.image?.name === 'mountains', 'the AI is told it is editing the background, including the image');
+  await page.screenshot({ path: `${OUT}/8-background.png` });
+  await page.getByTestId('tool-background').click();
+  await check(async () => (await bgPanel.count()) === 0, 'the background card closes again');
+
+  step = 'console tray';
+  const stageBox = await canvas.boundingBox();
+  await page.getByTestId('console-toggle').click();
+  await page.getByRole('tab', { name: /AI History/ }).click();
+  await page.getByRole('tab', { name: /Console/ }).click();
+  await page.getByTestId('tray').getByRole('button', { name: 'Close' }).click();
+  await check(async () => {
+    const b = await canvas.boundingBox();
+    const scrolled = await page.evaluate(() => [document.scrollingElement.scrollTop, document.querySelector('.stage').scrollTop, document.querySelector('.editor').scrollTop].some((v) => v !== 0));
+    return !scrolled && b.y === stageBox.y && b.height === stageBox.height;
+  }, 'switching console tabs and minimising leaves the editor in place');
+
   step = 'navigation';
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -358,6 +420,41 @@ try {
   await ask('Give the player a jetpack.');
   await check(async () => (await result.getAttribute('data-status')) === 'error', 'without an API key the real endpoint answers with an error');
   await check(async () => /not connected/i.test(await result.innerText()), 'the prompt says plainly that AI is not connected');
+
+  step = 'old autosave upgrade';
+  const old = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const oldPage = await old.newPage();
+  oldPage.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  await oldPage.addInitScript(() => {
+    const platform = {
+      id: 'def_platform', name: 'Platform', description: 'Solid, static ground.', tags: ['platform'], metadata: {},
+      components: {
+        Sprite: { assetId: null, width: 160, height: 24, color: '#6b7a8f', visible: true },
+        Collider: { shape: 'box', size: { x: 160, y: 24 }, offset: { x: 0, y: 0 }, isTrigger: false },
+        PhysicsBody: { bodyType: 'static', mass: 1, velocity: { x: 0, y: 0 }, gravityScale: 1, friction: 0.2 },
+      },
+    };
+    const scene = {
+      id: 'scn_1', name: 'Level 1', world: { gravity: { x: 0, y: 980 }, backgroundColor: '#1d2330' },
+      entities: [{ id: 'ent_a', name: 'Platform', definitionId: 'def_platform', transform: { position: { x: 0, y: 64 }, rotation: 0, scale: { x: 1, y: 1 } }, components: {}, removedComponents: [], tags: [], metadata: {} }],
+    };
+    const bundle = { kind: 'pxlbuilder.bundle', bundleVersion: 1, files: {
+      'project.json': { formatVersion: 1, id: 'prj_1', name: 'Old Game', settings: { gridSize: 16 }, startSceneId: 'scn_1', scenes: [{ id: 'scn_1', name: 'Level 1', file: 'scenes/scn_1.json' }], objects: [{ id: 'def_platform', name: 'Platform', file: 'objects/def_platform.json' }], assets: [] },
+      'scenes/scn_1.json': scene,
+      'objects/def_platform.json': platform,
+    } };
+    if (!sessionStorage.getItem('seeded')) {
+      localStorage.setItem('pxlbuilder.autosave', JSON.stringify(bundle));
+      sessionStorage.setItem('seeded', '1');
+    }
+  });
+  await oldPage.goto(URL);
+  const oldCanvas = oldPage.getByTestId('viewport-canvas');
+  await check(async () => (await oldCanvas.getAttribute('data-entities')) === '5', 'an old autosave with a wide platform opens as a row of 5 square tiles');
+  await oldPage.getByTestId('dock-library').click();
+  await check(async () => (await oldPage.getByTestId('definition-Ladder').count()) === 1 && (await oldPage.getByTestId('definition-Stone').count()) === 1, 'the upgraded project gets the new Ladder and Stone objects');
+  await oldPage.screenshot({ path: `${OUT}/9-upgraded-autosave.png` });
+  await old.close();
 
   step = 'console errors';
   await check(errors.length === 0, `no page/console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);

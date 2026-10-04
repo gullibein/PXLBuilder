@@ -38,6 +38,14 @@ export function Dock() {
 /** A small preview of an object: its placeholder sprite, to scale within the tile. */
 export function Thumb({ def, size = 34 }: { def: ObjectDefinition; size?: number }) {
   const sprite = def.components.Sprite ?? {};
+  const image = useEditor((s) => (typeof sprite.assetId === 'string' ? s.project.assets.find((a) => a.id === sprite.assetId)?.data : undefined));
+  if (image) {
+    return (
+      <span className="thumb" aria-hidden="true">
+        <img src={image} alt="" width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
+      </span>
+    );
+  }
   const w = typeof sprite.width === 'number' ? sprite.width : 32;
   const h = typeof sprite.height === 'number' ? sprite.height : 32;
   const k = size / Math.max(w, h, 1);

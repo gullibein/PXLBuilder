@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
+import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { Dock } from './chrome/Dock';
 import { GlobalPrompt } from './chrome/GlobalPrompt';
+import { ToolPanel } from './chrome/ToolPanel';
 import { TopBar } from './chrome/TopBar';
 import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
@@ -24,6 +26,8 @@ export function App() {
       <main className="stage">
         <Viewport />
         <ContextPrompt />
+        <ToolPanel />
+        <BackgroundPanel />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -83,12 +87,17 @@ function useGlobalShortcuts() {
       } else if (e.key === 'Escape') {
         if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
+        else if (state.backgroundOpen) state.setBackgroundOpen(false);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {
           state.selectEntities([]);
           state.setWorldContext(false);
           state.selectDefinition(null);
         }
+      } else if (key === 'v' && !mod) {
+        state.setTool({ kind: 'select' });
+      } else if (key === 'b' && !mod) {
+        state.usePen();
       } else if (key === 'f' && !mod) {
         frameView();
       } else if (key === 'i' && !mod) {

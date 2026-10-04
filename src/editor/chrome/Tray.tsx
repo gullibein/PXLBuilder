@@ -90,7 +90,12 @@ function ConsoleList() {
   const log = useEditor((s) => s.log);
   const clearLog = useEditor((s) => s.clearLog);
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [log.length]);
+  // Keep the newest message visible by scrolling only the tray itself. (scrollIntoView would also
+  // scroll every ancestor, including a page embedding the editor, shoving the whole app out of view.)
+  useEffect(() => {
+    const body = endRef.current?.closest('.tray-body');
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [log.length]);
   return (
     <div className="console" data-testid="console">
       {log.length === 0 && <p className="muted">No messages.</p>}

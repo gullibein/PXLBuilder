@@ -66,6 +66,14 @@ export const operationSchema = z.union([
     backgroundColor: z.string().nullable(),
   }),
   z.object({
+    op: z.literal('set_background'),
+    sceneId: z.string(),
+    color: z.string().nullable().describe('Background color "#rrggbb", or null to keep'),
+    fit: z.enum(['cover', 'tile']).nullable().describe('cover: image fills the view height and repeats sideways; tile: repeats at its own size'),
+    parallax: z.number().nullable().describe('0 = background stays fixed on screen, 1 = moves exactly with the level; 0.2-0.6 gives depth'),
+    removeImage: z.boolean().describe('true to remove the background image and show only the color'),
+  }),
+  z.object({
     op: z.literal('create_definition'),
     ref: z.string().describe('Temporary name for this new object, usable as definitionRef in a later place_instance'),
     name: z.string(),
@@ -161,6 +169,15 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         m.setWorldSettings(project, op.sceneId, {
           gravity: { x: op.gravityX ?? scene.world.gravity.x, y: op.gravityY ?? scene.world.gravity.y },
           ...(op.backgroundColor !== null ? { backgroundColor: op.backgroundColor } : {}),
+        });
+        break;
+      }
+      case 'set_background': {
+        if (op.color !== null) m.setWorldSettings(project, op.sceneId, { backgroundColor: op.color });
+        m.setBackground(project, op.sceneId, {
+          ...(op.fit !== null ? { fit: op.fit } : {}),
+          ...(op.parallax !== null ? { parallax: op.parallax } : {}),
+          ...(op.removeImage ? { imageAssetId: null } : {}),
         });
         break;
       }

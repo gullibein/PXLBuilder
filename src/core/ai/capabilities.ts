@@ -35,11 +35,11 @@ export function describeComponents(registry: ComponentRegistry): string {
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, jetpacks, health regeneration.',
+  'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, climbing (the Climbable component marks ladders, but nothing climbs until behaviors exist), jetpacks, health regeneration.',
   'Relationships between objects (controls, requires, opens, protects, targets, damages-specific-entity) and conditions/rules ("when X then Y").',
   'Events, win/lose conditions, checkpoints logic, level transitions.',
   'Play mode / runtime simulation (the game cannot be run yet), so values describe intent but are not simulated.',
-  'Camera settings, lighting, day/night, music, sound, particles, generated art or animation.',
+  'Camera settings, lighting, day/night, music, sound, particles, generated art or animation, backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 
 export function buildSystemPrompt(registry: ComponentRegistry): string {
@@ -69,7 +69,8 @@ Writing
 
 Operations
 - valueJson / propsJson are JSON text: numbers "3", booleans "true", strings "\\"#ff8800\\"", vectors "{\\"x\\":0,\\"y\\":686}".
-- set_transform / set_world: use null for anything that should stay the same.
+- set_transform / set_world / set_background: use null for anything that should stay the same.
+- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot create images.
 - create_definition: give the object a clear name, a one-line description, a category (one of Characters, Enemies, Platforms, Items, Environment, Effects, UI, Custom), tags, and components. Give new objects a Sprite with a fitting size and color (placeholder art), a Collider, and a PhysicsBody when they should collide or fall (gravityScale 0 for things that float or fly). place_instance only when the user asks to put it in the level.
 
 Available components

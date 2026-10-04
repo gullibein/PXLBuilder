@@ -20,6 +20,8 @@ export type AIContext =
   | { kind: 'pair'; sceneId: Id; entityIds: [Id, Id] }
   /** The level itself (world settings, all of its contents). `point` is where the user pointed, if anywhere. */
   | { kind: 'level'; sceneId: Id; point: Vec2 | null }
+  /** The level's background (color, image, how it moves). */
+  | { kind: 'background'; sceneId: Id }
   /** The whole game. */
   | { kind: 'project'; sceneId: Id }
   /** Creating a new object for the library. */
@@ -42,6 +44,8 @@ export function contextKey(ctx: AIContext): string {
       return `${ctx.kind}:${ctx.entityIds.join(',')}`;
     case 'level':
       return `level:${ctx.sceneId}`;
+    case 'background':
+      return `background:${ctx.sceneId}`;
     case 'project':
       return 'project';
     case 'create':
@@ -76,7 +80,14 @@ export interface EntityBrief {
 export interface AIPayload {
   scope: AIContext['kind'];
   scope_note: string;
-  level: { id: Id; name: string; gravity: Vec2; backgroundColor: string; isStartLevel: boolean };
+  level: {
+    id: Id;
+    name: string;
+    gravity: Vec2;
+    backgroundColor: string;
+    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile'; parallax: number };
+    isStartLevel: boolean;
+  };
   /** The selected/target entities, in full. */
   targets: EntityDetail[];
   /** Where the user pointed in the level (world coordinates), if anywhere. */
@@ -97,6 +108,8 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   pair: 'The user selected two entities, in this order: targets[0] then targets[1]. The request is most likely about how they relate.',
   group: 'The user selected several entities (see targets) and is addressing them together ("these", "them", "all of them").',
   level: 'The user is addressing the level itself: its world settings and its contents. "here" refers to `point` if set.',
+  background:
+    'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth). You cannot create or edit pictures; the user uploads background images themselves.',
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
 };
@@ -150,6 +163,14 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       name: scene.name,
       gravity: scene.world.gravity,
       backgroundColor: scene.world.backgroundColor,
+      background: {
+        image: (() => {
+          const a = project.assets.find((x) => x.id === scene.world.background.imageAssetId);
+          return a ? { name: a.name, width: a.width, height: a.height } : null;
+        })(),
+        fit: scene.world.background.fit,
+        parallax: scene.world.background.parallax,
+      },
       isStartLevel: project.startSceneId === scene.id,
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),

@@ -7,6 +7,7 @@
  *   project.json              index: metadata, settings, scene + object lists
  *   scenes/<sceneId>.json     one Scene each
  *   objects/<definitionId>.json  one ObjectDefinition each
+ *   assets/<assetId>.<ext>     asset files (images); in the bundle they are data URLs
  *
  * In the browser the file map is wrapped in a single JSON "bundle" for
  * download/upload and local storage; a desktop shell or backend can write the
@@ -49,10 +50,11 @@ export function projectToFiles(project: Project): ProjectFiles {
     startSceneId: project.startSceneId,
     scenes: project.scenes.map((s) => ({ id: s.id, name: s.name, file: `scenes/${s.id}.json` })),
     objects: project.definitions.map((d) => ({ id: d.id, name: d.name, file: `objects/${d.id}.json` })),
-    assets: project.assets,
+    assets: project.assets.map(({ data: _data, ...meta }) => meta),
   };
   for (const scene of project.scenes) files[`scenes/${scene.id}.json`] = scene;
   for (const def of project.definitions) files[`objects/${def.id}.json`] = def;
+  for (const asset of project.assets) files[asset.path] = asset.data;
   return JSON.parse(JSON.stringify(files)) as ProjectFiles;
 }
 
@@ -74,7 +76,11 @@ export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistr
     startSceneId: index.startSceneId,
     scenes: index.scenes.map((s) => read(s.file)),
     definitions: index.objects.map((o) => read(o.file)),
-    assets: index.assets,
+    // Attach each asset's file contents; a missing file is reported by validation below.
+    assets: index.assets.map((a) => {
+      const path = (a as { path?: unknown }).path;
+      return typeof path === 'string' && typeof files[path] === 'string' ? { ...(a as object), data: files[path] } : a;
+    }),
   };
 
   let migrated: Record<string, unknown>;
@@ -126,6 +132,12 @@ export function checkIntegrity(project: Project): string[] {
     }
   }
   if (!project.scenes.some((s) => s.id === project.startSceneId)) errors.push(`Start scene "${project.startSceneId}" not found`);
+  const assetIds = new Set(project.assets.map((a) => a.id));
+  for (const a of project.assets) unique(a.id, 'asset');
+  for (const s of project.scenes) {
+    const img = s.world.background.imageAssetId;
+    if (img !== null && !assetIds.has(img)) errors.push(`Background of "${s.name}" references missing asset "${img}"`);
+  }
   return errors;
 }
 

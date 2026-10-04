@@ -63,6 +63,10 @@ export interface EditorState {
   tray: { open: boolean; tab: TrayTab };
   dock: DockPanel;
   tool: Tool;
+  /** The object the pen draws with when picked from the tool panel (the last one used). */
+  lastBrushId: Id | null;
+  /** The background card is open (it is the active context; no object prompt then). */
+  backgroundOpen: boolean;
 
   /** Applies a change to the project as one undoable transaction. Returns false (and logs) if the change was rejected. */
   edit(label: string, recipe: (draft: Project) => void, opts?: EditOptions): boolean;
@@ -85,6 +89,9 @@ export interface EditorState {
   setTray(tray: Partial<EditorState['tray']>): void;
   setDock(dock: DockPanel): void;
   setTool(tool: Tool): void;
+  /** Switches to drawing with the last used object (or the first tile object). */
+  usePen(): void;
+  setBackgroundOpen(open: boolean): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -125,6 +132,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     tray: { open: false, tab: 'history' },
     dock: null,
     tool: { kind: 'select' },
+    lastBrushId: null,
+    backgroundOpen: false,
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -209,7 +218,12 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     selectEntities(ids) {
       const unique = [...new Set(ids)];
-      set({ selectedEntityIds: unique, worldContext: unique.length ? null : get().worldContext, selectedDefinitionId: unique.length ? null : get().selectedDefinitionId });
+      set({
+        selectedEntityIds: unique,
+        worldContext: unique.length ? null : get().worldContext,
+        selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
+        backgroundOpen: unique.length ? false : get().backgroundOpen,
+      });
     },
 
     selectDefinition(id) {
@@ -218,7 +232,7 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setWorldContext(point) {
       if (point === false) set({ worldContext: null });
-      else set({ worldContext: { point }, selectedEntityIds: [], selectedDefinitionId: null });
+      else set({ worldContext: { point }, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false });
     },
 
     setGlobalPrompt(open, scope) {
@@ -251,8 +265,23 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setTool(tool) {
       // Drawing has no selection: the prompt steps aside until you go back to selecting.
-      if (tool.kind === 'brush') set({ tool, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null });
-      else set({ tool });
+      if (tool.kind === 'brush') {
+        set({ tool, lastBrushId: tool.definitionId, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, backgroundOpen: false });
+      } else set({ tool });
+    },
+
+    usePen() {
+      const { project, lastBrushId } = get();
+      const pick =
+        project.definitions.find((d) => d.id === lastBrushId) ??
+        project.definitions.find((d) => d.metadata.placement === 'tile') ??
+        project.definitions[0];
+      if (pick) get().setTool({ kind: 'brush', definitionId: pick.id });
+    },
+
+    setBackgroundOpen(open) {
+      if (open) set({ backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      else set({ backgroundOpen: false });
     },
 
     logMessage(level, message) {
