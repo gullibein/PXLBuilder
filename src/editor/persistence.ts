@@ -53,8 +53,8 @@ function writeAutosave(project: Project): void {
 
 export function newProject(): void {
   const project = createProject(componentRegistry);
-  useEditor.getState().loadProject(project);
-  writeAutosave(project);
+  // Undoable, so there is no need to ask "are you sure?".
+  useEditor.getState().replaceProject('New project', project);
   useEditor.getState().logMessage('info', 'Created a new project');
 }
 
@@ -77,11 +77,10 @@ export function saveProjectToFile(): void {
 }
 
 export async function openProjectFile(file: File): Promise<void> {
-  const { loadProject, logMessage } = useEditor.getState();
+  const { replaceProject, logMessage } = useEditor.getState();
   try {
     const { project, warnings } = projectFromBundle(JSON.parse(await file.text()), componentRegistry);
-    loadProject(project);
-    writeAutosave(project);
+    replaceProject(`Open ${file.name}`, project);
     logMessage('info', `Opened "${project.name}" from ${file.name}`);
     for (const w of warnings) logMessage('warn', w);
   } catch (e) {

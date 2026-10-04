@@ -1,6 +1,12 @@
-// End-to-end smoke test: builds the app, serves it, and drives the real editor
-// in headless Chromium. Usage: npm run test:e2e
-import { spawn, execSync } from 'node:child_process';
+// End-to-end test: builds the app, serves it, and drives the real editor in
+// headless Chromium. Usage: npm run test:e2e
+//
+// The language model is the only stubbed part: /api/ai is intercepted with a
+// deterministic stub that returns structured operations computed from the
+// context the editor actually sends. Everything else (selection context,
+// prompt placement, validation, transactions, undo, rendering) is real.
+// A final pass runs against the real server endpoint with no API key.
+import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -9,8 +15,11 @@ const URL = `http://localhost:${PORT}/`;
 const OUT = 'test-results';
 mkdirSync(OUT, { recursive: true });
 
-execSync('npx vite build', { stdio: 'inherit' });
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+execSync('npx vite build', { stdio: ['ignore', 'ignore', 'inherit'] });
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], {
+  stdio: 'pipe',
+  env: { ...process.env, ANTHROPIC_API_KEY: '' },
+});
 await new Promise((resolve, reject) => {
   server.stdout.on('data', (d) => d.toString().includes(String(PORT)) && resolve());
   server.on('exit', (code) => reject(new Error(`preview exited ${code}`)));
@@ -20,7 +29,7 @@ const executablePath = existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browse
 const browser = await chromium.launch({ executablePath });
 const errors = [];
 let step = '';
-// Polls an async condition (UI updates render asynchronously) for up to 3s.
+let passed = 0;
 const check = async (cond, msg) => {
   const deadline = Date.now() + 3000;
   for (;;) {
@@ -28,125 +37,235 @@ const check = async (cond, msg) => {
     if (Date.now() > deadline) throw new Error(`[${step}] ${msg}`);
     await new Promise((r) => setTimeout(r, 50));
   }
+  passed++;
   console.log(`  ✓ ${msg}`);
 };
+
+/** Stand-in for the language model: same protocol, deterministic answers. */
+const aiRequests = [];
+function stubModel(body) {
+  aiRequests.push(body);
+  const req = body.request.toLowerCase();
+  const t = body.context.targets;
+  if (req.includes('three hearts')) {
+    return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
+  }
+  if (req.includes('patrol')) {
+    return { kind: 'unsupported', message: "Enemies can't patrol yet: movement behaviors aren't in this version.", changes: [], operations: [] };
+  }
+  if (req.includes('gravity')) {
+    const y = Math.round(body.context.level.gravity.y * 0.7);
+    return { kind: 'apply', message: 'Gravity is 30% weaker.', changes: [`Gravity: ${body.context.level.gravity.y} → ${y}`], operations: [{ op: 'set_world', sceneId: body.context.level.id, gravityX: null, gravityY: y, backgroundColor: null }] };
+  }
+  if (req.includes('faster')) {
+    return {
+      kind: 'preview',
+      message: 'Speeds up these enemies.',
+      changes: t.map((e) => `${e.name}: faster`),
+      operations: t.map((e) => ({ op: 'set_component_field', target: 'instance', id: e.id, component: 'Sprite', field: 'color', valueJson: '"#ff2d55"' })),
+    };
+  }
+  if (req.includes('flying robot')) {
+    return {
+      kind: 'preview',
+      message: 'A floating robot enemy. Shooting needs behaviors, which are not available yet.',
+      changes: ['New object: Flying Robot', 'Floats (no gravity)', 'Hurts on contact'],
+      operations: [
+        {
+          op: 'create_definition', ref: 'robot', name: 'Flying Robot', description: 'A hovering robot enemy.', category: 'Enemies', tags: ['enemy', 'flying'],
+          components: [
+            { component: 'Sprite', propsJson: '{"width":26,"height":22,"color":"#9aa7ff"}' },
+            { component: 'Collider', propsJson: '{"size":{"x":26,"y":22}}' },
+            { component: 'PhysicsBody', propsJson: '{"gravityScale":0}' },
+            { component: 'Damage', propsJson: '{"amount":1}' },
+          ],
+        },
+      ],
+    };
+  }
+  if (req.includes('open the door')) {
+    return { kind: 'unsupported', message: `Linking ${t[0]?.name} to ${t[1]?.name} needs relationships, which aren't in this version yet.`, changes: [], operations: [] };
+  }
+  return { kind: 'clarify', message: 'What would you like to change about it?', changes: [], operations: [] };
+}
 
 try {
   const context = await browser.newContext({ viewport: { width: 1400, height: 860 }, acceptDownloads: true });
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
+  // Ignored: the expected 401 from the keyless AI endpoint, and web-font hosts (unreachable in sandboxed CI; the UI falls back to system fonts).
+  const ignorable = (m) => m.text().includes('401') || /fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '');
+  page.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  await page.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    await new Promise((r) => setTimeout(r, 150));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
   await page.goto(URL);
 
   const canvas = page.getByTestId('viewport-canvas');
   const box = await canvas.boundingBox();
   const center = { x: box.width / 2, y: box.height / 2 };
-  // Camera starts at world (0,0), zoom 1: world = canvas-local point - center.
   const toScreen = (wx, wy) => ({ x: box.x + center.x + wx, y: box.y + center.y + wy });
-  const outlineCount = () => page.locator('[data-testid="outline"] li:not(.static)').count();
+  const prompts = page.getByTestId('context-prompt');
+  const promptInput = prompts.getByTestId('prompt-input');
+  const ask = async (text) => {
+    await promptInput.click();
+    await promptInput.fill(text);
+    await promptInput.press('Enter');
+  };
+  const result = page.locator('[data-testid="context-prompt"] [data-testid="prompt-result"]');
+  const clickWorld = async (wx, wy, opts = {}) => {
+    const p = toScreen(wx, wy);
+    // page.mouse.click ignores `modifiers`, so hold them on the keyboard.
+    for (const k of opts.modifiers ?? []) await page.keyboard.down(k);
+    await page.mouse.click(p.x, p.y);
+    for (const k of opts.modifiers ?? []) await page.keyboard.up(k);
+  };
+  const emptySpot = toScreen(420, 260);
 
-  step = 'startup';
-  await check(async () => (await page.locator('[data-testid="object-library"] li').count()) === 6, 'object library lists 6 starter definitions');
-  await check(async () => await page.getByTestId('scene-inspector').isVisible(), 'inspector shows scene settings with nothing selected');
+  step = 'canvas first';
+  await check(async () => (await canvas.isVisible()) && (await page.getByTestId('inspector').count()) === 0, 'the game canvas fills the window; no inspector panel by default');
+  await check(async () => (await prompts.count()) === 0, 'no prompt is visible when nothing is selected');
+  await check(async () => (await page.getByTestId('library-panel').count()) === 0, 'library is closed until asked for');
 
-  step = 'place objects';
-  const drop = async (name, wx, wy) =>
-    page.dragAndDrop(`[data-testid="definition-${name}"]`, '[data-testid="viewport-canvas"]', { targetPosition: { x: center.x + wx, y: center.y + wy } });
-  await drop('Player', -96, -64);
-  await drop('Platform', -96, 32);
-  await drop('Platform', 160, 0);
-  await check(async () => (await outlineCount()) === 3, 'three entities placed via drag and drop');
-  await check(async () => (await page.getByTestId('entity-name').inputValue()) === 'Platform 2', 'last placed entity is selected and auto-named');
-  await check(async () => (await page.getByTestId('transform-position.x').inputValue()) === '160', 'drop position is grid-snapped into the transform');
+  step = 'build a level from the library';
+  const drop = async (name, wx, wy) => {
+    if ((await page.getByTestId('library-panel').count()) === 0) await page.getByTestId('dock-library').click();
+    await page.dragAndDrop(`[data-testid="definition-${name}"]`, '[data-testid="viewport-canvas"]', { targetPosition: { x: center.x + wx, y: center.y + wy } });
+  };
+  await drop('Player', -256, 0);
+  await check(async () => (await page.getByTestId('library-panel').count()) === 0, 'library closes after placing, giving the canvas back');
+  await drop('Platform', -224, 64);
+  await drop('Enemy', -32, 0);
+  await drop('Enemy', 96, 0);
+  await drop('Door', 224, -16);
+  await page.mouse.click(emptySpot.x, emptySpot.y);
+  await check(async () => (await prompts.count()) === 0, 'clicking empty space deselects and removes the prompt');
+  await page.screenshot({ path: `${OUT}/1-clean-canvas.png` });
 
-  step = 'select + move';
-  let p = toScreen(-96, -64);
-  await page.mouse.click(p.x, p.y);
-  await check(async () => (await page.getByTestId('entity-name').inputValue()) === 'Player', 'clicking in the viewport selects the Player');
-  await page.mouse.move(p.x, p.y);
-  await page.mouse.down();
-  await page.mouse.move(p.x + 40, p.y - 10, { steps: 5 });
-  await page.mouse.move(p.x + 64, p.y - 16, { steps: 5 });
-  await page.mouse.up();
-  await check(async () => (await page.getByTestId('transform-position.x').inputValue()) === '-32', 'dragging moves the entity (x snapped to -32)');
-  await check(async () => (await page.getByTestId('transform-position.y').inputValue()) === '-80', 'dragging moves the entity (y snapped to -80)');
-
-  step = 'inspector edits';
-  const speed = page.getByTestId('field-CharacterController.speed');
-  await speed.fill('320');
-  await speed.press('Enter');
-  await check(async () => (await speed.inputValue()) === '320', 'component field edit is applied');
-  await check(async () => (await page.locator('[data-testid="component-CharacterController"] .row.overridden').count()) === 1, 'edited field is marked as instance override');
-  await page.getByTestId('add-component').selectOption('Health');
-  await check(async () => await page.getByTestId('component-Health').isVisible(), 'Health component added from the registry');
-  const maxHealth = page.getByTestId('field-Health.maxHealth');
-  await maxHealth.fill('2.5');
-  await maxHealth.press('Enter');
-  await check(async () => (await maxHealth.inputValue()) === '3', 'invalid value (non-integer health) is rejected');
-  await check(async () => (await page.getByTestId('console').innerText()).includes('must be an integer'), 'rejection is reported in the console');
-  await page.getByTestId('entity-tags').fill('hero, Tutorial');
-  await page.getByTestId('entity-tags').press('Enter');
-  await check(async () => (await page.getByTestId('entity-tags').inputValue()) === 'hero, tutorial', 'tags are saved normalized');
-
-  await page.screenshot({ path: `${OUT}/entity-inspector.png` });
-
-  step = 'definition editing';
-  await page.getByTestId('definition-Platform').click();
-  await check(async () => await page.getByTestId('definition-inspector').isVisible(), 'selecting a library item opens the definition inspector');
-  await check(async () => (await page.getByTestId('definition-inspector').innerText()).includes('2 instances'), 'definition reports its instance count');
-  await page.getByTestId('field-Sprite.color').fill('#22aa55');
-  await page.locator('[data-testid="outline"] li', { hasText: 'Platform 2' }).click();
-  await check(async () => (await page.getByTestId('field-Sprite.color').inputValue()) === '#22aa55', 'definition change propagates to instances');
-
-  step = 'multi-select';
-  await page.mouse.move(box.x + 10, box.y + 10);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10, { steps: 8 });
-  await page.mouse.up();
-  await check(async () => (await page.getByTestId('multi-inspector').innerText()).includes('3 entities selected'), 'marquee selects all three entities');
+  step = 'golden test 1: player';
+  await clickWorld(-256, 0);
+  await check(async () => (await prompts.count()) === 1, 'clicking the Player shows exactly one prompt');
+  await check(async () => (await prompts.getAttribute('data-context')) === 'entity', 'the prompt is bound to the selected entity');
+  await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) !== 'TEXTAREA', 'the first click selects without stealing focus');
+  await check(async () => (await promptInput.getAttribute('placeholder')) === 'Type a command…', 'the prompt is a plain input with a minimal placeholder');
+  const pBox = await prompts.boundingBox();
+  const player = toScreen(-256, 0);
+  await check(pBox.y + pBox.height < player.y && Math.abs(pBox.x + pBox.width / 2 - player.x) < 40, 'the prompt sits just above the Player, centered on it');
+  await page.screenshot({ path: `${OUT}/2-player-selected.png` });
   await canvas.focus();
-  await page.keyboard.press('Control+d');
-  await check(async () => (await outlineCount()) === 6, 'Ctrl+D duplicates the selection');
-  await page.keyboard.press('Delete');
-  await check(async () => (await outlineCount()) === 3, 'Delete removes the selection');
+  await page.keyboard.press('Enter');
+  await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Enter moves focus into the prompt');
+  await ask('Give the player three hearts.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the AI change is applied');
+  await check(async () => (await result.innerText()).includes('Player: 3 hearts'), 'a short confirmation lists what changed');
+  const last = aiRequests.at(-1);
+  await check(last.context.scope === 'entity' && last.context.targets[0].name === 'Player', 'the AI received the selected Player as context');
+  await check(last.context.otherEntities.some((e) => e.name === 'Door'), 'other objects are available to the AI by name');
+  await page.screenshot({ path: `${OUT}/3-applied.png` });
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '3', 'the details drawer shows the new Health component (max 3)');
+  await page.getByTestId('close-details').click();
 
-  step = 'world settings';
+  step = 'undo/redo';
+  await page.getByTestId('undo').click();
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('component-Health').count()) === 0, 'Undo removes the AI change as one step');
+  await page.getByTestId('redo').click();
+  await check(async () => (await page.getByTestId('component-Health').count()) === 1, 'Redo restores it');
+  await page.getByTestId('close-details').click();
+
+  step = 'golden test 2: enemy';
+  await clickWorld(-32, 0);
+  await check(async () => (await prompts.count()) === 1, 'selecting the Enemy replaces the Player prompt (still one prompt)');
+  await check(async () => !(await result.count()), 'the new prompt starts fresh');
+  await ask('Make the enemy patrol between these two points.');
+  await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
+  await check(async () => (await result.innerText()).includes("can't patrol yet"), 'the AI says what is missing instead of faking it');
+  await check(aiRequests.at(-1).context.targets[0].name === 'Enemy', 'the AI received the Enemy as context');
+
+  step = 'relationship context';
+  await clickWorld(224, -16, { modifiers: ['Shift'] });
+  await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'two selected objects give one relationship prompt');
+  await ask('Make the key open the door.');
+  await check(async () => (await result.count()) === 1, 'the relationship request gets an answer');
+  const pairReq = aiRequests.at(-1);
+  await check(pairReq.context.scope === 'pair' && pairReq.context.targets.map((t) => t.name).join('>') === 'Enemy>Door', 'both objects are sent, in selection order');
+  await page.screenshot({ path: `${OUT}/4-relationship.png` });
+
+  step = 'golden test 6: group';
+  const a = toScreen(-80, -60);
+  const b = toScreen(140, 40);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 6 });
+  await page.mouse.up();
+  await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'box-selecting the two enemies gives one shared prompt');
+  await clickWorld(-256, 0, { modifiers: ['Shift'] });
+  await check(async () => (await prompts.getAttribute('data-context')) === 'group' && (await prompts.count()) === 1, 'three selected objects still give one shared prompt');
+  await ask('Make these enemies move faster.');
+  await check(async () => (await result.getAttribute('data-status')) === 'proposal', 'a multi-object change is shown as a preview first');
+  await check(async () => (await result.locator('.changes li').count()) === 3, 'the preview lists one line per affected object');
+  await page.screenshot({ path: `${OUT}/5-preview.png` });
+  await prompts.getByTestId('proposal-cancel').click();
+  await check(async () => (await result.count()) === 0, 'Cancel discards the preview without changing anything');
+
+  step = 'golden test 5: world';
+  await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+  await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'double-clicking empty space makes the level the context');
+  await ask('Make gravity 30% weaker.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'world change applied');
+  await check(async () => (await result.innerText()).includes('980 → 686'), 'confirmation shows the gravity change');
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('world-gravity.y').inputValue()) === '686', 'level gravity is now 686');
+  await page.getByTestId('close-details').click();
   await page.keyboard.press('Escape');
-  await page.getByTestId('world-gravity.y').fill('490');
-  await page.getByTestId('world-gravity.y').press('Enter');
-  await check(async () => (await page.getByTestId('world-gravity.y').inputValue()) === '490', 'world gravity edited');
-  await page.screenshot({ path: `${OUT}/editor.png` });
+  await check(async () => (await prompts.count()) === 0, 'Escape clears the context');
 
-  step = 'save to file';
-  await page.getByTestId('menu-File').click();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('menu-save').click()]);
-  const savedPath = `${OUT}/${download.suggestedFilename()}`;
-  await download.saveAs(savedPath);
-  await check(savedPath.endsWith('.pxlproj.json'), `project downloaded as ${download.suggestedFilename()}`);
+  step = 'golden test 7: create with AI';
+  await page.getByTestId('dock-create').click();
+  const create = page.getByTestId('create-prompt');
+  await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Create opens a focused prompt');
+  await create.getByTestId('prompt-input').fill('Create a flying robot enemy that shoots lasers.');
+  await create.getByTestId('prompt-input').press('Enter');
+  await check(async () => (await create.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'creation is previewed before it happens');
+  await page.screenshot({ path: `${OUT}/6-create-preview.png` });
+  await create.getByTestId('proposal-apply').click();
+  await check(async () => (await create.locator('[data-testid="definition-Flying Robot"]').count()) === 1, 'the new object is offered right away, ready to drag');
+  await page.dragAndDrop('[data-testid="create-prompt"] [data-testid="definition-Flying Robot"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: center.x + 96, y: center.y - 160 } });
+  await page.mouse.click(emptySpot.x, emptySpot.y);
+  await clickWorld(96, -160);
+  await check(async () => (await prompts.count()) === 1, 'clicking the new robot gives it the same contextual prompt');
+  await ask('Give the robot three hearts.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the new object can be changed like any other');
+  await page.getByTestId('dock-library').click();
+  await page.locator('.chip', { hasText: 'Enemies' }).click();
+  await check(async () => (await page.locator('[data-testid="object-library"] .tile').count()) === 2, 'the library files the robot under Enemies');
+  await page.keyboard.press('Escape');
 
-  step = 'autosave restore';
+  step = 'history';
+  await page.getByTestId('tray-toggle').click();
+  await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player three hearts.'), 'AI changes appear in History');
+  await page.screenshot({ path: `${OUT}/7-history.png` });
+
+  step = 'save and reload';
   await page.waitForTimeout(500);
   await page.reload();
-  await check(async () => (await outlineCount()) === 3, 'reload restores the project from autosave');
+  await page.getByTestId('dock-library').click();
+  await check(async () => (await page.locator('[data-testid="definition-Flying Robot"]').count()) === 1, 'AI-created objects survive a reload (autosave)');
 
-  step = 'open from file';
-  page.on('dialog', (d) => d.accept());
-  await page.getByTestId('menu-File').click();
-  await page.getByTestId('menu-new').click();
-  await check(async () => (await outlineCount()) === 0, 'File > New gives an empty scene');
-  await page.getByTestId('open-file-input').setInputFiles(savedPath);
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="outline"] li:not(.static)').length === 3);
-  await check(true, 'opening the saved file restores 3 entities');
-  await page.locator('[data-testid="outline"] li', { hasText: 'Player' }).click();
-  await check(async () => (await page.getByTestId('field-CharacterController.speed').inputValue()) === '320', 'instance override survived save/load');
-  await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '3', 'added component survived save/load');
-  await check(async () => (await page.getByTestId('transform-position.x').inputValue()) === '-32', 'transform survived save/load');
+  step = 'no AI connection';
+  await page.unroute('**/api/ai');
   await page.keyboard.press('Escape');
-  await check(async () => (await page.getByTestId('world-gravity.y').inputValue()) === '490', 'world settings survived save/load');
+  await clickWorld(-256, 0);
+  await ask('Give the player a jetpack.');
+  await check(async () => (await result.getAttribute('data-status')) === 'error', 'without an API key the real endpoint answers with an error');
+  await check(async () => /not connected/i.test(await result.innerText()), 'the prompt says plainly that AI is not connected');
 
   step = 'console errors';
   await check(errors.length === 0, `no page/console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
-  console.log('\nE2E smoke test passed.');
+  console.log(`\nE2E passed (${passed} checks).`);
 } catch (e) {
   console.error(`\nE2E FAILED: ${e.message}`);
   if (errors.length) console.error(errors.join('\n'));

@@ -54,7 +54,15 @@ export function createStandaloneEntity(name: string, position: Vec2, components:
  */
 export function createStarterDefinitions(registry: ComponentRegistry): ObjectDefinition[] {
   const c = (type: string, props: Record<string, unknown> = {}) => registry.createDefault(type, props);
-  return [
+  const categories: Record<string, string> = {
+    Player: 'Characters',
+    Platform: 'Platforms',
+    Enemy: 'Enemies',
+    Coin: 'Items',
+    Door: 'Environment',
+    Hazard: 'Environment',
+  };
+  const defs = [
     createDefinition(
       'Player',
       {
@@ -119,6 +127,8 @@ export function createStarterDefinitions(registry: ComponentRegistry): ObjectDef
       'Damages anything that touches it.',
     ),
   ];
+  for (const def of defs) def.metadata.category = categories[def.name];
+  return defs;
 }
 
 /** A new, empty project with starter definitions and one empty scene. */

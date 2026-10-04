@@ -3,16 +3,23 @@
 An AI-native 2D game builder: describe what your game should do, and the AI
 changes a structured game model, which then drives the editor and the runtime.
 
-**Current status: Phase 1 (foundation).** The editor, project model, component
-system, object library and save/load work. There is no play mode and no AI
-yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Current status:** the game world is the interface. Click an object and a
+prompt appears next to it; describe the change; the AI turns it into validated,
+undoable operations. Behaviors (patrol, shoot, ...), relationships and play mode
+are not built yet, and the AI says so when a request needs them.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+cp .env.example .env.local   # then put your Anthropic API key in it
+npm run dev                  # http://localhost:5173
 ```
+
+The key is read only by the dev server (`server/`); it is never sent to the
+browser. Without a key everything works except the AI, which reports that it
+isn't connected.
 
 ## Check
 
@@ -22,12 +29,14 @@ npm run typecheck
 npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 ```
 
-## Editor basics
+## Using it
 
-- **Place**: drag an object from the Object Library into the viewport (or double-click it).
-- **Select**: click; Shift/Ctrl+click to add to the selection; drag on empty space for a box selection.
-- **Move**: drag the selection (snaps to the grid; toggle under View). Arrow keys nudge.
-- **Pan / zoom**: middle mouse or Space+drag to pan, mouse wheel to zoom, `F` to frame the selection.
-- **Edit**: the Inspector edits the selected entity, the selected library object (which changes all instances), or the scene/world when nothing is selected.
-- **Keys**: `Ctrl+D` duplicate, `Del` delete, `Ctrl+A` select all, `Esc` deselect, `Ctrl+S` save, `Ctrl+O` open.
-- **Files**: `File > Save` downloads a `.pxlproj.json` project bundle. The project also autosaves to the browser's local storage.
+- **Click something** in your game. A prompt appears next to it. Press Enter (or click the prompt) and describe what you want: "Give the player three hearts."
+- **Two objects** (Shift+click the second): one prompt about how they relate. **More**: one prompt for the group (or drag a box around them).
+- **The level**: double-click empty space. "Make gravity 30% weaker."
+- **Whole game**: the ✦ button in the top bar (Ctrl+K).
+- **Create**: the bottom dock's **+ Create** makes a new object from a description; **Library** holds everything you can drag into the level.
+- **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
+- **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
+- **Move / view**: drag objects; middle mouse or Space+drag to pan; wheel to zoom; `F` to frame; arrows nudge; `Ctrl+D` duplicate; `Del` delete.
+- **Files**: menu (⋯) > Save downloads a `.pxlproj.json`; the project also autosaves in your browser.

@@ -260,6 +260,11 @@ export function setDefinitionDescription(project: Project, definitionId: Id, des
   getDefinition(project, definitionId).description = description;
 }
 
+export function setDefinitionCategory(project: Project, definitionId: Id, category: string): void {
+  if (!category.trim()) throw new ModelError('Category cannot be empty');
+  getDefinition(project, definitionId).metadata.category = category.trim();
+}
+
 export function setDefinitionTags(project: Project, definitionId: Id, tags: string[]): void {
   getDefinition(project, definitionId).tags = normalizeTags(tags);
 }

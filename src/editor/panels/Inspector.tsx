@@ -2,6 +2,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import * as m from '../../core/model/mutations';
 import { resolveEntity } from '../../core/model/resolve';
 import type { ComponentMap, Id, ObjectDefinition, Scene } from '../../core/types';
+import { CATEGORIES, categoryOf } from '../categories';
 import { getActiveScene, useEditor } from '../store';
 import { FieldEditor, ListInput, NumberInput, TextInput, Vec2Input } from './FieldEditor';
 
@@ -22,11 +23,19 @@ export function Inspector() {
   } else {
     body = <SceneInspector scene={scene} />;
   }
+  const setInspectorOpen = useEditor((s) => s.setInspectorOpen);
   return (
-    <div className="panel inspector" data-testid="inspector">
-      <div className="panel-title">Inspector</div>
-      <div className="panel-body">{body}</div>
-    </div>
+    <aside className="drawer" data-testid="inspector" aria-label="Details">
+      <header className="drawer-head">
+        <span className="drawer-title">Details</span>
+        <button className="icon-btn" aria-label="Close details" data-testid="close-details" onClick={() => setInspectorOpen(false)}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
+      </header>
+      <div className="drawer-body">{body}</div>
+    </aside>
   );
 }
 
@@ -201,7 +210,9 @@ function EntityInspector({ scene, entityId }: { scene: Scene; entityId: Id }) {
       <ComponentList
         components={resolved.components}
         overridden={resolved.overriddenFields}
-        onSet={(type, field, value) => edit(`Set ${type}.${field}`, (p) => m.setEntityComponentField(p, sid, entityId, type, field, value, componentRegistry))}
+        onSet={(type, field, value) =>
+          edit(`Set ${type}.${field}`, (p) => m.setEntityComponentField(p, sid, entityId, type, field, value, componentRegistry), { coalesceKey: `${entityId}.${type}.${field}` })
+        }
         onRevert={(type, field) => edit(`Revert ${type}.${field}`, (p) => m.revertEntityComponentField(p, sid, entityId, type, field))}
         onAdd={(type) => edit(`Add ${type}`, (p) => m.addEntityComponent(p, sid, entityId, type, componentRegistry))}
         onRemove={(type) => edit(`Remove ${type}`, (p) => m.removeEntityComponent(p, sid, entityId, type))}
@@ -249,27 +260,36 @@ function DefinitionInspector({ def }: { def: ObjectDefinition }) {
         <Row label="description">
           <TextInput value={def.description} onCommit={(v) => edit('Set description', (p) => m.setDefinitionDescription(p, def.id, v))} />
         </Row>
+        <Row label="category">
+          <select
+            value={categoryOf(def)}
+            data-testid="definition-category"
+            onChange={(e) => edit('Set category', (p) => m.setDefinitionCategory(p, def.id, e.target.value))}
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </Row>
         <Row label="tags">
           <ListInput value={def.tags} testId="definition-tags" onCommit={(tags) => edit('Set tags', (p) => m.setDefinitionTags(p, def.id, tags))} />
         </Row>
       </Section>
       <ComponentList
         components={def.components}
-        onSet={(type, field, value) => edit(`Set ${def.name} ${type}.${field}`, (p) => m.setDefinitionComponentField(p, def.id, type, field, value, componentRegistry))}
+        onSet={(type, field, value) =>
+          edit(`Set ${def.name} ${type}.${field}`, (p) => m.setDefinitionComponentField(p, def.id, type, field, value, componentRegistry), { coalesceKey: `${def.id}.${type}.${field}` })
+        }
         onAdd={(type) => edit(`Add ${type} to ${def.name}`, (p) => m.addDefinitionComponent(p, def.id, type, componentRegistry))}
         onRemove={(type) => edit(`Remove ${type} from ${def.name}`, (p) => m.removeDefinitionComponent(p, def.id, type))}
       />
       <button
         className="danger"
         data-testid="delete-definition"
-        onClick={() => {
-          const msg = instances
-            ? `Delete "${def.name}"? Its ${instances} placed instance(s) will be kept as standalone entities.`
-            : `Delete "${def.name}"?`;
-          if (confirm(msg)) edit(`Delete ${def.name}`, (p) => m.deleteDefinition(p, def.id, componentRegistry));
-        }}
+        title={instances ? `Its ${instances} placed copies stay in your levels as standalone objects.` : undefined}
+        onClick={() => edit(`Delete ${def.name}`, (p) => m.deleteDefinition(p, def.id, componentRegistry))}
       >
-        Delete object definition
+        Delete from library
       </button>
     </div>
   );
@@ -279,13 +299,14 @@ function SceneInspector({ scene }: { scene: Scene }) {
   const project = useEditor((s) => s.project);
   const edit = useEditor((s) => s.edit);
   const sid = scene.id;
+  const selectEntities = useEditor((s) => s.selectEntities);
   return (
     <div data-testid="scene-inspector">
-      <Section title="Scene">
+      <Section title="Level">
         <Row label="name">
           <TextInput value={scene.name} testId="scene-name" onCommit={(v) => edit('Rename scene', (p) => m.renameScene(p, sid, v))} />
         </Row>
-        <Row label="start scene">
+        <Row label="starts the game">
           <input
             type="checkbox"
             checked={project.startSceneId === sid}
@@ -303,9 +324,21 @@ function SceneInspector({ scene }: { scene: Scene }) {
             type="color"
             value={scene.world.backgroundColor}
             data-testid="world-background"
-            onChange={(e) => edit('Set background', (p) => m.setWorldSettings(p, sid, { backgroundColor: e.target.value }))}
+            onChange={(e) => edit('Set background', (p) => m.setWorldSettings(p, sid, { backgroundColor: e.target.value }), { coalesceKey: `${sid}.background` })}
           />
         </Row>
+      </Section>
+      <Section title={`In this level (${scene.entities.length})`} testId="outline">
+        {scene.entities.length === 0 && <p className="muted">Nothing here yet. Open the Library to add objects.</p>}
+        <ul className="outline">
+          {scene.entities.map((e) => (
+            <li key={e.id}>
+              <button className="link" onClick={() => selectEntities([e.id])}>
+                {e.name}
+              </button>
+            </li>
+          ))}
+        </ul>
       </Section>
       <Section title="Project">
         <Row label="name">
@@ -315,6 +348,11 @@ function SceneInspector({ scene }: { scene: Scene }) {
           <NumberInput value={project.settings.gridSize} step={1} onCommit={(v) => edit('Set grid size', (p) => m.setGridSize(p, v))} />
         </Row>
       </Section>
+      {project.scenes.length > 1 && (
+        <button className="danger" data-testid="delete-scene" onClick={() => edit(`Delete ${scene.name}`, (p) => m.removeScene(p, sid))}>
+          Delete this level
+        </button>
+      )}
     </div>
   );
 }
