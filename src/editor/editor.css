@@ -319,3 +319,10 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .link-toggle.on { color: #d4ceff; background: var(--accent-soft); }
 .link-toggle:hover { color: var(--text); }
 .section-actions { display: flex; align-items: center; }
+
+/* ---------------------------------------------------------------- play mode */
+.play-view { position: absolute; inset: 0; background: var(--ink); }
+.play-view canvas { display: block; width: 100%; height: 100%; outline: none; }
+.play-btn.playing { background: #e5534b; box-shadow: 0 6px 20px rgba(229, 83, 75, 0.45); }
+/* While playing, only the Play/Stop control stays in the bar. */
+.editor.playing .topbar-left > :not(.wordmark), .editor.playing .topbar-right { visibility: hidden; }

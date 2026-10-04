@@ -35,10 +35,10 @@ export function describeComponents(registry: ComponentRegistry): string {
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, climbing (the Climbable component marks ladders, but nothing climbs until behaviors exist), jetpacks, health regeneration.',
+  'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, jetpacks, health regeneration.',
   'Relationships between objects (controls, requires, opens, protects, targets, damages-specific-entity) and conditions/rules ("when X then Y").',
   'Events, win/lose conditions, checkpoints logic, level transitions.',
-  'Play mode / runtime simulation (the game cannot be run yet), so values describe intent but are not simulated.',
+  'During play, damage, losing health, dying, and collecting items are not simulated yet: Health, Damage, DamageReceiver, Collectible and Inventory store values that the coming rules/events system will act on.',
   'Camera settings, lighting, day/night, music, sound, particles, generated art or animation, backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 
@@ -74,6 +74,12 @@ Operations
 - Collider.matchSprite (default true) keeps the collider the same size as the sprite: changing either size changes both. Set it to false only if the user wants them sized separately.
 - Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot create images.
 - create_definition: give the object a clear name, a one-line description, a category (one of Characters, Enemies, Platforms, Items, Environment, Effects, UI, Custom), tags, and components. Give new objects a Sprite with a fitting size and color (placeholder art), a Collider, and a PhysicsBody when they should collide or fall (gravityScale 0 for things that float or fly). place_instance only when the user asks to put it in the level.
+
+How the game runs (Play mode)
+- Entities with a CharacterController are player-controlled: arrows/WASD run, Space/Up jumps, Up/Down climb anything Climbable they overlap. speed, acceleration, jumpForce (initial upward speed; jump height ≈ jumpForce²/(2·gravity)) and airControl are simulated.
+- PhysicsBody: dynamic bodies fall with world gravity × gravityScale and collide with solids; static bodies and colliders without a PhysicsBody are solid ground/walls; kinematic bodies move by their velocity only. Colliders with isTrigger are not solid.
+- The camera follows the entity with a CameraTarget (followStrength = smoothing). Falling below the level puts an entity back at its start.
+- Not simulated yet: damage, health, collecting, enemies moving on their own (see "Not available yet").
 
 Available components
 ${describeComponents(registry)}

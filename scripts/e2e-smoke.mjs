@@ -424,6 +424,50 @@ try {
     return !scrolled && b.y === stageBox.y && b.height === stageBox.height;
   }, 'switching console tabs and minimising leaves the editor in place');
 
+  step = 'play';
+  await clickWorld(-256, 0);
+  await prompts.getByTestId('prompt-details').click();
+  const posBefore = [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()];
+  await page.getByTestId('close-details').click();
+  const undoTitle = await page.getByTestId('undo').getAttribute('title');
+  await page.getByTestId('play').click();
+  const play = page.getByTestId('play-canvas');
+  await check(async () => (await play.isVisible()) && (await page.getByTestId('viewport-canvas').count()) === 0, 'Play replaces the editor with the running game');
+  await check(async () => (await page.getByTestId('dock-create').count()) === 0 && (await page.getByTestId('tool-panel').count()) === 0 && (await prompts.count()) === 0, 'editor tools and prompts disappear while playing');
+  const ps = async () => ((await play.getAttribute('data-player')) ?? '').split(',').map(Number);
+  await check(async () => {
+    const [, y, grounded] = await ps();
+    return grounded === 1 && Math.abs(y - 12) < 0.5;
+  }, 'the player falls and lands on the drawn platform (y = 12)');
+  const [startX] = await ps();
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('ArrowRight');
+  await check(async () => (await ps())[0] > startX + 40, 'holding → runs right');
+  await page.waitForTimeout(400);
+  await page.keyboard.down('Space');
+  let jumped = false;
+  for (let i = 0; i < 30 && !jumped; i++) {
+    await page.waitForTimeout(20);
+    jumped = (await ps())[1] < 12 - 40;
+  }
+  await page.keyboard.up('Space');
+  await check(jumped, 'Space jumps (the player rises more than 40px)');
+  await check(async () => (await ps())[2] === 1, 'and lands again');
+  await page.screenshot({ path: `${OUT}/12-play.png` });
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('viewport-canvas').isVisible()) && (await play.count()) === 0, 'Esc stops the game and returns to the editor');
+  await check(async () => (await page.getByTestId('undo').getAttribute('title')) === undoTitle, 'playing made no edits (undo history unchanged)');
+  await clickWorld(-256, 0);
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()].join() === posBefore.join(), 'the player is back at its editor position (runtime state was thrown away)');
+  await page.getByTestId('close-details').click();
+  await page.keyboard.press('Control+Enter');
+  await check(async () => await play.isVisible(), 'Ctrl+Enter starts playing too');
+  await page.getByTestId('play').click();
+  await check(async () => await page.getByTestId('viewport-canvas').isVisible(), 'the Stop button stops');
+  await page.keyboard.press('Escape');
+
   step = 'navigation';
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');

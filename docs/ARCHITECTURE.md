@@ -204,6 +204,38 @@ A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
 **Background** card. Only one card is ever open: opening the background card
 clears the selection, and selecting something closes it.
 
+### Runtime (Play mode)
+`src/runtime/` is pure TypeScript (no React), unit-tested in Node:
+
+- `Runtime` is built from a snapshot of the project when Play starts and
+  discarded on Stop. It keeps its own positions/velocities; the project is
+  never written (tested: the serialized project is byte-identical after a
+  run, and the editor's undo history is unchanged after playing).
+- Fixed 1/120 s simulation steps with an accumulator, so physics doesn't
+  depend on the display's frame rate.
+- `physics.ts`: arcade physics for a platformer (axis-aligned boxes, no
+  rotation; move x then y and stop at the first solid). Bodies land exactly
+  on tile tops and never snag on seams between neighbouring tiles. A
+  rigid-body library (Box2D/Matter/Rapier) was considered and rejected for
+  characters: rotation, friction on walls and seam-snagging make platformer
+  controls feel wrong. One can still be added later for crates and ropes.
+- Everything is driven by components: `PhysicsBody` (dynamic falls with
+  world gravity × gravityScale; static and collider-only entities are
+  solid; kinematic moves by velocity), `Collider` (box/circle as a box,
+  offset, triggers aren't solid), `CharacterController` (input-driven run
+  with acceleration and air control, jump with jumpForce, coyote time, jump
+  buffering, shorter hop on early release), `Climbable` (Up/Down climbs;
+  the top of a ladder is a one-way platform you can stand on and climb down
+  from), `CameraTarget` (smoothed follow).
+- Falling far below the level puts an entity back at its start.
+- `input.ts` maps keys to actions (arrows/WASD, Space/Z jump); the runtime
+  only sees actions.
+- `PlayView` draws the runtime with the same renderer as the editor
+  (background, parallax, tiles, sprites). Play hides all editor tools; Esc,
+  Stop or Ctrl+Enter returns to editing; R restarts.
+- Not simulated yet (Phase 3, with events and rules): damage, health,
+  death, collecting, enemy behaviors.
+
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained
 or horizontal deltas are a trackpad and pan; a pinch arrives as Ctrl+wheel and
@@ -295,7 +327,7 @@ one version at a time, and refuses files from a newer editor.
 ## Roadmap (from the product spec)
 
 1. **Foundation**: done.
-2. Runtime: game loop, physics library, collisions, movement/jumping, Play/Stop (runtime state separate from the project). The Play button is in place but disabled until this exists.
+2. Runtime: **done** (game loop, arcade physics, collisions, running, jumping, ladders, camera follow, Play/Stop with runtime state separate from the project).
 3. Graph: relationships, events, rules, graph queries. Once relationships exist, the details drawer should show them ("requires -> Blue Key") and the AI gets relationship operations.
 4. Commands: **done** (operations, transactions, undo/redo).
 5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).

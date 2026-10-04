@@ -11,6 +11,7 @@ import { Inspector } from './panels/Inspector';
 import { saveProjectToFile } from './persistence';
 import { ContextPrompt } from './prompt/ContextPrompt';
 import { useEditor } from './store';
+import { PlayView } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
 
 /**
@@ -21,6 +22,18 @@ import { Viewport } from './viewport/Viewport';
 export function App() {
   useGlobalShortcuts();
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
+  const mode = useEditor((s) => s.mode);
+  if (mode === 'play') {
+    // Build → Play → Game: the editor gets out of the way.
+    return (
+      <div className="editor playing">
+        <TopBar />
+        <main className="stage">
+          <PlayView />
+        </main>
+      </div>
+    );
+  }
   return (
     <div className="editor">
       <TopBar />
@@ -47,6 +60,19 @@ function useGlobalShortcuts() {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       const state = useEditor.getState();
+      if (state.mode === 'play') {
+        // While playing, keys belong to the game; Esc (or Ctrl/Cmd+Enter) stops.
+        if (e.key === 'Escape' || (mod && e.key === 'Enter')) {
+          e.preventDefault();
+          state.setMode('edit');
+        }
+        return;
+      }
+      if (mod && e.key === 'Enter') {
+        e.preventDefault();
+        state.setMode('play');
+        return;
+      }
       if (mod && key === 's') {
         e.preventDefault();
         saveProjectToFile();

@@ -37,12 +37,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <button className="play-btn" disabled title="Play mode arrives with the game runtime (next phase)" data-testid="play">
-        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-          <path d="M3 1.8v8.4L10 6z" fill="currentColor" />
-        </svg>
-        Play
-      </button>
+      <PlayButton />
 
       <div className="topbar-right">
         <button
@@ -188,5 +183,30 @@ function MainMenu({ onOpen }: { onOpen: () => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+function PlayButton() {
+  const mode = useEditor((s) => s.mode);
+  const setMode = useEditor((s) => s.setMode);
+  const playing = mode === 'play';
+  return (
+    <button
+      className={`play-btn${playing ? ' playing' : ''}`}
+      data-testid="play"
+      title={playing ? 'Stop and go back to editing (Esc)' : 'Play the level (Ctrl+Enter). Arrows/WASD move, Space jumps, Up/Down climb, R restarts.'}
+      onClick={() => setMode(playing ? 'edit' : 'play')}
+    >
+      {playing ? (
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 1.8v8.4L10 6z" fill="currentColor" />
+        </svg>
+      )}
+      {playing ? 'Stop' : 'Play'}
+    </button>
   );
 }

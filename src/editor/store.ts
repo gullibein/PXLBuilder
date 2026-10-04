@@ -69,6 +69,8 @@ export interface EditorState {
   backgroundOpen: boolean;
   /** Object whose Sprites panel is open. */
   spritesFor: Id | null;
+  /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
+  mode: 'edit' | 'play';
 
   /** Applies a change to the project as one undoable transaction. Returns false (and logs) if the change was rejected. */
   edit(label: string, recipe: (draft: Project) => void, opts?: EditOptions): boolean;
@@ -95,6 +97,7 @@ export interface EditorState {
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
   openSprites(definitionId: Id | null): void;
+  setMode(mode: 'edit' | 'play'): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -139,6 +142,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     lastBrushId: null,
     backgroundOpen: false,
     spritesFor: null,
+    mode: 'edit',
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -283,6 +287,13 @@ export const useEditor = create<EditorState>()((set, get) => {
         project.definitions.find((d) => d.metadata.placement === 'tile') ??
         project.definitions[0];
       if (pick) get().setTool({ kind: 'brush', definitionId: pick.id });
+    },
+
+    setMode(mode) {
+      // Play takes the whole stage: close every card and panel.
+      if (mode === 'play') {
+        set({ mode, dock: null, backgroundOpen: false, spritesFor: null, inspectorOpen: false, globalPrompt: { ...get().globalPrompt, open: false }, tray: { ...get().tray, open: false } });
+      } else set({ mode });
     },
 
     openSprites(definitionId) {
