@@ -7,6 +7,7 @@
 import type { ComponentRegistry } from '../components/registry';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
+import { createLadderAsset, createStarterDefinitions } from './factory';
 import { validateGrid } from './spriteGrid';
 import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
@@ -345,6 +346,67 @@ export function setDefinitionComponentField(
     checkField(registry, t, f, v);
     def.components[t][f] = cloneValue(v);
   }
+}
+
+// ---------------------------------------------------------------- starter objects
+
+/** The starter key of a definition (set on starters; older projects match by name), or null for user-made objects. */
+export function starterKeyOf(def: ObjectDefinition, starters: ObjectDefinition[]): string | null {
+  const key = typeof def.metadata.starter === 'string' ? def.metadata.starter : def.name;
+  return starters.some((s) => s.name === key) ? key : null;
+}
+
+/** Fresh starter definitions whose image assets reuse identical ones already in the project. */
+function freshStarters(project: Project, registry: ComponentRegistry): { defs: ObjectDefinition[]; newAssets: AssetRecord[] } {
+  const ladder = createLadderAsset();
+  const existing = project.assets.find((a) => a.data === ladder.data);
+  const defs = createStarterDefinitions(registry, existing ?? ladder);
+  return { defs, newAssets: existing ? [] : [ladder] };
+}
+
+function applyStarter(project: Project, def: ObjectDefinition, starter: ObjectDefinition, newAssets: AssetRecord[]): void {
+  def.components = cloneValue(starter.components);
+  def.tags = [...starter.tags];
+  def.description = starter.description;
+  def.metadata = cloneValue(starter.metadata);
+  const assetId = def.components.Sprite?.assetId;
+  for (const a of newAssets) if (a.id === assetId && !project.assets.some((x) => x.id === a.id)) project.assets.push(cloneValue(a));
+  // Placed copies keep their place and name but lose their own tweaks.
+  forEachInstance(project, def.id, (e) => {
+    e.components = {};
+    e.removedComponents = [];
+  });
+}
+
+/** Puts one starter object (Player, Platform, ...) back to how it ships. Its id stays, so placed copies stay linked. */
+export function resetStarterDefinition(project: Project, definitionId: Id, registry: ComponentRegistry): void {
+  const def = getDefinition(project, definitionId);
+  const { defs, newAssets } = freshStarters(project, registry);
+  const key = starterKeyOf(def, defs);
+  if (!key) throw new ModelError(`"${def.name}" is not a built-in object, so it has no default to go back to`);
+  applyStarter(project, def, defs.find((s) => s.name === key)!, newAssets);
+  def.name = key;
+}
+
+/** Resets every starter object and re-adds deleted ones. Objects the user created are left alone. Returns how many were reset/added. */
+export function resetAllStarterDefinitions(project: Project, registry: ComponentRegistry): { reset: number; added: number } {
+  const { defs, newAssets } = freshStarters(project, registry);
+  let reset = 0;
+  let added = 0;
+  for (const starter of defs) {
+    const def = project.definitions.find((d) => starterKeyOf(d, defs) === starter.name);
+    if (def) {
+      applyStarter(project, def, starter, newAssets);
+      def.name = starter.name;
+      reset++;
+    } else {
+      const assetId = starter.components.Sprite?.assetId;
+      for (const a of newAssets) if (a.id === assetId && !project.assets.some((x) => x.id === a.id)) project.assets.push(cloneValue(a));
+      project.definitions.push(cloneValue(starter));
+      added++;
+    }
+  }
+  return { reset, added };
 }
 
 // ---------------------------------------------------------------- sprites

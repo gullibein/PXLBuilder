@@ -56,6 +56,8 @@ const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
 /** How much of a character must be inside a ladder (horizontally) to climb it. */
 const LADDER_GRIP = 0.5;
+/** How quickly a climbing character eases to the ladder's middle (per second, exponential). */
+const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
 
@@ -222,8 +224,11 @@ export class Runtime {
     }
     if (e.climbing && (!ladder || input.wasPressed('jump'))) e.climbing = false;
     if (e.climbing) {
-      e.vy = ((input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0)) * c.speed;
+      const vertical = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
+      e.vy = vertical * c.speed;
       e.vx = dir * c.speed;
+      // Climbing straight up or down eases you into the middle of the ladder; Left/Right overrides it.
+      if (ladder && vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
       e.grounded = false;
       return;
     }
@@ -255,12 +260,17 @@ export class Runtime {
   private ladderAt(e: RuntimeEntity): RuntimeEntity | null {
     const me = zoneOf(e);
     const reach = { ...me, y: me.y + 1, hh: me.hh + 1 };
+    let best: RuntimeEntity | null = null;
+    let bestInside = -1;
     for (const l of this.climbables) {
       const z = zoneOf(l);
       const inside = Math.min(me.x + me.hw, z.x + z.hw) - Math.max(me.x - me.hw, z.x - z.hw);
-      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && Math.abs(reach.y - z.y) < reach.hh + z.hh) return l;
+      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && inside > bestInside && Math.abs(reach.y - z.y) < reach.hh + z.hh) {
+        best = l;
+        bestInside = inside;
+      }
     }
-    return null;
+    return best;
   }
 
   /** Standing on solid ground with the ladder going up: pressing down shouldn't start a climb into the floor. */

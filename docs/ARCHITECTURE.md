@@ -198,6 +198,14 @@ collider, changing the collider resizes the sprite, and turning the link back
 on snaps the collider to the sprite. Existing objects keep their sizes until
 edited. The starter Ladder ships unlinked (its collider is narrower than its art).
 
+### Built-in (starter) objects
+Starter definitions carry `metadata.starter` (their original name; older
+projects match by name). `resetStarterDefinition` / `resetAllStarterDefinitions`
+put them back to how they ship, keeping their ids (so placed copies stay
+linked and in place; their per-copy tweaks are cleared), re-adding deleted
+starters, reusing identical image assets, and never touching user-made
+objects. Exposed in the project menu and in the Objects right-click menu.
+
 ### Tools
 A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
 `B`; draws with the last used object, shown under the pen), and opens the
@@ -230,6 +238,9 @@ clears the selection, and selecting something closes it.
   less than half remains; reaching the floor ends the climb; the top of a
   ladder is a one-way platform you can stand on and climb down from; Up
   never jumps), `CameraTarget` (smoothed follow).
+- Climbing straight up or down eases the character to the ladder's middle
+  (exponential, about 10/s); holding Left/Right while climbing overrides it.
+  With ladders side by side, the one the character overlaps most is used.
 - Tuning: the starter Player is one tile (32px) tall, and jumpForce 295 at
   gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
   v3 applies this to older saves unless the user changed those values.

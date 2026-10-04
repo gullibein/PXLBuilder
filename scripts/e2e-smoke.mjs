@@ -316,7 +316,7 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Sprites', 'right-clicking an object offers Inspector and Sprites');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Sprites Reset to default', 'right-clicking a built-in object offers Inspector, Sprites and Reset to default');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
@@ -538,6 +538,46 @@ try {
   await check(async () => (await result.getAttribute('data-status')) === 'error', 'without an API key the real endpoint answers with an error');
   await check(async () => /not connected/i.test(await result.innerText()), 'the prompt says plainly that AI is not connected');
 
+  step = 'reset objects / new project';
+  await page.keyboard.press('Escape');
+  const openLibrary = async () => {
+    if ((await page.getByTestId('library-panel').count()) === 0) await page.getByTestId('dock-library').click();
+  };
+  const openPlayerDetails = async () => {
+    await openLibrary();
+    await page.getByTestId('definition-Player').click({ button: 'right' });
+    await page.getByTestId('menu-inspector').click();
+  };
+  const setJump = async (v) => {
+    await page.getByTestId('field-CharacterController.jumpForce').fill(String(v));
+    await page.getByTestId('field-CharacterController.jumpForce').press('Enter');
+  };
+  await openPlayerDetails();
+  await setJump(900);
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '900', 'the Player object was edited (jumpForce 900)');
+  const levelSize = await canvas.getAttribute('data-entities');
+  await page.getByTestId('project-menu').click();
+  await check(async () => (await page.getByTestId('project-menu-pop').innerText()).includes('Reset objects to defaults'), 'the project menu (on the project name) offers New, Open, Save and Reset objects');
+  await page.getByTestId('menu-reset-objects').click();
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '295', 'Reset objects to defaults puts the Player back (jumpForce 295)');
+  await check(async () => (await canvas.getAttribute('data-entities')) === levelSize, 'and keeps the level as it is');
+  await check(async () => (await page.getByTestId('definition-name').count()) === 1, 'the inspector stays on the reset object');
+  await page.getByTestId('undo').click();
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '900', 'Undo brings the edited version back');
+  await page.getByTestId('close-details').click();
+  await openLibrary();
+  await page.getByTestId('definition-Player').click({ button: 'right' });
+  await page.getByTestId('menu-reset').click();
+  await openPlayerDetails();
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '295', 'right-click → Reset to default resets one object');
+  await page.getByTestId('close-details').click();
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('menu-new').click();
+  await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project starts an empty level');
+  await openLibrary();
+  await check(async () => (await page.getByTestId('definition-Flying Robot').count()) === 0 && (await page.getByTestId('definition-Ladder').count()) === 1, 'with only the built-in objects, as they ship');
+  await page.keyboard.press('Escape');
+
   step = 'old autosave upgrade';
   const old = await browser.newContext({ viewport: { width: 1400, height: 860 } });
   const oldPage = await old.newPage();
@@ -578,6 +618,8 @@ try {
   console.log(`\nE2E passed (${passed} checks).`);
 } catch (e) {
   console.error(`\nE2E FAILED: ${e.message}`);
+  console.error(`step: ${step}`);
+  await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${OUT}/failure.png` }).catch(() => {});
   if (errors.length) console.error(errors.join('\n'));
   process.exitCode = 1;
 } finally {

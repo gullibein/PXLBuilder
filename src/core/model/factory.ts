@@ -163,6 +163,8 @@ export function createStarterDefinitions(registry: ComponentRegistry, ladderAsse
     ),
   ];
   for (const def of defs) {
+    // Remembers which starter this is, so it can be reset even after being renamed.
+    def.metadata.starter = def.name;
     def.metadata.category = STARTER_CATEGORIES[def.name];
     if (STARTER_TILES.has(def.name)) def.metadata.placement = 'tile';
   }

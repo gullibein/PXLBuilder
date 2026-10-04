@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createScene } from '../../core/model/factory';
-import { addScene } from '../../core/model/mutations';
+import { componentRegistry } from '../../core/components/builtin';
+import { addScene, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
 import { newProject, openProjectFile, PROJECT_FILE_EXTENSION, saveProjectToFile } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
@@ -22,6 +23,7 @@ export function TopBar() {
           <span className="wordmark-mark" aria-hidden="true" />
           <span>PXLBuilder</span>
         </span>
+        <ProjectMenu onOpen={() => fileInput.current?.click()} />
         <SceneSelector />
         <div className="icon-group">
           <button className="icon-btn" disabled={!canUndo} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo" data-testid="undo" onClick={undo}>
@@ -49,7 +51,7 @@ export function TopBar() {
         >
           ✦
         </button>
-        <MainMenu onOpen={() => fileInput.current?.click()} />
+        <MainMenu />
       </div>
       <input
         ref={fileInput}
@@ -133,12 +135,11 @@ function SceneSelector() {
   );
 }
 
-function MainMenu({ onOpen }: { onOpen: () => void }) {
+function MainMenu() {
   const { open, setOpen, ref } = usePopover();
   const showGrid = useEditor((s) => s.showGrid);
   const snap = useEditor((s) => s.snapToGrid);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
-  const dirty = useEditor((s) => s.dirty);
   const s = useEditor.getState();
   const items: { label: string; hint?: string; checked?: boolean; run: () => void; testId?: string; sep?: boolean }[] = [
     { label: 'Details panel', hint: 'I', checked: inspectorOpen, run: () => s.setInspectorOpen(!inspectorOpen), testId: 'menu-details' },
@@ -146,9 +147,6 @@ function MainMenu({ onOpen }: { onOpen: () => void }) {
     { label: 'Frame everything', hint: 'F', run: frameView, sep: true },
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
-    { label: 'New project', run: newProject, testId: 'menu-new', sep: true },
-    { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
-    { label: 'Save', hint: 'Ctrl+S', run: saveProjectToFile, testId: 'menu-save' },
   ];
   return (
     <div className="popover-anchor" ref={ref}>
@@ -158,7 +156,6 @@ function MainMenu({ onOpen }: { onOpen: () => void }) {
           <circle cx="8" cy="8" r="1.3" fill="currentColor" />
           <circle cx="12.5" cy="8" r="1.3" fill="currentColor" />
         </svg>
-        {dirty && <span className="dirty-dot" title="Unsaved changes" />}
       </button>
       {open && (
         <div className="menu-pop right" role="menu">
@@ -209,4 +206,67 @@ function PlayButton() {
       {playing ? 'Stop' : 'Play'}
     </button>
   );
+}
+
+/** The project: its name, and New / Open / Save / reset the built-in objects. */
+function ProjectMenu({ onOpen }: { onOpen: () => void }) {
+  const { open, setOpen, ref } = usePopover();
+  const name = useEditor((s) => s.project.name);
+  const dirty = useEditor((s) => s.dirty);
+  const items: { label: string; hint?: string; detail?: string; run: () => void; testId: string; sep?: boolean }[] = [
+    { label: 'New project', detail: 'An empty level with all built-in objects as they ship', run: newProject, testId: 'menu-new' },
+    { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
+    { label: 'Save', hint: 'Ctrl+S', run: saveProjectToFile, testId: 'menu-save' },
+    {
+      label: 'Reset objects to defaults',
+      detail: 'Built-in objects go back to how they ship. Your level and your own objects stay.',
+      run: resetObjectsToDefaults,
+      testId: 'menu-reset-objects',
+      sep: true,
+    },
+  ];
+  return (
+    <div className="popover-anchor" ref={ref}>
+      <button className="project-btn" data-testid="project-menu" title="Project" onClick={() => setOpen(!open)}>
+        <span className="grow">{name}</span>
+        {dirty && <span className="dirty-dot inline" title="Unsaved changes" />}
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="m2.5 4 2.5 2.5L7.5 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="menu-pop wide" role="menu" data-testid="project-menu-pop">
+          {items.map((item) => (
+            <div key={item.label}>
+              {item.sep && <div className="menu-sep" />}
+              <button
+                role="menuitem"
+                className="menu-row stacked"
+                data-testid={item.testId}
+                onClick={() => {
+                  setOpen(false);
+                  item.run();
+                }}
+              >
+                <span className="menu-row-main">
+                  <span className="grow">{item.label}</span>
+                  {item.hint && <kbd>{item.hint}</kbd>}
+                </span>
+                {item.detail && <span className="menu-detail">{item.detail}</span>}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function resetObjectsToDefaults(): void {
+  const { edit, logMessage } = useEditor.getState();
+  let counts = { reset: 0, added: 0 };
+  const ok = edit('Reset objects to defaults', (p) => {
+    counts = resetAllStarterDefinitions(p, componentRegistry);
+  });
+  if (ok) logMessage('info', `Reset ${counts.reset} built-in objects to their defaults${counts.added ? ` and restored ${counts.added} deleted one${counts.added === 1 ? '' : 's'}` : ''}. Undo brings your versions back.`);
 }

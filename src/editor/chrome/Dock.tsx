@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { componentRegistry } from '../../core/components/builtin';
+import { createLadderAsset, createStarterDefinitions } from '../../core/model/factory';
+import { resetStarterDefinition, starterKeyOf } from '../../core/model/mutations';
 import type { ObjectDefinition } from '../../core/types';
 import { CATEGORIES, categoryOf } from '../categories';
 import { PromptBox } from '../prompt/PromptBox';
 import { SpriteImage } from '../SpriteImage';
 import { getActiveScene, useEditor } from '../store';
 import { DEFINITION_DRAG_TYPE } from '../viewport/Viewport';
+
+/** The built-in objects (only their names are used, to tell which library objects can be reset). */
+const STARTER_NAMES = createStarterDefinitions(componentRegistry, createLadderAsset());
 
 /**
  * Bottom dock: Create (describe a new object) and Objects (the library).
@@ -72,6 +78,7 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
   const armed = tool.kind === 'brush' && tool.definitionId === def.id;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { setTool, setDock, selectDefinition, setInspectorOpen, openSprites } = useEditor.getState();
+  const isStarter = starterKeyOf(def, STARTER_NAMES) !== null;
   return (
     <button
       className={`tile${armed ? ' armed' : ''}`}
@@ -114,6 +121,15 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
               },
             },
             { label: 'Sprites', testId: 'menu-sprites', run: () => openSprites(def.id) },
+            ...(isStarter
+              ? [
+                  {
+                    label: 'Reset to default',
+                    testId: 'menu-reset',
+                    run: () => useEditor.getState().edit(`Reset ${def.name} to default`, (p) => resetStarterDefinition(p, def.id, componentRegistry)),
+                  },
+                ]
+              : []),
           ]}
         />
       )}

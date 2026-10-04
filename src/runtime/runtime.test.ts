@@ -252,6 +252,30 @@ describe('runtime', () => {
     expect(grabAt(101)).toBe(false);
   });
 
+  it('climbing up or down eases the player into the middle of the ladder, unless Left/Right is held', () => {
+    const climbFrom = (x: number, withRight: boolean) => {
+      const { project, sceneId } = level((p, sid) => {
+        const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+        for (let y = 16; y >= -144; y -= 32) m.addEntity(p, sid, instantiateDefinition(ladder, { x: 80, y }));
+        p.scenes[0].entities.find((e) => e.name === 'Player')!.transform.position = { x, y: 0 };
+      });
+      const rt = new Runtime(project, sceneId, registry);
+      const input = new InputState();
+      run(rt, input, 0.5);
+      input.press('up');
+      run(rt, input, 0.1);
+      if (withRight) input.press('right');
+      run(rt, input, 0.1);
+      return rt.find('Player')!;
+    };
+    const p = climbFrom(66, false); // grabbed with exactly half inside, left of the middle
+    expect(p.climbing).toBe(true);
+    expect(Math.abs(p.x - 80)).toBeLessThan(2);
+    const q = climbFrom(66, true);
+    expect(q.x).toBeGreaterThan(66 + 10); // moved by the Right key, not pulled to 80 and held there
+    expect(Math.abs(q.x - 80)).toBeGreaterThan(2);
+  });
+
   it('Up does not jump (it only climbs)', () => {
     const { project, sceneId } = level();
     const rt = new Runtime(project, sceneId, registry);

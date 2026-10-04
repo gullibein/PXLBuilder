@@ -42,9 +42,9 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **Sprites**: right-click an object in **Objects** → **Sprites**. Import a single image, or a sprite sheet: the grid is detected and every cell is numbered; adjust the grid if needed and click a cell to use it. Sprites stretch to the object's size. Right-click → **Inspector** shows all its properties.
 - **Size link**: in the Inspector, sprite and collider sizes are linked (changing one changes the other). Click **Linked** to size them separately.
 - **Background**: choose a color, upload an image (Fill or Repeat, and how much it moves with the level), or describe what you want ("the background should move sideways along with the level").
-- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders, `R` restarts, `Esc` stops. Playing never changes your level.
+- **Play**: the ▶ Play button (or `Ctrl+Enter`). Arrows/WASD run, Space jumps (one row up), Up/Down climb ladders (you ease to the ladder's middle unless you also press Left/Right), `R` restarts, `Esc` stops. Playing never changes your level.
 - **Details**: the sliders icon on the prompt (or `I`) opens the full property drawer for advanced editing.
 - **Undo/Redo**: top bar, `Ctrl+Z` / `Ctrl+Shift+Z`. AI changes are single steps. **History** (bottom left) lists every change.
 - **Move**: drag objects (tiles snap to whole tiles); arrows nudge; `Ctrl+D` duplicate; `Del` delete.
 - **View**: trackpad two-finger scroll pans, pinch or Alt+scroll zooms. Mouse: wheel zooms, Shift+wheel scrolls sideways, middle-button drag pans. Space+drag pans with either. `F` frames everything.
-- **Files**: menu (⋯) > Save downloads a `.pxlproj.json`; the project also autosaves in your browser.
+- **Project** (click the project name in the top bar): **New project** (an empty level with the built-in objects as they ship), **Open…**, **Save** (downloads a `.pxlproj.json`; the project also autosaves in your browser), and **Reset objects to defaults** (built-in objects go back to how they ship; your level and your own objects stay; undoable). Right-click a built-in object in **Objects** → **Reset to default** for just that one.
