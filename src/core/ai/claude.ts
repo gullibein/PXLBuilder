@@ -7,20 +7,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
+import { userMessage } from './prompt';
 import { aiResponseSchema, type AIRequestBody, type AIResponse } from './protocol';
 
 export const MODEL = 'claude-opus-5-5';
 
 let systemPrompt: string | null = null;
-
-function userMessage(body: AIRequestBody): string {
-  const history = body.history.length
-    ? `Recent requests in this same context (oldest first; the project data above reflects their results):\n${body.history
-        .map((h) => `- User: ${h.request}\n  You: ${h.reply}`)
-        .join('\n')}\n\n`
-    : '';
-  return `CONTEXT\n${JSON.stringify(body.context)}\n\n${history}REQUEST\n${body.request}`;
-}
 
 export type ClaudeResult = { ok: true; response: AIResponse } | { ok: false; status: number; error: string; kind: 'auth' | 'rate' | 'other' };
 

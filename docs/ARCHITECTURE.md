@@ -378,8 +378,14 @@ server (`server/`, key from the environment, never sent to the browser) and
 `BrowserClaudeProvider` (the user's own key, entered in ⋯ → AI connection,
 calling the API directly with `dangerouslyAllowBrowser`). The key is checked
 with a free model lookup before it is kept; it lives in memory for the
-session, or in localStorage only if the user ticks "remember". The editor
-uses the user's key when one is set, else the server. The single-page build
+session, or in localStorage only if the user ticks "remember". A third provider, `SampleAIProvider`, is used when the app runs as a
+published claude.ai page: it asks Claude through the viewer's `sample`
+capability (the viewer's own Claude account, consent once per visit; the page
+itself may not contact other hosts, so keys cannot work there). It has no
+structured-output mode, so the reply format is the zod schema rendered as
+JSON Schema in the prompt, and the answer is validated with the same schema
+before anything is applied. Order: claude.ai account, else the user's key,
+else the server. The prompt text is shared (`core/ai/prompt.ts`). The single-page build
 (`vite build --mode single-file`) inlines everything for hosting as one page.
 
 ### AI-drawn sprites

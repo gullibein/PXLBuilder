@@ -24,7 +24,12 @@ The key is read only by the dev server (`server/`); it is never sent to the
 browser. Without a key everything works except the AI, which reports that it
 isn't connected.
 
-**Your own key instead:** ⋯ → **AI connection** takes your Anthropic API key
+**In the published app (claude.ai):** no key needed. The AI runs on your own
+Claude account through claude.ai; you're asked once per visit to allow the
+page to use Claude, and requests count toward your plan's usage. (Published
+pages can't contact other services, so API keys don't work there.)
+
+**Your own key instead (running locally):** ⋯ → **AI connection** takes your Anthropic API key
 and calls Claude straight from the browser (no server needed). The key is
 checked first, kept for the session (or remembered in this browser if you
 tick the box), and sent only to Anthropic. Requests are billed to your

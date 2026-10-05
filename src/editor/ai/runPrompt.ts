@@ -9,6 +9,7 @@ import { AIUnavailableError, type AIExchange, type AIResponse } from '../../core
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { getApiKey } from './apiKey';
 import { BrowserClaudeProvider } from './browserProvider';
+import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
@@ -31,9 +32,15 @@ export function setAIProvider(next: AIProvider | null): void {
   override = next;
 }
 
-/** The user's own key (AI connection) when set, else this computer's PXLBuilder server. */
-function currentProvider(): AIProvider {
+/**
+ * Where the AI comes from: inside claude.ai (the published app) the viewer's
+ * Claude account; else the user's own key (AI connection) when set; else this
+ * computer's PXLBuilder server.
+ */
+async function currentProvider(): Promise<AIProvider> {
   if (override) return override;
+  const sample = await claudeSample();
+  if (sample) return new SampleAIProvider(sample);
   const key = getApiKey();
   return key ? new BrowserClaudeProvider(key) : httpProvider;
 }
@@ -62,7 +69,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   };
   let response: AIResponse;
   try {
-    response = await currentProvider().respond(body, signal);
+    response = await (await currentProvider()).respond(body, signal);
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     const message = e instanceof AIUnavailableError ? e.message : `AI request failed: ${(e as Error).message}`;

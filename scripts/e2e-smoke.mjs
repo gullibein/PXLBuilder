@@ -831,6 +831,44 @@ try {
   await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
   await lc.close();
 
+  step = 'published app: AI through the claude.ai account';
+  const cc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const cp2 = await cc.newPage();
+  cp2.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  let cServer = 0;
+  await cp2.route('**/api/ai', (route) => {
+    cServer++;
+    return route.fulfill({ status: 404, body: '' });
+  });
+  const sampleCalls = [];
+  await cp2.exposeFunction('__stubSample', (input, cache) => {
+    sampleCalls.push({ input, cache });
+    const ctxStart = input.lastIndexOf('CONTEXT\n') + 8;
+    const context = JSON.parse(input.slice(ctxStart, input.indexOf('\n', ctxStart)));
+    const request = input.slice(input.lastIndexOf('REQUEST\n') + 8);
+    return stubModel({ context, request, history: [] });
+  });
+  // Stand-in for the claude.ai artifact viewer: window.claude.use("sample") like the real runtime.
+  await cp2.addInitScript(() => {
+    const sample = Object.freeze({ json: (input, options) => window.__stubSample(input, options?.cache) });
+    window.claude = Object.freeze({ use: async (name) => (name === 'sample' ? sample : null) });
+  });
+  await cp2.goto(URL);
+  await cp2.getByTestId('main-menu').click();
+  await cp2.getByTestId('menu-ai-connection').click();
+  await check(async () => (await cp2.getByTestId('ai-connection-status').innerText()).includes('your Claude account') && (await cp2.getByTestId('ai-key-input').count()) === 0, 'in the published app the AI uses your Claude account; no API key field');
+  await cp2.keyboard.press('Escape');
+  const cBox = await cp2.getByTestId('viewport-canvas').boundingBox();
+  await cp2.getByTestId('dock-library').click();
+  await cp2.dragAndDrop('[data-testid="definition-Player"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: cBox.width / 2, y: cBox.height / 2 - 150 } });
+  await cp2.mouse.click(cBox.x + cBox.width / 2, cBox.y + cBox.height / 2 - 150);
+  const cPrompt = cp2.getByTestId('context-prompt');
+  await cPrompt.getByTestId('prompt-input').fill('Give the player five hearts.');
+  await cPrompt.getByTestId('prompt-input').press('Enter');
+  await check(async () => (await cPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a prompt works through the Claude account');
+  await check(sampleCalls.length === 1 && sampleCalls[0].input.includes('REPLY FORMAT') && sampleCalls[0].cache === false && cServer === 0, 'it asked Claude via claude.ai with the reply format, never a server, never a cached answer');
+  await cc.close();
+
   step = 'switch connectors';
   const swc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
   const swp = await swc.newPage();

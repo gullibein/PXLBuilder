@@ -1,7 +1,21 @@
 import { useEffect, useState } from 'react';
 import { getApiKey, isKeyRemembered, maskKey, onApiKeyChange, setApiKey } from '../ai/apiKey';
 import { testApiKey } from '../ai/browserProvider';
+import { claudeSample } from '../ai/sampleProvider';
 import { useEditor } from '../store';
+
+/** True inside a claude.ai artifact viewer, where the AI runs on the viewer's Claude account. */
+function useClaudeAccount(): boolean | null {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void claudeSample().then((s) => live && setAvailable(!!s));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return available;
+}
 
 /** Hook: the user's key as it changes. */
 export function useApiKey(): string | null {
@@ -22,7 +36,29 @@ export function AIConnection() {
   const [remember, setRemember] = useState(isKeyRemembered());
   const [status, setStatus] = useState<{ tone: 'ok' | 'warn' | 'info'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const claudeAccount = useClaudeAccount();
   if (!open) return null;
+
+  if (claudeAccount) {
+    return (
+      <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
+        <section className="dialog" role="dialog" aria-label="AI connection" data-testid="ai-connection">
+          <header className="bg-head">
+            <span>AI connection</span>
+            <button className="icon-btn" aria-label="Close" onClick={() => setOpen(false)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </header>
+          <p className="dialog-text" data-testid="ai-connection-status">
+            Here on claude.ai the AI uses <strong>your Claude account</strong>. No API key is needed. The first time you ask something, claude.ai asks you to allow this page to use Claude; requests count toward your Claude plan's usage.
+          </p>
+          <p className="bg-hint">API keys can't be used here: claude.ai doesn't let published pages contact other services. Your own key works when you run PXLBuilder on your computer.</p>
+        </section>
+      </div>
+    );
+  }
 
   const save = async () => {
     const value = draft.trim();
