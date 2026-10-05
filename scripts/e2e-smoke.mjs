@@ -372,6 +372,10 @@ try {
   step = 'golden test 2: enemy';
   await clickWorld(-32, 0);
   await check(async () => (await prompts.count()) === 1, 'selecting the Enemy replaces the Player prompt (still one prompt)');
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await prompts.count()) === 0, 'the × on the prompt card closes it');
+  await clickWorld(-32, 0);
+  await check(async () => (await prompts.count()) === 1, 'selecting the Enemy again brings the prompt back');
   await check(async () => !(await result.count()), 'the new prompt starts fresh');
   await ask('Make the enemy patrol between these two points.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a behavior request is applied');
@@ -1225,6 +1229,8 @@ try {
   await check(async () => (await ep.locator('.dock [data-testid="play"]').count()) === 1 && (await ep.locator('.topbar [data-testid="play"]').count()) === 0, 'the Play button moved to the bottom bar');
   const editorReq = aiRequests.at(-1);
   await check(editorReq.context.scope === 'editor' && editorReq.context.editor.settings.some((x) => x.key === 'playButton' && x.value === 'top'), 'the AI gets the editor settings, with their current values');
+  await editorPrompt.getByTestId('prompt-close').click();
+  await check(async () => (await ep.getByTestId('global-prompt').count()) === 0, 'the × closes the ✦ prompt card too');
   await ep.screenshot({ path: `${OUT}/16-play-bottom.png` });
   await ep.locator('.dock [data-testid="play"]').click();
   await check(async () => (await ep.locator('.play-float [data-testid="play"]').innerText()).includes('Stop'), 'while playing, Stop is at the bottom too');

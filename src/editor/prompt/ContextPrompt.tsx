@@ -94,6 +94,11 @@ export function ContextPrompt() {
     ) : ctx.kind === 'group' ? (
       <>{ctx.entityIds.length} objects</>
     ) : undefined;
+  const close = () => {
+    selectEntities([]);
+    setWorldContext(false);
+    selectConnection(null);
+  };
   return (
     <div className="context-layer">
       <svg className="connector" aria-hidden="true">
@@ -106,11 +111,8 @@ export function ContextPrompt() {
           ctx={ctx}
           header={header}
           onDetails={() => setInspectorOpen(true)}
-          onEscape={() => {
-            selectEntities([]);
-            setWorldContext(false);
-            selectConnection(null);
-          }}
+          onEscape={close}
+          onClose={close}
         />
       </div>
     </div>

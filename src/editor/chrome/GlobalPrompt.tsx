@@ -30,6 +30,7 @@ export function GlobalPrompt() {
         placeholder={scope === 'editor' ? 'Change the editor, e.g. "dock the details panel on the right"…' : undefined}
         testId={scope === 'editor' ? 'editor-prompt' : undefined}
         onEscape={() => setGlobalPrompt(false)}
+        onClose={() => setGlobalPrompt(false)}
       />
     </div>
   );

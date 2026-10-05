@@ -79,7 +79,7 @@ export const NOT_YET_AVAILABLE = [
   'Path finding around obstacles (scripts can steer, check walls with solid_at and jump, but cannot plan a route through a maze).',
   'Moving to another level, saving progress between plays, a game-over or title screen (a script or rule can show a message and restart the level), a score shown permanently on screen (messages are temporary).',
   'Relationship types marked "NOT simulated" (targets, protects, contains) only record the design; nothing happens in play.',
-  'Camera settings, lighting, day/night, music, sound, particles, animation, detailed or photographic art (simple pixel-art sprites are possible), backgrounds that scroll on their own (background movement only follows the camera).',
+  'Camera zoom, shake, look-ahead or limits (the camera either follows the CameraTarget or stays still), lighting, day/night, music, sound, particles, animation, detailed or photographic art (simple pixel-art sprites are possible), backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 
 export function buildSystemPrompt(registry: ComponentRegistry): string {
@@ -125,7 +125,7 @@ Operations
 How the game runs (Play mode)
 - Entities with a CharacterController are player-controlled: arrows/WASD run, Space jumps (Up never jumps), Up/Down climb anything Climbable when at least half of the character is inside it, at the character's running speed; moving sideways off the ladder lets go; climbing stops on the ladder's top; stacked pieces form one ladder and one above a gap is reached only by jumping. speed, acceleration, jumpForce (initial upward speed; jump height ≈ jumpForce²/(2·gravity); the default 295 reaches one 32px tile row up, not two) and airControl are simulated.
 - PhysicsBody: dynamic bodies fall with world gravity × gravityScale and collide with solids; static bodies and colliders without a PhysicsBody are solid ground/walls; kinematic bodies move by their velocity only. Colliders with isTrigger are not solid.
-- The camera follows the entity with a CameraTarget (followStrength = smoothing). Falling below the level puts an entity back at its start.
+- The camera follows the entity with a CameraTarget (followStrength = smoothing; the starter Player has one). Without any CameraTarget the camera does not move at all: it shows the middle of the level. "Stop the camera following the player" / "keep the level still" -> remove CameraTarget from whatever has it (check library[].components and otherEntities[].components); "follow the player again" -> add it back. Falling below the level puts an entity back at its start.
 - Touching: things touch when they overlap, stand on each other or bump into each other (only moving entities start touches).
 - Collecting: an entity with an Inventory picks up Collectibles it touches (they leave the level); "addToInventory" keeps the item (named by Collectible.itemId, or the object name in lower case). Items can be checked with has_item. To make different keys, give each key object its own itemId ("blue key", "red key").
 - Damage: an entity with Damage hurts an entity with Health whose DamageReceiver.damageSources contains one of its tags (the starter Player accepts "hazard" and "enemy"), or that a "damages" relationship points at. After a hit it is invincible for DamageReceiver.invincibilityDuration seconds and knocked back. At 0 health it dies: a player-controlled entity respawns at its start with full health, anything else is removed.

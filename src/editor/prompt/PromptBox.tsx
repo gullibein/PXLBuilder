@@ -82,6 +82,8 @@ export interface PromptBoxProps {
   /** Extra content shown under an applied result (e.g. the new object to drag in). */
   renderApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => React.ReactNode;
   onEscape?: () => void;
+  /** Shows a close (×) button on the card. */
+  onClose?: () => void;
   /** Optional small title above the input (e.g. "World", "Enemy → Door"). Objects themselves need none. */
   header?: React.ReactNode;
 }
@@ -116,6 +118,13 @@ export function PromptBox(props: PromptBoxProps) {
 
   return (
     <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId}>
+      {props.onClose && (
+        <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={props.onClose}>
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+      )}
       {props.header && <div className="prompt-header">{props.header}</div>}
       <div className="prompt-field">
         <span className="spark" aria-hidden="true">

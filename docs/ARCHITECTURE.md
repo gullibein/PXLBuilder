@@ -264,6 +264,9 @@ clears the selection, and selecting something closes it.
   gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
   v3 applies this to older saves unless the user changed those values.
 - Falling far below the level puts an entity back at its start.
+- Camera: follows the entity with a `CameraTarget` (smoothed). With none, it
+  stays still on the middle of the level; there is deliberately no fallback
+  to the player, so what the project (and the AI) says is what happens.
 - `input.ts` maps keys to actions (arrows/WASD, Space/Z jump, E use, X fire); the runtime
   only sees actions.
 - `PlayView` draws the runtime with the same renderer as the editor

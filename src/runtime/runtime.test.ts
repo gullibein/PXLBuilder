@@ -404,4 +404,17 @@ describe('runtime', () => {
     const p = rt.find('Player')!;
     expect(rt.camera.x).toBeGreaterThan(p.x - 60);
   });
+
+  it('without any CameraTarget the camera stays still on the middle of the level (it does not fall back to the player)', () => {
+    const { project, sceneId } = level((p, _sid, def) => m.removeDefinitionComponent(p, def('Player'), 'CameraTarget'));
+    const rt = new Runtime(project, sceneId, registry);
+    const start = { ...rt.camera };
+    const xs = rt.entities.map((e) => e.x);
+    const input = new InputState();
+    input.press('right');
+    run(rt, input, 1);
+    expect(rt.find('Player')!.x).toBeGreaterThan(100);
+    expect(rt.camera).toEqual(start);
+    expect(start.x).toBeCloseTo((Math.min(...xs) + Math.max(...xs)) / 2, -1);
+  });
 });

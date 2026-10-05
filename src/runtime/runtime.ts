@@ -111,6 +111,23 @@ const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
 
+/** The middle of everything placed in the level (where a camera without a target looks). */
+function levelCenter(entities: RuntimeEntity[]): Vec2 {
+  if (!entities.length) return { x: 0, y: 0 };
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const e of entities) {
+    const s = getEntitySize(e.base);
+    minX = Math.min(minX, e.x - s.x / 2);
+    maxX = Math.max(maxX, e.x + s.x / 2);
+    minY = Math.min(minY, e.y - s.y / 2);
+    maxY = Math.max(maxY, e.y + s.y / 2);
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
 function boxOf(e: RuntimeEntity): Box | null {
   return e.collider ? { x: e.x + e.collider.ox, y: e.y + e.collider.oy, hw: e.collider.hw, hh: e.collider.hh } : null;
 }
@@ -304,11 +321,14 @@ export class Runtime {
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
     this.fallLimit = (bottoms.length ? Math.max(...bottoms) : 0) + FALL_MARGIN;
 
-    this.cameraTarget = this.entities.find((e) => e.base.components.CameraTarget) ?? this.entities.find((e) => e.controller) ?? null;
+    // Only what the project says: the camera follows the entity with a CameraTarget. Without one it
+    // stays still, on the middle of the level (there is no hidden fallback to the player).
+    this.cameraTarget = this.entities.find((e) => e.base.components.CameraTarget) ?? null;
     const fs = this.cameraTarget?.base.components.CameraTarget?.followStrength;
     this.followStrength = typeof fs === 'number' ? fs : 0.15;
-    this.camera.x = this.cameraTarget?.x ?? 0;
-    this.camera.y = this.cameraTarget?.y ?? 0;
+    const still = this.cameraTarget ? null : levelCenter(this.entities);
+    this.camera.x = this.cameraTarget?.x ?? still!.x;
+    this.camera.y = this.cameraTarget?.y ?? still!.y;
     this.scripts.reset();
     this.gameplay.reset();
   }

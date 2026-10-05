@@ -127,6 +127,10 @@ code { font-family: var(--font-data); font-size: 11px; }
 .prompt textarea { flex: 1; min-width: 0; resize: none; border: none; outline: none; background: none; color: var(--card-text); font: 14px/20px var(--font-ui); padding: 8px 0; }
 .prompt textarea::placeholder { color: var(--card-muted); }
 .is-working textarea::placeholder { color: var(--card-text); opacity: 0.6; }
+.prompt { position: relative; }
+/* Close (×): a small round button on the card's top-right corner. */
+.prompt-close { position: absolute; top: -9px; right: -9px; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; background: var(--card); color: var(--card-muted); box-shadow: 0 2px 8px rgba(20, 16, 60, 0.35), 0 0 0 1px var(--card-line); }
+.prompt-close:hover { color: var(--card-text); background: var(--card-line); }
 .prompt-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: none; background: none; border-radius: 8px; color: var(--card-muted); --surface: var(--card); }
 .prompt-icon:hover { background: var(--card-line); color: var(--card-text); }
 .send-btn { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: none; border-radius: 50%; color: #fff; background: var(--accent); transition: transform 120ms, opacity 120ms; }
