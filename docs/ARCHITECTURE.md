@@ -382,6 +382,22 @@ session, or in localStorage only if the user ticks "remember". The editor
 uses the user's key when one is set, else the server. The single-page build
 (`vite build --mode single-file`) inlines everything for hosting as one page.
 
+### Wiring switches on the canvas
+- A selected entity with a Switch component shows two red connectors (left
+  and right of its frame, the size of the corner boxes). Dragging one onto
+  another entity adds a `controls` relationship with `action: "open"` (or
+  selects the existing one) and selects it.
+- Connections are always drawn (faint unless they concern the selection or
+  the Logic card is open) and are clickable: a click near a line selects
+  that relationship (`selectedConnectionId`, exclusive with selected
+  entities). Its prompt has the AI context kind `connection` (the
+  relationship plus both ends as targets), anchored on the line; the AI
+  changes it with `update_relationship`. Delete removes it; Esc deselects.
+- `controls` actions: open, close, toggle, disappear (switch on removes the
+  target, off brings it back), move (on: glide by `offset` at `speed`, off:
+  back; solids move with it). Sentences read "Switch moves Door 3 tiles up";
+  the line label says what it does ("opens", "moves", "hides").
+
 ### Changes go where they belong
 The system prompt tells the AI to put a behavior on the object it is about,
 whatever is selected (a mushroom's "can be stomped" goes on the Mushroom

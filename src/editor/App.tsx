@@ -151,6 +151,7 @@ function useGlobalShortcuts() {
           state.selectEntities([]);
           state.setWorldContext(false);
           state.selectDefinition(null);
+          state.selectConnection(null);
         }
       } else if (key === 'v' && !mod) {
         state.setTool({ kind: 'select' });

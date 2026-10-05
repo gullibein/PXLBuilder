@@ -66,6 +66,10 @@ export interface RuntimeEntity {
   inventory: Map<string, number> | null;
   collectible: { item: string; keep: boolean } | null;
   stompable: { stompers: string[]; bounce: number; damage: number } | null;
+  /** Removed by a switch ("disappear"), so switching back brings it back. */
+  hiddenBySwitch: boolean;
+  /** Where a switch is moving it, and how fast (px/s; 0 = at once). */
+  moveTarget: { x: number; y: number; speed: number } | null;
   /** Seconds after a stomp during which what it stomped can't hurt it. */
   stompGrace: number;
   /** Position at the start of the step (to tell landing on top from bumping into the side). */
@@ -172,6 +176,8 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume' } : null,
     stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
     stompGrace: 0,
+    hiddenBySwitch: false,
+    moveTarget: null,
     prevY: r.transform.position.y,
     touching: new Set(),
   };
@@ -252,6 +258,24 @@ export class Runtime {
 
   step(dt: number, input: InputState): void {
     this.time += dt;
+    // Things a switch is moving glide toward their target (solids move with them).
+    for (const e of this.entities) {
+      const t = e.moveTarget;
+      if (!t) continue;
+      const dx = t.x - e.x;
+      const dy = t.y - e.y;
+      const dist = Math.hypot(dx, dy);
+      const stepLen = t.speed > 0 ? t.speed * dt : Infinity;
+      if (dist <= stepLen) {
+        e.x = t.x;
+        e.y = t.y;
+        e.moveTarget = null;
+      } else {
+        e.x += (dx / dist) * stepLen;
+        e.y += (dy / dist) * stepLen;
+      }
+      if (e.collider && e.body !== 'dynamic') this.solidsDirty = true;
+    }
     if (this.solidsDirty) {
       this.staticSolids = this.entities.filter((e) => this.isSolid(e) && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
       this.solidsDirty = false;
@@ -311,6 +335,11 @@ export class Runtime {
 
   byId(id: Id): RuntimeEntity | undefined {
     return this.entities.find((e) => e.id === id);
+  }
+
+  /** Moves an entity to a point over time (a switch's "move"). */
+  moveTo(e: RuntimeEntity, to: Vec2, speed: number): void {
+    e.moveTarget = { x: to.x, y: to.y, speed };
   }
 
   /** Adds a new instance of a library object during play. */

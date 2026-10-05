@@ -153,6 +153,12 @@ function stubModel(body) {
     ops.push({ op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'teleports_to', source: { kind: 'entity', id: 'tpA' }, target: { kind: 'entity', id: 'tpB' } }) });
     return { kind: 'preview', message: 'A hard level: three stretches of ground with pits, spikes, three enemies and a teleporter up to a high ledge.', changes: ['Ground: 3 stretches with 2 pits', 'Spikes: 4', 'Enemies: 3', 'Teleporter A → B (up to the ledge)'], operations: ops };
   }
+  if (body.context.scope === 'connection') {
+    const c = body.context.connection;
+    const update = (params, msg, change) => ({ kind: 'apply', message: msg, changes: [change], operations: [{ op: 'update_relationship', sceneId: body.context.level.id, id: c.id, patchJson: JSON.stringify({ params }) }] });
+    if (req.includes('three squares upwards')) return update({ action: 'move', offset: { x: 0, y: -96 } }, 'The switch now moves the door 3 tiles up.', 'Switch moves Door 3 tiles up');
+    if (req.includes('disappear')) return update({ action: 'disappear' }, 'The switch now makes the door disappear.', 'Switch makes Door disappear');
+  }
   if (body.context.scope === 'editor') {
     const keys = body.context.editor.settings.map((x) => x.key);
     const set = (key, value) => ({ op: 'set_editor_setting', key, valueJson: JSON.stringify(value) });
@@ -763,7 +769,7 @@ try {
 
   await lp.getByTestId('tool-logic').click();
   const logicPanel = lp.getByTestId('logic-panel');
-  await check(async () => (await logicPanel.getByTestId('relationship-item').innerText()).includes('Switch controls Door, only if whoever uses it has key'), 'the Logic card lists the connection as a sentence');
+  await check(async () => (await logicPanel.getByTestId('relationship-item').innerText()).includes('Switch opens and closes Door, only if whoever uses it has key'), 'the Logic card lists the connection as a sentence');
   await lAsk('When the player picks up the key, say Got the key!', logicPanel);
   await check(async () => (await logicPanel.getByTestId('rule-item').innerText()).includes('When every Player picks up every Key: show "Got the key!"'), 'a rule described in the Logic card appears as a sentence');
   await check(async () => (await lp.getByTestId('tool-logic').innerText()) === '2', 'the count includes rules');
@@ -773,7 +779,7 @@ try {
 
   await lClick(64, 0);
   await lPrompt.getByTestId('prompt-details').click();
-  await check(async () => (await lp.getByTestId('connections').innerText()).includes('Switch controls Door'), "the door's details show what controls it");
+  await check(async () => (await lp.getByTestId('connections').innerText()).includes('Switch opens and closes Door'), "the door's details show what controls it");
   await lp.getByTestId('close-details').click();
 
   await lp.getByTestId('play').click();
@@ -811,6 +817,98 @@ try {
   await lp.getByTestId('tool-logic').click();
   await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
   await lc.close();
+
+  step = 'switch connectors';
+  const swc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const swp = await swc.newPage();
+  swp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  swp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  await swp.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
+  await swp.goto(URL);
+  const sw_sCanvas = swp.getByTestId('viewport-canvas');
+  const sw_sBox = await sw_sCanvas.boundingBox();
+  const sw_sAt = (wx, wy) => ({ x: sw_sBox.x + sw_sBox.width / 2 + wx, y: sw_sBox.y + sw_sBox.height / 2 + wy });
+  const sw_sDrop = async (name, wx, wy) => {
+    if ((await swp.getByTestId('library-panel').count()) === 0) await swp.getByTestId('dock-library').click();
+    await swp.dragAndDrop(`[data-testid="definition-${name}"]`, '[data-testid="viewport-canvas"]', { targetPosition: { x: sw_sBox.width / 2 + wx, y: sw_sBox.height / 2 + wy } });
+  };
+  const sw_sPrompt = swp.getByTestId('context-prompt');
+  const sw_sAsk = async (text) => {
+    const input = sw_sPrompt.getByTestId('prompt-input');
+    await input.click();
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  await swp.getByTestId('dock-library').click();
+  await swp.getByTestId('definition-Platform').click();
+  await swp.mouse.move(sw_sAt(-208, 48).x, sw_sAt(-208, 48).y);
+  await swp.mouse.down();
+  await swp.mouse.move(sw_sAt(208, 48).x, sw_sAt(208, 48).y, { steps: 6 });
+  await swp.mouse.up();
+  await swp.getByTestId('tool-select').click();
+  await sw_sDrop('Player', -176, 0);
+  await sw_sDrop('Switch', -64, 16);
+  await sw_sDrop('Door', 64, 0);
+  await swp.mouse.click(sw_sAt(-64, 16).x, sw_sAt(-64, 16).y);
+  // The switch (32x32 at -64,16) gets red connectors 4px outside its frame, left and right.
+  const sw_handle = sw_sAt(-64 + 16 + 4, 16);
+  await swp.mouse.move(sw_handle.x, sw_handle.y);
+  await swp.mouse.down();
+  await swp.mouse.move(sw_sAt(0, 10).x, sw_sAt(0, 10).y, { steps: 4 });
+  await swp.screenshot({ path: `${OUT}/22-connector-drag.png` });
+  await swp.mouse.move(sw_sAt(64, 0).x, sw_sAt(64, 0).y, { steps: 4 });
+  await swp.mouse.up();
+  await check(async () => (await sw_sCanvas.getAttribute('data-connection')) !== '' && (await sw_sCanvas.getAttribute('data-links')) === '1', "dragging the switch's red connector onto the door connects them");
+  await check(async () => (await sw_sPrompt.getAttribute('data-context')) === 'connection' && (await sw_sPrompt.getByTestId('connection-header').innerText()).replace(/\s+/g, ' ').includes('Switch → Door opens'), 'the new connection is selected, with its prompt: "Switch → Door", it opens');
+  await swp.screenshot({ path: `${OUT}/23-connection-selected.png` });
+  await swp.mouse.click(sw_sAt(300, -250).x, sw_sAt(300, -250).y);
+  await check(async () => (await sw_sPrompt.count()) === 0 && (await sw_sCanvas.getAttribute('data-links')) === '1', 'clicking away deselects; the connection line stays on the level');
+  // Click the line itself (the middle of the curve from the switch to the door).
+  const sw_pa = { x: -64, y: 16 };
+  const sw_pb = { x: 64, y: 0 };
+  const sw_dist = Math.hypot(sw_pb.x - sw_pa.x, sw_pb.y - sw_pa.y);
+  const sw_nx = (sw_pb.y - sw_pa.y) / sw_dist;
+  const sw_ny = -(sw_pb.x - sw_pa.x) / sw_dist;
+  const sw_bow = Math.min(80, sw_dist * 0.25) * (sw_ny <= 0 ? 1 : -1);
+  const sw_ctrlPt = { x: (sw_pa.x + sw_pb.x) / 2 + sw_nx * sw_bow, y: (sw_pa.y + sw_pb.y) / 2 + sw_ny * sw_bow };
+  const sw_mid = { x: 0.25 * sw_pa.x + 0.5 * sw_ctrlPt.x + 0.25 * sw_pb.x, y: 0.25 * sw_pa.y + 0.5 * sw_ctrlPt.y + 0.25 * sw_pb.y };
+  await swp.mouse.click(sw_sAt(sw_mid.x, sw_mid.y).x, sw_sAt(sw_mid.x, sw_mid.y).y);
+  await check(async () => (await sw_sPrompt.getAttribute('data-context')) === 'connection', 'clicking the line selects the connection');
+  await sw_sAsk('The switch moves the door three squares upwards.');
+  await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await sw_sPrompt.getByTestId('connection-header').innerText()).includes('moves'), 'describing it changes what the connection does (now it moves the door)');
+  await check(aiRequests.at(-1).context.scope === 'connection' && aiRequests.at(-1).context.targets.map((t) => t.name).join('>') === 'Switch>Door', 'the AI gets the connection and both of its ends');
+  await swp.getByTestId('tool-logic').click();
+  await check(async () => (await swp.getByTestId('logic-panel').getByTestId('relationship-item').innerText()).includes('Switch moves Door 3 tiles up'), 'the Logic card reads "Switch moves Door 3 tiles up"');
+  await swp.keyboard.press('Escape');
+  await swp.getByTestId('play').click();
+  const sw_sPlay = swp.getByTestId('play-canvas');
+  const sw_sps = async () => ((await sw_sPlay.getAttribute('data-player')) ?? '').split(',').map(Number);
+  await check(async () => (await sw_sps())[2] === 1, 'play: the player lands');
+  const sw_walkTo = async (x) => {
+    await swp.keyboard.down('ArrowRight');
+    for (let i = 0; i < 150 && (await sw_sps())[0] < x; i++) await swp.waitForTimeout(20);
+    await swp.keyboard.up('ArrowRight');
+  };
+  await sw_walkTo(-80);
+  await swp.waitForTimeout(150);
+  await swp.keyboard.press('KeyE');
+  await swp.waitForTimeout(1300);
+  await sw_walkTo(120);
+  await check(async () => (await sw_sps())[0] >= 120, 'in play, the switch moves the door up and the player walks under it');
+  await swp.screenshot({ path: `${OUT}/24-door-moved.png` });
+  await swp.keyboard.press('Escape');
+  await swp.mouse.click(sw_sAt(sw_mid.x, sw_mid.y).x, sw_sAt(sw_mid.x, sw_mid.y).y);
+  await sw_sAsk('The switch makes the door disappear.');
+  await check(async () => (await sw_sPrompt.getByTestId('connection-header').innerText()).includes('hides'), '"makes the door disappear" changes it again');
+  await swp.mouse.click(sw_sAt(sw_mid.x, sw_mid.y).x, sw_sAt(sw_mid.x, sw_mid.y).y);
+  await swp.keyboard.press('Delete');
+  await check(async () => (await sw_sCanvas.getAttribute('data-links')) === '0' && (await sw_sPrompt.count()) === 0, 'Delete removes a selected connection');
+  await swp.getByTestId('undo').click();
+  await check(async () => (await sw_sCanvas.getAttribute('data-links')) === '1', 'and Undo brings it back');
+  await swc.close();
 
   step = 'own API key, and changes placed on the right object';
   const kc = await browser.newContext({ viewport: { width: 1400, height: 860 } });

@@ -14,6 +14,8 @@ export const theme = {
   erase: '#ff5d73',
   /** Existing connections between objects (relationships). */
   logic: '#ffc65c',
+  /** The red connector circles on a switch, and the line dragged from them. */
+  connector: '#ff4d5e',
 };
 
 /** Mixes a #rrggbb color toward white by `amount` (0..1). */

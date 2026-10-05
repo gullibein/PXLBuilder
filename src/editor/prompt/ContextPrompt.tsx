@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { describeRelationship, relationshipLabel } from '../../core/logic/describe';
+import { describeRef } from '../../core/logic/refs';
 import { contextKey } from '../../core/ai/context';
 import { CHROME_INSETS } from '../viewport/Viewport';
 import { getSelectionContext, useEditor } from '../store';
@@ -17,7 +19,11 @@ export function ContextPrompt() {
   const activeSceneId = useEditor((s) => s.activeSceneId);
   const selectedEntityIds = useEditor((s) => s.selectedEntityIds);
   const worldContext = useEditor((s) => s.worldContext);
-  const ctx = useMemo(() => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext }), [activeSceneId, selectedEntityIds, worldContext]);
+  const selectedConnectionId = useEditor((s) => s.selectedConnectionId);
+  const ctx = useMemo(
+    () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId }),
+    [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId],
+  );
   const key = ctx ? contextKey(ctx) : null;
   const wrapRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<SVGLineElement>(null);
@@ -67,7 +73,7 @@ export function ContextPrompt() {
   }, [key]);
 
   if (!ctx || !key) return null;
-  const { setInspectorOpen, selectEntities, setWorldContext, project } = useEditor.getState();
+  const { setInspectorOpen, selectEntities, setWorldContext, selectConnection, project } = useEditor.getState();
   const scene = project.scenes.find((sc) => sc.id === ctx.sceneId);
   const nameOf = (id: string) => scene?.entities.find((e) => e.id === id)?.name ?? '?';
   const header =
@@ -79,6 +85,8 @@ export function ContextPrompt() {
         </svg>
         World
       </>
+    ) : ctx.kind === 'connection' ? (
+      <ConnectionHeader sceneId={ctx.sceneId} relationshipId={ctx.relationshipId} />
     ) : ctx.kind === 'pair' ? (
       <>
         {nameOf(ctx.entityIds[0])} <span className="arrow">→</span> {nameOf(ctx.entityIds[1])}
@@ -101,9 +109,24 @@ export function ContextPrompt() {
           onEscape={() => {
             selectEntities([]);
             setWorldContext(false);
+            selectConnection(null);
           }}
         />
       </div>
     </div>
+  );
+}
+
+/** "Switch → Door" and what the connection does now ("opens"). */
+function ConnectionHeader({ sceneId, relationshipId }: { sceneId: string; relationshipId: string }) {
+  const project = useEditor((s) => s.project);
+  const scene = project.scenes.find((s) => s.id === sceneId);
+  const rel = scene?.relationships.find((r) => r.id === relationshipId);
+  if (!scene || !rel) return null;
+  return (
+    <span className="connection-head" data-testid="connection-header" title={describeRelationship(project, scene, rel)}>
+      {describeRef(project, scene, rel.source)} <span className="arrow">→</span> {describeRef(project, scene, rel.target)}
+      <span className="connection-does">{relationshipLabel(rel)}</span>
+    </span>
   );
 }

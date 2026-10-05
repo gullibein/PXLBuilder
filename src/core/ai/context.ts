@@ -30,6 +30,8 @@ export type AIContext =
   | { kind: 'project'; sceneId: Id }
   /** Creating a new object for the library. */
   | { kind: 'create'; sceneId: Id }
+  /** One connection (relationship) the user clicked on, e.g. the line from a switch to a door. */
+  | { kind: 'connection'; sceneId: Id; relationshipId: Id }
   /** The editor itself (layout, look, controls), not the game. */
   | { kind: 'editor'; sceneId: Id };
 
@@ -58,6 +60,8 @@ export function contextKey(ctx: AIContext): string {
       return 'create';
     case 'editor':
       return 'editor';
+    case 'connection':
+      return `connection:${ctx.relationshipId}`;
   }
 }
 
@@ -99,6 +103,8 @@ export interface EditorSettingsPayload {
 
 export interface AIPayload {
   scope: AIContext['kind'];
+  /** The connection the user selected (scope "connection"): in words and as data. */
+  connection?: { id: Id; text: string; type: string; source: EntityRef; target: EntityRef; params: Record<string, unknown>; conditions: Condition[] };
   /** The editor's adjustable settings and overlays, with their current values (editor changes are possible from any scope). */
   editor?: EditorSettingsPayload;
   scope_note: string;
@@ -153,6 +159,8 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
     'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth). You cannot create or edit pictures; the user uploads background images themselves.',
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
+  connection:
+    'The user clicked on a CONNECTION (see connection; its two ends are targets[0] = source and targets[1] = target). The request is about what this connection does: change it with update_relationship (id = connection.id), e.g. for a switch (controls): params.action "open" | "close" | "toggle" | "disappear" | "move", with offset (pixels, one tile = 32, negative y = up) and speed for "move". Replace or remove it only if asked; if what they want cannot be expressed by a connection, a rule may do it.',
   editor:
     'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks, what it shows over the level), not the game. Use only editor operations (set_editor_setting, add_editor_overlay, remove_editor_overlay). If the request needs something they cannot do, reply unsupported and say what can be changed instead.',
 };
@@ -178,7 +186,9 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
 
 export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
-  const targetIds = 'entityIds' in ctx ? ctx.entityIds : [];
+  const connection = ctx.kind === 'connection' ? scene.relationships.find((r) => r.id === ctx.relationshipId) : undefined;
+  const endIds = (ref: EntityRef) => (ref.kind === 'entity' ? [ref.id] : []);
+  const targetIds = 'entityIds' in ctx ? ctx.entityIds : connection ? [...endIds(connection.source), ...endIds(connection.target)] : [];
   const placed = (defId: Id) => project.scenes.reduce((n, s) => n + s.entities.filter((e) => e.definitionId === defId).length, 0);
 
   const detail = (id: Id): EntityDetail | null => {
@@ -221,6 +231,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     scope: ctx.kind,
     scope_note: SCOPE_NOTES[ctx.kind],
     ...(editor ? { editor } : {}),
+    ...(connection ? { connection: { id: connection.id, text: describeRelationship(project, scene, connection), type: connection.type, source: connection.source, target: connection.target, params: connection.params, conditions: connection.conditions } } : {}),
     level: {
       id: scene.id,
       name: scene.name,

@@ -78,13 +78,54 @@ export function describeRule(project: Project, scene: Scene | null, rule: Rule):
   return `When ${when}${cond}: ${joinAnd(rule.actions.map((a) => describeAction(project, scene, a, roles)))}.`;
 }
 
-/** "Switch controls Door", plus parameters and conditions. */
+function tiles(px: number): string {
+  const n = Math.round((Math.abs(px) / 32) * 10) / 10;
+  return `${n} tile${n === 1 ? '' : 's'}`;
+}
+
+/** "3 tiles up", "2 tiles right and 1 tile down". */
+export function describeOffset(o: { x: number; y: number }): string {
+  const parts = [];
+  if (o.y) parts.push(`${tiles(o.y)} ${o.y < 0 ? 'up' : 'down'}`);
+  if (o.x) parts.push(`${tiles(o.x)} ${o.x < 0 ? 'left' : 'right'}`);
+  return parts.join(' and ') || 'nowhere';
+}
+
+/** The short label drawn on a connection's line: "opens", "moves", "requires". */
+export function relationshipLabel(rel: Relationship): string {
+  if (rel.type === 'controls') {
+    const action = rel.params.action ?? 'toggle';
+    return action === 'toggle' ? 'opens/closes' : action === 'disappear' ? 'hides' : action === 'move' ? 'moves' : action === 'close' ? 'closes' : 'opens';
+  }
+  return relationshipRegistry.get(rel.type)?.verb ?? rel.type;
+}
+
+/** "Switch opens Door", "Switch moves Door 3 tiles up", plus parameters and conditions. */
 export function describeRelationship(project: Project, scene: Scene | null, rel: Relationship): string {
   const t = relationshipRegistry.get(rel.type);
   const roles: Roles = rel.type === 'controls' ? { other: 'whoever uses it' } : rel.type === 'requires' ? { subject: 'whoever touches it' } : {};
-  let text = `${describeRef(project, scene, rel.source)} ${t?.verb ?? rel.type} ${describeRef(project, scene, rel.target)}`;
-  const params = Object.entries(rel.params).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(t?.params[k]?.default));
-  if (params.length) text += ` (${params.map(([k, v]) => `${k}: ${String(v)}`).join(', ')})`;
+  const source = describeRef(project, scene, rel.source);
+  const target = describeRef(project, scene, rel.target);
+  let text: string;
+  if (rel.type === 'controls') {
+    const action = rel.params.action ?? 'toggle';
+    const offset = (rel.params.offset as { x: number; y: number } | undefined) ?? { x: 0, y: -96 };
+    const speed = typeof rel.params.speed === 'number' ? rel.params.speed : 96;
+    text =
+      action === 'open'
+        ? `${source} opens ${target}`
+        : action === 'close'
+          ? `${source} closes ${target}`
+          : action === 'disappear'
+            ? `${source} makes ${target} disappear (and come back when switched off)`
+            : action === 'move'
+              ? `${source} moves ${target} ${describeOffset(offset)}${speed === 0 ? ' at once' : speed !== 96 ? ` at ${speed} px/s` : ''} (and back when switched off)`
+              : `${source} opens and closes ${target}`;
+  } else {
+    text = `${source} ${t?.verb ?? rel.type} ${target}`;
+    const params = Object.entries(rel.params).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(t?.params[k]?.default));
+    if (params.length) text += ` (${params.map(([k, v]) => `${k}: ${String(v)}`).join(', ')})`;
+  }
   if (rel.conditions.length) text += `, only if ${joinAnd(rel.conditions.map((c) => describeCondition(project, scene, c, roles)))}`;
   return text;
 }

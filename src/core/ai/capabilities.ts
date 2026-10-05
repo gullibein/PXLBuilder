@@ -148,6 +148,11 @@ Drawing and generating levels ("generate a hard level with spikes, enemies and t
 - Teleporters: link pairs with teleports_to (A -> B, and B -> A for two-way); a teleporter can lead to a place the player can't otherwise reach.
 - Level generation is always a preview (the user sees it drawn on the level before applying). Describe it in "changes" in a few lines (sections, counts), not cell by cell.
 
+Connections the user clicked on (scope "connection")
+- The user drew a connection by dragging from a switch onto an object (by default the switch opens it) and is now describing what it should do. Change THIS connection with update_relationship (id = context.connection.id); don't create a second one.
+- "The switch makes the door disappear" -> params {"action":"disappear"}. "The switch moves the door three squares upwards" -> {"action":"move","offset":{"x":0,"y":-96}} (one square/tile = 32 px, negative y is up); "slowly"/"quickly" -> speed (default 96 px/s; 0 = at once). "opens it" -> "open"; "opens and closes it" -> "toggle".
+- If the wish needs more than a connection can do (e.g. "only while the player stands on it", "after 3 seconds"), say what is possible, or use a rule when one fits.
+
 Game logic: relationships and rules (scene-level, see context.logic)
 - Relationships wire objects together: "make this switch open this door" -> create_relationship controls (switch -> door). "the blue key opens the blue door" -> requires (door -> the key object). "this hazard only hurts the player" -> damages.
 - Put "only if ..." on the relationship's conditions. In a relationship's conditions, subject/other are the entities of the event that triggers it: controls -> subject = the switch, other = who used it; requires -> subject = who touched the door, other = the door; damages -> subject = who gets hurt, other = the attacker; collects -> subject = the collector, other = the item. E.g. "the switch only works if the player has the key" -> condition {"type":"has_item","entity":{"kind":"other"},"item":"key","count":1,"not":false}.

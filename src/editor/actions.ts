@@ -1,4 +1,5 @@
 /** Editor-level actions shared by menus and keyboard shortcuts. */
+import { addRelationship, removeRelationship } from '../core/logic/mutations';
 import type { ResolvedEntity } from '../core/model/resolve';
 import { getWorldBounds } from '../core/model/geometry';
 import { duplicateEntities, moveEntities, removeEntities } from '../core/model/mutations';
@@ -6,7 +7,11 @@ import { resolveSceneEntities } from './selectors';
 import { useEditor } from './store';
 
 export function deleteSelection(): void {
-  const { selectedEntityIds: ids, activeSceneId, edit } = useEditor.getState();
+  const { selectedEntityIds: ids, selectedConnectionId, activeSceneId, edit } = useEditor.getState();
+  if (selectedConnectionId) {
+    edit('Remove connection', (p) => removeRelationship(p, activeSceneId, selectedConnectionId));
+    return;
+  }
   if (!ids.length) return;
   edit(ids.length === 1 ? 'Delete entity' : `Delete ${ids.length} entities`, (p) => removeEntities(p, activeSceneId, ids));
 }
@@ -65,4 +70,32 @@ export function frameEntities(subset: ResolvedEntity[]): void {
   const h = Math.max(64, b.maxY - b.minY);
   const zoom = Math.min(4, Math.max(0.1, Math.min(viewWidth / (w * 1.3), viewHeight / (h * 1.3))));
   setCamera({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, zoom });
+}
+
+/**
+ * Connects a switch to another object (dragging from the switch's red connector):
+ * by default the switch opens it. An existing connection between the two is
+ * selected instead of adding a second one. The new connection is selected, so
+ * its prompt is ready ("the switch moves the door three squares up").
+ */
+export function connectSwitch(switchId: string, targetId: string): void {
+  const { project, activeSceneId, edit, selectConnection, logMessage } = useEditor.getState();
+  const scene = project.scenes.find((s) => s.id === activeSceneId);
+  if (!scene) return;
+  const existing = scene.relationships.find(
+    (r) => r.type === 'controls' && r.source.kind === 'entity' && r.source.id === switchId && r.target.kind === 'entity' && r.target.id === targetId,
+  );
+  if (existing) {
+    selectConnection(existing.id);
+    return;
+  }
+  let id = '';
+  const names = (eid: string) => scene.entities.find((e) => e.id === eid)?.name ?? '?';
+  const ok = edit(`Connect ${names(switchId)} to ${names(targetId)}`, (p) => {
+    id = addRelationship(p, activeSceneId, { type: 'controls', source: { kind: 'entity', id: switchId }, target: { kind: 'entity', id: targetId }, params: { action: 'open' }, conditions: [] });
+  });
+  if (ok) {
+    selectConnection(id);
+    logMessage('info', `${names(switchId)} now opens ${names(targetId)}`);
+  }
 }

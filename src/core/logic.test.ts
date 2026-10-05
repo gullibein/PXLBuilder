@@ -55,8 +55,8 @@ describe('relationships', () => {
       id = logic.addRelationship(d, sceneId, rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door'])));
     });
     const r = p.scenes[0].relationships.find((x) => x.id === id)!;
-    expect(r.params).toEqual({ action: 'toggle' });
-    expect(describeRelationship(p, p.scenes[0], r)).toBe('Switch 1 controls Blue Door');
+    expect(r.params).toEqual({ action: 'toggle', offset: { x: 0, y: -96 }, speed: 96 });
+    expect(describeRelationship(p, p.scenes[0], r)).toBe('Switch 1 opens and closes Blue Door');
   });
 
   it('are validated: type, parameters and references', () => {
@@ -66,7 +66,7 @@ describe('relationships', () => {
     expect(tryAdd(rel('controls', ent(ids['Switch 1']), ent('ent_nope')))).toThrow(/not in level/);
     expect(tryAdd(rel('requires', ent(ids['Blue Door']), obj('def_nope')))).toThrow(/does not exist/);
     expect(tryAdd(rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door']), { params: { action: 'explode' } }))).toThrow(/must be one of/);
-    expect(tryAdd(rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door']), { params: { speed: 2 } }))).toThrow(/no parameter "speed"/);
+    expect(tryAdd(rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door']), { params: { color: 2 } }))).toThrow(/no parameter "color"/);
     expect(tryAdd(rel('controls', { kind: 'subject' }, ent(ids['Blue Door'])))).toThrow(/must name an entity/);
     expect(tryAdd(rel('requires', ent(ids['Blue Door']), obj(def('Key')), { conditions: [{ type: 'has_item', entity: { kind: 'any' }, item: 'x', count: 1, not: false }] }))).toThrow(/must name who/);
   });
@@ -76,7 +76,7 @@ describe('relationships', () => {
     const p = edit(project, (d) => {
       logic.addRelationship(d, sceneId, rel('controls', ent(ids['Switch 1']), ent(ids['Blue Door']), { conditions: [{ type: 'has_item', entity: { kind: 'other' }, item: 'key', count: 1, not: false }] }));
     });
-    expect(describeRelationship(p, p.scenes[0], p.scenes[0].relationships[0])).toBe('Switch 1 controls Blue Door, only if whoever uses it has key');
+    expect(describeRelationship(p, p.scenes[0], p.scenes[0].relationships[0])).toBe('Switch 1 opens and closes Blue Door, only if whoever uses it has key');
   });
 
   it('can be updated and removed', () => {

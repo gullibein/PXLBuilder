@@ -256,6 +256,18 @@ export class Gameplay {
     else e.inventory.delete(item);
   }
 
+  /** Taken out of play by a switch (and brought back by it); things removed any other way stay gone. */
+  private setHidden(e: RuntimeEntity, hidden: boolean): void {
+    if (hidden && e.alive) {
+      e.alive = false;
+      e.hiddenBySwitch = true;
+    } else if (!hidden && e.hiddenBySwitch) {
+      e.alive = true;
+      e.hiddenBySwitch = false;
+    } else return;
+    this.rt.markSolidsDirty();
+  }
+
   private setOpen(e: RuntimeEntity, open: boolean, by: RuntimeEntity | null): void {
     if (e.open === open || !e.alive) return;
     e.open = open;
@@ -321,9 +333,15 @@ export class Gameplay {
       for (const r of this.relationships('controls')) {
         if (!refMatches(r.source, ev.subject)) continue;
         if (!this.check(r.conditions, { subject: ev.subject, other: ev.other })) continue;
-        for (const t of this.resolve(r.target, ev)) {
-          const action = r.params.action ?? 'toggle';
-          this.setOpen(t, action === 'open' ? true : action === 'close' ? false : !t.open, ev.subject);
+        const on = ev.subject.switch?.on ?? true;
+        const action = r.params.action ?? 'toggle';
+        // Disappeared targets are still found, so switching off can bring them back.
+        for (const t of this.resolve(r.target, ev, action === 'disappear')) {
+          if (action === 'disappear') this.setHidden(t, on);
+          else if (action === 'move') {
+            const offset = (r.params.offset as { x: number; y: number } | undefined) ?? { x: 0, y: -96 };
+            this.rt.moveTo(t, on ? { x: t.spawn.x + offset.x, y: t.spawn.y + offset.y } : { ...t.spawn }, typeof r.params.speed === 'number' ? r.params.speed : 96);
+          } else this.setOpen(t, action === 'open' ? true : action === 'close' ? false : !t.open, ev.subject);
         }
       }
     }

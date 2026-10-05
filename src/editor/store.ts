@@ -48,6 +48,8 @@ export interface EditorState {
   activeSceneId: Id;
   /** Selected entities in the active scene, in the order they were selected. */
   selectedEntityIds: Id[];
+  /** A connection (relationship) selected by clicking its line; exclusive with selected entities. */
+  selectedConnectionId: Id | null;
   /** Library object open in the details drawer. */
   selectedDefinitionId: Id | null;
   /** When set, the level itself is the active context, anchored at this world point (or the view center). */
@@ -94,6 +96,7 @@ export interface EditorState {
   markSaved(): void;
   setActiveScene(sceneId: Id): void;
   selectEntities(ids: Id[]): void;
+  selectConnection(id: Id | null): void;
   selectDefinition(id: Id | null): void;
   setWorldContext(point: Vec2 | null | false): void;
   setGlobalPrompt(open: boolean, scope?: 'level' | 'project' | 'editor'): void;
@@ -132,6 +135,7 @@ function reconcile(s: EditorState, next: Project): Partial<EditorState> {
     project: next,
     activeSceneId: scene.id,
     selectedEntityIds: s.selectedEntityIds.filter((id) => existing.has(id)),
+    selectedConnectionId: scene.relationships.some((r) => r.id === s.selectedConnectionId) ? s.selectedConnectionId : null,
     selectedDefinitionId: defExists ? s.selectedDefinitionId : null,
     spritesFor: next.definitions.some((d) => d.id === s.spritesFor) ? s.spritesFor : null,
     tool: s.tool.kind === 'brush' && !next.definitions.some((d) => d.id === (s.tool as { definitionId: Id }).definitionId) ? { kind: 'select' } : s.tool,
@@ -145,6 +149,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     project: initial,
     activeSceneId: initial.startSceneId,
     selectedEntityIds: [],
+    selectedConnectionId: null,
     selectedDefinitionId: null,
     worldContext: null,
     globalPrompt: { open: false, scope: 'level' },
@@ -205,6 +210,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         project,
         activeSceneId: project.startSceneId,
         selectedEntityIds: [],
+        selectedConnectionId: null,
         selectedDefinitionId: null,
         worldContext: null,
         dirty: true,
@@ -217,6 +223,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         project,
         activeSceneId: project.startSceneId,
         selectedEntityIds: [],
+        selectedConnectionId: null,
         selectedDefinitionId: null,
         worldContext: null,
         camera: { x: 0, y: 0, zoom: 1 },
@@ -245,13 +252,18 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setActiveScene(sceneId) {
       if (!get().project.scenes.some((s) => s.id === sceneId)) return;
-      set({ activeSceneId: sceneId, selectedEntityIds: [], worldContext: null, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+      set({ activeSceneId: sceneId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+    },
+
+    selectConnection(id) {
+      set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
     },
 
     selectEntities(ids) {
       const unique = [...new Set(ids)];
       set({
         selectedEntityIds: unique,
+        selectedConnectionId: unique.length ? null : get().selectedConnectionId,
         worldContext: unique.length ? null : get().worldContext,
         selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
         backgroundOpen: unique.length ? false : get().backgroundOpen,
@@ -266,7 +278,7 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setWorldContext(point) {
       if (point === false) set({ worldContext: null });
-      else set({ worldContext: { point }, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
+      else set({ worldContext: { point }, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
     setGlobalPrompt(open, scope) {
@@ -320,7 +332,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     setTool(tool) {
       // Drawing has no selection: the prompt steps aside until you go back to selecting.
       if (tool.kind === 'brush') {
-        set({ tool, lastBrushId: tool.definitionId, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, backgroundOpen: false });
+        set({ tool, lastBrushId: tool.definitionId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, selectedDefinitionId: null, backgroundOpen: false });
       } else set({ tool });
     },
 
@@ -341,12 +353,12 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     openSprites(definitionId) {
-      if (definitionId) set({ spritesFor: definitionId, dock: null, backgroundOpen: false, logicOpen: false, selectedEntityIds: [], worldContext: null, tool: { kind: 'select' } });
+      if (definitionId) set({ spritesFor: definitionId, dock: null, backgroundOpen: false, logicOpen: false, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, tool: { kind: 'select' } });
       else set({ spritesFor: null });
     },
 
     setBackgroundOpen(open) {
-      if (open) set({ spritesFor: null, logicOpen: false, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      if (open) set({ spritesFor: null, logicOpen: false, backgroundOpen: true, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ backgroundOpen: false });
     },
 
@@ -363,7 +375,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setLogicOpen(open) {
-      if (open) set({ spritesFor: null, backgroundOpen: false, logicOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
+      if (open) set({ spritesFor: null, backgroundOpen: false, logicOpen: true, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ logicOpen: false });
     },
 
@@ -382,7 +394,8 @@ export function getActiveScene(state: Pick<EditorState, 'project' | 'activeScene
 }
 
 /** The AI context implied by the current selection, or null when nothing is selected. */
-export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext'>): AIContext | null {
+export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext' | 'selectedConnectionId'>): AIContext | null {
+  if (state.selectedConnectionId) return { kind: 'connection', sceneId: state.activeSceneId, relationshipId: state.selectedConnectionId };
   const fromSelection = contextFromSelection(state.activeSceneId, state.selectedEntityIds);
   if (fromSelection) return fromSelection;
   if (state.worldContext) return { kind: 'level', sceneId: state.activeSceneId, point: state.worldContext.point };

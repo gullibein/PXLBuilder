@@ -201,7 +201,7 @@ describe('logic operations (the relationships proof of concept, without a model)
     const controls = p.scenes[0].relationships.find((r) => r.type === 'controls')!;
     p = apply(p, [{ op: 'update_relationship', sceneId, id: controls.id, patchJson: JSON.stringify({ conditions: [{ type: 'has_item', entity: { kind: 'other' }, item: 'key' }] }) }]);
     const payload = buildAIPayload(p, { kind: 'pair', sceneId, entityIds: [sw.id, door.id] }, registry);
-    expect(payload.logic.relationships.map((r) => r.text)).toEqual(['Door requires every Key', 'Switch controls Door, only if whoever uses it has key']);
+    expect(payload.logic.relationships.map((r) => r.text)).toEqual(['Door requires every Key', 'Switch opens and closes Door, only if whoever uses it has key']);
     expect(() => apply(p, [{ op: 'update_relationship', sceneId, id: controls.id, patchJson: '{"type":"damages"}' }])).toThrow(/cannot set "type"/);
   });
 

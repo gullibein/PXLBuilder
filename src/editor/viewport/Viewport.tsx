@@ -6,9 +6,10 @@ import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, sn
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { componentRegistry } from '../../core/components/builtin';
 import type { Id, Project, Scene, Vec2 } from '../../core/types';
-import { refCovers } from '../../core/graph/graph';
 import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
+import { relationshipLabel } from '../../core/logic/describe';
+import { connectSwitch } from '../actions';
 import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { setViewportSize } from '../actions';
@@ -27,7 +28,9 @@ type Drag =
   | { kind: 'move'; startWorld: Vec2; anchor: Vec2; anchorId: Id; ids: Id[]; delta: Vec2 }
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
-  | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> };
+  | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> }
+  /** Dragging from a switch's red connector onto another object. */
+  | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null };
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
@@ -133,15 +136,35 @@ export function Viewport() {
       const flashAttr = state.flash && time < state.flash.until ? String(state.flash.ids.length) : '';
       if ((canvas.dataset.flash ?? '') !== flashAttr) canvas.dataset.flash = flashAttr;
       // Existing connections: those of the selection, or all of them while the Logic card is open.
-      const links = state.logicOpen || selected.length ? linksToShow(state.project, scene, byId, state.logicOpen ? null : new Set(state.selectedEntityIds)) : [];
-      for (const l of links) drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, faded: !l.simulated });
+      // Connections: all of them, faint unless they concern the selection (or the Logic card is open); the selected one stands out.
+      const selectedSet = new Set(state.selectedEntityIds);
+      const links = linksToShow(state.project, scene, byId).map((l) => ({
+        ...l,
+        selected: l.relId === state.selectedConnectionId,
+        related: state.logicOpen || selectedSet.has(l.a.id) || selectedSet.has(l.b.id),
+      }));
+      for (const l of links) {
+        if (l.selected) drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, width: 4, glow: true });
+        else drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, faded: !l.simulated || !l.related });
+      }
+      const connector = connectorsFor(state.selectedEntityIds, entities, state.camera.zoom);
+      for (const c of connector) drawConnector(ctx, c.point, state.camera.zoom);
+      if (drag?.kind === 'connect') {
+        const target = drag.targetId ? byId.get(drag.targetId) : undefined;
+        if (target) drawHover(ctx, target, state.camera.zoom);
+        drawConnectDrag(ctx, drag.from, target ? target.transform.position : drag.current, state.camera.zoom);
+      }
       if (selected.length === 2) drawRelation(ctx, selected[0], selected[1], state.camera.zoom);
       if (drag?.kind === 'marquee' && drag.moved) drawMarquee(ctx, drag.startWorld, drag.currentWorld, state.camera.zoom);
 
       // Screen-space labels and the prompt anchor.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const toScreen = (p: Vec2) => worldToScreen(state.camera, view, p);
-      for (const l of links) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)));
+      for (const l of links) if (l.related || l.selected) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)));
+      const connAttr = state.selectedConnectionId ?? '';
+      if ((canvas.dataset.connection ?? '') !== connAttr) canvas.dataset.connection = connAttr;
+      const linksAttr = String(links.length);
+      if (canvas.dataset.links !== linksAttr) canvas.dataset.links = linksAttr;
       const panels = drawInfoPanels(ctx, state.layout.overlays, entities, scene, toScreen);
       if (canvas.dataset.overlays !== String(panels.length)) canvas.dataset.overlays = String(panels.length);
       if (selected.length === 1) drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
@@ -168,6 +191,10 @@ export function Viewport() {
         // The prompt sits beside the selection's info panels, not on top of them.
         if (selected.length !== 2) for (const p of panels) if (state.selectedEntityIds.includes(p.entityId)) screenRect = unionRect(screenRect, p.rect);
         publishAnchor({ key: anchorKey, rect: screenRect, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
+      } else if (state.selectedConnectionId) {
+        const l = links.find((x) => x.selected);
+        const p = l ? toScreen(curveMidpoint(l.a, l.b)) : { x: view.width / 2, y: view.height / 2 };
+        publishAnchor({ key: anchorKey, rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: !!l });
       } else if (state.worldContext) {
         const p = state.worldContext.point ? toScreen(state.worldContext.point) : { x: view.width / 2, y: view.height / 2 };
         drawWorldMarker(ctx, p, scene.name, time);
@@ -269,8 +296,21 @@ export function Viewport() {
       dragRef.current = { kind: 'paint', definitionId: state.tool.definitionId, erase: ev.button === 2, start: cell, last: cell, cells: new Map([[cellKey(cell), cell]]) };
     } else if (ev.button === 0) {
       const world = toWorld(ev);
-      const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
+      const entities = resolveSceneEntities(state.project, state.activeSceneId);
+      const handle = connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
+      if (handle) {
+        dragRef.current = { kind: 'connect', fromId: handle.entityId, from: handle.point, current: world, targetId: null };
+        canvas.setPointerCapture(ev.pointerId);
+        return;
+      }
+      const hit = pick(entities, world);
       const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+      const scene = getActiveScene(state);
+      const line = hit ? null : connectionAt(state.project, scene, new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
+      if (line && !additive) {
+        state.selectConnection(line);
+        return;
+      }
       if (hit) {
         let selection = state.selectedEntityIds;
         if (additive) selection = selection.includes(hit.id) ? selection.filter((id) => id !== hit.id) : [...selection, hit.id];
@@ -298,9 +338,19 @@ export function Viewport() {
         canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : 'crosshair';
         return;
       }
-      const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev));
+      const world = toWorld(ev);
+      const entities = resolveSceneEntities(state.project, state.activeSceneId);
+      const hit = pick(entities, world);
       hoverRef.current = hit?.id ?? null;
-      canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : hit ? 'pointer' : 'default';
+      const onConnector = !!connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
+      const onLine = !hit && !onConnector && !!connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
+      canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine ? 'pointer' : 'default';
+      return;
+    }
+    if (drag.kind === 'connect') {
+      drag.current = toWorld(ev);
+      const over = pick(resolveSceneEntities(state.project, state.activeSceneId), drag.current);
+      drag.targetId = over && over.id !== drag.fromId ? over.id : null;
       return;
     }
     if (drag.kind === 'paint') {
@@ -347,6 +397,10 @@ export function Viewport() {
       commitStroke(drag);
       return;
     }
+    if (drag?.kind === 'connect') {
+      if (drag.targetId) connectSwitch(drag.fromId, drag.targetId);
+      return;
+    }
     if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
       const label = drag.ids.length === 1 ? 'Move' : `Move ${drag.ids.length} objects`;
       state.edit(label, (p) => moveEntities(p, state.activeSceneId, drag.ids, drag.delta));
@@ -354,6 +408,7 @@ export function Viewport() {
       // A plain click on empty space clears the context: clean canvas, no prompt.
       state.selectEntities([]);
       state.setWorldContext(false);
+      state.selectConnection(null);
     }
   };
 
@@ -584,6 +639,7 @@ function curveMidpoint(a: ResolvedEntity, b: ResolvedEntity): Vec2 {
 }
 
 interface Link {
+  relId: Id;
   a: ResolvedEntity;
   b: ResolvedEntity;
   verb: string;
@@ -592,23 +648,96 @@ interface Link {
 
 const MAX_LINKS = 120;
 
-/** Entity-to-entity arrows for the level's relationships; with `only`, just those touching those entities. */
-function linksToShow(project: Project, scene: Scene, byId: Map<Id, ResolvedEntity>, only: Set<Id> | null): Link[] {
+/** Entity-to-entity arrows for the level's relationships (a relationship naming an object or tag gives several). */
+function linksToShow(project: Project, scene: Scene, byId: Map<Id, ResolvedEntity>): Link[] {
   const links: Link[] = [];
   for (const r of scene.relationships) {
-    if (only && !scene.entities.some((e) => only.has(e.id) && (refCovers(project, r.source, e) || refCovers(project, r.target, e)))) continue;
     const t = relationshipRegistry.get(r.type);
     for (const s of resolveRef(project, scene, r.source)) {
       for (const d of resolveRef(project, scene, r.target)) {
-        if (s.id === d.id || (only && !only.has(s.id) && !only.has(d.id))) continue;
+        if (s.id === d.id) continue;
         const a = byId.get(s.id);
         const b = byId.get(d.id);
-        if (a && b) links.push({ a, b, verb: t?.verb ?? r.type, simulated: t?.simulated === true });
+        if (a && b) links.push({ relId: r.id, a, b, verb: relationshipLabel(r), simulated: t?.simulated === true });
         if (links.length >= MAX_LINKS) return links;
       }
     }
   }
   return links;
+}
+
+/** The red connectors on a selected switch: left and right of its selection frame (same size as the corner boxes). */
+const CONNECTOR_RADIUS = 5;
+
+function connectorsFor(selectedIds: Id[], entities: ResolvedEntity[], zoom: number): { entityId: Id; point: Vec2 }[] {
+  if (selectedIds.length !== 1) return [];
+  const e = entities.find((x) => x.id === selectedIds[0]);
+  if (!e?.components.Switch) return [];
+  const b = getWorldBounds(e);
+  const pad = 4 / zoom;
+  const y = (b.minY + b.maxY) / 2;
+  return [
+    { entityId: e.id, point: { x: b.minX - pad, y } },
+    { entityId: e.id, point: { x: b.maxX + pad, y } },
+  ];
+}
+
+function connectorAt(selectedIds: Id[], entities: ResolvedEntity[], world: Vec2, zoom: number): { entityId: Id; point: Vec2 } | null {
+  return connectorsFor(selectedIds, entities, zoom).find((c) => Math.hypot(c.point.x - world.x, c.point.y - world.y) * zoom <= CONNECTOR_RADIUS + 5) ?? null;
+}
+
+function drawConnector(ctx: CanvasRenderingContext2D, p: Vec2, zoom: number): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, CONNECTOR_RADIUS / zoom, 0, Math.PI * 2);
+  ctx.fillStyle = theme.connector;
+  ctx.fill();
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawConnectDrag(ctx: CanvasRenderingContext2D, from: Vec2, to: Vec2, zoom: number): void {
+  ctx.save();
+  ctx.strokeStyle = theme.connector;
+  ctx.lineWidth = 2 / zoom;
+  ctx.setLineDash([6 / zoom, 4 / zoom]);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, 4 / zoom, 0, Math.PI * 2);
+  ctx.fillStyle = theme.connector;
+  ctx.fill();
+  ctx.restore();
+}
+
+/** The connection whose line passes within a few pixels of `world`, if any. */
+function connectionAt(project: Project, scene: Scene, byId: Map<Id, ResolvedEntity>, world: Vec2, zoom: number): Id | null {
+  let best: { id: Id; d: number } | null = null;
+  for (const l of linksToShow(project, scene, byId)) {
+    const { from, to, ctrl } = curveControl(l.a, l.b);
+    let prev = from;
+    for (let i = 1; i <= 24; i++) {
+      const t = i / 24;
+      const p = { x: (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * ctrl.x + t * t * to.x, y: (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * ctrl.y + t * t * to.y };
+      const d = distToSegment(world, prev, p) * zoom;
+      if (d <= 6 && (!best || d < best.d)) best = { id: l.relId, d };
+      prev = p;
+    }
+  }
+  return best?.id ?? null;
+}
+
+function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
 /** Things an AI change just touched: a fading glow, so you see where it went. */
@@ -674,7 +803,13 @@ function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2): vo
  * objects (the relationship being described), or solid in the logic color
  * for an existing connection (faded when it does nothing in play yet).
  */
-function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number, style: { color: string; dashed: boolean; faded?: boolean } = { color: theme.select, dashed: true }): void {
+function drawRelation(
+  ctx: CanvasRenderingContext2D,
+  a: ResolvedEntity,
+  b: ResolvedEntity,
+  zoom: number,
+  style: { color: string; dashed: boolean; faded?: boolean; width?: number; glow?: boolean } = { color: theme.select, dashed: true },
+): void {
   const { from, to, ctrl } = curveControl(a, b);
   const ra = Math.max(getEntitySize(a).x, getEntitySize(a).y) / 2 + 10 / zoom;
   const rb = Math.max(getEntitySize(b).x, getEntitySize(b).y) / 2 + 12 / zoom;
@@ -687,8 +822,12 @@ function drawRelation(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: Resol
   ctx.save();
   ctx.strokeStyle = style.color;
   ctx.fillStyle = style.color;
-  if (style.faded) ctx.globalAlpha = 0.5;
-  ctx.lineWidth = 2 / zoom;
+  if (style.faded) ctx.globalAlpha = 0.45;
+  if (style.glow) {
+    ctx.shadowColor = style.color;
+    ctx.shadowBlur = 10;
+  }
+  ctx.lineWidth = (style.width ?? 2) / zoom;
   if (style.dashed) ctx.setLineDash([6 / zoom, 5 / zoom]);
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);

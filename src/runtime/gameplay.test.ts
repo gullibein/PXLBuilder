@@ -142,11 +142,11 @@ describe('gameplay', () => {
   });
 
   /** Switch at x=40 (the player passes it), door at x=96, the switch controls the door. */
-  function switchLevel(conditions: Parameters<typeof logic.addRelationship>[2]['conditions'] = [], playerItems: string[] = []) {
+  function switchLevel(conditions: Parameters<typeof logic.addRelationship>[2]['conditions'] = [], playerItems: string[] = [], params: Record<string, unknown> = {}) {
     return level((b) => {
       const doorId = door(b);
       const switchId = b.place('Switch', { x: 40, y: 16 });
-      logic.addRelationship(b.d, b.sceneId, { type: 'controls', source: { kind: 'entity', id: switchId }, target: { kind: 'entity', id: doorId }, params: {}, conditions });
+      logic.addRelationship(b.d, b.sceneId, { type: 'controls', source: { kind: 'entity', id: switchId }, target: { kind: 'entity', id: doorId }, params, conditions });
       if (playerItems.length) {
         const player = b.d.scenes[0].entities.find((e) => e.name === 'Player')!;
         m.setEntityComponentField(b.d, b.sceneId, player.id, 'Inventory', 'items', playerItems, registry);
@@ -402,5 +402,45 @@ describe('gameplay', () => {
     walkRight(rt, input, 0.6);
     expect(events(rt, 'stomped')).toHaveLength(0);
     expect(p.health!.current).toBe(2);
+  });
+
+  const useSwitch = (rt: Runtime, input: InputState) => {
+    input.press('interact');
+    run(rt, input, 0.05);
+    input.release('interact');
+  };
+
+  it('a switch can make its target disappear, and switching off brings it back', () => {
+    const { rt, input } = switchLevel([], [], { action: 'disappear' });
+    walkRight(rt, input, 0.25);
+    useSwitch(rt, input);
+    expect(rt.find('Door')!.alive).toBe(false);
+    expect(rt.renderList().some((e) => e.name === 'Door')).toBe(false);
+    useSwitch(rt, input);
+    expect(rt.find('Door')!.alive).toBe(true);
+  });
+
+  it('a switch can move its target (3 tiles up at a speed) and back', () => {
+    const { rt, input } = switchLevel([], [], { action: 'move', offset: { x: 0, y: -96 }, speed: 96 });
+    walkRight(rt, input, 0.25);
+    useSwitch(rt, input);
+    run(rt, input, 0.5);
+    const d = rt.find('Door')!;
+    expect(d.y).toBeGreaterThan(-96);
+    expect(d.y).toBeLessThan(-30); // on its way, about half way after half a second
+    run(rt, input, 1);
+    expect(d.y).toBeCloseTo(-96, 5);
+    // The way under it is free now: the player walks through where the door was.
+    walkRight(rt, input, 1.2);
+    expect(rt.find('Player')!.x).toBeGreaterThan(120);
+    useSwitch(rt, input); // too far from the switch now: nothing happens
+    expect(d.y).toBeCloseTo(-96, 5);
+  });
+
+  it('speed 0 moves it at once', () => {
+    const { rt, input } = switchLevel([], [], { action: 'move', offset: { x: 64, y: 0 }, speed: 0 });
+    walkRight(rt, input, 0.25);
+    useSwitch(rt, input);
+    expect(rt.find('Door')!.x).toBe(96 + 64);
   });
 });

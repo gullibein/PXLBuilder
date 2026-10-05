@@ -74,9 +74,14 @@ export const BUILTIN_RELATIONSHIP_TYPES: RelationshipType[] = [
   {
     type: 'controls',
     verb: 'controls',
-    description: 'When the source (a switch) is used, the target opens or closes.',
+    description:
+      'When the source (a switch) is used, something happens to the target. open/close/toggle: it opens (stops blocking, drawn faded) or closes. disappear: switching on removes it, switching off brings it back. move: switching on moves it by offset at speed, switching off moves it back.',
     simulated: true,
-    params: { action: { kind: 'enum', options: ['toggle', 'open', 'close'], default: 'toggle', description: 'What using the switch does to the target' } },
+    params: {
+      action: { kind: 'enum', options: ['open', 'close', 'toggle', 'disappear', 'move'], default: 'toggle', description: 'What using the switch does to the target' },
+      offset: { kind: 'vec2', default: { x: 0, y: -96 }, description: 'For move: how far it moves, in pixels (one tile = 32; negative y is up)' },
+      speed: { kind: 'number', default: 96, min: 0, step: 8, description: 'For move: pixels per second (0 = there at once)' },
+    },
   },
   {
     type: 'requires',

@@ -407,3 +407,5 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .dialog-status.ok { color: var(--ok-dark); }
 .dialog-status.warn { color: var(--warn-dark); }
 .result-where { margin: 2px 0 4px; font-size: 12px; font-weight: 600; color: var(--card-text); }
+.connection-head { display: inline-flex; align-items: center; gap: 6px; }
+.connection-does { margin-left: 4px; padding: 1px 7px; border-radius: 8px; background: #ffc65c; color: #1a1430; font-size: 11px; font-weight: 700; }
