@@ -102,7 +102,7 @@ function useGlobalShortcuts() {
       }
       if (mod && key === 's') {
         e.preventDefault();
-        saveProjectToFile();
+        void saveProjectToFile();
         return;
       }
       if (mod && key === 'o') {

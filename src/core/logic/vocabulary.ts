@@ -112,7 +112,17 @@ export const BUILTIN_RELATIONSHIP_TYPES: RelationshipType[] = [
     params: {},
   },
   { type: 'targets', verb: 'targets', description: 'The source is after the target (e.g. an enemy targeting the player).', simulated: false, params: {} },
-  { type: 'follows', verb: 'follows', description: 'The source follows the target.', simulated: false, params: {} },
+  {
+    type: 'follows',
+    verb: 'follows',
+    description:
+      'The source moves toward the target during play (an enemy chasing the player). Walkers (with gravity) move left/right along the ground and stop at walls; things without gravity (gravityScale 0) fly straight at it. They only follow while the target is within range.',
+    simulated: true,
+    params: {
+      speed: { kind: 'number', default: 80, min: 0, step: 10, description: 'Pixels per second (the player runs at 200)' },
+      range: { kind: 'number', default: 320, min: 0, step: 32, description: 'Starts following when the target is this close, in pixels (0 = always)' },
+    },
+  },
   { type: 'protects', verb: 'protects', description: 'The source protects the target.', simulated: false, params: {} },
   { type: 'contains', verb: 'contains', description: 'The source holds the target (e.g. a chest containing a key).', simulated: false, params: {} },
 ];

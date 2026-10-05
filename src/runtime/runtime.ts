@@ -280,6 +280,7 @@ export class Runtime {
       this.staticSolids = this.entities.filter((e) => this.isSolid(e) && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
       this.solidsDirty = false;
     }
+    this.gameplay.steer();
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
       if (e.body === 'kinematic' && e.alive) {

@@ -291,9 +291,11 @@ the same checks.
   with its verb, description and parameter schema). Built in, with meaning
   in play: `controls` (a switch opens/closes its target), `requires` (a door
   opens for whoever touches it carrying the target's item; `consume`),
-  `damages` (touching the source hurts the target), `collects`. Recorded in
-  the design only (marked so in the UI and for the AI): `targets`, `follows`,
-  `protects`, `contains`. A relationship's `conditions` gate it ("the switch
+  `damages` (touching the source hurts the target), `collects`, `follows`
+  (the source steers toward the nearest target within range at a speed:
+  walkers sideways, gravity-free things straight at it). Recorded in the
+  design only (marked so in the UI and for the AI): `targets`, `protects`,
+  `contains`. A relationship's `conditions` gate it ("the switch
   only works if the player has the key").
 - **Events** come from a registry too (`level_started`, `touch_started/ended`,
   `collected`, `damaged`, `died`, `respawned`, `switch_activated`, `opened`,
@@ -385,7 +387,10 @@ itself may not contact other hosts, so keys cannot work there). It has no
 structured-output mode, so the reply format is the zod schema rendered as
 JSON Schema in the prompt, and the answer is validated with the same schema
 before anything is applied. Order: claude.ai account, else the user's key,
-else the server. The prompt text is shared (`core/ai/prompt.ts`). The single-page build
+else the server. The prompt text is shared (`core/ai/prompt.ts`).
+`editor/claudeViewer.ts` reaches the viewer's capabilities; Save uses its
+`downloads` capability in a published page (pages cannot download by
+themselves), and a normal browser download elsewhere. The single-page build
 (`vite build --mode single-file`) inlines everything for hosting as one page.
 
 ### AI-drawn sprites

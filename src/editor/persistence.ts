@@ -1,3 +1,4 @@
+import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
 import { projectFromBundle, projectToBundle } from '../core/serialization/serialize';
@@ -113,21 +114,43 @@ export function newProject(): void {
 }
 
 /** Downloads the project as a single bundle file. */
-export function saveProjectToFile(): void {
+/**
+ * Downloads the project as one bundle file. In the published app (claude.ai)
+ * the viewer offers the file instead (pages may not download by themselves):
+ * the user confirms the name and it is saved like any download.
+ */
+export async function saveProjectToFile(): Promise<void> {
   const { project, markSaved, logMessage } = useEditor.getState();
   const text = JSON.stringify(projectToBundle(project), null, 2);
+  const filename = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
   const blob = new Blob([text], { type: 'application/json' });
+  void writeAutosave(project);
+
+  const downloads = await claudeCapability<ViewerDownloads>('downloads');
+  if (downloads) {
+    try {
+      await downloads.save({ filename, data: blob });
+      markSaved();
+      logMessage('info', `Saved "${project.name}" (${filename})`);
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === 'declined') logMessage('info', 'Save cancelled');
+      else if (code === 'rate_limited') logMessage('warn', 'A save is already waiting for your answer');
+      else logMessage('error', `Could not save the file here (${code ?? 'unknown'}). Your work is still kept in this browser.`);
+    }
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  void writeAutosave(project);
   markSaved();
-  logMessage('info', `Saved "${project.name}" (${a.download})`);
+  logMessage('info', `Saved "${project.name}" (${filename})`);
 }
 
 export async function openProjectFile(file: File): Promise<void> {

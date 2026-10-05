@@ -848,10 +848,20 @@ try {
     const request = input.slice(input.lastIndexOf('REQUEST\n') + 8);
     return stubModel({ context, request, history: [] });
   });
-  // Stand-in for the claude.ai artifact viewer: window.claude.use("sample") like the real runtime.
+  const saves = [];
+  await cp2.exposeFunction('__stubSave', (filename, text) => {
+    saves.push({ filename, text });
+  });
+  // Stand-in for the claude.ai artifact viewer: window.claude.use("sample" | "downloads") like the real runtime.
   await cp2.addInitScript(() => {
     const sample = Object.freeze({ json: (input, options) => window.__stubSample(input, options?.cache) });
-    window.claude = Object.freeze({ use: async (name) => (name === 'sample' ? sample : null) });
+    const downloads = Object.freeze({
+      save: async ({ filename, data }) => {
+        await window.__stubSave(filename, typeof data === 'string' ? data : await data.text());
+        return { status: 'saved' };
+      },
+    });
+    window.claude = Object.freeze({ use: async (name) => (name === 'sample' ? sample : name === 'downloads' ? downloads : null) });
   });
   await cp2.goto(URL);
   await cp2.getByTestId('main-menu').click();
@@ -867,6 +877,10 @@ try {
   await cPrompt.getByTestId('prompt-input').press('Enter');
   await check(async () => (await cPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a prompt works through the Claude account');
   await check(sampleCalls.length === 1 && sampleCalls[0].input.includes('REPLY FORMAT') && sampleCalls[0].cache === false && cServer === 0, 'it asked Claude via claude.ai with the reply format, never a server, never a cached answer');
+  await cp2.getByTestId('project-menu').click();
+  await cp2.getByTestId('menu-save').click();
+  await check(async () => saves.length === 1 && saves[0].filename === 'untitled-game.pxlproj.json' && JSON.parse(saves[0].text).kind === 'pxlbuilder.bundle', 'Save hands the project file to claude.ai to offer for download');
+  await check(async () => (await cp2.locator('.dirty-dot').count()) === 0, 'and the project counts as saved');
   await cc.close();
 
   step = 'switch connectors';

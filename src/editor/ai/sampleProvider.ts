@@ -14,6 +14,7 @@ import { userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { componentRegistry } from '../../core/components/builtin';
+import { claudeCapability } from '../claudeViewer';
 
 interface SampleError {
   code: string;
@@ -21,15 +22,9 @@ interface SampleError {
 }
 type SampleFn = { json(input: string, options?: { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean }): Promise<unknown> };
 
-let samplePromise: Promise<SampleFn | null> | null = null;
-
 /** The viewer's `sample` function, or null outside a claude.ai artifact viewer (local dev, a saved copy). */
 export function claudeSample(): Promise<SampleFn | null> {
-  if (!samplePromise) {
-    const claude = (globalThis as { claude?: { use?: (name: string) => Promise<unknown> } }).claude;
-    samplePromise = claude?.use ? claude.use('sample').then((s) => (s as SampleFn | null) ?? null, () => null) : Promise.resolve(null);
-  }
-  return samplePromise;
+  return claudeCapability<SampleFn>('sample');
 }
 
 let instructions: string | null = null;

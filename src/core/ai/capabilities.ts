@@ -73,10 +73,10 @@ ${actions}
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Behaviors / logic of any kind: patrolling, chasing, fleeing, shooting, flying movement, following, wandering, timers, disappearing, opening/closing, spawning, respawning, double jump, ledge grab, jetpacks, health regeneration.',
+  'Movement behaviors other than following (the "follows" relationship): patrolling back and forth, fleeing, wandering, jumping enemies, shooting/projectiles, double jump, ledge grab, jetpacks, health regeneration.',
   'Timers and delays ("after 3 seconds", "every 2 seconds"), counters/variables other than inventory items and health, score.',
   'Moving to another level, checkpoints, a game-over screen (a rule can show a message and restart the level).',
-  'Relationship types marked "NOT simulated" (targets, follows, protects, contains) only record the design; nothing happens in play.',
+  'Relationship types marked "NOT simulated" (targets, protects, contains) only record the design; nothing happens in play.',
   'Camera settings, lighting, day/night, music, sound, particles, animation, detailed or photographic art (simple pixel-art sprites are possible), backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 

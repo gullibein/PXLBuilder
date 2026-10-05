@@ -443,4 +443,38 @@ describe('gameplay', () => {
     useSwitch(rt, input);
     expect(rt.find('Door')!.x).toBe(96 + 64);
   });
+
+  function followLevel(params: Record<string, unknown>, enemy: Vec2, flying = false) {
+    return level((b) => {
+      const e = b.place('Enemy', enemy);
+      if (flying) m.setEntityComponentField(b.d, b.sceneId, e, 'PhysicsBody', 'gravityScale', 0, registry);
+      logic.addRelationship(b.d, b.sceneId, { type: 'follows', source: { kind: 'entity', id: e }, target: { kind: 'object', id: b.def('Player') }, params, conditions: [] });
+    });
+  }
+
+  it('"Enemy follows Player": a walking enemy heads for the player at its speed', () => {
+    const { rt, input, p } = followLevel({ speed: 80 }, { x: 140, y: 17 });
+    run(rt, input, 0.5);
+    const e = rt.find('Enemy')!;
+    expect(e.x).toBeLessThan(140 - 30);
+    expect(e.x).toBeGreaterThan(140 - 50); // about 80 px/s for half a second
+    expect(e.y).toBeCloseTo(17, 0); // stays on the ground
+    run(rt, input, 1.5);
+    expect(events(rt, 'damaged')[0]).toMatchObject({ subject: 'Player', other: 'Enemy' });
+    expect(p.health!.current).toBeLessThan(3);
+  });
+
+  it('it only follows within range', () => {
+    const { rt, input } = followLevel({ speed: 80, range: 64 }, { x: 140, y: 17 });
+    run(rt, input, 1);
+    expect(rt.find('Enemy')!.x).toBeCloseTo(140, 0);
+  });
+
+  it('a flying follower (no gravity) goes straight at the player', () => {
+    const { rt, input } = followLevel({ speed: 100 }, { x: 100, y: -100 }, true);
+    run(rt, input, 0.5);
+    const e = rt.find('Enemy')!;
+    expect(e.x).toBeLessThan(100);
+    expect(e.y).toBeGreaterThan(-100);
+  });
 });

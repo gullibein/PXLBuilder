@@ -27,7 +27,8 @@ isn't connected.
 **In the published app (claude.ai):** no key needed. The AI runs on your own
 Claude account through claude.ai; you're asked once per visit to allow the
 page to use Claude, and requests count toward your plan's usage. (Published
-pages can't contact other services, so API keys don't work there.)
+pages can't contact other services, so API keys don't work there.) **Save**
+works there too: claude.ai asks you to confirm the download.
 
 **Your own key instead (running locally):** ⋯ → **AI connection** takes your Anthropic API key
 and calls Claude straight from the browser (no server needed). The key is

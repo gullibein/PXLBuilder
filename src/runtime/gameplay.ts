@@ -74,6 +74,48 @@ export class Gameplay {
     this.messages = this.messages.filter((m) => m.until > this.rt.time);
   }
 
+  /**
+   * "Enemy follows Player": before things move, each follower heads for the
+   * nearest of its targets that is within range. Walkers only steer
+   * sideways (gravity and the ground do the rest); flyers (no gravity) go
+   * straight at it.
+   */
+  steer(): void {
+    for (const r of this.relationships('follows')) {
+      const speed = typeof r.params.speed === 'number' ? r.params.speed : 80;
+      const range = typeof r.params.range === 'number' ? r.params.range : 320;
+      const targets = this.resolve(r.target, {});
+      for (const f of this.resolve(r.source, {})) {
+        if (f.body !== 'dynamic' || f.controller || f.invincible > 0) continue;
+        let best: RuntimeEntity | null = null;
+        let bestD = Infinity;
+        for (const t of targets) {
+          if (t === f) continue;
+          const d = Math.hypot(t.x - f.x, t.y - f.y);
+          if (d < bestD) {
+            best = t;
+            bestD = d;
+          }
+        }
+        const flying = f.gravityScale === 0;
+        if (!best || (range > 0 && bestD > range) || !this.check(r.conditions, { subject: f, other: best })) {
+          f.vx = 0;
+          if (flying) f.vy = 0;
+          continue;
+        }
+        const dx = best.x - f.x;
+        const dy = best.y - f.y;
+        if (flying) {
+          const d = Math.hypot(dx, dy);
+          f.vx = d > 2 ? (dx / d) * speed : 0;
+          f.vy = d > 2 ? (dy / d) * speed : 0;
+        } else {
+          f.vx = Math.abs(dx) > 2 ? Math.sign(dx) * speed : 0;
+        }
+      }
+    }
+  }
+
   /** Drops pending events (the level restarted) and announces the start. */
   reset(): void {
     this.queue = [];
