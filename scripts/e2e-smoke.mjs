@@ -55,6 +55,21 @@ function stubModel(body) {
   if (req.includes('three hearts')) {
     return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
   }
+  if (req.includes('hop toward the player')) {
+    // First answer has a typo ("sped"); the editor sends the exact problem back and gets a fixed one.
+    const fixed = req.includes('could not be applied');
+    const script = {
+      name: 'Hopper',
+      description: 'Says hello, then hops toward the player when it is close.',
+      vars: [{ name: 'speed', value: 90 }],
+      states: [],
+      handlers: [
+        { when: { on: 'start' }, state: null, if: null, do: [{ do: 'message', text: 'Hopper ready ({speed})', seconds: 30 }] },
+        { when: { on: 'every', seconds: 1 }, state: null, if: 'self.grounded and dist(player) < 400', do: [{ do: 'jump', force: '250' }, { do: 'velocity', x: `sign(dx(player)) * ${fixed ? 'speed' : 'sped'}`, y: null }] },
+      ],
+    };
+    return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', target: 'instance', id: t[0].id, scriptJson: JSON.stringify(script) }] };
+  }
   if (req.includes('patrol')) {
     return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
   }
@@ -368,6 +383,39 @@ try {
   await ask('Give the enemy a jetpack.');
   await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
   await check(async () => (await result.innerText()).includes("can't fly with a jetpack yet"), 'the AI says what is missing instead of faking it');
+
+  step = 'AI writes a behavior script';
+  const askedBefore = aiRequests.length;
+  await ask('Make the enemy hop toward the player when it gets close.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a custom behavior is written as a script and applied');
+  await check(aiRequests.length === askedBefore + 2 && aiRequests.at(-1).request.includes('unknown name "sped" (did you mean "speed"?)'), 'a script that does not check out goes back to the AI once, with the exact problem');
+  await prompts.getByTestId('prompt-details').click();
+  const card = page.getByTestId('script-Hopper');
+  await check(async () => (await card.count()) === 1 && (await card.innerText()).includes('hops toward the player when it is close'), 'the details panel lists the script with its description');
+  await card.getByTestId('script-open').click();
+  await check(async () => /every 1 s, if self\.grounded and \(dist\(player\) < 400\):[\s\S]*jump \(250\)/.test(await card.getByTestId('script-code').innerText()), 'the script is shown as readable steps');
+  await card.getByTestId('script-edit').click();
+  const json = card.getByTestId('script-json');
+  await json.fill((await json.inputValue()).replace('sign(dx(player)) * speed', 'sign(dx(player)) * sped'));
+  await card.getByTestId('script-save').click();
+  await check(async () => (await card.getByTestId('script-error').innerText()).includes('unknown name "sped"'), 'a hand edit is checked the same way, with the same message');
+  await json.fill((await json.inputValue()).replace('* sped', '* speed * 2'));
+  await card.getByTestId('script-save').click();
+  await check(async () => (await card.getByTestId('script-error').count()) === 0 && (await card.getByTestId('script-code').innerText()).includes('speed) * 2'), 'a valid hand edit is saved');
+  await page.getByTestId('close-details').click();
+  await page.getByTestId('play').click();
+  await check(async () => (await page.getByTestId('hud-message').innerText()).includes('Hopper ready (90)'), 'in play, the script runs (its start message, with the variable filled in)');
+  const enemyHopped = async () => (await page.getByTestId('play-canvas').getAttribute('data-events')) ?? '';
+  await page.waitForTimeout(1500);
+  await check(async () => !(await enemyHopped()).includes('script_error'), 'no script errors while playing');
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
+  await page.getByTestId('undo').click();
+  await clickWorld(-32, 0);
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('script-Hopper').count()) === 0, 'Undo removes the script again (edit, then the AI change)');
+  await page.getByTestId('close-details').click();
 
   step = 'relationship context';
   await clickWorld(224, -16, { modifiers: ['Shift'] });

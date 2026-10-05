@@ -1,4 +1,5 @@
 import { componentRegistry } from '../../core/components/builtin';
+import { ScriptList } from './ScriptList';
 import * as m from '../../core/model/mutations';
 import { resolveEntity } from '../../core/model/resolve';
 import type { ComponentMap, Id, ObjectDefinition, Scene } from '../../core/types';
@@ -268,6 +269,15 @@ function EntityInspector({ scene, entityId }: { scene: Scene; entityId: Id }) {
         <EntityLogic scene={scene} entityId={entityId} />
       </Section>
 
+      <Section title="Behavior scripts" testId="scripts">
+        <ScriptList
+          groups={[
+            ...(def ? [{ owner: { target: 'definition' as const, id: def.id }, label: `From ${def.name} (every copy)`, scripts: def.scripts ?? [] }] : []),
+            { owner: { target: 'instance' as const, id: entityId }, label: def && (def.scripts ?? []).length ? 'Only this one' : null, scripts: entity.scripts ?? [] },
+          ]}
+        />
+      </Section>
+
       <ComponentList
         components={resolved.components}
         overridden={resolved.overriddenFields}
@@ -336,6 +346,9 @@ function DefinitionInspector({ def }: { def: ObjectDefinition }) {
         <Row label="tags">
           <ListInput value={def.tags} testId="definition-tags" onCommit={(tags) => edit('Set tags', (p) => m.setDefinitionTags(p, def.id, tags))} />
         </Row>
+      </Section>
+      <Section title="Behavior scripts" testId="scripts">
+        <ScriptList groups={[{ owner: { target: 'definition', id: def.id }, label: null, scripts: def.scripts ?? [] }]} />
       </Section>
       <ComponentList
         components={def.components}

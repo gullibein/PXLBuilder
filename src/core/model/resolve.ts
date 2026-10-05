@@ -1,5 +1,5 @@
 import type { ComponentRegistry } from '../components/registry';
-import type { ComponentMap, EntityInstance, Id, ObjectDefinition, Project, Transform } from '../types';
+import type { BehaviorScript, ComponentMap, EntityInstance, Id, ObjectDefinition, Project, Transform } from '../types';
 
 /** An entity with its definition applied: the effective state the editor and runtime use. */
 export interface ResolvedEntity {
@@ -15,6 +15,8 @@ export interface ResolvedEntity {
   instanceOnlyComponents: Set<string>;
   /** Placed on a tile grid (see placement.ts): snaps to whole cells and is drawn as part of a continuous surface. */
   tile: boolean;
+  /** Behavior scripts: the object's, then the entity's own. */
+  scripts: BehaviorScript[];
 }
 
 export function findDefinition(project: Project, id: Id | null): ObjectDefinition | undefined {
@@ -63,5 +65,6 @@ export function resolveEntity(project: Project, entity: EntityInstance, registry
     overriddenFields,
     instanceOnlyComponents,
     tile: def?.metadata.placement === 'tile' || entity.metadata.placement === 'tile',
+    scripts: [...(def?.scripts ?? []), ...(entity.scripts ?? [])],
   };
 }

@@ -7,11 +7,13 @@
  * mutation functions the inspector uses. A list of operations is applied
  * all-or-nothing inside one transaction.
  */
+import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
 import { checkPixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
+import * as scripts from '../script/mutations';
 import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
 import { LEVEL_CELL } from '../model/placement';
@@ -161,6 +163,25 @@ export const operationSchema = z.union([
     id: z.string().describe('Overlay id from editor.overlays'),
   }),
   z.object({
+    op: z.literal('set_script'),
+    target,
+    id: z.string().describe('Object definition id (definition: every copy runs it) or entity id (instance: only this one); also a create_definition / place_instance ref from earlier in this list'),
+    scriptJson: z.string().describe('The whole behavior script as JSON (see "Behavior scripts"). Same "id" as an existing script of that owner replaces it; a new id (or none) adds one'),
+  }),
+  z.object({
+    op: z.literal('remove_script'),
+    target,
+    id: z.string(),
+    scriptId: z.string(),
+  }),
+  z.object({
+    op: z.literal('set_script_enabled'),
+    target,
+    id: z.string(),
+    scriptId: z.string(),
+    enabled: z.boolean(),
+  }),
+  z.object({
     op: z.literal('set_rule_enabled'),
     sceneId: z.string(),
     id: z.string(),
@@ -202,6 +223,8 @@ function substituteRefs(value: unknown, entities: Map<string, Id>, objects: Map<
   if (out.kind === 'entity' && typeof out.id === 'string') out.id = entities.get(out.id) ?? out.id;
   if (out.kind === 'object' && typeof out.id === 'string') out.id = objects.get(out.id) ?? out.id;
   if (out.type === 'spawn' && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
+  // Script statements that name a library object.
+  if ((out.do === 'spawn' || out.do === 'shoot') && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
   return out;
 }
 
@@ -223,6 +246,24 @@ function sceneOfEntity(project: Project, entityId: Id): Id {
   const scene = project.scenes.find((s) => s.entities.some((e) => e.id === entityId));
   if (!scene) throw new m.ModelError(`Entity "${entityId}" not found`);
   return scene.id;
+}
+
+/**
+ * Tries the operations on a copy of the project: the first problem, or null
+ * when all of them would apply. Nothing is changed.
+ */
+export function checkOperations(project: Project, ops: Operation[], registry: ComponentRegistry): string | null {
+  const game = ops.filter((op) => !isEditorOperation(op));
+  if (!game.length) return null;
+  try {
+    produce(project, (d) => {
+      applyOperations(d, game, registry);
+    });
+    return null;
+  } catch (e) {
+    if (e instanceof m.ModelError) return e.message;
+    throw e;
+  }
 }
 
 /**
@@ -389,6 +430,15 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
       case 'remove_rule':
         logic.removeRule(project, op.sceneId, op.id);
         break;
+      case 'set_script':
+      case 'remove_script':
+      case 'set_script_enabled': {
+        const owner = { target: op.target, id: op.target === 'definition' ? (refs.get(op.id) ?? op.id) : (entityRefs.get(op.id) ?? op.id) };
+        if (op.op === 'set_script') scripts.setScript(project, owner, logicJson(op.scriptJson, 'Script'));
+        else if (op.op === 'remove_script') scripts.removeScript(project, owner, op.scriptId);
+        else scripts.setScriptEnabled(project, owner, op.scriptId, op.enabled);
+        break;
+      }
       case 'set_rule_enabled':
         logic.setRuleEnabled(project, op.sceneId, op.id, op.enabled);
         break;

@@ -299,6 +299,8 @@ export function unlinkEntity(project: Project, sceneId: Id, entityId: Id, regist
   entity.components = cloneValue(resolved.components);
   entity.tags = [...resolved.tags];
   entity.removedComponents = [];
+  // Its object's scripts become its own.
+  if (resolved.scripts.length) entity.scripts = cloneValue(resolved.scripts);
   entity.definitionId = null;
 }
 

@@ -244,7 +244,7 @@ export class Gameplay {
     return true;
   }
 
-  private hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
+  hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
     if (!victim.health || !victim.alive) return;
     victim.health.current = Math.max(0, victim.health.current - amount);
     victim.invincible = victim.receiver?.invincibility ?? 1;
@@ -293,12 +293,12 @@ export class Gameplay {
     return out;
   }
 
-  private addItem(e: RuntimeEntity, item: string, count: number): void {
+  addItem(e: RuntimeEntity, item: string, count: number): void {
     e.inventory ??= new Map();
     e.inventory.set(item, (e.inventory.get(item) ?? 0) + count);
   }
 
-  private takeItem(e: RuntimeEntity, item: string, count: number): void {
+  takeItem(e: RuntimeEntity, item: string, count: number): void {
     if (!e.inventory) return;
     const left = (e.inventory.get(item) ?? 0) - count;
     if (left > 0) e.inventory.set(item, left);
@@ -317,7 +317,7 @@ export class Gameplay {
     this.rt.markSolidsDirty();
   }
 
-  private setOpen(e: RuntimeEntity, open: boolean, by: RuntimeEntity | null): void {
+  setOpen(e: RuntimeEntity, open: boolean, by: RuntimeEntity | null): void {
     if (e.open === open || !e.alive) return;
     e.open = open;
     this.rt.markSolidsDirty();
@@ -339,6 +339,7 @@ export class Gameplay {
       this.restarting = false;
       this.react(ev);
       this.runRules(ev);
+      if (!this.restarting) this.rt.scripts.onEvent(ev);
       if (this.restarting) {
         // The level restarted: what was pending belonged to the old run.
         this.queue = this.queue.filter((q) => q.type === 'level_started');

@@ -159,10 +159,21 @@ function migrateV3toV4(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v4 -> v5
+ * - Objects and entities can carry behavior scripts (`scripts`, optional).
+ *   Nothing to convert; the version marks files an older editor would
+ *   silently strip the scripts from.
+ */
+function migrateV4toV5(raw: Raw): Raw {
+  return structuredClone(raw);
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
   { from: 3, to: 4, migrate: migrateV3toV4 },
+  { from: 4, to: 5, migrate: migrateV4toV5 },
 ];
 
 export class MigrationError extends Error {

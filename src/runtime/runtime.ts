@@ -15,6 +15,7 @@ import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
 import type { Camera, RenderEntity } from '../render/renderer';
 import { BehaviorSystem } from './behaviors';
 import { Gameplay } from './gameplay';
+import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import type { InputState } from './input';
 import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
 
@@ -71,6 +72,10 @@ export interface RuntimeEntity {
   facing: 1 | -1;
   /** The side it bumped into a wall on in the last step (-1 left, 1 right, 0 none). */
   bumped: -1 | 0 | 1;
+  /** Behavior scripts this entity runs (its own copy: variables, state). */
+  scripts: ScriptInstance[];
+  /** See-through amount set by a script (null: normal). */
+  alpha: number | null;
   /** Being steered by a "follows" relationship this step (so it isn't also patrolling). */
   chasing: boolean;
   /** Behaviors (from behavior components) and their running state. */
@@ -236,6 +241,8 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
     bumped: 0,
     chasing: false,
+    scripts: instantiateScripts(r.scripts),
+    alpha: null,
     beh: readBehaviors(c, r.transform.position),
     hanging: null,
     grabCooldown: 0,
@@ -255,6 +262,8 @@ export class Runtime {
   readonly gameplay: Gameplay;
   /** What things do on their own (patrol, shoot, move…). */
   private readonly behaviors: BehaviorSystem;
+  /** Behavior scripts. */
+  readonly scripts: ScriptSystem;
   time = 0;
   private accumulator = 0;
   /** Solids that never move: recomputed only when something opens, closes, appears or goes away. */
@@ -280,6 +289,7 @@ export class Runtime {
     this.camera = { x: 0, y: 0, zoom: opts.zoom ?? 1 };
     this.gameplay = new Gameplay(this, project, this.scene);
     this.behaviors = new BehaviorSystem(this);
+    this.scripts = new ScriptSystem(this, project);
     this.load();
   }
 
@@ -299,6 +309,7 @@ export class Runtime {
     this.followStrength = typeof fs === 'number' ? fs : 0.15;
     this.camera.x = this.cameraTarget?.x ?? 0;
     this.camera.y = this.cameraTarget?.y ?? 0;
+    this.scripts.reset();
     this.gameplay.reset();
   }
 
@@ -349,6 +360,7 @@ export class Runtime {
     }
     this.gameplay.steer();
     this.behaviors.before(dt, input);
+    this.scripts.before(dt, input);
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
       if (e.body === 'kinematic' && e.alive) {
@@ -362,6 +374,12 @@ export class Runtime {
     for (const e of this.entities) {
       if (e.body !== 'dynamic' || !e.alive) continue;
       e.prevY = e.y;
+      if (e.moveTarget) {
+        // Gliding (a script or a switch moves it): no falling meanwhile.
+        e.vx = 0;
+        e.vy = 0;
+        continue;
+      }
       if (e.controller) this.control(e, input, dt);
       if (!e.climbing && !e.hanging) {
         e.vx += this.gravity.x * e.gravityScale * dt;
@@ -549,7 +567,7 @@ export class Runtime {
   }
 
   /** Fires a shot from `from` in direction (dx, dy) (normalized), as a runtime-only entity. */
-  shoot(from: RuntimeEntity, dx: number, dy: number, cfg: NonNullable<Behaviors['shooter']>): RuntimeEntity {
+  shoot(from: RuntimeEntity, dx: number, dy: number, cfg: { projectile: string; speed: number; damage: number; range: number }): RuntimeEntity {
     const def = cfg.projectile ? this.project.definitions.find((d) => d.id === cfg.projectile) : undefined;
     const fromBox = boxOf(from);
     const reach = (fromBox ? Math.max(fromBox.hw, fromBox.hh) : 8) + 6;
@@ -638,7 +656,7 @@ export class Runtime {
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
       let r: RenderEntity = moved || mirrored ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } } : e.base;
-      const alpha = e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1;
+      const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1);
       if (alpha !== 1) r = { ...r, alpha };
       out.push(r);
     }

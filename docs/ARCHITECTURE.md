@@ -300,6 +300,61 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
+### Behavior scripts (programmable behavior)
+Ready-made components cover common cases; everything else is programmed.
+The AI writes **behavior scripts**: programs stored as data on a library
+object (`ObjectDefinition.scripts`, every copy runs them) or on one entity
+(`EntityInstance.scripts`); format v5. Never JavaScript: nothing is `eval`'d,
+so a shared game can't run arbitrary code, and scripts are validated, undone,
+saved and shown like any other edit.
+
+- **Language** (`core/script/language.ts`, one table drives the schema, the
+  checker, the AI reference and the interpreter):
+  - a script = `vars` (per entity), optional `states` (a state machine;
+    `states[0]` starts), and `handlers`: *when* trigger, *in state*, *if*
+    expression, *do* statements;
+  - triggers: `start`, `tick` (every step), `every` N s, `enter_state`,
+    `event` (any game event the entity takes part in, `with` a tag of the
+    other party; `other` is that party), `key` (pressed/held/released),
+    `signal` (sent by another script);
+  - statements: `set` (own or another entity's variable), `if`, `each` (over
+    a tag, as `it`), `velocity`, `push`, `move_toward`, `glide_to`,
+    `position`, `jump`, `face`, `gravity`, `shoot`, `spawn`, `remove`,
+    `damage`, `heal`, `give_item`, `take_item`, `set_open`, `state`, `signal`,
+    `message` (with `{expression}` parts), `alpha`, `respawn`,
+    `restart_level`;
+  - expressions (`expr.ts`, a hand-written parser): numbers, text, booleans,
+    arithmetic, comparisons, and/or/not, `?:`, names (`self`, `player`,
+    `other`, `it`, `time`, `dt`, `state`, `state_time`, variables), entity
+    properties (`x`, `vy`, `grounded`, `health`, `facing`, `spawn_x`…) and
+    functions (`dist`, `dx`, `nearest`, `count`, `solid_at`, `can_see`,
+    `key`, `pressed`, `rand`, `chance`, `sin`, `clamp`, `get`…).
+- **Checking** (`checkScript`): structure, every expression parsed, every
+  name/property/function/state/event/object known (with "did you mean"),
+  `other` only where it exists, size limits (40 handlers, 400 steps, depth
+  8). Errors name the exact place: `Script "Charge", handler 2 (tick): step
+  1 (move_toward): expression "sped * 3": unknown name "sped" (did you mean
+  "speed"?)`.
+- **Running** (`runtime/scripts.ts`): each entity runs its own copy.
+  start/tick/every/key handlers run before physics; event and signal
+  handlers run from the gameplay event queue (so the runaway cap covers
+  them). No open loops; a budget per handler run (2000 operations) and per
+  step stops runaway scripts. Problems while running are reported once per
+  script (`runtime.scripts.errors`, event `script_error`) and the game goes
+  on; a stored script that no longer checks out is reported and not run.
+  Static things a script moves become kinematic; `glide_to` suspends gravity.
+- **AI**: operations `set_script` (whole script; same id replaces),
+  `remove_script`, `set_script_enabled`. Targets carry their scripts in
+  full; the system prompt carries the generated language reference and
+  three example scripts (`script/examples.ts`; tests run each one in the
+  engine). If the AI's answer doesn't apply (any operation, not only
+  scripts), the editor sends the exact problem back once and uses the
+  corrected answer.
+- **Editor**: the details panel lists scripts (the object's and the
+  entity's own) with their description, a readable step-by-step view
+  (`script/describe.ts`), on/off, remove, and "Edit as code" (JSON, checked
+  the same way before saving).
+
 ### Game logic (Phase 3): relationships, events, rules, graph
 The design principle: logic is **data in the project**, built from a small
 vocabulary, never generated code. Everything lives per level
@@ -590,5 +645,5 @@ one version at a time, and refuses files from a newer editor.
 4. Commands: **done** (operations, transactions, undo/redo).
 5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.
-- Behaviors: **done** (patrol, jumper, shooter/shots, moving platforms, timers, double jump, ledge grab).
+- Behaviors: **done** (ready-made components, plus behavior scripts the AI programs).
 8–10. Design planning, debugging, asset generation (simple pixel-art sprites are done).

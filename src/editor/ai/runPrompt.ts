@@ -10,7 +10,7 @@ import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { getApiKey } from './apiKey';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
-import { applyOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
+import { applyOperations, checkOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
@@ -69,7 +69,22 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   };
   let response: AIResponse;
   try {
-    response = await (await currentProvider()).respond(body, signal);
+    const provider = await currentProvider();
+    response = await provider.respond(body, signal);
+    // A game change that wouldn't apply (a script with a typo, a wrong id) goes back to the AI once, with the exact problem.
+    const problem = response.operations.length && !response.operations.some(isEditorOperation) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
+    if (problem) {
+      state.logMessage('info', `AI answer didn't check out (${problem}); asking it to fix that.`);
+      const first = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
+      response = await provider.respond(
+        {
+          ...body,
+          history: [...body.history, { request, reply: first }],
+          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer.]`,
+        },
+        signal,
+      );
+    }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     const message = e instanceof AIUnavailableError ? e.message : `AI request failed: ${(e as Error).message}`;

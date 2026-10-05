@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
+import { scriptSchema } from '../script/language';
 
 /** Structural schemas for the current format version (component props are checked against the component registry separately). */
 
@@ -22,6 +23,7 @@ export const entitySchema = z.object({
   removedComponents: z.array(z.string()),
   tags: z.array(z.string()),
   metadata: z.record(z.string(), z.unknown()),
+  scripts: z.array(scriptSchema).optional(),
 });
 
 export const sceneSchema = z.object({
@@ -44,6 +46,7 @@ export const definitionSchema = z.object({
   components: componentMap,
   tags: z.array(z.string()),
   metadata: z.record(z.string(), z.unknown()),
+  scripts: z.array(scriptSchema).optional(),
 });
 
 export const assetSchema = z.object({

@@ -2,6 +2,8 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
 import * as logic from '../core/logic/mutations';
+import { SCRIPT_EXAMPLES } from '../core/script/examples';
+import { setScript } from '../core/script/mutations';
 import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
@@ -681,6 +683,194 @@ describe('behaviors', () => {
     run(rt, input, 0.6);
     expect(p.hanging).toBeNull();
     expect(p.y).toBeCloseTo(16, 0);
+  });
+});
+
+describe('behavior scripts', () => {
+  const script = (b: Builder, id: string, body: Record<string, unknown>, target: 'instance' | 'definition' = 'instance') =>
+    setScript(b.d, { target, id }, { name: 'Test', ...body });
+
+  it('a state machine: walks left, and charges at the player once close', () => {
+    const { rt, input } = level((b) =>
+      script(b, b.place('Enemy', { x: 140, y: 17 }), {
+        vars: [{ name: 'speed', value: 40 }],
+        states: ['walk', 'charge'],
+        handlers: [
+          { when: { on: 'tick' }, state: 'walk', do: [{ do: 'velocity', x: '-speed', y: null }] },
+          { when: { on: 'tick' }, state: 'walk', if: 'dist(player) < 100', do: [{ do: 'state', name: 'charge' }] },
+          { when: { on: 'enter_state' }, state: 'charge', do: [{ do: 'message', text: 'Charge at {round(dist(player))}!' }] },
+          { when: { on: 'tick' }, state: 'charge', do: [{ do: 'move_toward', target: 'player', speed: 'speed * 4' }] },
+        ],
+      }),
+    );
+    const e = rt.find('Enemy')!;
+    run(rt, input, 0.5);
+    expect(e.scripts[0].state).toBe('walk');
+    expect(e.vx).toBeCloseTo(-40, 5);
+    run(rt, input, 1);
+    expect(e.scripts[0].state).toBe('charge');
+    expect(e.vx).toBe(-160);
+    expect(e.facing).toBe(-1);
+    expect(rt.messages[0]).toMatch(/^Charge at (9\d|100)!$/);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('variables and events: the player counts coins and shows the count', () => {
+    const { rt, input } = level((b) => {
+      b.place('Coin', { x: 40, y: 20 });
+      b.place('Coin', { x: 80, y: 20 });
+      script(b, b.def('Player'), {
+        vars: [{ name: 'coins', value: 0 }],
+        handlers: [{ when: { on: 'event', event: 'collected', with: 'collectible' }, do: [{ do: 'set', var: 'coins', value: 'coins + 1' }, { do: 'message', text: 'Coins: {coins}' }] }],
+      }, 'definition');
+    });
+    walkRight(rt, input, 1);
+    expect(rt.find('Player')!.scripts[0].vars.get('coins')).toBe(2);
+    expect(rt.messages).toContain('Coins: 2');
+  });
+
+  it('math: a floating thing bobs up and down on a sine wave', () => {
+    const { rt, input } = level((b) => {
+      const id = b.place('Enemy', { x: 100, y: -60 });
+      m.setEntityComponentField(b.d, b.sceneId, id, 'PhysicsBody', 'gravityScale', 0, registry);
+      script(b, id, { handlers: [{ when: { on: 'tick' }, do: [{ do: 'position', x: 'self.x', y: 'self.spawn_y + sin(time * 6) * 20' }] }] });
+    });
+    const e = rt.find('Enemy')!;
+    let lo = Infinity;
+    let hi = -Infinity;
+    run(rt, input, 1.2, () => {
+      lo = Math.min(lo, e.y);
+      hi = Math.max(hi, e.y);
+    });
+    expect(hi - lo).toBeGreaterThan(35);
+    expect(hi).toBeLessThanOrEqual(-40 + 0.01);
+    expect(lo).toBeGreaterThanOrEqual(-80 - 0.01);
+  });
+
+  it('a key handler: the player shoots with X, and the shot hurts an enemy', () => {
+    const { rt, input } = level((b) => {
+      script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'key', key: 'fire' }, do: [{ do: 'shoot', dx: 'self.facing', dy: '0', speed: '300', damage: '1', range: '400', object: null }] }] });
+      const e = b.place('Enemy', { x: 110, y: 17 });
+      m.addEntityComponent(b.d, b.sceneId, e, 'Health', registry, { maxHealth: 3, currentHealth: 3 });
+      m.addEntityComponent(b.d, b.sceneId, e, 'DamageReceiver', registry, { damageSources: ['player'] });
+    });
+    input.press('fire');
+    run(rt, input, 0.05);
+    input.release('fire');
+    run(rt, input, 0.6);
+    expect(rt.find('Enemy')!.health!.current).toBe(2);
+  });
+
+  it('touch events: a script makes a block hurt the player and fade', () => {
+    const { rt, input, p } = level((b) => {
+      const s = b.place('Stone', { x: 60, y: 16 });
+      script(b, s, { handlers: [{ when: { on: 'event', event: 'touch_started', with: 'player' }, do: [{ do: 'damage', target: 'other', amount: '1' }, { do: 'alpha', value: '0.5' }] }] });
+    });
+    walkRight(rt, input, 0.6);
+    expect(p.health!.current).toBe(2);
+    expect(rt.renderList().find((r) => r.name === 'Stone' && r.transform.position.x === 60)?.alpha).toBe(0.5);
+  });
+
+  it('signals: one script tells others, which react', () => {
+    const { rt, input } = level((b) => {
+      script(b, b.place('Coin', { x: -100, y: 0 }), { handlers: [{ when: { on: 'every', seconds: 0.5 }, do: [{ do: 'signal', name: 'ping' }] }] });
+      for (const x of [60, 100]) {
+        script(b, b.place('Enemy', { x, y: 17 }), { vars: [{ name: 'pings', value: 0 }], handlers: [{ when: { on: 'signal', name: 'ping' }, do: [{ do: 'set', var: 'pings', value: 'pings + 1' }] }] });
+      }
+    });
+    run(rt, input, 1.1);
+    const enemies = rt.entities.filter((e) => e.name === 'Enemy');
+    expect(enemies.map((e) => e.scripts[0].vars.get('pings'))).toEqual([2, 2]);
+    expect(events(rt, 'signal')).toHaveLength(2);
+  });
+
+  it('a script that does far too much is stopped and reported; the game keeps running', () => {
+    const { rt, input, p } = level((b) =>
+      script(b, b.place('Enemy', { x: 100, y: 17 }), {
+        vars: [{ name: 'n', value: 0 }],
+        handlers: [
+          {
+            when: { on: 'tick' },
+            do: [{ do: 'each', tag: 'platform', then: [{ do: 'each', tag: 'platform', then: [{ do: 'each', tag: 'platform', then: [{ do: 'set', var: 'n', value: 'n + 1' }] }] }] }],
+          },
+        ],
+      }),
+    );
+    walkRight(rt, input, 0.5);
+    expect(rt.scripts.errors).toEqual([{ entity: 'Enemy', script: 'Test', message: 'did too much work in one step and was stopped there' }]);
+    expect(events(rt, 'script_error')).toHaveLength(1);
+    expect(p.x).toBeGreaterThan(40);
+  });
+
+  it('a stored script that no longer checks out (e.g. a hand-edited file) is reported and not run', () => {
+    const { rt, input } = level((b) => {
+      const id = b.place('Enemy', { x: 100, y: 17 });
+      script(b, id, { handlers: [{ when: { on: 'tick' }, do: [{ do: 'jump', force: '300' }] }] });
+      const e = b.d.scenes[0].entities.find((x) => x.id === id)!;
+      e.scripts![0].handlers[0].do = [{ do: 'jump', force: 'nonsense(1)' }];
+    });
+    run(rt, input, 0.3);
+    expect(rt.find('Enemy')!.y).toBeCloseTo(17, 0);
+    expect(rt.scripts.errors[0].message).toMatch(/not run.*unknown function "nonsense"/);
+  });
+
+  it('restart_level from a script starts over cleanly', () => {
+    const { rt, input } = level((b) =>
+      script(b, b.place('Coin', { x: -100, y: 0 }), { vars: [{ name: 'n', value: 0 }], handlers: [{ when: { on: 'every', seconds: 0.5 }, do: [{ do: 'set', var: 'n', value: 'n + 1' }, { do: 'restart_level' }] }] }),
+    );
+    run(rt, input, 1.2);
+    expect(events(rt, 'level_started').length).toBeGreaterThanOrEqual(3);
+    expect(rt.find('Coin')!.scripts[0].vars.get('n')).toBe(0);
+  });
+});
+
+describe('the example scripts the AI learns from', () => {
+  const example = (name: string) => JSON.parse(SCRIPT_EXAMPLES.find((x) => x.json.includes(`"name":"${name}"`))!.json);
+
+  it('Charger: charges at a nearby player, rests, then walks again', () => {
+    const { rt, input } = level((b) => setScript(b.d, { target: 'instance', id: b.place('Enemy', { x: 130, y: 17 }) }, example('Charger')));
+    const e = rt.find('Enemy')!;
+    const seen: string[] = [];
+    run(rt, input, 3, () => {
+      if (seen.at(-1) !== e.scripts[0].state) seen.push(e.scripts[0].state);
+    });
+    // After resting it walks again, and (the player still close) charges again at once.
+    expect(seen.slice(0, 4)).toEqual(['walk', 'charge', 'rest', 'charge']);
+    expect(e.x).toBeLessThan(130 - 60);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('Jetpack: holding Up flies while fuel lasts', () => {
+    const { rt, input, p } = level((b) => setScript(b.d, { target: 'instance', id: rt0(b, 'Player') }, example('Jetpack')));
+    run(rt, input, 0.2);
+    input.press('up');
+    run(rt, input, 0.6);
+    expect(p.y).toBeLessThan(16 - 40);
+    expect(p.scripts[0].vars.get('fuel') as number).toBeLessThan(70);
+    expect(rt.messages.some((t) => /^Fuel \d+%$/.test(t))).toBe(true);
+    run(rt, input, 2);
+    input.release('up');
+    expect(p.scripts[0].vars.get('fuel') as number).toBeLessThanOrEqual(0);
+    run(rt, input, 2);
+    expect(p.y).toBeCloseTo(16, 0); // back down when the fuel ran out
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('Crumble: gives way under the player shortly after landing, and comes back', () => {
+    const { rt, input, p } = level((b) => setScript(b.d, { target: 'instance', id: b.place('Stone', { x: 208, y: 48 }) }, example('Crumble')));
+    const stone = rt.entities.find((e) => e.name === 'Stone' && e.scripts.length)!;
+    p.x = 208;
+    run(rt, input, 0.4);
+    expect(p.y).toBeCloseTo(16, 0);
+    expect(stone.scripts[0].state).toBe('shaking');
+    run(rt, input, 0.6);
+    expect(stone.open).toBe(true);
+    expect(p.y).toBeGreaterThan(30); // falling
+    run(rt, input, 3.2);
+    expect(stone.open).toBe(false);
+    expect(stone.scripts[0].state).toBe('solid');
+    expect(stone.x).toBe(208);
+    expect(rt.scripts.errors).toEqual([]);
   });
 });
 

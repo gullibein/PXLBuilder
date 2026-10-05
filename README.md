@@ -8,10 +8,13 @@ prompt appears next to it; describe the change; the AI turns it into validated,
 undoable operations. Press **Play** to run the level. Objects can be connected
 ("this switch opens this door", "the blue key opens the blue door") and levels
 can have rules ("when the player picks up the key, show a message"). Things can
-behave on their own ("make the mushroom walk back and forth", "this turret
-shoots at the player", "let the player double jump"): behaviors are components
-(Patrol, Jumper, Shooter, MovingPlatform, Timer, DoubleJump, LedgeGrab). What
-isn't built yet (jetpacks, wall jumps, ...) the AI says so.
+behave on their own. A few common behaviors are ready-made components
+(Patrol, Jumper, Shooter, MovingPlatform, Timer, DoubleJump, LedgeGrab), and
+for anything else the AI **programs the behavior**: it writes a behavior
+script for the object ("charges at the player when it gets close, then rests",
+"a jetpack with fuel", "a platform that crumbles"). Scripts are data in a small
+event-based language (variables, states, expressions, game actions), checked
+before they are applied and readable in the details panel.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run

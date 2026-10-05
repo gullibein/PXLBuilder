@@ -4,6 +4,10 @@
  * from and writes to these structures; nothing here depends on React or the DOM.
  */
 
+import type { BehaviorScript } from './script/language';
+
+export type { BehaviorScript };
+
 export type Id = string;
 
 export interface Vec2 {
@@ -35,6 +39,8 @@ export interface ObjectDefinition {
   components: ComponentMap;
   tags: string[];
   metadata: Record<string, unknown>;
+  /** Behavior scripts every copy runs in play. */
+  scripts?: BehaviorScript[];
 }
 
 /**
@@ -55,6 +61,8 @@ export interface EntityInstance {
   /** Tags in addition to those inherited from the definition. */
   tags: string[];
   metadata: Record<string, unknown>;
+  /** Behavior scripts only this entity runs (in addition to its object's). */
+  scripts?: BehaviorScript[];
 }
 
 export interface BackgroundSettings {

@@ -14,7 +14,7 @@ import { characterReach } from '../model/reach';
 import { suggestedGrid } from '../model/pixelArt';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
-import type { Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
+import type { BehaviorScript, Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
 
 export type AIContext =
   /** One selected entity. */
@@ -80,6 +80,8 @@ export interface EntityDetail {
   instanceOverrides: string[];
   /** The pixel grid to use when drawing a sprite for it (draw_sprite): same proportions as its size. */
   spriteGrid: { width: number; height: number };
+  /** Behavior scripts, in full: its object's (every copy runs them) and its own (only this one). */
+  scripts: { object: BehaviorScript[]; own: BehaviorScript[] };
 }
 
 export interface EntityBrief {
@@ -90,6 +92,8 @@ export interface EntityBrief {
   x: number;
   y: number;
   components: string[];
+  /** Names of the behavior scripts it runs. */
+  scripts?: string[];
 }
 
 /**
@@ -137,6 +141,8 @@ export interface AIPayload {
     tags: string[];
     components: string[];
     placedCount: number;
+    /** Behavior scripts every copy runs (in full when it's a target's object; else id, name and description). */
+    scripts: { id: Id; name: string; description: string }[];
     /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
     sprites: { assetId: Id; image: string; frame: number; sheet: boolean }[];
   }[];
@@ -211,6 +217,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       components: r.components,
       instanceOverrides: [...r.overriddenFields],
       spriteGrid: suggestedGrid(getEntitySize(r)),
+      scripts: { object: def?.scripts ?? [], own: entity.scripts ?? [] },
     };
   };
 
@@ -228,6 +235,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
           x: Math.round(r.transform.position.x),
           y: Math.round(r.transform.position.y),
           components: Object.keys(r.components),
+          ...(r.scripts.length ? { scripts: r.scripts.map((x) => x.name) } : {}),
         };
       });
 
@@ -263,6 +271,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       tags: d.tags,
       components: Object.keys(d.components),
       placedCount: placed(d.id),
+      scripts: (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: x.description })),
       sprites: getDefinitionSprites(d).map((r) => {
         const a = project.assets.find((x) => x.id === r.assetId);
         return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, sheet: a?.kind === 'spritesheet' };

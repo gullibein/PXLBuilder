@@ -37,6 +37,8 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'timer', description: 'A Timer component goes off (every `interval` seconds, or once).', subject: 'what has the Timer', other: null, phrase: "{subject}'s timer goes off" },
   { type: 'shot', description: 'A Shooter fires a shot.', subject: 'the shooter', other: 'the shot', phrase: '{subject} shoots' },
   { type: 'ledge_grabbed', description: 'A character with LedgeGrab grabs a ledge.', subject: 'who grabbed it', other: null, phrase: '{subject} grabs a ledge' },
+  { type: 'signal', description: 'A behavior script sent a signal (detail.name).', subject: 'the sender', other: null, phrase: '{subject} sends a signal' },
+  { type: 'script_error', description: 'A behavior script had a problem while running (detail.message); it was stopped there.', subject: 'whose script', other: null, phrase: "{subject}'s script has a problem" },
   { type: 'spawned', description: 'A new entity appears (by a spawn action).', subject: 'the new entity', other: null, phrase: '{subject} appears' },
 ];
 

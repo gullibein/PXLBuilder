@@ -7,6 +7,8 @@
 import type { ComponentRegistry } from '../components/registry';
 import type { FieldSchema } from '../components/schema';
 import { ACTION_HELP, CONDITION_HELP, eventRegistry, relationshipRegistry } from '../logic/vocabulary';
+import { SCRIPT_EXAMPLES } from '../script/examples';
+import { describeScriptLanguage } from '../script/language';
 
 function describeField(name: string, f: FieldSchema): string {
   let type: string = f.kind;
@@ -73,9 +75,9 @@ ${actions}
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Movement behaviors beyond the behavior components and "follows": fleeing, wandering at random, jetpacks, wall jumping, dashing, swimming, health regeneration, enemies that aim ahead or use paths with more than two points.',
-  'Timers and delays ("after 3 seconds", "every 2 seconds"), counters/variables other than inventory items and health, score.',
-  'Moving to another level, checkpoints, a game-over screen (a rule can show a message and restart the level).',
+  'Physics beyond moving boxes: slopes, rotation, ropes/swinging, water you swim in, pushing or carrying objects, bouncy or slippery surfaces (a script can fake some of these with velocity changes; say so when you do).',
+  'Path finding around obstacles (scripts can steer, check walls with solid_at and jump, but cannot plan a route through a maze).',
+  'Moving to another level, saving progress between plays, a game-over or title screen (a script or rule can show a message and restart the level), a score shown permanently on screen (messages are temporary).',
   'Relationship types marked "NOT simulated" (targets, protects, contains) only record the design; nothing happens in play.',
   'Camera settings, lighting, day/night, music, sound, particles, animation, detailed or photographic art (simple pixel-art sprites are possible), backgrounds that scroll on their own (background movement only follows the camera).',
 ];
@@ -166,6 +168,20 @@ Connections the user clicked on (scope "connection")
 - The user drew a connection by dragging from a switch onto an object (by default the switch opens it) and is now describing what it should do. Change THIS connection with update_relationship (id = context.connection.id); don't create a second one.
 - "The switch makes the door disappear" -> params {"action":"disappear"}. "The switch moves the door three squares upwards" -> {"action":"move","offset":{"x":0,"y":-96}} (one square/tile = 32 px, negative y is up); "slowly"/"quickly" -> speed (default 96 px/s; 0 = at once). "opens it" -> "open"; "opens and closes it" -> "toggle".
 - If the wish needs more than a connection can do (e.g. "only while the player stands on it", "after 3 seconds"), say what is possible, or use a rule when one fits.
+
+Behavior scripts: programming behavior (the main tool for anything custom)
+- When the user describes how something should behave and no component or relationship does exactly that, WRITE A SCRIPT with set_script. Never answer "unsupported" for behavior a script can express: chasing only when the player is close, fleeing, wandering, patrol with pauses, bosses with phases, enemies that jump at the player or shoot in bursts, homing shots, dashes, jetpacks, wall jumps, health regeneration, counters, score messages, timed traps, crumbling platforms, buttons that do several things, enemies that react to each other (signals).
+- Prefer a built-in component when it fits exactly (Patrol, Shooter… have editable fields); combine them with scripts freely.
+- Put scripts on the library object (target "definition") when the user means a kind of thing; on one entity ("instance") for "this one". Say where it went. Each entity runs its own copy with its own variables and state.
+- Write small, readable scripts: a clear name, a one-sentence description, named variables for the numbers the user may want to tune (speed, range, cooldown), states for modes (walk / chase / stunned). Guard jumps with self.grounded and cooldowns with variables or "every".
+- Physics facts: y grows DOWNWARD (up is negative vy); one tile is 32 px; gravity is usually 980 px/s²; the starter player runs at 200 px/s and jumps with 295 (about 1.4 tiles). A dynamic body keeps its vx until changed and falls by gravity; set gravity 0 for flyers. Entities with a CharacterController (the player) set their own vx from the arrow keys every step, so for the player use push, jump and velocity y, not velocity x (a dash: push x then it decays as the controller takes over).
+- Static and component-less things that a script moves (velocity, move_toward) become kinematic: they move by their speed without gravity. glide_to moves anything smoothly to a point.
+- To change a script, send set_script with the same script id and the WHOLE new script (targets[].scripts has them in full). remove_script / set_script_enabled by id.
+- The script is checked before it is applied: unknown names, states, events or objects are rejected with the exact place. In "changes" describe the behavior in words ("Mushroom: chases the player when within 5 tiles, gives up after 3 seconds"), not the code.
+
+${describeScriptLanguage()}
+
+${SCRIPT_EXAMPLES.map((x) => `Example: ${x.title}\n${x.json}`).join('\n\n')}
 
 Game logic: relationships and rules (scene-level, see context.logic)
 - Relationships wire objects together: "make this switch open this door" -> create_relationship controls (switch -> door). "the blue key opens the blue door" -> requires (door -> the key object). "this hazard only hurts the player" -> damages.
