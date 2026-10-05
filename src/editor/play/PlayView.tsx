@@ -16,13 +16,14 @@ interface Hud {
   items: [string, number][];
   messages: string[];
   hasSwitches: boolean;
+  canShoot: boolean;
 }
 
 const sameHud = (a: Hud, b: Hud) => JSON.stringify(a) === JSON.stringify(b);
 
 export function PlayView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false });
+  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -31,7 +32,8 @@ export function PlayView() {
     const zoom = Math.min(3, Math.max(0.75, camera.zoom));
     const runtime = new Runtime(project, activeSceneId, componentRegistry, { zoom });
     const hasSwitches = runtime.entities.some((e) => e.switch);
-    let shown: Hud = { health: null, items: [], messages: [], hasSwitches };
+    const canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
+    let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot };
     const input = new InputState();
     const scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
 
@@ -91,6 +93,7 @@ export function PlayView() {
         items: player?.inventory ? [...player.inventory.entries()] : [],
         messages: runtime.messages,
         hasSwitches,
+        canShoot,
       };
       if (!sameHud(next, shown)) {
         shown = next;
@@ -133,7 +136,7 @@ export function PlayView() {
           {hud.messages.at(-1)}
         </div>
       )}
-      <div className="hud-keys">Arrows move · Space jumps{hud.hasSwitches ? ' · E uses' : ''} · R restarts · Esc stops</div>
+      <div className="hud-keys">Arrows move · Space jumps{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts · Esc stops</div>
     </div>
   );
 }

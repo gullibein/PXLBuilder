@@ -2,7 +2,7 @@
  * Player input as game actions. The runtime reads actions, never raw keys,
  * so key bindings (and later gamepads/touch) can change in one place.
  */
-export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire';
 
 export const KEY_BINDINGS: Record<string, Action> = {
   ArrowLeft: 'left',
@@ -16,6 +16,7 @@ export const KEY_BINDINGS: Record<string, Action> = {
   Space: 'jump',
   KeyZ: 'jump',
   KeyE: 'interact',
+  KeyX: 'fire',
 };
 
 export class InputState {

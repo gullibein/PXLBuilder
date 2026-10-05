@@ -56,7 +56,10 @@ function stubModel(body) {
     return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
   }
   if (req.includes('patrol')) {
-    return { kind: 'unsupported', message: "Enemies can't patrol yet: movement behaviors aren't in this version.", changes: [], operations: [] };
+    return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
+  }
+  if (req.includes('jetpack')) {
+    return { kind: 'unsupported', message: "Enemies can't fly with a jetpack yet: jetpacks aren't in this version.", changes: [], operations: [] };
   }
   if (req.includes('gravity')) {
     const y = Math.round(body.context.level.gravity.y * 0.7);
@@ -356,9 +359,15 @@ try {
   await check(async () => (await prompts.count()) === 1, 'selecting the Enemy replaces the Player prompt (still one prompt)');
   await check(async () => !(await result.count()), 'the new prompt starts fresh');
   await ask('Make the enemy patrol between these two points.');
-  await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
-  await check(async () => (await result.innerText()).includes("can't patrol yet"), 'the AI says what is missing instead of faking it');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a behavior request is applied');
   await check(aiRequests.at(-1).context.targets[0].name === 'Enemy', 'the AI received the Enemy as context');
+  await prompts.getByTestId('prompt-details').click();
+  await check(async () => (await page.getByTestId('field-Patrol.distance').inputValue()) === '64', 'the enemy got a Patrol behavior (shown in its details)');
+  await page.getByTestId('close-details').click();
+  await page.getByTestId('undo').click();
+  await ask('Give the enemy a jetpack.');
+  await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
+  await check(async () => (await result.innerText()).includes("can't fly with a jetpack yet"), 'the AI says what is missing instead of faking it');
 
   step = 'relationship context';
   await clickWorld(224, -16, { modifiers: ['Shift'] });

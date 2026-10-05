@@ -34,6 +34,9 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
   { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },
   { type: 'teleported', description: 'Something is moved to another place (by a teleporter or a teleport action).', subject: 'who was moved', other: 'where it arrived', phrase: '{subject} is teleported to {other}' },
+  { type: 'timer', description: 'A Timer component goes off (every `interval` seconds, or once).', subject: 'what has the Timer', other: null, phrase: "{subject}'s timer goes off" },
+  { type: 'shot', description: 'A Shooter fires a shot.', subject: 'the shooter', other: 'the shot', phrase: '{subject} shoots' },
+  { type: 'ledge_grabbed', description: 'A character with LedgeGrab grabs a ledge.', subject: 'who grabbed it', other: null, phrase: '{subject} grabs a ledge' },
   { type: 'spawned', description: 'A new entity appears (by a spawn action).', subject: 'the new entity', other: null, phrase: '{subject} appears' },
 ];
 

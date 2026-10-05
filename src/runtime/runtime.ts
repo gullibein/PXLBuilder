@@ -8,14 +8,15 @@
  */
 import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
-import { instantiateDefinition } from '../core/model/factory';
+import { createStandaloneEntity, instantiateDefinition } from '../core/model/factory';
 import { getEntitySize } from '../core/model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
 import type { Camera, RenderEntity } from '../render/renderer';
+import { BehaviorSystem } from './behaviors';
 import { Gameplay } from './gameplay';
 import type { InputState } from './input';
-import { moveAndCollide, standingOn, type Box } from './physics';
+import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
@@ -66,6 +67,20 @@ export interface RuntimeEntity {
   inventory: Map<string, number> | null;
   collectible: { item: string; keep: boolean } | null;
   stompable: { stompers: string[]; bounce: number; damage: number } | null;
+  /** Which way it faces (1 right, -1 left): set by running and patrolling; drawn mirrored when -1. */
+  facing: 1 | -1;
+  /** The side it bumped into a wall on in the last step (-1 left, 1 right, 0 none). */
+  bumped: -1 | 0 | 1;
+  /** Being steered by a "follows" relationship this step (so it isn't also patrolling). */
+  chasing: boolean;
+  /** Behaviors (from behavior components) and their running state. */
+  beh: Behaviors;
+  /** Hanging from a ledge (LedgeGrab): which side the wall is on, its top, and its face. */
+  hanging: { side: 1 | -1; top: number; edgeX: number } | null;
+  /** Seconds before it can grab a ledge again (after letting go). */
+  grabCooldown: number;
+  /** A shot (from a Shooter): who fired it, and how far it may still fly. */
+  projectile: { owner: Id; left: number } | null;
   /** Removed by a switch ("disappear"), so switching back brings it back. */
   hiddenBySwitch: boolean;
   /** Where a switch is moving it, and how fast (px/s; 0 = at once). */
@@ -119,6 +134,48 @@ function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
     else ladders.push({ x: z.x, hw: z.hw, top: z.y - z.hh, bottom: z.y + z.hh });
   }
   return ladders;
+}
+
+export interface Behaviors {
+  patrol: { speed: number; distance: number; turnAtLedges: boolean; originX: number; originY: number; dir: 1 | -1 } | null;
+  jumper: { interval: number; jumpForce: number; t: number } | null;
+  shooter: { trigger: 'auto' | 'key'; interval: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number } | null;
+  mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
+  timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
+  doubleJump: { extra: number; left: number } | null;
+  ledgeGrab: boolean;
+}
+
+const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Behaviors {
+  const p = c.Patrol;
+  const j = c.Jumper;
+  const s = c.Shooter;
+  const mv = c.MovingPlatform;
+  const t = c.Timer;
+  return {
+    patrol: p ? { speed: num(p.speed, 60), distance: num(p.distance, 0), turnAtLedges: p.turnAtLedges !== false, originX: at.x, originY: at.y, dir: p.startDirection === 'left' ? -1 : 1 } : null,
+    jumper: j ? { interval: num(j.interval, 2), jumpForce: num(j.jumpForce, 300), t: 0 } : null,
+    shooter: s
+      ? {
+          trigger: s.trigger === 'key' ? 'key' : 'auto',
+          interval: num(s.interval, 2),
+          direction: typeof s.direction === 'string' ? s.direction : 'facing',
+          targetTag: typeof s.targetTag === 'string' ? s.targetTag : 'player',
+          speed: num(s.speed, 240),
+          damage: num(s.damage, 1),
+          range: num(s.range, 480),
+          projectile: typeof s.projectile === 'string' ? s.projectile : '',
+          // Fired by a key: ready at once. Automatic: the first shot comes after one interval.
+          t: s.trigger === 'key' ? num(s.interval, 2) : 0,
+        }
+      : null,
+    mover: mv ? { offset: (mv.offset as Vec2) ?? { x: 96, y: 0 }, speed: num(mv.speed, 64), pause: num(mv.pause, 0.5), originX: at.x, originY: at.y, toEnd: true, wait: 0 } : null,
+    timer: t ? { interval: num(t.interval, 2), repeat: t.repeat !== false, t: 0, done: false } : null,
+    doubleJump: c.DoubleJump ? { extra: num(c.DoubleJump.extraJumps, 1), left: num(c.DoubleJump.extraJumps, 1) } : null,
+    ledgeGrab: !!c.LedgeGrab,
+  };
 }
 
 function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
@@ -176,6 +233,13 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume' } : null,
     stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
     stompGrace: 0,
+    facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
+    bumped: 0,
+    chasing: false,
+    beh: readBehaviors(c, r.transform.position),
+    hanging: null,
+    grabCooldown: 0,
+    projectile: null,
     hiddenBySwitch: false,
     moveTarget: null,
     prevY: r.transform.position.y,
@@ -189,6 +253,8 @@ export class Runtime {
   readonly camera: Camera;
   /** Events, rules and gameplay systems. */
   readonly gameplay: Gameplay;
+  /** What things do on their own (patrol, shoot, move…). */
+  private readonly behaviors: BehaviorSystem;
   time = 0;
   private accumulator = 0;
   /** Solids that never move: recomputed only when something opens, closes, appears or goes away. */
@@ -213,6 +279,7 @@ export class Runtime {
     this.gravity = { ...this.scene.world.gravity };
     this.camera = { x: 0, y: 0, zoom: opts.zoom ?? 1 };
     this.gameplay = new Gameplay(this, project, this.scene);
+    this.behaviors = new BehaviorSystem(this);
     this.load();
   }
 
@@ -281,6 +348,7 @@ export class Runtime {
       this.solidsDirty = false;
     }
     this.gameplay.steer();
+    this.behaviors.before(dt, input);
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
       if (e.body === 'kinematic' && e.alive) {
@@ -295,7 +363,7 @@ export class Runtime {
       if (e.body !== 'dynamic' || !e.alive) continue;
       e.prevY = e.y;
       if (e.controller) this.control(e, input, dt);
-      if (!e.climbing) {
+      if (!e.climbing && !e.hanging) {
         e.vx += this.gravity.x * e.gravityScale * dt;
         e.vy = Math.min(MAX_FALL_SPEED, e.vy + this.gravity.y * e.gravityScale * dt);
       }
@@ -310,6 +378,7 @@ export class Runtime {
         const r = moveAndCollide(box, e.vx * dt, e.vy * dt, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
+        e.bumped = r.hitX ? (e.vx > 0 ? 1 : e.vx < 0 ? -1 : 0) : 0;
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
@@ -318,6 +387,7 @@ export class Runtime {
       }
       if (e.y > this.fallLimit) this.respawn(e);
     }
+    this.behaviors.after(dt);
     this.gameplay.update(dt, input);
   }
 
@@ -392,6 +462,11 @@ export class Runtime {
       return;
     }
 
+    if (dir !== 0) e.facing = dir as 1 | -1;
+    if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
+    if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
+    if (e.hanging && this.hang(e, input, dir)) return;
+
     const target = dir * c.speed;
     const rate = c.acceleration * (e.grounded ? 1 : c.airControl);
     const diff = target - e.vx;
@@ -407,9 +482,97 @@ export class Runtime {
       e.jumpBuffer = 0;
       e.coyote = 0;
       e.grounded = false;
+    } else if (input.wasPressed('jump') && !e.grounded && e.coyote <= 0 && e.beh.doubleJump && e.beh.doubleJump.left > 0) {
+      // Double jump: another full jump in the air.
+      e.beh.doubleJump.left--;
+      e.vy = -c.jumpForce;
+      e.jumpBuffer = 0;
     }
+    if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
     // Releasing jump early makes a shorter hop.
     if (input.wasReleased('jump') && e.vy < 0) e.vy *= 0.5;
+  }
+
+  /**
+   * Ledge grab: falling (or at the top of a jump) against a wall while
+   * pressing toward it, with the wall's top edge at about hand height and room
+   * to stand on top: hang there.
+   */
+  private tryGrabLedge(e: RuntimeEntity, dir: 1 | -1): void {
+    const box = boxOf(e);
+    if (!box) return;
+    const face = box.x + dir * box.hw;
+    const myTop = box.y - box.hh;
+    for (const s of this.staticSolids) {
+      const wallFace = dir > 0 ? s.x - s.hw : s.x + s.hw;
+      if (Math.abs(face - wallFace) > 2) continue;
+      const top = s.y - s.hh;
+      if (top < myTop - 4 || top > myTop + 14) continue;
+      // Room to stand on top of the ledge (also rules out the seam between two stacked tiles).
+      const above: Box = { x: wallFace + dir * (box.hw + 1), y: top - box.hh - 0.5, hw: box.hw, hh: box.hh - 0.5 };
+      if (this.staticSolids.some((o) => overlaps(above, o))) continue;
+      e.hanging = { side: dir, top, edgeX: wallFace };
+      e.y += top - 2 - myTop;
+      e.vx = 0;
+      e.vy = 0;
+      e.climbing = false;
+      this.gameplay.emit('ledge_grabbed', e);
+      return;
+    }
+  }
+
+  /** While hanging: Up or Jump climbs onto the ledge, Down or pressing away lets go. Returns true while still hanging. */
+  private hang(e: RuntimeEntity, input: InputState, dir: number): boolean {
+    const h = e.hanging!;
+    const box = boxOf(e)!;
+    e.vx = 0;
+    e.vy = 0;
+    e.grounded = false;
+    if (input.wasPressed('jump') || input.isDown('up')) {
+      e.x = h.edgeX + h.side * (box.hw + 1) - (box.x - e.x);
+      e.y = h.top - box.hh - (box.y - e.y);
+      e.hanging = null;
+      e.grabCooldown = 0.2;
+      return true;
+    }
+    if (input.isDown('down') || dir === -h.side) {
+      e.hanging = null;
+      e.grabCooldown = 0.3;
+      return false;
+    }
+    return true;
+  }
+
+  /** Solids that don't move this step (for behaviors looking at walls and floors). */
+  get solids(): readonly Box[] {
+    return this.staticSolids;
+  }
+
+  /** Fires a shot from `from` in direction (dx, dy) (normalized), as a runtime-only entity. */
+  shoot(from: RuntimeEntity, dx: number, dy: number, cfg: NonNullable<Behaviors['shooter']>): RuntimeEntity {
+    const def = cfg.projectile ? this.project.definitions.find((d) => d.id === cfg.projectile) : undefined;
+    const fromBox = boxOf(from);
+    const reach = (fromBox ? Math.max(fromBox.hw, fromBox.hh) : 8) + 6;
+    const at = { x: from.x + dx * reach, y: from.y + dy * reach };
+    const instance = def
+      ? instantiateDefinition(def, at)
+      : createStandaloneEntity('Shot', at, {
+          Sprite: this.registry.createDefault('Sprite', { width: 8, height: 8, color: '#ffd166' }),
+          Collider: this.registry.createDefault('Collider', { shape: 'circle', size: { x: 8, y: 8 }, isTrigger: true }),
+        });
+    const e = buildEntity(this.project, instance, this.registry);
+    // A shot flies straight and is never solid, whatever the object says.
+    e.body = 'kinematic';
+    if (e.collider) e.collider.trigger = true;
+    e.vx = dx * cfg.speed;
+    e.vy = dy * cfg.speed;
+    e.facing = dx < 0 ? -1 : 1;
+    e.damage = e.damage ?? cfg.damage;
+    // A shot carries its shooter's tags (an enemy's shot hurts like the enemy does), plus "projectile".
+    e.tags = [...new Set([...e.tags, ...from.tags, 'projectile'])];
+    e.projectile = { owner: from.id, left: cfg.range };
+    this.entities.push(e);
+    return e;
   }
 
   /**
@@ -472,7 +635,7 @@ export class Runtime {
     for (const e of this.entities) {
       if (!e.alive) continue;
       const t = e.base.transform;
-      const mirrored = e.switch?.on === true;
+      const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
       let r: RenderEntity = moved || mirrored ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } } : e.base;
       const alpha = e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1;

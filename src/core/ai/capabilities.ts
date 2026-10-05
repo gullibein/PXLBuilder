@@ -73,7 +73,7 @@ ${actions}
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Movement behaviors other than following (the "follows" relationship): patrolling back and forth, fleeing, wandering, jumping enemies, shooting/projectiles, double jump, ledge grab, jetpacks, health regeneration.',
+  'Movement behaviors beyond the behavior components and "follows": fleeing, wandering at random, jetpacks, wall jumping, dashing, swimming, health regeneration, enemies that aim ahead or use paths with more than two points.',
   'Timers and delays ("after 3 seconds", "every 2 seconds"), counters/variables other than inventory items and health, score.',
   'Moving to another level, checkpoints, a game-over screen (a rule can show a message and restart the level).',
   'Relationship types marked "NOT simulated" (targets, protects, contains) only record the design; nothing happens in play.',
@@ -131,7 +131,15 @@ How the game runs (Play mode)
 - Stomping: an entity with Stompable is defeated when something carrying one of its stomper tags lands on its top (the stomper bounces off, unhurt); touching it from the side still works as usual (its Damage still hurts). Event "stomped".
 - Switches: Switch.activation "interact" = press E while touching it, "touch" = walking into it. Each use flips it on/off and fires switch_activated.
 - R restarts the level; rules can too.
-- Not simulated yet: enemies moving on their own (see "Not available yet").
+
+Behaviors (components in the "Behavior" category; add them with add_component, usually to the library object)
+- Patrol: walks back and forth at speed, turning at walls, at ledges (turnAtLedges) and after distance px from its start (0 = only walls/ledges). Without gravity (gravityScale 0) it flies back and forth. "Make the mushroom walk back and forth" -> Patrol on the Mushroom. A "follows" relationship takes over while its target is in range; patrolling resumes after.
+- Jumper: jumps every interval seconds when on the ground (needs a dynamic PhysicsBody).
+- Shooter: fires shots. trigger "auto" fires every interval while something tagged targetTag is within range; "key" fires when the player presses X (for the player). direction facing/atTarget/left/right/up/down. A shot flies at speed until it hits a wall, goes range px, or hits something with Health: it hurts like its shooter (carries the shooter's tags, e.g. "enemy", plus "projectile") for damage. To let the player's shots hurt enemies, the enemy needs Health and a DamageReceiver whose damageSources include "player". projectile = a library object id to fire (empty = a small built-in shot). Event "shot".
+- MovingPlatform: moves to its start + offset and back at speed, waiting pause seconds at each end, carrying whatever stands on it. It becomes kinematic.
+- Timer: fires the "timer" event every interval seconds (or once if repeat is false), for rules ("every 3 seconds spawn a coin" -> Timer on something + a rule on timer).
+- DoubleJump (player): extraJumps more jumps in the air. LedgeGrab (player): grabs a ledge at hand height when jumping/falling against a wall while pressing toward it; Up/Space climbs up, Down or away lets go. Event "ledge_grabbed".
+- Characters and patrollers face the way they move (drawn mirrored when going left).
 
 Changing the editor (any scope; scope "editor" is only about this)
 - Some requests are about the editor (PXLBuilder's own interface), not the game: "move the Play button to the bottom", "dock the details panel on the right", "make the editor green", "show the jump height above the player while editing", "show how far the player can jump".

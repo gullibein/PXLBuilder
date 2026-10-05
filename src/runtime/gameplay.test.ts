@@ -478,3 +478,213 @@ describe('gameplay', () => {
     expect(e.y).toBeGreaterThan(-100);
   });
 });
+
+describe('behaviors', () => {
+  const add = (b: Builder, id: string, type: string, props: Record<string, unknown> = {}) => m.addEntityComponent(b.d, b.sceneId, id, type, registry, props);
+
+  it('Patrol: walks back and forth and turns at the ledge instead of falling off', () => {
+    const { rt, input } = level((b) => add(b, b.place('Enemy', { x: 60, y: 17 }), 'Patrol', { speed: 120 }));
+    const e = rt.find('Enemy')!;
+    let maxX = -Infinity;
+    let turned = false;
+    run(rt, input, 4, () => {
+      maxX = Math.max(maxX, e.x);
+      if (e.vx < 0) turned = true;
+    });
+    expect(turned).toBe(true);
+    expect(maxX).toBeLessThanOrEqual(160);
+    expect(e.y).toBeCloseTo(17, 0);
+    expect(e.alive).toBe(true);
+    expect(rt.renderList().find((r) => r.name === 'Enemy')!.transform.scale.x).toBe(e.facing === -1 ? -1 : 1);
+  });
+
+  it('Patrol with a distance stays within that distance of where it started', () => {
+    const { rt, input } = level((b) => add(b, b.place('Enemy', { x: 60, y: 17 }), 'Patrol', { speed: 120, distance: 32 }));
+    const e = rt.find('Enemy')!;
+    let lo = Infinity;
+    let hi = -Infinity;
+    run(rt, input, 3, () => {
+      lo = Math.min(lo, e.x);
+      hi = Math.max(hi, e.x);
+    });
+    expect(hi).toBeLessThanOrEqual(60 + 32 + 3);
+    expect(lo).toBeGreaterThanOrEqual(60 - 32 - 3);
+    expect(hi - lo).toBeGreaterThan(50);
+  });
+
+  it('Patrol turns at walls', () => {
+    const { rt, input } = level((b) => {
+      add(b, b.place('Enemy', { x: 60, y: 17 }), 'Patrol', { speed: 120 });
+      b.place('Stone', { x: 112, y: 16 });
+    });
+    const e = rt.find('Enemy')!;
+    let maxX = -Infinity;
+    run(rt, input, 1.5, () => (maxX = Math.max(maxX, e.x)));
+    expect(maxX).toBeLessThanOrEqual(112 - 16 - 15 + 0.01);
+    expect(e.vx).toBeLessThan(0);
+  });
+
+  it('Jumper: jumps every interval', () => {
+    const { rt, input } = level((b) => add(b, b.place('Enemy', { x: 100, y: 17 }), 'Jumper', { interval: 0.5, jumpForce: 300 }));
+    const e = rt.find('Enemy')!;
+    let minY = Infinity;
+    let jumps = 0;
+    let wasUp = false;
+    run(rt, input, 2.2, () => {
+      minY = Math.min(minY, e.y);
+      const up = e.vy < 0;
+      if (up && !wasUp) jumps++;
+      wasUp = up;
+    });
+    expect(minY).toBeLessThan(17 - 30);
+    expect(jumps).toBeGreaterThanOrEqual(2);
+  });
+
+  it('Shooter (auto): fires at the player when in range, and the shot hurts', () => {
+    const { rt, input, p } = level((b) => add(b, b.place('Enemy', { x: 120, y: 17 }), 'Shooter', { interval: 1, speed: 300 }));
+    run(rt, input, 1.6);
+    expect(events(rt, 'shot')[0]).toMatchObject({ subject: 'Enemy', other: 'Shot' });
+    expect(events(rt, 'damaged')[0]).toMatchObject({ subject: 'Player', other: 'Shot' });
+    expect(p.health!.current).toBe(2);
+    // Spent shots are gone.
+    expect(rt.entities.filter((e) => e.projectile && !e.alive)).toHaveLength(0);
+  });
+
+  it('Shooter (auto) does nothing while the target is out of range', () => {
+    const { rt, input } = level((b) => add(b, b.place('Enemy', { x: 120, y: 17 }), 'Shooter', { interval: 0.5, range: 64 }));
+    run(rt, input, 2);
+    expect(events(rt, 'shot')).toHaveLength(0);
+  });
+
+  it('Shooter (key): the player shoots with X; the shot hurts an enemy that takes damage from the player, never the player', () => {
+    const { rt, input, p } = level((b) => {
+      add(b, rt0(b, 'Player'), 'Shooter', { trigger: 'key', interval: 0.3, speed: 300 });
+      const e = b.place('Enemy', { x: 110, y: 17 });
+      add(b, e, 'Health', { maxHealth: 2, currentHealth: 2 });
+      add(b, e, 'DamageReceiver', { damageSources: ['player'] });
+    });
+    run(rt, input, 0.1);
+    expect(events(rt, 'shot')).toHaveLength(0); // not without pressing
+    input.press('fire');
+    run(rt, input, 0.05);
+    input.release('fire');
+    expect(events(rt, 'shot')).toHaveLength(1);
+    run(rt, input, 0.6);
+    expect(events(rt, 'damaged')[0]).toMatchObject({ subject: 'Enemy', other: 'Shot' });
+    expect(rt.find('Enemy')!.health!.current).toBe(1);
+    expect(p.health!.current).toBe(3);
+  });
+
+  it('shots stop at walls', () => {
+    const { rt, input } = level((b) => {
+      add(b, rt0(b, 'Player'), 'Shooter', { trigger: 'key', speed: 300 });
+      b.place('Stone', { x: 64, y: 16 });
+    });
+    input.press('fire');
+    run(rt, input, 0.05);
+    input.release('fire');
+    expect(rt.entities.some((e) => e.projectile)).toBe(true);
+    run(rt, input, 0.4);
+    expect(rt.entities.some((e) => e.projectile)).toBe(false);
+  });
+
+  it('MovingPlatform: glides to its offset and back, carrying the player standing on it', () => {
+    const { rt, input, p } = level((b) => add(b, b.place('Stone', { x: 208, y: 48 }), 'MovingPlatform', { offset: { x: 64, y: 0 }, speed: 64, pause: 0.5 }));
+    const stone = rt.entities.find((e) => e.name === 'Stone' && e.beh.mover)!;
+    p.x = 208;
+    run(rt, input, 0.5);
+    expect(stone.x).toBeGreaterThan(230);
+    expect(p.x - stone.x).toBeCloseTo(0, 0);
+    expect(p.y).toBeCloseTo(16, 0);
+    run(rt, input, 1.5); // at the end, wait, and start back
+    run(rt, input, 1.2);
+    expect(stone.x).toBeLessThan(250);
+    expect(p.x - stone.x).toBeCloseTo(0, 0);
+    expect(p.y).toBeCloseTo(16, 0);
+  });
+
+  it('Timer: goes off every interval (or once) as a "timer" event rules can use', () => {
+    const { rt, input } = level((b) => {
+      add(b, b.place('Coin', { x: -100, y: 0 }), 'Timer', { interval: 0.5 });
+      const once = b.place('Key', { x: -60, y: 0 });
+      add(b, once, 'Timer', { interval: 0.5, repeat: false });
+      logic.addRule(b.d, b.sceneId, { name: '', enabled: true, when: { event: 'timer', subject: { kind: 'entity', id: once }, other: { kind: 'any' } }, conditions: [], actions: [{ type: 'show_message', text: 'Ding', seconds: 1 }] });
+    });
+    run(rt, input, 0.6);
+    expect(rt.messages).toContain('Ding');
+    run(rt, input, 1);
+    expect(events(rt, 'timer').filter((e) => e.subject === 'Coin')).toHaveLength(3);
+    expect(events(rt, 'timer').filter((e) => e.subject === 'Key')).toHaveLength(1);
+  });
+
+  function apex(withDouble: boolean) {
+    const { rt, input, p } = level((b) => withDouble && add(b, rt0(b, 'Player'), 'DoubleJump'));
+    run(rt, input, 0.1);
+    let minY = Infinity;
+    const track = () => (minY = Math.min(minY, p.y));
+    // Hold jump to the top of the jump, then press it again in the air.
+    input.press('jump');
+    run(rt, input, 0.32, track);
+    input.release('jump');
+    run(rt, input, 0.02, track);
+    input.press('jump');
+    run(rt, input, 0.35, track);
+    input.release('jump');
+    run(rt, input, 0.5, track);
+    return minY;
+  }
+
+  it('DoubleJump: a second jump in the air goes higher; without it, pressing jump in the air does nothing', () => {
+    const single = apex(false);
+    const double = apex(true);
+    expect(16 - single).toBeGreaterThan(35);
+    expect(16 - single).toBeLessThan(55);
+    expect(16 - double).toBeGreaterThan(70);
+  });
+
+  function ledge(grab: boolean) {
+    const { rt, input, p } = level((b) => {
+      if (grab) add(b, rt0(b, 'Player'), 'LedgeGrab');
+      b.place('Stone', { x: 64, y: 16 });
+      b.place('Stone', { x: 64, y: -16 });
+    });
+    input.press('right');
+    run(rt, input, 0.3);
+    input.press('jump');
+    run(rt, input, 0.6);
+    input.release('jump');
+    return { rt, input, p };
+  }
+
+  it('LedgeGrab: jumping at a wall a bit too high to reach, the player hangs from its top and climbs up with Up', () => {
+    const { rt, input, p } = ledge(true);
+    expect(p.hanging).not.toBeNull();
+    expect(events(rt, 'ledge_grabbed')).toHaveLength(1);
+    const y = p.y;
+    run(rt, input, 0.5);
+    expect(p.y).toBe(y); // hangs still
+    input.press('up');
+    run(rt, input, 0.1);
+    input.release('up');
+    input.release('right');
+    run(rt, input, 0.3);
+    expect(p.hanging).toBeNull();
+    expect(p.y).toBeCloseTo(-48, 0);
+    expect(p.grounded).toBe(true);
+  });
+
+  it('without LedgeGrab the same jump falls back down; Down lets go of a ledge', () => {
+    expect(ledge(false).p.y).toBeCloseTo(16, 0);
+    const { rt, input, p } = ledge(true);
+    input.release('right');
+    input.press('down');
+    run(rt, input, 0.6);
+    expect(p.hanging).toBeNull();
+    expect(p.y).toBeCloseTo(16, 0);
+  });
+});
+
+/** The id of the (first) placed instance called `name`. */
+function rt0(b: Builder, name: string): string {
+  return b.d.scenes.find((s) => s.id === b.sceneId)!.entities.find((e) => e.name === name)!.id;
+}

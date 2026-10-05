@@ -87,6 +87,7 @@ export class Gameplay {
       const targets = this.resolve(r.target, {});
       for (const f of this.resolve(r.source, {})) {
         if (f.body !== 'dynamic' || f.controller || f.invincible > 0) continue;
+        f.chasing = false;
         let best: RuntimeEntity | null = null;
         let bestD = Infinity;
         for (const t of targets) {
@@ -112,6 +113,8 @@ export class Gameplay {
         } else {
           f.vx = Math.abs(dx) > 2 ? Math.sign(dx) * speed : 0;
         }
+        f.chasing = true;
+        if (Math.abs(dx) > 2) f.facing = dx < 0 ? -1 : 1;
       }
     }
   }
@@ -175,6 +178,8 @@ export class Gameplay {
       for (const id of e.touching) {
         const o = this.rt.byId(id);
         if (!o?.alive || !e.alive) continue;
+        // Shots hit in the behavior system (once, then they're gone).
+        if (o.projectile || e.projectile) continue;
         if (o.collectible && this.canCollect(e, o)) this.collect(e, o);
         else {
           this.tryHurt(o, e);
@@ -227,14 +232,16 @@ export class Gameplay {
   }
 
   /** `attacker` hurts `victim` if the victim accepts its damage (by tag) or a "damages" relationship says so. */
-  private tryHurt(attacker: RuntimeEntity, victim: RuntimeEntity): void {
-    if (!victim.health || victim.invincible > 0 || victim.stompGrace > 0 || !attacker.alive) return;
+  tryHurt(attacker: RuntimeEntity, victim: RuntimeEntity): boolean {
+    if (!victim.health || victim.invincible > 0 || victim.stompGrace > 0 || !attacker.alive) return false;
+    if (attacker.projectile?.owner === victim.id) return false;
     let amount = 0;
     const rel = this.relationships('damages').find((r) => refMatches(r.source, attacker) && refMatches(r.target, victim) && this.check(r.conditions, { subject: victim, other: attacker }));
     if (rel) amount = Number(rel.params.amount ?? 1);
     else if (attacker.damage !== null && victim.receiver && attacker.tags.some((t) => victim.receiver!.sources.includes(t))) amount = attacker.damage;
-    if (amount <= 0) return;
+    if (amount <= 0) return false;
     this.hurt(victim, amount, attacker);
+    return true;
   }
 
   private hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {

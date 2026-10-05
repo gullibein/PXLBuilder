@@ -144,6 +144,83 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     category: 'Movement',
     fields: {},
   },
+  // ------------------------------------------------------------ behaviors: what things do on their own
+  {
+    type: 'Patrol',
+    label: 'Patrol',
+    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Without gravity (gravityScale 0) it flies back and forth.',
+    category: 'Behavior',
+    fields: {
+      speed: { kind: 'number', default: 60, min: 0, step: 10, description: 'Pixels per second (the player runs at 200)' },
+      distance: { kind: 'number', default: 0, min: 0, step: 32, description: 'How far it goes each way from its start, in pixels (32 = one tile); 0 = until a wall or ledge' },
+      turnAtLedges: { kind: 'boolean', default: true, description: 'Turn around instead of walking off a ledge' },
+      startDirection: { kind: 'enum', options: ['right', 'left'], default: 'right' },
+    },
+  },
+  {
+    type: 'Jumper',
+    label: 'Jumper',
+    description: 'Jumps on its own every few seconds while standing on something.',
+    category: 'Behavior',
+    fields: {
+      interval: { kind: 'number', default: 2, min: 0.1, step: 0.1, description: 'Seconds between jumps' },
+      jumpForce: { kind: 'number', default: 300, min: 0, step: 10, description: 'Jump speed (px/s); 295 at normal gravity reaches about one tile row up' },
+    },
+  },
+  {
+    type: 'Shooter',
+    label: 'Shooter',
+    description:
+      'Fires shots. trigger "auto": every `interval` seconds; "key": when the player presses X (only on a player-controlled object), at most once per interval. A shot flies straight, hurts what it hits (by the usual Damage Receiver tag rules; shots carry the shooter\'s tags and "projectile") and vanishes on hitting a wall or after `range` pixels.',
+    category: 'Behavior',
+    fields: {
+      trigger: { kind: 'enum', options: ['auto', 'key'], default: 'auto' },
+      interval: { kind: 'number', default: 2, min: 0.1, step: 0.1, description: 'Seconds between shots' },
+      direction: { kind: 'enum', options: ['facing', 'atTarget', 'left', 'right', 'up', 'down'], default: 'facing', description: 'facing: the way it faces; atTarget: at the nearest thing tagged targetTag' },
+      targetTag: { kind: 'string', default: 'player', description: 'For atTarget: what to aim at' },
+      speed: { kind: 'number', default: 240, min: 1, step: 10, description: 'Shot speed (px/s)' },
+      damage: { kind: 'number', default: 1, min: 0, step: 1 },
+      range: { kind: 'number', default: 480, min: 16, step: 32, description: 'How far a shot flies before it vanishes (px)' },
+      projectile: { kind: 'string', default: '', description: 'Library object id to fire (its look and tags); empty = a small built-in shot' },
+    },
+  },
+  {
+    type: 'MovingPlatform',
+    label: 'Moving Platform',
+    description: 'Moves back and forth between where it starts and `offset` from there, carrying whatever stands on it.',
+    category: 'Behavior',
+    fields: {
+      offset: { kind: 'vec2', default: { x: 96, y: 0 }, description: 'Where it moves to, relative to its start, in pixels (32 = one tile; negative y is up)' },
+      speed: { kind: 'number', default: 64, min: 1, step: 8, description: 'Pixels per second' },
+      pause: { kind: 'number', default: 0.5, min: 0, step: 0.1, description: 'Seconds it waits at each end' },
+    },
+  },
+  {
+    type: 'Timer',
+    label: 'Timer',
+    description: 'Fires the "timer" event every `interval` seconds (or once). Use it with rules: "every 5 seconds, spawn an enemy here".',
+    category: 'Behavior',
+    fields: {
+      interval: { kind: 'number', default: 2, min: 0.1, step: 0.1, description: 'Seconds' },
+      repeat: { kind: 'boolean', default: true, description: 'Keep firing, or only once' },
+    },
+  },
+  {
+    type: 'DoubleJump',
+    label: 'Double Jump',
+    description: 'A player-controlled character can jump again in the air.',
+    category: 'Behavior',
+    fields: {
+      extraJumps: { kind: 'number', default: 1, min: 1, max: 5, step: 1, integer: true, description: 'Jumps allowed in the air before landing' },
+    },
+  },
+  {
+    type: 'LedgeGrab',
+    label: 'Ledge Grab',
+    description: 'A player-controlled character catches the top edge of a wall it jumps or falls against while pressing toward it, and hangs there; Up or Jump climbs onto the ledge, Down or away lets go.',
+    category: 'Behavior',
+    fields: {},
+  },
   {
     type: 'CameraTarget',
     label: 'Camera Target',

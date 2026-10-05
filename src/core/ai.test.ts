@@ -176,7 +176,9 @@ describe('AI context', () => {
     for (const c of registry.list()) expect(prompt).toContain(`  ${c.type}:`);
     expect(prompt).toContain('maxHealth: integer (min 1)');
     expect(prompt).toMatch(/Not available yet/);
-    expect(prompt).toMatch(/patrolling/);
+    expect(prompt).toMatch(/jetpacks/);
+    expect(prompt).toMatch(/Patrol: walks back and forth/);
+    expect(prompt).not.toMatch(/patrolling back and forth/);
   });
 });
 

@@ -264,14 +264,41 @@ clears the selection, and selecting something closes it.
   gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
   v3 applies this to older saves unless the user changed those values.
 - Falling far below the level puts an entity back at its start.
-- `input.ts` maps keys to actions (arrows/WASD, Space/Z jump); the runtime
+- `input.ts` maps keys to actions (arrows/WASD, Space/Z jump, E use, X fire); the runtime
   only sees actions.
 - `PlayView` draws the runtime with the same renderer as the editor
   (background, parallax, tiles, sprites). Play hides all editor tools; Esc,
   Stop or Ctrl+Enter returns to editing; R restarts.
 - Gameplay (health, damage, collecting, doors, switches) and the level's
   relationships and rules run in `gameplay.ts`; see "Game logic" below.
-- Not simulated yet: enemy behaviors (patrol, chase, shoot), timers.
+- **Behaviors** are components (category "Behavior"), read into
+  `RuntimeEntity.beh` when Play starts, run by `behaviors.ts` (`before`
+  physics sets velocities, `after` handles shots):
+  - `Patrol`: back and forth at a speed; turns on bumping a wall, on a wall
+    probe just ahead, at a ledge (floor probe ahead, walkers only) and after
+    `distance` from the start. A static thing that patrols becomes kinematic
+    (flies). A `follows` relationship takes over while chasing (`chasing`).
+  - `Jumper`: jumps every `interval` when grounded.
+  - `Shooter`: `auto` fires every `interval` while something tagged
+    `targetTag` is within `range` (no target, no shot); `key` fires on X
+    (cooldown = `interval`, ready at once). Shots are runtime-only kinematic
+    triggers (a library object, or a built-in 8px shot) carrying the
+    shooter's tags plus `projectile`; they hurt through the normal damage
+    rules (receiver tags or `damages`), never their owner, then vanish; also
+    on walls and after `range`. Spent shots are dropped from the list; at
+    most 100 fly at once.
+  - `MovingPlatform`: kinematic, glides to start + `offset` and back with a
+    `pause`, carrying dynamic things standing on it (sideways moves stop at
+    walls).
+  - `Timer`: emits `timer` every `interval` (or once).
+  - `DoubleJump` and `LedgeGrab` are part of character control
+    (`runtime.ts`): extra jumps in the air reset on landing; a ledge is
+    grabbed when falling (or at the top of a jump) flush against a static
+    solid while pressing toward it, with its top within hand reach and room
+    to stand above it. Hanging: no gravity; Up/Space climbs onto it,
+    Down/away lets go (short cooldown).
+  - Entities face the way they move (`facing`); the renderer mirrors them.
+  - New events: `timer`, `shot`, `ledge_grabbed`.
 
 ### Game logic (Phase 3): relationships, events, rules, graph
 The design principle: logic is **data in the project**, built from a small
@@ -563,4 +590,5 @@ one version at a time, and refuses files from a newer editor.
 4. Commands: **done** (operations, transactions, undo/redo).
 5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.
-8–10. Design planning, debugging, asset generation.
+- Behaviors: **done** (patrol, jumper, shooter/shots, moving platforms, timers, double jump, ledge grab).
+8–10. Design planning, debugging, asset generation (simple pixel-art sprites are done).
