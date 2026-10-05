@@ -275,7 +275,7 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .bg-section { display: grid; gap: 8px; }
 .bg-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .bg-label .muted { font-family: var(--font-data); letter-spacing: 0; text-transform: none; }
-.swatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.swatches { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
 .swatch-btn { position: relative; aspect-ratio: 1; min-width: 0; border: 2px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 0; cursor: pointer; }
 .swatch-btn[aria-checked='true'] { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
 .swatch-btn.custom { background: conic-gradient(#ff6b6b, #ffd93d, #6bcb77, #4d96ff, #b06bff, #ff6b6b); overflow: hidden; }

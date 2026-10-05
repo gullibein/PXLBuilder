@@ -205,3 +205,10 @@ describe('serialization', () => {
     expect(() => migrateProject({ formatVersion: 1 }, [], 2)).toThrow(/No migration/);
   });
 });
+
+describe('new projects', () => {
+  it('start with the dark background (easy on the eyes; the dot grid shows on it)', () => {
+    const project = createProject(createBuiltinRegistry());
+    expect(project.scenes[0].world.backgroundColor).toBe('#1d2330');
+  });
+});

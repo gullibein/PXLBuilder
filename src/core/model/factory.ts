@@ -11,7 +11,7 @@ export function createScene(name: string): Scene {
   return {
     id: generateId('scn'),
     name,
-    world: { gravity: { x: 0, y: 980 }, backgroundColor: '#8ecdf2', background: { imageAssetId: null, fit: 'cover', parallax: 0.3 } },
+    world: { gravity: { x: 0, y: 980 }, backgroundColor: '#1d2330', background: { imageAssetId: null, fit: 'cover', parallax: 0.3 } },
     entities: [],
     relationships: [],
     rules: [],

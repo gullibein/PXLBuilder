@@ -6,6 +6,7 @@ import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
 const SWATCHES = [
+  { name: 'Dark (default)', color: '#1d2330' },
   { name: 'Day sky', color: '#8ecdf2' },
   { name: 'Sunset', color: '#f6a46b' },
   { name: 'Dusk', color: '#6b5b95' },

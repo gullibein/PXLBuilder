@@ -495,6 +495,7 @@ try {
   await page.getByTestId('tool-background').click();
   const bgPanel = page.getByTestId('background-panel');
   await check(async () => (await bgPanel.isVisible()) && (await prompts.count()) === 0, 'the background card opens (and is the only card)');
+  await check(async () => (await bgPanel.getByRole('radio', { name: 'Dark (default)' }).getAttribute('aria-checked')) === 'true', 'a new project starts with the dark background');
   await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');
   // A small generated image stands in for a user's picture.
