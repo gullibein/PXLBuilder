@@ -70,6 +70,18 @@ function stubModel(body) {
       operations: t.map((e) => ({ op: 'set_component_field', target: 'instance', id: e.id, component: 'Sprite', field: 'color', valueJson: '"#ff2d55"' })),
     };
   }
+  if (req.includes('look like spikes')) {
+    const { width, height } = t[0].spriteGrid;
+    const rows = Array.from({ length: height }, (_, y) =>
+      Array.from({ length: width }, (_, x) => (y === height - 1 ? 'd' : Math.abs((x % 8) - 3.5) <= ((y + 1) * 4) / height ? 'g' : '.')).join(''),
+    );
+    return {
+      kind: 'apply',
+      message: `Gave every ${t[0].object.name} a spikes sprite.`,
+      changes: [`${t[0].object.name}: looks like spikes (${width}×${height} pixels)`],
+      operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Spikes', palette: [{ key: 'g', color: '#d9dde6' }, { key: 'd', color: '#5b6070' }], rows }],
+    };
+  }
   if (req.includes('mushroom-enemies by jumping')) {
     const mushroom = body.context.library.find((d) => d.name === 'Mushroom');
     if (!mushroom) return { kind: 'answer', message: "There's no mushroom enemy in your library yet. Create one with + Create, place a few, then ask again.", changes: [], operations: [] };
@@ -908,6 +920,16 @@ try {
   await check(async () => (await sw_sCanvas.getAttribute('data-links')) === '0' && (await sw_sPrompt.count()) === 0, 'Delete removes a selected connection');
   await swp.getByTestId('undo').click();
   await check(async () => (await sw_sCanvas.getAttribute('data-links')) === '1', 'and Undo brings it back');
+  await swp.keyboard.press('Escape');
+  await sw_sDrop('Hazard', -150, -150);
+  await swp.mouse.click(sw_sAt(-150, -150).x, sw_sAt(-150, -150).y);
+  await sw_sAsk('Make this look like spikes.');
+  await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"make this look like spikes" draws a sprite');
+  await check(JSON.stringify(aiRequests.at(-1).context.targets[0].spriteGrid) === '{"width":32,"height":8}', 'the AI is told to draw 32×8 pixels for the 64×16 hazard (its proportions)');
+  await sw_sPrompt.getByTestId('prompt-details').click();
+  await check(async () => (await swp.getByTestId('component-Sprite').innerText()).includes('Spikes'), 'the hazard now uses the drawn "Spikes" image (its size is unchanged)');
+  await swp.getByTestId('close-details').click();
+  await swp.screenshot({ path: `${OUT}/25-spikes-sprite.png`, clip: { x: sw_sAt(-260, -260).x, y: sw_sAt(-260, -260).y, width: 520, height: 320 } });
   await swc.close();
 
   step = 'own API key, and changes placed on the right object';

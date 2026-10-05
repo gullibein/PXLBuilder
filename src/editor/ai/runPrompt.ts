@@ -107,7 +107,7 @@ export function touchedBy(project: Project, sceneId: Id, operations: Operation[]
   return out;
 }
 
-const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [] };
+const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
 
 /**
  * Applies editor-setting operations as one step of the editor's own undo.

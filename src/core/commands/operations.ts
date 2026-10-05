@@ -9,7 +9,8 @@
  */
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
-import { createDefinition, instantiateDefinition } from '../model/factory';
+import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
+import { checkPixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
@@ -96,6 +97,14 @@ export const operationSchema = z.union([
     ref: z.string().nullable().describe('Temporary name for the placed entity, usable as an entity id in later relationships/rules in this list; null if not needed'),
   }),
   z.object({
+    op: z.literal('draw_sprite'),
+    target,
+    id: z.string().describe('Entity id (instance) or object definition id (definition) whose look this becomes'),
+    name: z.string().describe('Short name for the image, e.g. "Spikes"'),
+    palette: z.array(z.object({ key: z.string().describe('One character'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
+    rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object)'),
+  }),
+  z.object({
     op: z.literal('draw_tiles'),
     sceneId: z.string(),
     definitionRef: z.string().describe('An existing definition id, or the ref of a create_definition earlier in this list'),
@@ -174,6 +183,7 @@ export interface ApplyResult {
   createdRelationshipIds: Id[];
   createdRuleIds: Id[];
   removedEntityIds: Id[];
+  createdAssetIds: Id[];
 }
 
 /** Largest number of cells one draw_tiles may fill. */
@@ -223,7 +233,7 @@ function sceneOfEntity(project: Project, entityId: Id): Id {
 export function applyOperations(project: Project, ops: Operation[], registry: ComponentRegistry): ApplyResult {
   const refs = new Map<string, Id>();
   const entityRefs = new Map<string, Id>();
-  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [] };
+  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
   for (const op of ops) {
@@ -299,6 +309,24 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         m.addEntity(project, op.sceneId, entity);
         if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);
+        break;
+      }
+      case 'draw_sprite': {
+        const entity = op.target === 'instance' ? m.getEntity(project, sceneOfEntity(project, op.id), op.id) : instantiateDefinition(m.getDefinition(project, op.id), { x: 0, y: 0 });
+        const size = getEntitySize(resolveEntity(project, entity, registry));
+        const art = { palette: op.palette, rows: op.rows };
+        const err = checkPixelArt(art, size);
+        if (err) throw new m.ModelError(`Sprite: ${err}`);
+        const asset = createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), op.rows[0].length, op.rows.length, 'svg');
+        m.addAsset(project, asset);
+        if (op.target === 'definition') m.useDefinitionSprite(project, op.id, { assetId: asset.id, frame: 1 }, registry);
+        else {
+          const sceneId = sceneOfEntity(project, op.id);
+          if (!resolveEntity(project, entity, registry).components.Sprite) m.addEntityComponent(project, sceneId, op.id, 'Sprite', registry, { width: size.x, height: size.y });
+          m.setEntityComponentField(project, sceneId, op.id, 'Sprite', 'assetId', asset.id, registry);
+          m.setEntityComponentField(project, sceneId, op.id, 'Sprite', 'frame', 1, registry);
+        }
+        result.createdAssetIds.push(asset.id);
         break;
       }
       case 'draw_tiles': {

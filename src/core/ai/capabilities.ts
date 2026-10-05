@@ -77,7 +77,7 @@ export const NOT_YET_AVAILABLE = [
   'Timers and delays ("after 3 seconds", "every 2 seconds"), counters/variables other than inventory items and health, score.',
   'Moving to another level, checkpoints, a game-over screen (a rule can show a message and restart the level).',
   'Relationship types marked "NOT simulated" (targets, follows, protects, contains) only record the design; nothing happens in play.',
-  'Camera settings, lighting, day/night, music, sound, particles, generated art or animation, backgrounds that scroll on their own (background movement only follows the camera).',
+  'Camera settings, lighting, day/night, music, sound, particles, animation, detailed or photographic art (simple pixel-art sprites are possible), backgrounds that scroll on their own (background movement only follows the camera).',
 ];
 
 export function buildSystemPrompt(registry: ComponentRegistry): string {
@@ -115,9 +115,9 @@ Writing
 Operations
 - valueJson / propsJson are JSON text: numbers "3", booleans "true", strings "\\"#ff8800\\"", vectors "{\\"x\\":0,\\"y\\":686}".
 - set_transform / set_world / set_background: use null for anything that should stay the same.
-- Sprites: an object is drawn with Sprite.assetId (an image or sprite sheet), stretched to Sprite.width x height. For sprite sheets Sprite.frame is the cell number (1 = top-left, counting across rows). library[].sprites lists the sprites already collected for each object; to switch, set Sprite.assetId and Sprite.frame. You cannot create images.
+- Sprites: an object is drawn with Sprite.assetId (an image or sprite sheet), stretched to Sprite.width x height. For sprite sheets Sprite.frame is the cell number (1 = top-left, counting across rows). library[].sprites lists the sprites already collected for each object; to switch, set Sprite.assetId and Sprite.frame. You can draw new simple pixel-art sprites with draw_sprite (below), not photos or detailed artwork.
 - Collider.matchSprite (default true) keeps the collider the same size as the sprite: changing either size changes both. Set it to false only if the user wants them sized separately.
-- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot create images.
+- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot draw background pictures; the user uploads them.
 - create_definition: give the object a clear name, a one-line description, a category (one of Characters, Enemies, Platforms, Items, Environment, Effects, UI, Custom), tags, and components. Give new objects a Sprite with a fitting size and color (placeholder art), a Collider, and a PhysicsBody when they should collide or fall (gravityScale 0 for things that float or fly). place_instance only when the user asks to put it in the level.
 
 How the game runs (Play mode)
@@ -139,6 +139,12 @@ Changing the editor (any scope; scope "editor" is only about this)
 - Information over the level while editing: add_editor_overlay (kinds in context.editor.overlayKinds; values in context.editor.metrics, or any "Component.field"; target usually the object, e.g. every Player). Adding the same kind for the same target replaces it, so send the full list of values. remove_editor_overlay by id from context.editor.overlays. Overlays are never shown in play.
 - A reply is either all editor operations or all game operations, never both. Editor changes are applied right away (kind "apply").
 - The editor can only change what these describe. For anything else (new panels, moving other buttons, fonts, custom layouts), reply unsupported in one sentence and mention what can be changed.
+
+Drawing sprites ("make this look like spikes", "draw a red mushroom", "give the coin a shine")
+- draw_sprite draws simple pixel art and makes it the object's look. rows are pixel rows (top to bottom) of palette keys; "." is transparent. Use exactly the grid in targets[].spriteGrid (it has the object's proportions; the art is stretched to the object's size, so other proportions are rejected). For an object not selected, use the same proportions as its Sprite width x height, longer side at most 32.
+- Draw readable game sprites: a clear silhouette filling the grid (spikes: a row of sharp triangles standing on the bottom edge; a coin: a round shape with a highlight), 3-6 colors, a darker outline or shading where it helps, transparent background. Keep the object's existing color scheme unless asked otherwise.
+- Looks belong to the kind of thing: target the library object (every copy) unless the user says only this one, and say so ("Gave every Hazard a spikes sprite").
+- The new image is added to the object's sprites, so the user can switch back in the Sprites panel. It changes only the look, not the size, collider or behavior.
 
 Drawing and generating levels ("generate a hard level with spikes, enemies and teleporters", "add a pit here", "build a tower")
 - The level is drawn on a grid of 32 px cells (context.level.grid). Cell (col,row) spans x col*32..col*32+32 and y row*32..row*32+32; y grows downward, so the row above row r is r-1. context.level.grid.occupied is what is already drawn.

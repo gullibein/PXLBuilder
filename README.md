@@ -42,6 +42,7 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 
 - **Click something** in your game. A prompt appears next to it. Press Enter (or click the prompt) and describe what you want: "Give the player three hearts."
 - **Two objects** (Shift+click the second): one prompt about how they relate ("make this switch open this door"). **More**: one prompt for the group (or drag a box around them).
+- **Draw sprites**: select something and ask "make this look like spikes" or "draw a red mushroom". The AI draws simple pixel art at the object's proportions (a 64×16 hazard gets 32×8 pixels) and makes it the look of every copy; it's added to the object's Sprites, so you can switch back.
 - **Wire a switch**: select a Switch; red circles appear left and right of its frame. Drag one onto another object (a door): the switch now opens it. Click the connection's line to select it and describe what it should do instead: "the switch makes the door disappear", "the switch moves the door three squares upwards". Delete removes a selected connection.
 - **Logic** (left panel, the connected-dots button): the level's connections and rules as sentences. Switch rules off, remove things, or describe new logic ("when the player has 3 coins, open the exit"). Existing connections show as arrows on the level. An object's details also list its connections, with a small form to add one.
 - **The level**: double-click empty space. "Make gravity 30% weaker."

@@ -11,6 +11,7 @@ import { describeRelationship, describeRule } from '../logic/describe';
 import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
 import { characterReach } from '../model/reach';
+import { suggestedGrid } from '../model/pixelArt';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
 import type { Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
@@ -77,6 +78,8 @@ export interface EntityDetail {
   components: Record<string, Record<string, unknown>>;
   /** "Component.field" values set on this instance only (overriding its object definition). */
   instanceOverrides: string[];
+  /** The pixel grid to use when drawing a sprite for it (draw_sprite): same proportions as its size. */
+  spriteGrid: { width: number; height: number };
 }
 
 export interface EntityBrief {
@@ -207,6 +210,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       scale: r.transform.scale,
       components: r.components,
       instanceOverrides: [...r.overriddenFields],
+      spriteGrid: suggestedGrid(getEntitySize(r)),
     };
   };
 

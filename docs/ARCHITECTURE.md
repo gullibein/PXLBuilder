@@ -382,6 +382,16 @@ session, or in localStorage only if the user ticks "remember". The editor
 uses the user's key when one is set, else the server. The single-page build
 (`vite build --mode single-file`) inlines everything for hosting as one page.
 
+### AI-drawn sprites
+`draw_sprite` carries pixel art as data: a palette of one-character keys
+(`.` transparent) and equal-length rows. `core/model/pixelArt.ts` checks it
+(rows, palette, at most 64×64, and the same proportions as the object it is
+for, within one pixel) and turns it into an SVG image asset (one rect per run
+of equal pixels, crisp edges), which becomes the object's sprite through the
+same path as the Sprites panel (`useDefinitionSprite`, size unchanged). The
+AI context gives each target a `spriteGrid` (the object's proportions, long
+side at most 32).
+
 ### Wiring switches on the canvas
 - A selected entity with a Switch component shows two red connectors (left
   and right of its frame, the size of the corner boxes). Dragging one onto
