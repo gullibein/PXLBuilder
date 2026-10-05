@@ -7,7 +7,8 @@ import { getActiveScene, useEditor } from '../store';
 import { EntityLogic } from '../logic/LogicPanel';
 import { FieldEditor, ListInput, NumberInput, TextInput, Vec2Input } from './FieldEditor';
 
-export function Inspector() {
+/** The details panel: floating over the level (opened on demand), or `docked` as a column beside it (an editor setting). */
+export function Inspector({ docked = false }: { docked?: boolean }) {
   const project = useEditor((s) => s.project);
   const scene = useEditor(getActiveScene);
   const selectedIds = useEditor((s) => s.selectedEntityIds);
@@ -25,17 +26,36 @@ export function Inspector() {
     body = <SceneInspector scene={scene} />;
   }
   const setInspectorOpen = useEditor((s) => s.setInspectorOpen);
+  const setLayout = useEditor((s) => s.setLayout);
   return (
-    <aside className="drawer" data-testid="inspector" aria-label="Details">
+    <aside className={`drawer${docked ? ' docked' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
       <header className="drawer-head">
         <span className="drawer-title">
           Inspector <span className="muted">(Advanced)</span>
         </span>
-        <button className="icon-btn" aria-label="Close details" data-testid="close-details" onClick={() => setInspectorOpen(false)}>
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        {docked ? (
+          <button
+            className="icon-btn"
+            aria-label="Undock details"
+            title="Undock: open the details only when needed"
+            data-testid="undock-details"
+            onClick={() => {
+              setLayout({ inspector: 'floating' });
+              setInspectorOpen(false);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <rect x="2" y="2.5" width="10" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M8.5 2.5v9" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+          </button>
+        ) : (
+          <button className="icon-btn" aria-label="Close details" data-testid="close-details" onClick={() => setInspectorOpen(false)}>
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
       </header>
       <div className="drawer-body">{body}</div>
     </aside>

@@ -111,7 +111,7 @@ export function Viewport() {
       const images = imageLookup(state.project);
       drawBackground(ctx, view, dpr, scene.world, state.camera, images);
       applyCamera(ctx, state.camera, view, dpr);
-      if (state.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
+      if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
       drawEntities(ctx, entities, images);
       if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
@@ -167,7 +167,7 @@ export function Viewport() {
   // Wheel zoom (non-passive so the page doesn't scroll).
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const interpret = createWheelInterpreter();
+    const interpret = createWheelInterpreter(() => useEditor.getState().layout.mouseZoomSpeed);
     const zoomAt = (screen: Vec2, factor: number) => {
       const { camera, setCamera } = useEditor.getState();
       const view = viewRef.current;
@@ -303,7 +303,7 @@ export function Viewport() {
       const raw = { x: drag.anchor.x + world.x - drag.startWorld.x, y: drag.anchor.y + world.y - drag.startWorld.y };
       // The object under the cursor leads; the rest of the selection keeps its offsets.
       const anchorEntity = resolveSceneEntities(state.project, state.activeSceneId).find((e) => e.id === drag.anchorId) ?? null;
-      const target = snapPosition(raw, anchorEntity, state.project.settings.gridSize, state.snapToGrid);
+      const target = snapPosition(raw, anchorEntity, state.project.settings.gridSize, state.layout.snapToGrid);
       drag.delta = { x: target.x - drag.anchor.x, y: target.y - drag.anchor.y };
     } else {
       drag.currentWorld = toWorld(ev);
@@ -385,7 +385,7 @@ export function placeDefinition(definitionId: Id, world: Vec2): Id | null {
   const state = useEditor.getState();
   const def = state.project.definitions.find((d) => d.id === definitionId);
   if (!def) return null;
-  const pos = snapPosition(world, brushPreview(def.id), state.project.settings.gridSize, state.snapToGrid);
+  const pos = snapPosition(world, brushPreview(def.id), state.project.settings.gridSize, state.layout.snapToGrid);
   const scene = getActiveScene(state);
   const count = scene.entities.filter((e) => e.definitionId === def.id).length;
   const entity = instantiateDefinition(def, pos, count === 0 ? def.name : `${def.name} ${count + 1}`);

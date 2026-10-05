@@ -15,3 +15,22 @@ export const theme = {
   /** Existing connections between objects (relationships). */
   logic: '#ffc65c',
 };
+
+/** Mixes a #rrggbb color toward white by `amount` (0..1). */
+function lighten(hex: string, amount: number): [number, number, number] {
+  const n = parseInt(hex.slice(1, 7), 16);
+  const ch = (v: number) => Math.round(v + (255 - v) * amount);
+  return [ch((n >> 16) & 255), ch((n >> 8) & 255), ch(n & 255)];
+}
+
+/** Follows the editor accent color (an editor setting): CSS variables for the chrome, theme colors for the canvas. */
+export function applyAccent(hex: string): void {
+  const color = /^#[0-9a-f]{3}$/i.test(hex) ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex;
+  if (!/^#[0-9a-f]{6}/i.test(color)) return;
+  document.documentElement.style.setProperty('--accent', color.slice(0, 7));
+  const [r, g, b] = lighten(color, 0.12);
+  theme.select = `rgb(${r}, ${g}, ${b})`;
+  theme.selectGlow = `rgba(${r}, ${g}, ${b}, 0.85)`;
+  theme.marqueeFill = `rgba(${r}, ${g}, ${b}, 0.12)`;
+  theme.marqueeStroke = `rgba(${r}, ${g}, ${b}, 0.9)`;
+}

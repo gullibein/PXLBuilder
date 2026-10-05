@@ -43,4 +43,28 @@ describe('wheel interpretation', () => {
     const read = createWheelInterpreter();
     expect(read(ev({ deltaY: 100, shiftKey: true, timeStamp: 5000 }))).toEqual({ kind: 'pan', dx: 100, dy: 0 });
   });
+
+  it('Alt + mouse wheel zooms by the same moderate step as the plain wheel', () => {
+    const read = createWheelInterpreter();
+    const plain = read(ev({ deltaY: -100, timeStamp: 5000 }));
+    const alt = read(ev({ deltaY: -100, altKey: true, timeStamp: 6000 }));
+    expect(alt).toEqual(plain);
+    expect(alt.kind === 'zoom' && alt.factor).toBeGreaterThan(1.1);
+    expect(alt.kind === 'zoom' && alt.factor).toBeLessThan(1.2);
+    // Alt on a horizontal axis (some browsers) works the same.
+    expect(read(ev({ deltaX: -100, altKey: true, timeStamp: 7000 }))).toEqual(plain);
+  });
+
+  it('a fast-spun or accelerated wheel is capped per event', () => {
+    const read = createWheelInterpreter();
+    const notch = read(ev({ deltaY: 100, timeStamp: 5000 }));
+    const spin = read(ev({ deltaY: 600, altKey: true, timeStamp: 6000 }));
+    expect(spin).toEqual(notch);
+  });
+
+  it('mouse zoom speed can be tuned', () => {
+    const read = createWheelInterpreter(() => 0.5);
+    const r = read(ev({ deltaY: -100, timeStamp: 5000 }));
+    expect(r.kind === 'zoom' && r.factor).toBeCloseTo(Math.exp(0.065), 5);
+  });
 });

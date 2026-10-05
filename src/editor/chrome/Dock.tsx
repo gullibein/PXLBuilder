@@ -1,3 +1,4 @@
+import { PlayButton } from './TopBar';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
@@ -20,6 +21,7 @@ const STARTER_NAMES = createStarterDefinitions(componentRegistry, createStarterA
 export function Dock() {
   const dock = useEditor((s) => s.dock);
   const setDock = useEditor((s) => s.setDock);
+  const playHere = useEditor((s) => s.layout.playButton === 'bottom');
   return (
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
@@ -37,6 +39,7 @@ export function Dock() {
           </svg>
           Objects
         </button>
+        {playHere && <PlayButton />}
       </nav>
     </div>
   );

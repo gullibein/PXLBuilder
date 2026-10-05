@@ -119,6 +119,11 @@ export const operationSchema = z.union([
     id: z.string(),
   }),
   z.object({
+    op: z.literal('set_editor_setting'),
+    key: z.string().describe('An editor setting key from editor.settings (editor scope only)'),
+    valueJson: z.string().describe('The new value as JSON, e.g. "\\"bottom\\"", "true", "1.5"'),
+  }),
+  z.object({
     op: z.literal('set_rule_enabled'),
     sceneId: z.string(),
     id: z.string(),
@@ -127,6 +132,11 @@ export const operationSchema = z.union([
 ]);
 
 export type Operation = z.infer<typeof operationSchema>;
+
+/** Operations that change the editor rather than the project. */
+export function isEditorOperation(op: Operation): op is Extract<Operation, { op: 'set_editor_setting' }> {
+  return op.op === 'set_editor_setting';
+}
 
 export interface ApplyResult {
   createdDefinitionIds: Id[];
@@ -284,6 +294,9 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
       case 'set_rule_enabled':
         logic.setRuleEnabled(project, op.sceneId, op.id, op.enabled);
         break;
+      case 'set_editor_setting':
+        // Editor settings are not part of the game; the editor applies them (see isEditorOperation).
+        throw new m.ModelError('Editor settings cannot be changed together with the game');
     }
   }
   return result;

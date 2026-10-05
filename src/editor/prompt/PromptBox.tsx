@@ -61,6 +61,7 @@ export function PromptBox(props: PromptBoxProps) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const undo = useEditor((s) => s.undo);
+  const undoLayout = useEditor((s) => s.undoLayout);
   const working = runner.state.phase === 'working';
 
   // Auto-grow up to four lines.
@@ -132,7 +133,12 @@ export function PromptBox(props: PromptBoxProps) {
         </button>
       </div>
       {working && <div className="prompt-progress" aria-label="Working" />}
-      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onCancel={runner.reset} onUndo={() => { undo(); runner.reset(); }} renderApplied={props.renderApplied} />}
+      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onCancel={runner.reset} onUndo={() => {
+            const o = runner.state.phase === 'done' ? runner.state.outcome : null;
+            if (o?.status === 'applied' && o.editor) undoLayout();
+            else undo();
+            runner.reset();
+          }} renderApplied={props.renderApplied} />}
     </div>
   );
 }
@@ -151,7 +157,7 @@ function Outcome(props: {
         <div className="prompt-result applied" data-testid="prompt-result" data-status="applied">
           <div className="result-head">
             <span className="ok">✓ Applied</span>
-            <button className="text-btn" onClick={props.onUndo}>
+            <button className="text-btn" data-testid="result-undo" onClick={props.onUndo}>
               Undo
             </button>
           </div>

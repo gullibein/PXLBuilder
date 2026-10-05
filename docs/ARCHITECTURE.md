@@ -334,11 +334,35 @@ the same checks.
   system prompt lists relationship types, events, conditions and actions from
   the registries, so it can't drift from the engine.
 
+### Editor settings and the Editor prompt
+The editor's own interface can be changed by talking to it ("move the Play
+button to the bottom", "dock the details panel on the right"), with the same
+principle as the game: the AI never edits UI code. `editor/layout/settings.ts`
+declares each adjustable part as a typed setting (reusing the component field
+schemas): Play button position, details panel floating/docked and side, tool
+panel side, history/console corner, accent color, mouse-wheel zoom speed,
+grid and snap. The ✦ prompt's **Editor** tab sends these settings with their
+allowed and current values (`AIContext` kind `editor`; core only carries them,
+it knows nothing about the UI); the AI answers with `set_editor_setting`
+operations, which are validated against the schema and applied all-or-nothing.
+Anything outside the settings is answered as not possible yet.
+- Settings are the user's preferences, not the game: saved in this browser
+  (localStorage), not in the project, with their own undo (the prompt's Undo,
+  `undoLayout`), and "Reset editor layout" in the ⋯ menu.
+- The layout is applied with classes on the editor root; a docked details
+  panel is a column beside the stage, so the level view (and every overlay
+  placed in it) makes room. The accent color drives the CSS variables (other
+  purples are `color-mix` of it) and the canvas selection colors.
+- New adjustable parts are added by declaring a setting and reading it in the
+  UI; the AI picks it up automatically.
+
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained
 or horizontal deltas are a trackpad and pan; a pinch arrives as Ctrl+wheel and
 zooms (Safari's gesture events are handled too); Alt/Cmd+scroll zooms; coarse
-whole-number vertical steps are a mouse wheel and zoom; once a trackpad
+whole-number steps are a mouse wheel and zoom by a moderate fixed step per notch
+(the same with or without Alt, capped per event, scaled by the mouse-zoom-speed
+setting); once a trackpad
 gesture is seen, the next 400 ms keep panning so fast flicks don't turn into
 zooms. Space+drag and middle-button drag pan.
 

@@ -104,6 +104,15 @@ function stubModel(body) {
     const rule = { name: 'Key found', when: { event: 'collected', subject: { kind: 'object', id: lib('Player') }, other: { kind: 'object', id: lib('Key') } }, actions: [{ type: 'show_message', text: 'Got the key!', seconds: 3 }] };
     return { kind: 'apply', message: 'Added a rule.', changes: ['When the player picks up a key: show "Got the key!"'], operations: [{ op: 'create_rule', sceneId: body.context.level.id, ruleJson: JSON.stringify(rule) }] };
   }
+  if (body.context.scope === 'editor') {
+    const keys = body.context.editor.settings.map((x) => x.key);
+    const set = (key, value) => ({ op: 'set_editor_setting', key, valueJson: JSON.stringify(value) });
+    if (req.includes('sideways')) return { kind: 'apply', message: 'Done.', changes: [], operations: [set('playButton', 'sideways')] };
+    if (req.includes('play button')) return { kind: 'apply', message: 'The Play button is now at the bottom.', changes: ['Play button: bottom'], operations: [set('playButton', 'bottom')] };
+    if (req.includes('dock')) return { kind: 'apply', message: 'The details panel is docked on the right.', changes: ['Details panel: docked, right'], operations: [set('inspector', 'docked'), set('inspectorSide', 'right')] };
+    if (req.includes('green')) return { kind: 'apply', message: 'The editor is green now.', changes: ['Accent color: green'], operations: [set('accentColor', '#2ea043')] };
+    return { kind: 'unsupported', message: `The editor can't do that yet. It can change: ${keys.join(', ')}.`, changes: [], operations: [] };
+  }
   if (req.includes('open the door')) {
     return { kind: 'clarify', message: `${t[0]?.name} can't open things. Did you mean a switch or a key?`, changes: [], operations: [] };
   }
@@ -743,6 +752,66 @@ try {
   await lp.getByTestId('tool-logic').click();
   await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
   await lc.close();
+
+  step = 'editor prompt';
+  const ec = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const ep = await ec.newPage();
+  ep.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  ep.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  await ep.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
+  await ep.goto(URL);
+  const eCanvas = ep.getByTestId('viewport-canvas');
+  const canvasWidth = (await eCanvas.boundingBox()).width;
+  await ep.getByTestId('global-prompt-toggle').click();
+  await ep.getByTestId('scope-editor').click();
+  const editorPrompt = ep.getByTestId('editor-prompt');
+  const eAsk = async (text) => {
+    const input = editorPrompt.getByTestId('prompt-input');
+    await input.click();
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  const eResult = editorPrompt.getByTestId('prompt-result');
+  await eAsk('Move the Play button to the bottom of the screen.');
+  await check(async () => (await eResult.getAttribute('data-status')) === 'applied', 'the Editor tab of the ✦ prompt changes the editor');
+  await check(async () => (await ep.locator('.dock [data-testid="play"]').count()) === 1 && (await ep.locator('.topbar [data-testid="play"]').count()) === 0, 'the Play button moved to the bottom bar');
+  const editorReq = aiRequests.at(-1);
+  await check(editorReq.context.scope === 'editor' && editorReq.context.editor.settings.some((x) => x.key === 'playButton' && x.value === 'top'), 'the AI gets the editor settings, with their current values');
+  await ep.screenshot({ path: `${OUT}/16-play-bottom.png` });
+  await ep.locator('.dock [data-testid="play"]').click();
+  await check(async () => (await ep.locator('.play-float [data-testid="play"]').innerText()).includes('Stop'), 'while playing, Stop is at the bottom too');
+  await ep.keyboard.press('Escape');
+  await ep.getByTestId('global-prompt-toggle').click();
+  await ep.getByTestId('scope-editor').click();
+  await eAsk('Move the play button to the bottom.');
+  await editorPrompt.getByTestId('result-undo').click();
+  await check(async () => (await ep.locator('.topbar [data-testid="play"]').count()) === 1, 'Undo puts the editor back (the editor has its own undo)');
+  await eAsk('Move the play button to the bottom.');
+  await check(async () => (await ep.locator('.dock [data-testid="play"]').count()) === 1, '(again at the bottom)');
+
+  await eAsk('I want the detail inspector docked at the right side of the screen.');
+  await check(async () => (await ep.getByTestId('inspector').getAttribute('data-docked')) === 'true', 'the details panel is docked');
+  await check(async () => {
+    const ib = await ep.getByTestId('inspector').boundingBox();
+    const cb = await eCanvas.boundingBox();
+    return ib.x >= cb.x + cb.width - 1 && cb.width < canvasWidth - 200;
+  }, 'on the right, and the level view makes room for it');
+  await eAsk('Make the editor green.');
+  await check(async () => (await ep.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())) === '#2ea043', 'the accent color changes');
+  await eAsk('Put the play button sideways.');
+  await check(async () => (await eResult.getAttribute('data-status')) === 'error' && (await eResult.innerText()).includes('must be one of'), 'an invalid editor value is rejected, nothing changes');
+  await eAsk('Add a timeline panel.');
+  await check(async () => (await eResult.getAttribute('data-status')) === 'message' && (await eResult.innerText()).includes("can't do that yet"), 'what the editor cannot do gets a plain answer');
+  await ep.screenshot({ path: `${OUT}/17-editor-docked.png` });
+  await ep.reload();
+  await check(async () => (await ep.getByTestId('inspector').getAttribute('data-docked')) === 'true' && (await ep.locator('.dock [data-testid="play"]').count()) === 1, 'editor settings are remembered after a reload');
+  await ep.getByTestId('main-menu').click();
+  await ep.getByTestId('menu-reset-layout').click();
+  await check(async () => (await ep.getByTestId('inspector').count()) === 0 && (await ep.locator('.topbar [data-testid="play"]').count()) === 1, 'Reset editor layout restores the defaults');
+  await ec.close();
 
   step = 'console errors';
   await check(errors.length === 0, `no page/console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);

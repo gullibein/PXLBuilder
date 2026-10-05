@@ -27,7 +27,9 @@ export type AIContext =
   /** The whole game. */
   | { kind: 'project'; sceneId: Id }
   /** Creating a new object for the library. */
-  | { kind: 'create'; sceneId: Id };
+  | { kind: 'create'; sceneId: Id }
+  /** The editor itself (layout, look, controls), not the game. */
+  | { kind: 'editor'; sceneId: Id };
 
 /** Derives the context from a selection (ordered by selection order). */
 export function contextFromSelection(sceneId: Id, selected: Id[]): AIContext | null {
@@ -52,6 +54,8 @@ export function contextKey(ctx: AIContext): string {
       return 'project';
     case 'create':
       return 'create';
+    case 'editor':
+      return 'editor';
   }
 }
 
@@ -79,8 +83,18 @@ export interface EntityBrief {
   components: string[];
 }
 
+/**
+ * Editor settings the AI may change (editor scope only). The editor declares
+ * them; core only carries them, so the game model knows nothing about the UI.
+ */
+export interface EditorSettingsPayload {
+  settings: { key: string; label: string; description: string; type: string; options?: readonly string[]; min?: number; max?: number; value: unknown }[];
+}
+
 export interface AIPayload {
   scope: AIContext['kind'];
+  /** Present in editor scope: the editor's adjustable settings and their current values. */
+  editor?: EditorSettingsPayload;
   scope_note: string;
   level: {
     id: Id;
@@ -129,9 +143,11 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
     'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth). You cannot create or edit pictures; the user uploads background images themselves.',
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
+  editor:
+    'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks and behaves), not the game. Use only set_editor_setting with keys from editor.settings. If the request needs something those settings cannot do, reply unsupported and say what can be changed instead.',
 };
 
-export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry): AIPayload {
+export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const targetIds = 'entityIds' in ctx ? ctx.entityIds : [];
   const placed = (defId: Id) => project.scenes.reduce((n, s) => n + s.entities.filter((e) => e.definitionId === defId).length, 0);
@@ -175,6 +191,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
   return {
     scope: ctx.kind,
     scope_note: SCOPE_NOTES[ctx.kind],
+    ...(ctx.kind === 'editor' && editor ? { editor } : {}),
     level: {
       id: scene.id,
       name: scene.name,

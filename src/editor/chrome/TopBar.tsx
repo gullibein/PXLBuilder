@@ -14,6 +14,7 @@ export function TopBar() {
   const undoLabel = useEditor((s) => s.history.past.at(-1)?.label);
   const redoLabel = useEditor((s) => s.history.future[0]?.label);
   const globalOpen = useEditor((s) => s.globalPrompt.open);
+  const playOnTop = useEditor((s) => s.layout.playButton === 'top');
   const { undo, redo, setGlobalPrompt } = useEditor.getState();
 
   return (
@@ -39,7 +40,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <PlayButton />
+      {playOnTop && <PlayButton />}
 
       <div className="topbar-right">
         <button
@@ -137,8 +138,8 @@ function SceneSelector() {
 
 function MainMenu() {
   const { open, setOpen, ref } = usePopover();
-  const showGrid = useEditor((s) => s.showGrid);
-  const snap = useEditor((s) => s.snapToGrid);
+  const showGrid = useEditor((s) => s.layout.showGrid);
+  const snap = useEditor((s) => s.layout.snapToGrid);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const s = useEditor.getState();
   const items: { label: string; hint?: string; checked?: boolean; run: () => void; testId?: string; sep?: boolean }[] = [
@@ -147,6 +148,8 @@ function MainMenu() {
     { label: 'Frame everything', hint: 'F', run: frameView, sep: true },
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
+    { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt', sep: true },
+    { label: 'Reset editor layout', run: () => s.resetLayout(), testId: 'menu-reset-layout' },
   ];
   return (
     <div className="popover-anchor" ref={ref}>
@@ -183,7 +186,8 @@ function MainMenu() {
   );
 }
 
-function PlayButton() {
+/** Play / Stop. In the top bar, or in the bottom bar (an editor setting). */
+export function PlayButton() {
   const mode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
   const playing = mode === 'play';

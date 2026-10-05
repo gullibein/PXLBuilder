@@ -9,6 +9,7 @@
  * Selection is also the AI context: one selected entity, two (a relationship),
  * several (a group), or the level itself (`worldContext`).
  */
+import { DEFAULT_LAYOUT, loadLayout, saveLayout, type EditorLayout } from './layout/settings';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import { contextFromSelection, type AIContext } from '../core/ai/context';
@@ -52,10 +53,12 @@ export interface EditorState {
   /** When set, the level itself is the active context, anchored at this world point (or the view center). */
   worldContext: { point: Vec2 | null } | null;
   /** The global (not object-bound) prompt. */
-  globalPrompt: { open: boolean; scope: 'level' | 'project' };
+  globalPrompt: { open: boolean; scope: 'level' | 'project' | 'editor' };
   camera: Camera;
-  showGrid: boolean;
-  snapToGrid: boolean;
+  /** The editor's own settings (layout, look, grid); saved in this browser, not in the project. */
+  layout: EditorLayout;
+  /** Earlier layouts, for undoing editor changes (separate from the project's undo). */
+  layoutPast: EditorLayout[];
   dirty: boolean;
   log: LogEntry[];
   history: History;
@@ -87,10 +90,14 @@ export interface EditorState {
   selectEntities(ids: Id[]): void;
   selectDefinition(id: Id | null): void;
   setWorldContext(point: Vec2 | null | false): void;
-  setGlobalPrompt(open: boolean, scope?: 'level' | 'project'): void;
+  setGlobalPrompt(open: boolean, scope?: 'level' | 'project' | 'editor'): void;
   setCamera(camera: Partial<Camera>): void;
   setShowGrid(show: boolean): void;
   setSnapToGrid(snap: boolean): void;
+  /** Changes editor settings as one undoable step (values must be valid; see checkEditorSetting). */
+  setLayout(patch: Partial<EditorLayout>): void;
+  undoLayout(): void;
+  resetLayout(): void;
   setInspectorOpen(open: boolean): void;
   setTray(tray: Partial<EditorState['tray']>): void;
   setDock(dock: DockPanel): void;
@@ -133,8 +140,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     worldContext: null,
     globalPrompt: { open: false, scope: 'level' },
     camera: { x: 0, y: 0, zoom: 1 },
-    showGrid: true,
-    snapToGrid: true,
+    layout: loadLayout(),
+    layoutPast: [],
     dirty: false,
     log: [],
     history: EMPTY_HISTORY,
@@ -259,11 +266,31 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setShowGrid(showGrid) {
-      set({ showGrid });
+      get().setLayout({ showGrid });
     },
 
     setSnapToGrid(snapToGrid) {
-      set({ snapToGrid });
+      get().setLayout({ snapToGrid });
+    },
+
+    setLayout(patch) {
+      const before = get().layout;
+      const layout = { ...before, ...patch };
+      if (JSON.stringify(layout) === JSON.stringify(before)) return;
+      set({ layout, layoutPast: [...get().layoutPast.slice(-49), before] });
+      saveLayout(layout);
+    },
+
+    undoLayout() {
+      const past = get().layoutPast;
+      if (!past.length) return;
+      const layout = past[past.length - 1];
+      set({ layout, layoutPast: past.slice(0, -1) });
+      saveLayout(layout);
+    },
+
+    resetLayout() {
+      get().setLayout({ ...DEFAULT_LAYOUT });
     },
 
     setInspectorOpen(inspectorOpen) {

@@ -6,7 +6,7 @@ import { Dock } from './chrome/Dock';
 import { SpritesPanel } from './chrome/SpritesPanel';
 import { GlobalPrompt } from './chrome/GlobalPrompt';
 import { ToolPanel } from './chrome/ToolPanel';
-import { TopBar } from './chrome/TopBar';
+import { PlayButton, TopBar } from './chrome/TopBar';
 import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
 import { saveProjectToFile } from './persistence';
@@ -14,6 +14,18 @@ import { ContextPrompt } from './prompt/ContextPrompt';
 import { useEditor } from './store';
 import { PlayView } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
+import { applyAccent } from './theme';
+import type { EditorLayout } from './layout/settings';
+
+/** Layout classes on the editor root: where panels and buttons go (editor settings). */
+function layoutClasses(layout: EditorLayout): string {
+  return [
+    `tools-${layout.toolPanelSide}`,
+    `tray-${layout.trayCorner}`,
+    `play-${layout.playButton}`,
+    layout.inspector === 'docked' ? `docked docked-${layout.inspectorSide}` : `drawer-${layout.inspectorSide}`,
+  ].join(' ');
+}
 
 /**
  * Canvas-first layout: the game fills the window. Everything else floats on
@@ -24,20 +36,30 @@ export function App() {
   useGlobalShortcuts();
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const mode = useEditor((s) => s.mode);
+  const layout = useEditor((s) => s.layout);
+  useEffect(() => applyAccent(layout.accentColor), [layout.accentColor]);
+  const docked = layout.inspector === 'docked';
   if (mode === 'play') {
     // Build → Play → Game: the editor gets out of the way.
     return (
-      <div className="editor playing">
+      <div className={`editor playing ${layoutClasses(layout)}`}>
         <TopBar />
         <main className="stage">
           <PlayView />
+          {layout.playButton === 'bottom' && (
+            <div className="play-float">
+              <PlayButton />
+            </div>
+          )}
         </main>
       </div>
     );
   }
   return (
-    <div className="editor">
+    <div className={`editor ${layoutClasses(layout)}`}>
       <TopBar />
+      <div className="workspace">
+      {docked && <Inspector docked />}
       <main className="stage">
         <Viewport />
         <ContextPrompt />
@@ -48,8 +70,9 @@ export function App() {
         <GlobalPrompt />
         <Dock />
         <Tray />
-        {inspectorOpen && <Inspector />}
+        {inspectorOpen && !docked && <Inspector />}
       </main>
+      </div>
     </div>
   );
 }
