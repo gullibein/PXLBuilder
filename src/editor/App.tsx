@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
+import { AIConnection } from './chrome/AIConnection';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
@@ -67,6 +68,7 @@ export function App() {
         <BackgroundPanel />
         <LogicPanel />
         <SpritesPanel />
+        <AIConnection />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -142,6 +144,7 @@ function useGlobalShortcuts() {
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
         else if (state.backgroundOpen) state.setBackgroundOpen(false);
         else if (state.logicOpen) state.setLogicOpen(false);
+        else if (state.aiConnectionOpen) state.setAIConnectionOpen(false);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {

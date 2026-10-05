@@ -366,4 +366,41 @@ describe('gameplay', () => {
     input.release('right');
     expect(p.x).toBeCloseTo(-120, 0);
   });
+
+  /** An enemy standing on the ground at x=60; `stompable` adds Stompable to this enemy. */
+  function enemyLevel(stompable: boolean, player: Vec2) {
+    return level((b) => {
+      const e = b.place('Enemy', { x: 60, y: 17 }, stompable ? 'Mushroom' : 'Enemy');
+      if (stompable) m.addEntityComponent(b.d, b.sceneId, e, 'Stompable', registry);
+      b.d.scenes[0].entities.find((x) => x.name === 'Player')!.transform.position = player;
+    });
+  }
+
+  it('landing on a Stompable enemy defeats it; the player bounces off unhurt', () => {
+    const { rt, input, p } = enemyLevel(true, { x: 60, y: -80 });
+    let bounced = false;
+    run(rt, input, 1, () => {
+      if (events(rt, 'stomped').length && p.vy < 0) bounced = true;
+    });
+    expect(events(rt, 'stomped')).toEqual([expect.objectContaining({ subject: 'Mushroom', other: 'Player' })]);
+    expect(rt.find('Mushroom')!.alive).toBe(false);
+    expect(events(rt, 'died')[0]).toMatchObject({ subject: 'Mushroom', other: 'Player' });
+    expect(bounced).toBe(true);
+    expect(p.health!.current).toBe(3);
+  });
+
+  it('other enemies cannot be stomped: landing on one hurts', () => {
+    const { rt, input, p } = enemyLevel(false, { x: 60, y: -80 });
+    run(rt, input, 1);
+    expect(events(rt, 'stomped')).toHaveLength(0);
+    expect(rt.find('Enemy')!.alive).toBe(true);
+    expect(p.health!.current).toBe(2);
+  });
+
+  it('walking into a Stompable enemy from the side still hurts', () => {
+    const { rt, input, p } = enemyLevel(true, { x: 0, y: 16 });
+    walkRight(rt, input, 0.6);
+    expect(events(rt, 'stomped')).toHaveLength(0);
+    expect(p.health!.current).toBe(2);
+  });
 });

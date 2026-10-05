@@ -66,14 +66,18 @@ export function Viewport() {
   useEffect(() => {
     const container = containerRef.current!;
     const canvas = canvasRef.current!;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       viewRef.current = { width: rect.width, height: rect.height };
       setViewportSize(rect.width, rect.height);
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
-    });
+    };
+    // Measure right away: the observer reports a frame later, and a click in between
+    // (e.g. just after stopping Play) would otherwise be mapped with a 1x1 view and miss.
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(container);
     return () => ro.disconnect();
   }, []);
@@ -125,6 +129,9 @@ export function Viewport() {
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
       for (const e of selected) drawSelected(ctx, e, state.camera.zoom, time);
+      if (state.flash && time < state.flash.until) drawFlash(ctx, state.flash.ids, byId, state.camera.zoom, (state.flash.until - time) / 2200);
+      const flashAttr = state.flash && time < state.flash.until ? String(state.flash.ids.length) : '';
+      if ((canvas.dataset.flash ?? '') !== flashAttr) canvas.dataset.flash = flashAttr;
       // Existing connections: those of the selection, or all of them while the Logic card is open.
       const links = state.logicOpen || selected.length ? linksToShow(state.project, scene, byId, state.logicOpen ? null : new Set(state.selectedEntityIds)) : [];
       for (const l of links) drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, faded: !l.simulated });
@@ -602,6 +609,24 @@ function linksToShow(project: Project, scene: Scene, byId: Map<Id, ResolvedEntit
     }
   }
   return links;
+}
+
+/** Things an AI change just touched: a fading glow, so you see where it went. */
+function drawFlash(ctx: CanvasRenderingContext2D, ids: Id[], byId: Map<Id, ResolvedEntity>, zoom: number, left: number): void {
+  ctx.save();
+  ctx.strokeStyle = theme.logic;
+  ctx.shadowColor = theme.logic;
+  ctx.shadowBlur = 12;
+  ctx.globalAlpha = Math.min(1, left * 1.5);
+  ctx.lineWidth = 3 / zoom;
+  for (const id of ids) {
+    const e = byId.get(id);
+    if (!e) continue;
+    const b = getWorldBounds(e);
+    const pad = 4 / zoom;
+    ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad);
+  }
+  ctx.restore();
 }
 
 /** New things in an AI proposal get a pulsing outline; things it would remove show as faded red ghosts. */

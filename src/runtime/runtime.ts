@@ -65,6 +65,11 @@ export interface RuntimeEntity {
   /** Item name -> count, or null without an Inventory. */
   inventory: Map<string, number> | null;
   collectible: { item: string; keep: boolean } | null;
+  stompable: { stompers: string[]; bounce: number; damage: number } | null;
+  /** Seconds after a stomp during which what it stomped can't hurt it. */
+  stompGrace: number;
+  /** Position at the start of the step (to tell landing on top from bumping into the side). */
+  prevY: number;
   /** Ids of the entities it touches right now (moving entities only). */
   touching: Set<Id>;
 }
@@ -165,6 +170,9 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     invincible: 0,
     inventory,
     collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume' } : null,
+    stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
+    stompGrace: 0,
+    prevY: r.transform.position.y,
     touching: new Set(),
   };
 }
@@ -260,6 +268,7 @@ export class Runtime {
 
     for (const e of this.entities) {
       if (e.body !== 'dynamic' || !e.alive) continue;
+      e.prevY = e.y;
       if (e.controller) this.control(e, input, dt);
       if (!e.climbing) {
         e.vx += this.gravity.x * e.gravityScale * dt;

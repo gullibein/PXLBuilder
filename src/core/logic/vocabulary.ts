@@ -29,6 +29,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'damaged', description: 'Something loses health.', subject: 'who was hurt', other: 'what hurt it', phrase: '{subject} is hurt by {other}' },
   { type: 'died', description: 'Something runs out of health.', subject: 'who died', other: 'what dealt the last hit', phrase: '{subject} dies' },
   { type: 'respawned', description: 'Something is put back at its start (after dying or falling out of the level).', subject: 'who respawned', other: null, phrase: '{subject} respawns' },
+  { type: 'stomped', description: 'Something Stompable is jumped on from above.', subject: 'what was stomped', other: 'who jumped on it', phrase: '{other} stomps on {subject}' },
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
   { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },

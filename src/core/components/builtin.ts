@@ -107,6 +107,17 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'Stompable',
+    label: 'Stompable',
+    description: 'Can be defeated by jumping on top of it (like stomping an enemy). Whoever lands on it, if it carries one of the stomper tags, bounces off unhurt. Other contact still works as usual (its Damage still hurts from the side).',
+    category: 'Gameplay',
+    fields: {
+      stompers: { kind: 'stringList', default: ['player'], description: 'Tags of who can stomp it' },
+      bounce: { kind: 'number', default: 320, min: 0, step: 10, description: 'How high the stomper bounces off (upward speed, px/s)' },
+      damage: { kind: 'number', default: 0, min: 0, step: 1, description: '0: one stomp defeats it. Otherwise the health it loses per stomp' },
+    },
+  },
+  {
     type: 'Openable',
     label: 'Openable',
     description: 'Something that opens and closes, like a door. While open it does not block and is drawn faded. Switches, keys ("requires") and rules open it.',

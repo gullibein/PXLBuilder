@@ -70,6 +70,24 @@ function stubModel(body) {
       operations: t.map((e) => ({ op: 'set_component_field', target: 'instance', id: e.id, component: 'Sprite', field: 'color', valueJson: '"#ff2d55"' })),
     };
   }
+  if (req.includes('mushroom-enemies by jumping')) {
+    const mushroom = body.context.library.find((d) => d.name === 'Mushroom');
+    if (!mushroom) return { kind: 'answer', message: "There's no mushroom enemy in your library yet. Create one with + Create, place a few, then ask again.", changes: [], operations: [] };
+    return {
+      kind: 'apply',
+      message: "I'll add this to the Mushroom enemy (every mushroom), not the player: landing on a mushroom defeats it. Other enemies still hurt.",
+      changes: ['Mushroom: can be stomped by the player'],
+      operations: [{ op: 'add_component', target: 'definition', id: mushroom.id, component: 'Stompable', propsJson: '{"stompers":["player"]}' }],
+    };
+  }
+  if (req.includes('mushroom enemy')) {
+    return {
+      kind: 'preview',
+      message: 'A walking mushroom enemy.',
+      changes: ['New object: Mushroom'],
+      operations: [{ op: 'create_definition', ref: 'm', name: 'Mushroom', description: 'A mushroom enemy.', category: 'Enemies', tags: ['enemy', 'mushroom'], components: [{ component: 'Sprite', propsJson: '{"width":28,"height":24,"color":"#c0563f"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":24}}' }, { component: 'PhysicsBody', propsJson: '{}' }, { component: 'Damage', propsJson: '{"amount":1}' }] }],
+    };
+  }
   if (req.includes('flying robot')) {
     return {
       kind: 'preview',
@@ -497,9 +515,6 @@ try {
   }, 'switching console tabs and minimising leaves the editor in place');
 
   step = 'play';
-  // Settle the pointer on the Player first (it just came from the tray's Close button).
-  await page.mouse.move(toScreen(-256, 0).x, toScreen(-256, 0).y, { steps: 3 });
-  await page.waitForTimeout(50);
   await clickWorld(-256, 0);
   await check(async () => (await prompts.count()) === 1, 'clicking the Player selects it');
   await prompts.getByTestId('prompt-details').click();
@@ -540,8 +555,9 @@ try {
   await page.screenshot({ path: `${OUT}/12-play.png` });
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').isVisible()) && (await play.count()) === 0, 'Esc stops the game and returns to the editor');
-  await check(async () => (await page.getByTestId('undo').getAttribute('title')) === undoTitle, 'playing made no edits (undo history unchanged)');
   await clickWorld(-256, 0);
+  await check(async () => (await prompts.count()) === 1, 'clicking an object right after stopping selects it (the view is measured at once)');
+  await check(async () => (await page.getByTestId('undo').getAttribute('title')) === undoTitle, 'playing made no edits (undo history unchanged)');
   await prompts.getByTestId('prompt-details').click();
   await check(async () => [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()].join() === posBefore.join(), 'the player is back at its editor position (runtime state was thrown away)');
   await page.getByTestId('close-details').click();
@@ -795,6 +811,94 @@ try {
   await lp.getByTestId('tool-logic').click();
   await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
   await lc.close();
+
+  step = 'own API key, and changes placed on the right object';
+  const kc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const kp = await kc.newPage();
+  kp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  kp.on('console', (m) => m.type() === 'error' && !ignorable(m) && !/api\.anthropic\.com|401/.test(m.text()) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  let serverCalls = 0;
+  await kp.route('**/api/ai', async (route) => {
+    serverCalls++;
+    await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'no key on this server' }) });
+  });
+  // A stand-in for api.anthropic.com: same endpoints and shapes the SDK uses, answers from the stub model.
+  const VALID = 'sk-ant-test-valid-key-1234';
+  const anthropicCalls = [];
+  await kp.route('https://api.anthropic.com/**', async (route) => {
+    const r = route.request();
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+    if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const headers = await r.allHeaders();
+    anthropicCalls.push({ url: r.url(), key: headers['x-api-key'], browser: headers['anthropic-dangerous-direct-browser-access'] });
+    const json = (status, body) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (headers['x-api-key'] !== VALID) return json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
+    if (r.url().includes('/v1/models/')) return json(200, { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-01-01T00:00:00Z' });
+    const sent = JSON.parse(r.postData());
+    const text = sent.messages[0].content;
+    const context = JSON.parse(text.split('\n')[1]);
+    const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
+    const out = stubModel({ context, request, history: [] });
+    return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 10 } });
+  });
+  await kp.goto(URL);
+  const kCanvas = kp.getByTestId('viewport-canvas');
+  const kBox = await kCanvas.boundingBox();
+  const kAt = (wx, wy) => ({ x: kBox.x + kBox.width / 2 + wx, y: kBox.y + kBox.height / 2 + wy });
+  const kPrompt = kp.getByTestId('context-prompt');
+  const kAsk = async (text) => {
+    const input = kPrompt.getByTestId('prompt-input');
+    await input.click();
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  const kDrop = async (name, wx, wy) => {
+    if ((await kp.getByTestId('library-panel').count()) === 0) await kp.getByTestId('dock-library').click();
+    await kp.dragAndDrop(`[data-testid="definition-${name}"]`, '[data-testid="viewport-canvas"]', { targetPosition: { x: kBox.width / 2 + wx, y: kBox.height / 2 + wy } });
+  };
+  await kDrop('Player', -200, -150);
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await kAsk('Make the player faster.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').innerText()).includes('AI connection'), 'without a server key, the prompt says how to connect (⋯ → AI connection)');
+  await kp.keyboard.press('Escape');
+  await kp.getByTestId('main-menu').click();
+  await kp.getByTestId('menu-ai-connection').click();
+  const dialog = kp.getByTestId('ai-connection');
+  await check(async () => (await dialog.getByTestId('ai-connection-status').innerText()).includes("this computer's PXLBuilder server"), 'the AI connection dialog shows where the AI comes from');
+  await dialog.getByTestId('ai-key-input').fill('sk-ant-wrong-key-0000');
+  await dialog.getByTestId('ai-key-save').click();
+  await check(async () => (await dialog.getByTestId('ai-key-result').innerText()).includes('not accepted'), 'a wrong key is checked and not saved');
+  await dialog.getByTestId('ai-key-input').fill(VALID);
+  await dialog.getByTestId('ai-key-save').click();
+  await check(async () => (await dialog.getByTestId('ai-key-result').innerText()).includes('Connected'), 'a valid key connects');
+  await check(async () => (await dialog.getByTestId('ai-connection-status').innerText()).includes('sk-ant-…1234') && (await dialog.getByTestId('ai-connection-status').innerText()).includes('this session only'), 'the key is shown masked, kept for this session only (not remembered by default)');
+  await check(async () => (await dialog.getByTestId('ai-key-input').inputValue()) === '' && (await dialog.getByTestId('ai-key-input').getAttribute('type')) === 'password', 'the key field is a password field and is cleared after connecting');
+  await check(anthropicCalls.every((c) => c.browser === 'true'), 'calls go straight from the browser to the Anthropic API');
+  await kp.keyboard.press('Escape');
+
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  const serverBefore = serverCalls;
+  await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'message' && (await kPrompt.getByTestId('prompt-result').innerText()).includes("There's no mushroom enemy"), 'the AI instructs the user when what they describe does not exist yet');
+  await check(serverCalls === serverBefore && anthropicCalls.at(-1).key === VALID && anthropicCalls.at(-1).url.includes('/v1/messages'), 'prompts use the user key, not the server');
+  await kp.keyboard.press('Escape');
+  await kp.getByTestId('dock-create').click();
+  const kCreate = kp.getByTestId('create-prompt');
+  await kCreate.getByTestId('prompt-input').fill('Create a mushroom enemy.');
+  await kCreate.getByTestId('prompt-input').press('Enter');
+  await kCreate.getByTestId('proposal-apply').click();
+  await kp.keyboard.press('Escape');
+  await kDrop('Mushroom', 0, -150);
+  await kDrop('Mushroom', 100, -150);
+  await kDrop('Enemy', 200, -150);
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asked on the player, the change is applied');
+  await check(async () => (await kPrompt.getByTestId('result-message').innerText()).startsWith("I'll add this to the Mushroom enemy"), 'the AI says it put it on the mushroom, not the player');
+  await check(async () => (await kPrompt.getByTestId('result-where').innerText()) === 'Changed: Mushroom (every copy, 2 in this level)', 'the prompt shows which object changed');
+  await check(async () => (await kCanvas.getAttribute('data-flash')) === '2', 'the two mushrooms glow on the level');
+  await kp.screenshot({ path: `${OUT}/21-change-elsewhere.png` });
+  await kc.close();
 
   step = 'AI draws: overlays and a generated level';
   const gc = await browser.newContext({ viewport: { width: 1400, height: 860 } });

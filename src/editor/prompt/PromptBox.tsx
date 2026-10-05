@@ -168,7 +168,7 @@ export function PromptBox(props: PromptBoxProps) {
             if (o?.status === 'applied' && o.editor) undoLayout();
             else undo();
             runner.reset();
-          }} renderApplied={props.renderApplied} />}
+          }} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} />}
     </div>
   );
 }
@@ -179,8 +179,12 @@ function Outcome(props: {
   onCancel: () => void;
   onUndo: () => void;
   renderApplied?: PromptBoxProps['renderApplied'];
+  /** What the prompt is about; a change made elsewhere is pointed out. */
+  selectedIds: readonly string[];
 }) {
   const { outcome } = props;
+  // The AI may put a change on another object than the one asked about (a mushroom's behavior goes on the Mushroom, not the player).
+  const elsewhere = outcome.status === 'applied' && !outcome.editor && (outcome.touched ?? []).some((t) => !t.entityIds.length || t.entityIds.some((id) => !props.selectedIds.includes(id)));
   switch (outcome.status) {
     case 'applied':
       return (
@@ -191,6 +195,16 @@ function Outcome(props: {
               Undo
             </button>
           </div>
+          {elsewhere && (
+            <>
+              <p className="result-message" data-testid="result-message">
+                {outcome.message}
+              </p>
+              <p className="result-where" data-testid="result-where">
+                Changed: {outcome.touched!.map((t) => t.label).join(', ')}
+              </p>
+            </>
+          )}
           {outcome.changes.length > 0 && (
             <ul className="changes">
               {outcome.changes.slice(0, 5).map((c, i) => (

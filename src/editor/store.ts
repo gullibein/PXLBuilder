@@ -74,6 +74,10 @@ export interface EditorState {
   spritesFor: Id | null;
   /** An AI proposal shown on the level before it is applied: the project as it would be. */
   aiPreview: { project: Project; sceneId: Id; created: Id[]; removed: Id[] } | null;
+  /** Entities that just changed (by the AI) glow briefly on the level. */
+  flash: { ids: Id[]; until: number } | null;
+  /** The AI connection dialog (the user's own API key) is open. */
+  aiConnectionOpen: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
@@ -108,6 +112,8 @@ export interface EditorState {
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
   setLogicOpen(open: boolean): void;
+  setAIConnectionOpen(open: boolean): void;
+  flashEntities(ids: Id[]): void;
   setAIPreview(preview: EditorState['aiPreview']): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
@@ -157,6 +163,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     spritesFor: null,
     logicOpen: false,
     aiPreview: null,
+    aiConnectionOpen: false,
+    flash: null,
     mode: 'edit',
 
     edit(label, recipe, opts = {}) {
@@ -340,6 +348,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     setBackgroundOpen(open) {
       if (open) set({ spritesFor: null, logicOpen: false, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ backgroundOpen: false });
+    },
+
+    flashEntities(ids) {
+      set({ flash: { ids, until: performance.now() + 2200 } });
+    },
+
+    setAIConnectionOpen(aiConnectionOpen) {
+      set({ aiConnectionOpen });
     },
 
     setAIPreview(aiPreview) {

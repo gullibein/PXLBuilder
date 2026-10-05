@@ -42,6 +42,8 @@ const MAX_LOG = 300;
 const KNOCKBACK = { x: 160, y: 220 };
 /** Touching includes standing on something or pressing against it. */
 const TOUCH_SLOP = 0.5;
+/** How far below a stompable's top the feet may have been and still count as landing on it. */
+const STOMP_SLOP = 6;
 
 export class Gameplay {
   readonly log: LoggedEvent[] = [];
@@ -61,7 +63,10 @@ export class Gameplay {
 
   /** Called once per step, after everything has moved. */
   update(dt: number, input: InputState): void {
-    for (const e of this.rt.entities) if (e.invincible > 0) e.invincible = Math.max(0, e.invincible - dt);
+    for (const e of this.rt.entities) {
+      if (e.invincible > 0) e.invincible = Math.max(0, e.invincible - dt);
+      if (e.stompGrace > 0) e.stompGrace = Math.max(0, e.stompGrace - dt);
+    }
     this.updateTouches();
     this.useSwitches(input);
     this.collectAndHurt();
@@ -114,8 +119,15 @@ export class Gameplay {
     this.emit('switch_activated', s, user, { on: sw.on });
   }
 
-  /** Continuous contact effects: picking things up and getting hurt. */
+  /** Continuous contact effects: stomping first (so a stomp is never also a hit), then picking up and getting hurt. */
   private collectAndHurt(): void {
+    for (const e of this.rt.entities) {
+      if (!e.alive || e.body !== 'dynamic') continue;
+      for (const id of e.touching) {
+        const o = this.rt.byId(id);
+        if (o?.alive && o.stompable && this.landedOn(e, o)) this.stomp(e, o);
+      }
+    }
     for (const e of this.rt.entities) {
       if (!e.alive || e.body !== 'dynamic') continue;
       for (const id of e.touching) {
@@ -127,6 +139,32 @@ export class Gameplay {
           this.tryHurt(e, o);
         }
       }
+    }
+  }
+
+  /** `e` came down onto the top of `o` and may stomp it. */
+  private landedOn(e: RuntimeEntity, o: RuntimeEntity): boolean {
+    if (!e.alive || e.vy < 0 || !e.tags.some((t) => o.stompable!.stompers.includes(t))) return false;
+    const eb = this.rt.boxOf(e);
+    const ob = this.rt.boxOf(o);
+    if (!eb || !ob) return false;
+    const prevFeet = e.prevY + (eb.y - e.y) + eb.hh;
+    return prevFeet <= ob.y - ob.hh + STOMP_SLOP;
+  }
+
+  private stomp(stomper: RuntimeEntity, o: RuntimeEntity): void {
+    const s = o.stompable!;
+    stomper.vy = -s.bounce;
+    stomper.grounded = false;
+    // Landing on it is never also a hit from it.
+    stomper.stompGrace = 0.2;
+    this.emit('stomped', o, stomper);
+    if (s.damage > 0 && o.health) {
+      if (o.invincible <= 0) this.hurt(o, s.damage, null);
+    } else {
+      this.emit('died', o, stomper);
+      o.alive = false;
+      this.rt.markSolidsDirty();
     }
   }
 
@@ -148,7 +186,7 @@ export class Gameplay {
 
   /** `attacker` hurts `victim` if the victim accepts its damage (by tag) or a "damages" relationship says so. */
   private tryHurt(attacker: RuntimeEntity, victim: RuntimeEntity): void {
-    if (!victim.health || victim.invincible > 0 || !attacker.alive) return;
+    if (!victim.health || victim.invincible > 0 || victim.stompGrace > 0 || !attacker.alive) return;
     let amount = 0;
     const rel = this.relationships('damages').find((r) => refMatches(r.source, attacker) && refMatches(r.target, victim) && this.check(r.conditions, { subject: victim, other: attacker }));
     if (rel) amount = Number(rel.params.amount ?? 1);

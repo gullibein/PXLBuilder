@@ -371,6 +371,31 @@ Anything outside the settings is answered as not possible yet.
   figures come from `core/model/reach.ts` (height jumpForce²/2g, running
   distance speed·2·jumpForce/g), shared with the AI context.
 
+### Where the AI runs, and whose key
+`core/ai/claude.ts` is the single Claude request (model, cached system prompt,
+structured output, fallbacks, error meanings). Two providers use it: the dev
+server (`server/`, key from the environment, never sent to the browser) and
+`BrowserClaudeProvider` (the user's own key, entered in ⋯ → AI connection,
+calling the API directly with `dangerouslyAllowBrowser`). The key is checked
+with a free model lookup before it is kept; it lives in memory for the
+session, or in localStorage only if the user ticks "remember". The editor
+uses the user's key when one is set, else the server. The single-page build
+(`vite build --mode single-file`) inlines everything for hosting as one page.
+
+### Changes go where they belong
+The system prompt tells the AI to put a behavior on the object it is about,
+whatever is selected (a mushroom's "can be stomped" goes on the Mushroom
+object, not the player), to say so first in its message, to ask when the
+target is ambiguous, and to answer with instructions when the user must do
+something first. The editor computes which objects/entities a change touched
+(`touchedBy`): when that isn't the selection, the result shows the message and
+"Changed: Mushroom (every copy, N in this level)", and the touched entities
+glow on the level for two seconds.
+
+Stomping is a component on the stomped thing (`Stompable`: stomper tags,
+bounce, damage): landing on its top defeats it (or costs it health), the
+stomper bounces off unhurt; side contact works as before. Event `stomped`.
+
 ### AI level drawing
 - Operations `draw_tiles` (fill rectangles of the 32 px level grid with an
   object, one copy per cell, resting on the cell bottom, no duplicates; at most
@@ -391,6 +416,13 @@ Anything outside the settings is answered as not possible yet.
   with a pulsing outline, removed things as red ghosts; a large change is
   framed. Apply commits the same operations as one transaction; Cancel
   discards the copy.
+
+### Viewport size
+The viewport is measured synchronously when it mounts (and then by a
+ResizeObserver). Before, the size was only known a frame later, so a click
+right after returning from Play was mapped with a 1×1 view and missed (29 of
+40 times in a reproduction); this was also the long-standing intermittent
+end-to-end failure.
 
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained

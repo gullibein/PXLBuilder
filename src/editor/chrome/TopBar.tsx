@@ -149,7 +149,8 @@ function MainMenu() {
     { label: 'Frame everything', hint: 'F', run: frameView, sep: true },
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
-    { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt', sep: true },
+    { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
+    { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt' },
     ...(overlayCount ? [{ label: `Hide info on the level (${overlayCount})`, run: () => s.setLayout({ overlays: [] }), testId: 'menu-clear-overlays' }] : []),
     { label: 'Reset editor layout', run: () => s.resetLayout(), testId: 'menu-reset-layout' },
   ];
