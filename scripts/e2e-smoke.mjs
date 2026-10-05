@@ -43,6 +43,7 @@ const check = async (cond, msg) => {
 
 /** Stand-in for the language model: same protocol, deterministic answers. */
 const aiRequests = [];
+let diagnostics = null;
 function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
@@ -161,6 +162,18 @@ try {
     await new Promise((r) => setTimeout(r, 150));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
+  // Diagnostics, printed only if the test fails: input events and when the prompt comes and goes.
+  await page.addInitScript(() => {
+    window.__events = [];
+    const rec = (e) => window.__events.push(`${Math.round(performance.now())} ${e.type} ${e.target?.dataset?.testid ?? e.target?.className ?? e.target?.tagName} ${e.button ?? ''}${e.key ?? ''}`);
+    for (const t of ['pointerdown', 'pointerup', 'click', 'dblclick', 'keydown', 'pointercancel']) window.addEventListener(t, rec, true);
+    new MutationObserver(() => {
+      const has = !!document.querySelector('[data-testid="context-prompt"]');
+      if (has !== window.__had) window.__events.push(`${Math.round(performance.now())} prompt ${has ? 'shown' : 'gone'}`);
+      window.__had = has;
+    }).observe(document, { subtree: true, childList: true });
+  });
+  diagnostics = async () => (await page.evaluate(() => window.__events.slice(-30))).join('\n');
   await page.goto(URL);
 
   const canvas = page.getByTestId('viewport-canvas');
@@ -917,6 +930,7 @@ try {
 } catch (e) {
   console.error(`\nE2E FAILED: ${e.message}`);
   console.error(`step: ${step}`);
+  if (diagnostics) console.error(`recent events on the main page:\n${await diagnostics().catch((x) => x.message)}`);
   await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${OUT}/failure.png` }).catch(() => {});
   if (errors.length) console.error(errors.join('\n'));
   process.exitCode = 1;
