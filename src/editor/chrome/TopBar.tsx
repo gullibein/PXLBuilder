@@ -141,6 +141,7 @@ function MainMenu() {
   const showGrid = useEditor((s) => s.layout.showGrid);
   const snap = useEditor((s) => s.layout.snapToGrid);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
+  const overlayCount = useEditor((s) => s.layout.overlays.length);
   const s = useEditor.getState();
   const items: { label: string; hint?: string; checked?: boolean; run: () => void; testId?: string; sep?: boolean }[] = [
     { label: 'Details panel', hint: 'I', checked: inspectorOpen, run: () => s.setInspectorOpen(!inspectorOpen), testId: 'menu-details' },
@@ -149,6 +150,7 @@ function MainMenu() {
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
     { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt', sep: true },
+    ...(overlayCount ? [{ label: `Hide info on the level (${overlayCount})`, run: () => s.setLayout({ overlays: [] }), testId: 'menu-clear-overlays' }] : []),
     { label: 'Reset editor layout', run: () => s.resetLayout(), testId: 'menu-reset-layout' },
   ];
   return (

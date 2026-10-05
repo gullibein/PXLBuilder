@@ -10,6 +10,7 @@
  */
 import type { EditorSettingsPayload } from '../../core/ai/context';
 import { validateField, type FieldSchema } from '../../core/components/schema';
+import { checkOverlay, overlaysPayload, type EditorOverlay } from '../overlays/overlays';
 
 export interface EditorLayout {
   playButton: 'top' | 'bottom';
@@ -21,6 +22,8 @@ export interface EditorLayout {
   mouseZoomSpeed: number;
   showGrid: boolean;
   snapToGrid: boolean;
+  /** Extra information drawn over the level while editing (see overlays.ts). */
+  overlays: EditorOverlay[];
 }
 
 export interface EditorSetting {
@@ -30,7 +33,7 @@ export interface EditorSetting {
   field: FieldSchema;
 }
 
-export const EDITOR_SETTINGS: EditorSetting[] = [
+export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout, 'overlays'> })[] = [
   {
     key: 'playButton',
     label: 'Play button',
@@ -77,7 +80,7 @@ export const EDITOR_SETTINGS: EditorSetting[] = [
   { key: 'snapToGrid', label: 'Snap to grid', description: 'Snap objects to the grid when placing and moving them.', field: { kind: 'boolean', default: true } },
 ];
 
-export const DEFAULT_LAYOUT: EditorLayout = Object.fromEntries(EDITOR_SETTINGS.map((s) => [s.key, s.field.default])) as unknown as EditorLayout;
+export const DEFAULT_LAYOUT: EditorLayout = { ...(Object.fromEntries(EDITOR_SETTINGS.map((s) => [s.key, s.field.default])) as Omit<EditorLayout, 'overlays'>), overlays: [] };
 
 /** Validates one setting; returns the error or null. */
 export function checkEditorSetting(key: string, value: unknown): string | null {
@@ -99,6 +102,7 @@ export function editorSettingsPayload(layout: EditorLayout): EditorSettingsPaylo
       ...(s.field.kind === 'number' ? { min: s.field.min, max: s.field.max } : {}),
       value: layout[s.key],
     })),
+    ...overlaysPayload(layout.overlays),
   };
 }
 
@@ -112,6 +116,7 @@ export function loadLayout(): EditorLayout {
     for (const s of EDITOR_SETTINGS) {
       if (s.key in saved && checkEditorSetting(s.key, saved[s.key]) === null) (layout as Record<string, unknown>)[s.key] = saved[s.key];
     }
+    if (Array.isArray(saved.overlays)) layout.overlays = (saved.overlays as unknown[]).filter((o) => checkOverlay(o) === null) as EditorOverlay[];
   } catch {
     // Storage unavailable or corrupt: defaults.
   }

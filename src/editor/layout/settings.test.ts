@@ -3,7 +3,7 @@ import { checkEditorSetting, DEFAULT_LAYOUT, EDITOR_SETTINGS, editorSettingsPayl
 
 describe('editor settings', () => {
   it('have defaults for every setting', () => {
-    expect(Object.keys(DEFAULT_LAYOUT).sort()).toEqual(EDITOR_SETTINGS.map((s) => s.key).sort());
+    expect(Object.keys(DEFAULT_LAYOUT).sort()).toEqual([...EDITOR_SETTINGS.map((s) => s.key), 'overlays'].sort());
     expect(DEFAULT_LAYOUT).toMatchObject({ playButton: 'top', inspector: 'floating', mouseZoomSpeed: 1 });
   });
 

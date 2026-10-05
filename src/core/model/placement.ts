@@ -9,6 +9,13 @@
  */
 import type { Vec2 } from '../types';
 
+/**
+ * The level grid the AI draws on: 32 px cells, the size of the starter tiles.
+ * Cell (col, row) covers x in [col*32, col*32+32) and y in [row*32, row*32+32);
+ * y grows downward.
+ */
+export const LEVEL_CELL = 32;
+
 export interface Cell {
   i: number;
   j: number;

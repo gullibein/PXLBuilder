@@ -33,6 +33,10 @@ function checkActions(project: Project, scene: Scene, actions: RuleAction[]): vo
       if (a.target.kind === 'any') throw new ModelError(`${where}: must name its target`);
       check(project, scene, a.target, where, true);
     }
+    if (a.type === 'teleport') {
+      if (a.to.kind === 'any') throw new ModelError(`${where}: must say where to`);
+      check(project, scene, a.to, where, true);
+    }
     if (a.type === 'spawn') {
       if (!project.definitions.some((d) => d.id === a.object)) throw new ModelError(`${where}: object "${a.object}" does not exist`);
       if (a.at) check(project, scene, a.at, where, true);

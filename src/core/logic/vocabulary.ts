@@ -32,6 +32,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
   { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },
+  { type: 'teleported', description: 'Something is moved to another place (by a teleporter or a teleport action).', subject: 'who was moved', other: 'where it arrived', phrase: '{subject} is teleported to {other}' },
   { type: 'spawned', description: 'A new entity appears (by a spawn action).', subject: 'the new entity', other: null, phrase: '{subject} appears' },
 ];
 
@@ -94,6 +95,13 @@ export const BUILTIN_RELATIONSHIP_TYPES: RelationshipType[] = [
     type: 'collects',
     verb: 'collects',
     description: 'The source picks up the target (a collectible) when touching it, even without an Inventory component.',
+    simulated: true,
+    params: {},
+  },
+  {
+    type: 'teleports_to',
+    verb: 'teleports to',
+    description: 'Touching the source (a teleporter) moves whoever touched it to the target (another teleporter, or any spot). For a two-way pair, add one in each direction.',
     simulated: true,
     params: {},
   },
@@ -175,6 +183,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('give_item'), target: entityRefSchema, item: z.string().min(1), count }),
   z.object({ type: z.literal('take_item'), target: entityRefSchema, item: z.string().min(1), count }),
   z.object({ type: z.literal('respawn'), target: entityRefSchema }),
+  z.object({ type: z.literal('teleport'), target: entityRefSchema, to: entityRefSchema }),
   z.object({ type: z.literal('restart_level') }),
   z.object({ type: z.literal('show_message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(3) }),
 ]);
@@ -220,6 +229,7 @@ export const ACTION_HELP: Record<string, string> = {
   give_item: 'add `count` of `item` to target',
   take_item: 'remove `count` of `item` from target',
   respawn: 'put target back at its start with full health',
+  teleport: 'move target to where `to` is (standing on the same floor); it does not bounce straight back',
   restart_level: 'start the level again from the beginning',
   show_message: 'show `text` on screen for `seconds`',
 };

@@ -72,6 +72,8 @@ export interface EditorState {
   backgroundOpen: boolean;
   /** Object whose Sprites panel is open. */
   spritesFor: Id | null;
+  /** An AI proposal shown on the level before it is applied: the project as it would be. */
+  aiPreview: { project: Project; sceneId: Id; created: Id[]; removed: Id[] } | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
@@ -106,6 +108,7 @@ export interface EditorState {
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
   setLogicOpen(open: boolean): void;
+  setAIPreview(preview: EditorState['aiPreview']): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
   logMessage(level: LogLevel, message: string): void;
@@ -153,6 +156,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     backgroundOpen: false,
     spritesFor: null,
     logicOpen: false,
+    aiPreview: null,
     mode: 'edit',
 
     edit(label, recipe, opts = {}) {
@@ -336,6 +340,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     setBackgroundOpen(open) {
       if (open) set({ spritesFor: null, logicOpen: false, backgroundOpen: true, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });
       else set({ backgroundOpen: false });
+    },
+
+    setAIPreview(aiPreview) {
+      set({ aiPreview });
     },
 
     setLogicOpen(open) {

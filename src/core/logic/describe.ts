@@ -38,6 +38,8 @@ export function describeAction(project: Project, scene: Scene | null, a: RuleAct
     case 'remove':
     case 'respawn':
       return `${a.type} ${ref(a.target)}`;
+    case 'teleport':
+      return `teleport ${ref(a.target)} to ${ref(a.to)}`;
     case 'spawn': {
       const name = project.definitions.find((d) => d.id === a.object)?.name ?? '(missing object)';
       return `spawn a ${name} ${a.at ? `at ${ref(a.at)}` : `at ${Math.round(a.x)}, ${Math.round(a.y)}`}`;

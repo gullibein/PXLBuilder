@@ -104,6 +104,36 @@ function stubModel(body) {
     const rule = { name: 'Key found', when: { event: 'collected', subject: { kind: 'object', id: lib('Player') }, other: { kind: 'object', id: lib('Key') } }, actions: [{ type: 'show_message', text: 'Got the key!', seconds: 3 }] };
     return { kind: 'apply', message: 'Added a rule.', changes: ['When the player picks up a key: show "Got the key!"'], operations: [{ op: 'create_rule', sceneId: body.context.level.id, ruleJson: JSON.stringify(rule) }] };
   }
+  if (req.includes('jump height')) {
+    const playerId = body.context.library.find((d) => d.name === 'Player').id;
+    const target = { kind: 'object', id: playerId };
+    return {
+      kind: 'apply',
+      message: 'The jump height now shows above the player while editing.',
+      changes: ['Player: jump height and distance shown', 'Player: jump arc shown'],
+      operations: [
+        { op: 'add_editor_overlay', overlayJson: JSON.stringify({ kind: 'info', target, show: ['jumpHeight', 'jumpDistance'] }) },
+        { op: 'add_editor_overlay', overlayJson: JSON.stringify({ kind: 'jump_reach', target, show: [] }) },
+      ],
+    };
+  }
+  if (req.includes('generate a hard level')) {
+    const sceneId = body.context.level.id;
+    const lib = (name) => body.context.library.find((d) => d.name === name)?.id;
+    const ops = [{ op: 'erase_area', sceneId, col: -50, row: -50, width: 100, height: 100, definitionRef: null }];
+    const spikes = lib('Spikes') ?? 'spikes';
+    if (!lib('Spikes')) ops.push({ op: 'create_definition', ref: 'spikes', name: 'Spikes', description: 'Hurts on touch.', category: 'Environment', tags: ['hazard'], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":12,"color":"#c9ced8"}' }, { component: 'Collider', propsJson: '{"size":{"x":32,"y":12},"isTrigger":true}' }, { component: 'Damage', propsJson: '{"amount":1}' }] });
+    ops.push({ op: 'create_definition', ref: 'tp', name: 'Teleporter', description: 'Step on it to travel.', category: 'Environment', tags: ['teleporter'], components: [{ component: 'Sprite', propsJson: '{"width":28,"height":8,"color":"#36e2ff"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":8},"isTrigger":true}' }] });
+    ops.push({ op: 'draw_tiles', sceneId, definitionRef: lib('Platform'), rects: [{ col: -8, row: 2, width: 10, height: 1 }, { col: 5, row: 2, width: 8, height: 1 }, { col: 16, row: 2, width: 10, height: 1 }] });
+    ops.push({ op: 'draw_tiles', sceneId, definitionRef: lib('Stone'), rects: [{ col: 8, row: -2, width: 4, height: 1 }, { col: 20, row: 1, width: 1, height: 1 }] });
+    ops.push({ op: 'draw_tiles', sceneId, definitionRef: spikes, rects: [{ col: 8, row: 1, width: 2, height: 1 }, { col: 22, row: 1, width: 2, height: 1 }] });
+    ops.push({ op: 'place_instance', sceneId, definitionRef: lib('Player'), x: -200, y: 48, name: null, ref: null });
+    for (const x of [300, 560, 760]) ops.push({ op: 'place_instance', sceneId, definitionRef: lib('Enemy'), x, y: 49, name: null, ref: null });
+    ops.push({ op: 'place_instance', sceneId, definitionRef: 'tp', x: 30, y: 60, name: 'Teleporter A', ref: 'tpA' });
+    ops.push({ op: 'place_instance', sceneId, definitionRef: 'tp', x: 320, y: -76, name: 'Teleporter B', ref: 'tpB' });
+    ops.push({ op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'teleports_to', source: { kind: 'entity', id: 'tpA' }, target: { kind: 'entity', id: 'tpB' } }) });
+    return { kind: 'preview', message: 'A hard level: three stretches of ground with pits, spikes, three enemies and a teleporter up to a high ledge.', changes: ['Ground: 3 stretches with 2 pits', 'Spikes: 4', 'Enemies: 3', 'Teleporter A → B (up to the ledge)'], operations: ops };
+  }
   if (body.context.scope === 'editor') {
     const keys = body.context.editor.settings.map((x) => x.key);
     const set = (key, value) => ({ op: 'set_editor_setting', key, valueJson: JSON.stringify(value) });
@@ -753,6 +783,66 @@ try {
   await check(async () => (await logicPanel.getByTestId('relationship-item').count()) === 0 && (await logicPanel.getByTestId('rule-item').count()) === 1, 'deleting the door removes its connection (the rule stays)');
   await lc.close();
 
+  step = 'AI draws: overlays and a generated level';
+  const gc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+  const gp = await gc.newPage();
+  gp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  gp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+  await gp.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
+  await gp.goto(URL);
+  const gCanvas = gp.getByTestId('viewport-canvas');
+  const gBox = await gCanvas.boundingBox();
+  const gAt = (wx, wy) => ({ x: gBox.x + gBox.width / 2 + wx, y: gBox.y + gBox.height / 2 + wy });
+  const gPrompt = gp.getByTestId('context-prompt');
+  const gAsk = async (text) => {
+    const input = gPrompt.getByTestId('prompt-input');
+    await input.click();
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  await gp.getByTestId('dock-library').click();
+  await gp.dragAndDrop('[data-testid="definition-Player"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: gBox.width / 2, y: gBox.height / 2 } });
+  await gp.mouse.click(gAt(0, 0).x, gAt(0, 0).y);
+  await gAsk('I want to see the jump height in a panel above the player when editing.');
+  await check(async () => (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asking the Player prompt for its jump height adds an editor overlay');
+  await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', 'a panel with the jump height is drawn above the player');
+  await check(async () => {
+    const pb = await gPrompt.boundingBox();
+    return pb.y + pb.height < gAt(0, -16).y - 40;
+  }, 'the prompt moves up to make room for the panel');
+  await check(aiRequests.at(-1).context.editor?.metrics.some((x) => x.key === 'jumpHeight'), 'the AI knows which values can be shown');
+  await gp.screenshot({ path: `${OUT}/18-jump-overlay.png` });
+  await gPrompt.getByTestId('result-undo').click();
+  await check(async () => (await gCanvas.getAttribute('data-overlays')) === '0', 'Undo removes the overlay (editor undo)');
+  await gAsk('Show the jump height above the player.');
+  await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', '(shown again)');
+  await gp.keyboard.press('Escape');
+
+  const empty = gAt(300, -200);
+  await gp.mouse.dblclick(empty.x, empty.y);
+  await check(async () => (await gPrompt.getAttribute('data-context')) === 'level', 'double-clicking empty space gives the level prompt');
+  const before = Number(await gCanvas.getAttribute('data-entities'));
+  await gAsk('Generate a hard level with spikes, enemies and teleporters.');
+  await check(async () => (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'level generation is a preview');
+  await check(async () => {
+    const [created, removed] = ((await gCanvas.getAttribute('data-preview')) ?? '').split(',').map(Number);
+    return created > 30 && removed === before;
+  }, 'the proposed level is drawn on the canvas (new things outlined, removed things in red) before applying');
+  await check(async () => Number(await gCanvas.getAttribute('data-entities')) === before, 'nothing is changed yet');
+  await gp.waitForTimeout(300);
+  await gp.screenshot({ path: `${OUT}/19-level-preview.png` });
+  await gPrompt.getByTestId('proposal-apply').click();
+  await check(async () => Number(await gCanvas.getAttribute('data-entities')) > 30 && (await gCanvas.getAttribute('data-preview')) === '', 'Apply draws it for real');
+  await gp.getByTestId('play').click();
+  const gPlay = gp.getByTestId('play-canvas');
+  await check(async () => ((await gPlay.getAttribute('data-player')) ?? '').split(',')[2] === '1', 'the generated level is playable: the player starts on solid ground');
+  await gp.keyboard.press('Escape');
+  await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', 'overlays are only drawn while editing');
+  await gc.close();
+
   step = 'editor prompt';
   const ec = await browser.newContext({ viewport: { width: 1400, height: 860 } });
   const ep = await ec.newPage();
@@ -763,6 +853,14 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   await ep.goto(URL);
+  await ep.setViewportSize({ width: 900, height: 860 });
+  await check(async () => {
+    const play = await ep.getByTestId('play').boundingBox();
+    const others = [await ep.getByTestId('scene-selector').boundingBox(), await ep.getByTestId('undo').boundingBox(), await ep.getByTestId('redo').boundingBox(), await ep.getByTestId('global-prompt-toggle').boundingBox()];
+    return others.every((o) => play.x >= o.x + o.width || play.x + play.width <= o.x);
+  }, 'in a narrower window the Play button never covers the level menu or undo/redo');
+  await ep.screenshot({ path: `${OUT}/20-narrow-topbar.png` });
+  await ep.setViewportSize({ width: 1400, height: 860 });
   const eCanvas = ep.getByTestId('viewport-canvas');
   const canvasWidth = (await eCanvas.boundingBox()).width;
   await ep.getByTestId('global-prompt-toggle').click();

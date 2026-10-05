@@ -11,7 +11,10 @@ import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, instantiateDefinition } from '../model/factory';
 import * as logic from '../logic/mutations';
+import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
+import { LEVEL_CELL } from '../model/placement';
+import { resolveEntity } from '../model/resolve';
 import type { Id, Project } from '../types';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -93,6 +96,23 @@ export const operationSchema = z.union([
     ref: z.string().nullable().describe('Temporary name for the placed entity, usable as an entity id in later relationships/rules in this list; null if not needed'),
   }),
   z.object({
+    op: z.literal('draw_tiles'),
+    sceneId: z.string(),
+    definitionRef: z.string().describe('An existing definition id, or the ref of a create_definition earlier in this list'),
+    rects: z
+      .array(z.object({ col: z.number().int(), row: z.number().int(), width: z.number().int().min(1), height: z.number().int().min(1) }))
+      .describe('Rectangles of 32px level cells to fill, one copy per cell (a row of ground: height 1)'),
+  }),
+  z.object({
+    op: z.literal('erase_area'),
+    sceneId: z.string(),
+    col: z.number().int(),
+    row: z.number().int(),
+    width: z.number().int().min(1),
+    height: z.number().int().min(1),
+    definitionRef: z.string().nullable().describe('Only remove copies of this object; null removes everything in the area'),
+  }),
+  z.object({
     op: z.literal('create_relationship'),
     sceneId: z.string(),
     relationshipJson: z.string().describe('JSON {"type", "source": EntityRef, "target": EntityRef, "params": {}, "conditions": [Condition]}'),
@@ -124,6 +144,14 @@ export const operationSchema = z.union([
     valueJson: z.string().describe('The new value as JSON, e.g. "\\"bottom\\"", "true", "1.5"'),
   }),
   z.object({
+    op: z.literal('add_editor_overlay'),
+    overlayJson: z.string().describe('JSON {"kind":"info"|"jump_reach","target":EntityRef,"show":[metric keys or "Component.field"]} - information drawn over the level while editing'),
+  }),
+  z.object({
+    op: z.literal('remove_editor_overlay'),
+    id: z.string().describe('Overlay id from editor.overlays'),
+  }),
+  z.object({
     op: z.literal('set_rule_enabled'),
     sceneId: z.string(),
     id: z.string(),
@@ -134,8 +162,10 @@ export const operationSchema = z.union([
 export type Operation = z.infer<typeof operationSchema>;
 
 /** Operations that change the editor rather than the project. */
-export function isEditorOperation(op: Operation): op is Extract<Operation, { op: 'set_editor_setting' }> {
-  return op.op === 'set_editor_setting';
+export type EditorOperation = Extract<Operation, { op: 'set_editor_setting' | 'add_editor_overlay' | 'remove_editor_overlay' }>;
+
+export function isEditorOperation(op: Operation): op is EditorOperation {
+  return op.op === 'set_editor_setting' || op.op === 'add_editor_overlay' || op.op === 'remove_editor_overlay';
 }
 
 export interface ApplyResult {
@@ -143,7 +173,11 @@ export interface ApplyResult {
   createdEntityIds: Id[];
   createdRelationshipIds: Id[];
   createdRuleIds: Id[];
+  removedEntityIds: Id[];
 }
+
+/** Largest number of cells one draw_tiles may fill. */
+const MAX_DRAW_CELLS = 3000;
 
 /**
  * Replaces temporary names from earlier operations in this list with the real
@@ -189,7 +223,7 @@ function sceneOfEntity(project: Project, entityId: Id): Id {
 export function applyOperations(project: Project, ops: Operation[], registry: ComponentRegistry): ApplyResult {
   const refs = new Map<string, Id>();
   const entityRefs = new Map<string, Id>();
-  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [] };
+  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
   for (const op of ops) {
@@ -267,6 +301,42 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         result.createdEntityIds.push(entity.id);
         break;
       }
+      case 'draw_tiles': {
+        const defId = refs.get(op.definitionRef) ?? op.definitionRef;
+        const def = m.getDefinition(project, defId);
+        const scene = m.getScene(project, op.sceneId);
+        const size = getEntitySize(resolveEntity(project, instantiateDefinition(def, { x: 0, y: 0 }), registry));
+        const cells = op.rects.reduce((n, r) => n + r.width * r.height, 0);
+        if (cells > MAX_DRAW_CELLS) throw new m.ModelError(`draw_tiles: ${cells} cells is too many at once (max ${MAX_DRAW_CELLS})`);
+        const taken = new Set(scene.entities.filter((e) => e.definitionId === defId).map((e) => `${Math.round(e.transform.position.x)},${Math.round(e.transform.position.y)}`));
+        for (const r of op.rects) {
+          for (let col = r.col; col < r.col + r.width; col++) {
+            for (let row = r.row; row < r.row + r.height; row++) {
+              // Centered in the cell horizontally, resting on the cell's bottom (so a short spike sits on the ground below).
+              const pos = { x: col * LEVEL_CELL + LEVEL_CELL / 2, y: (row + 1) * LEVEL_CELL - size.y / 2 };
+              const key = `${Math.round(pos.x)},${Math.round(pos.y)}`;
+              if (taken.has(key)) continue;
+              taken.add(key);
+              const entity = instantiateDefinition(def, pos);
+              m.addEntity(project, op.sceneId, entity);
+              result.createdEntityIds.push(entity.id);
+            }
+          }
+        }
+        break;
+      }
+      case 'erase_area': {
+        const scene = m.getScene(project, op.sceneId);
+        const defId = op.definitionRef === null ? null : (refs.get(op.definitionRef) ?? op.definitionRef);
+        const x0 = op.col * LEVEL_CELL;
+        const y0 = op.row * LEVEL_CELL;
+        const gone = scene.entities
+          .filter((e) => (defId === null || e.definitionId === defId) && e.transform.position.x >= x0 && e.transform.position.x < x0 + op.width * LEVEL_CELL && e.transform.position.y >= y0 && e.transform.position.y < y0 + op.height * LEVEL_CELL)
+          .map((e) => e.id);
+        m.removeEntities(project, op.sceneId, gone);
+        result.removedEntityIds.push(...gone);
+        break;
+      }
       case 'create_relationship': {
         const id = logic.addRelationship(project, op.sceneId, logicJson(op.relationshipJson, 'Relationship') as unknown as Parameters<typeof logic.addRelationship>[2]);
         result.createdRelationshipIds.push(id);
@@ -295,6 +365,8 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         logic.setRuleEnabled(project, op.sceneId, op.id, op.enabled);
         break;
       case 'set_editor_setting':
+      case 'add_editor_overlay':
+      case 'remove_editor_overlay':
         // Editor settings are not part of the game; the editor applies them (see isEditorOperation).
         throw new m.ModelError('Editor settings cannot be changed together with the game');
     }

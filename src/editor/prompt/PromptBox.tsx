@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AIContext } from '../../core/ai/context';
+import { produce } from 'immer';
+import { applyOperations, isEditorOperation, type ApplyResult } from '../../core/commands/operations';
+import { componentRegistry } from '../../core/components/builtin';
+import { frameEntities } from '../actions';
 import { applyAIOperations, runPrompt, type PromptOutcome } from '../ai/runPrompt';
+import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
 
 type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
@@ -15,6 +20,31 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     setState({ phase: 'done', request, outcome });
     if (outcome.status === 'applied') onApplied?.(outcome);
   };
+
+  // A pending proposal is drawn on the level (new things highlighted, removed things faded) until applied or cancelled.
+  useEffect(() => {
+    if (state.phase !== 'done' || state.outcome.status !== 'proposal' || state.outcome.operations.some(isEditorOperation)) return;
+    const { project, activeSceneId, setAIPreview } = useEditor.getState();
+    const operations = state.outcome.operations;
+    let result: ApplyResult | null = null;
+    let next = project;
+    try {
+      next = produce(project, (d) => {
+        result = applyOperations(d, operations, componentRegistry);
+      });
+    } catch {
+      return; // Invalid proposals are reported when applied.
+    }
+    const r = result as ApplyResult | null;
+    if (!r || (!r.createdEntityIds.length && !r.removedEntityIds.length)) return;
+    setAIPreview({ project: next, sceneId: activeSceneId, created: r.createdEntityIds, removed: r.removedEntityIds });
+    // A big change (a generated level) is framed so it can be seen whole.
+    if (r.createdEntityIds.length >= 10) {
+      const created = new Set(r.createdEntityIds);
+      frameEntities(resolveSceneEntities(next, activeSceneId).filter((e) => created.has(e.id)));
+    }
+    return () => setAIPreview(null);
+  }, [state]);
 
   return {
     state,

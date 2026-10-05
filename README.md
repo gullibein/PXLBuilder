@@ -39,6 +39,8 @@ npm run test:e2e     # builds, serves and drives the editor in headless Chromium
 - **Logic** (left panel, the connected-dots button): the level's connections and rules as sentences. Switch rules off, remove things, or describe new logic ("when the player has 3 coins, open the exit"). Existing connections show as arrows on the level. An object's details also list its connections, with a small form to add one.
 - **The level**: double-click empty space. "Make gravity 30% weaker."
 - **Whole game**: the ✦ button in the top bar (Ctrl+K).
+- **Show more while editing**: ask any prompt, e.g. on the Player: "show the jump height above the player" or "show how far it can jump" (a panel with values, or the jump arc). Only shown while editing; ⋯ → **Hide info on the level** removes them.
+- **Generate or redraw levels**: double-click empty space and describe it: "Generate a hard level with spikes, enemies and teleporters". The AI uses your objects (or makes simple ones it needs), keeps jumps within the player's reach, and shows the result on the level before you Apply.
 - **The editor itself**: the ✦ prompt's **Editor** tab. "Move the Play button to the bottom", "dock the details panel on the right", "make the editor green", "zoom slower with my mouse". Editor changes are saved in your browser (not in the game) and have their own Undo; ⋯ → **Reset editor layout** puts everything back.
 - **Create**: the bottom dock's **+ Create** makes a new object from a description.
 - **Tools** (left panel): the arrow selects and moves (`V`), the pen draws (`B`), and the picture button opens the level background.

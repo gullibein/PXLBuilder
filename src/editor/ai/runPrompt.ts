@@ -9,6 +9,7 @@ import { AIUnavailableError, type AIExchange, type AIResponse } from '../../core
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { applyOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
+import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
 import { useEditor } from '../store';
 
@@ -44,7 +45,7 @@ export function labelFor(request: string): string {
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal): Promise<PromptOutcome> {
   const state = useEditor.getState();
   const body = {
-    context: buildAIPayload(state.project, ctx, componentRegistry, ctx.kind === 'editor' ? editorSettingsPayload(state.layout) : undefined),
+    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout)),
     request,
     history: conversations.get(contextKey(ctx)) ?? [],
   };
@@ -66,17 +67,39 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   return { status: 'proposal', message: response.message, changes: response.changes, operations: response.operations };
 }
 
-const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [] };
+const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [] };
 
 /**
  * Applies editor-setting operations as one step of the editor's own undo.
  * Every value is checked against the setting's schema first; one bad value rejects all.
  */
 function applyEditorOperations(message: string, changes: string[], operations: Operation[]): PromptOutcome {
-  const { setLayout, logMessage } = useEditor.getState();
+  const { setLayout, logMessage, layout } = useEditor.getState();
   const patch: Record<string, unknown> = {};
+  let overlays = layout.overlays;
+  const reject = (err: string): PromptOutcome => {
+    logMessage('error', `Editor change rejected: ${err}`);
+    return { status: 'error', message: `The AI's editor change couldn't be applied. ${err}.` };
+  };
   for (const op of operations) {
     if (!isEditorOperation(op)) return { status: 'error', message: "The AI mixed editor and game changes, so nothing was changed." };
+    if (op.op === 'remove_editor_overlay') {
+      if (!overlays.some((o) => o.id === op.id)) return reject(`There is no overlay "${op.id}"`);
+      overlays = overlays.filter((o) => o.id !== op.id);
+      continue;
+    }
+    if (op.op === 'add_editor_overlay') {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(op.overlayJson);
+      } catch {
+        return reject('The overlay is not valid JSON');
+      }
+      const next = addOverlays(overlays, [parsed], () => `ovl_${Math.random().toString(36).slice(2, 10)}`);
+      if ('error' in next) return reject(next.error);
+      overlays = next;
+      continue;
+    }
     let value: unknown;
     try {
       value = JSON.parse(op.valueJson);
@@ -84,13 +107,10 @@ function applyEditorOperations(message: string, changes: string[], operations: O
       return { status: 'error', message: `The AI's value for "${op.key}" isn't valid, so nothing was changed.` };
     }
     const err = checkEditorSetting(op.key, value);
-    if (err) {
-      logMessage('error', `Editor change rejected: ${err}`);
-      return { status: 'error', message: `The AI's editor change couldn't be applied. ${err}.` };
-    }
+    if (err) return reject(err);
     patch[op.key] = value;
   }
-  setLayout(patch as Partial<EditorLayout>);
+  setLayout({ ...(patch as Partial<EditorLayout>), overlays });
   logMessage('info', `Editor: ${message}`);
   return { status: 'applied', message, changes, result: EMPTY_RESULT, editor: true };
 }

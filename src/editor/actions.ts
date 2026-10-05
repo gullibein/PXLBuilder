@@ -1,4 +1,5 @@
 /** Editor-level actions shared by menus and keyboard shortcuts. */
+import type { ResolvedEntity } from '../core/model/resolve';
 import { getWorldBounds } from '../core/model/geometry';
 import { duplicateEntities, moveEntities, removeEntities } from '../core/model/mutations';
 import { resolveSceneEntities } from './selectors';
@@ -41,10 +42,15 @@ export function setViewportSize(width: number, height: number): void {
 
 /** Centers and zooms the view on the selection, or on all entities if nothing is selected. */
 export function frameView(): void {
-  const { width: viewWidth, height: viewHeight } = viewSize;
-  const { project, activeSceneId, selectedEntityIds, setCamera } = useEditor.getState();
+  const { project, activeSceneId, selectedEntityIds } = useEditor.getState();
   const all = resolveSceneEntities(project, activeSceneId);
-  const subset = selectedEntityIds.length ? all.filter((e) => selectedEntityIds.includes(e.id)) : all;
+  frameEntities(selectedEntityIds.length ? all.filter((e) => selectedEntityIds.includes(e.id)) : all);
+}
+
+/** Zooms and pans so these entities fill the view. */
+export function frameEntities(subset: ResolvedEntity[]): void {
+  const { width: viewWidth, height: viewHeight } = viewSize;
+  const { setCamera } = useEditor.getState();
   if (!subset.length) {
     setCamera({ x: 0, y: 0, zoom: 1 });
     return;

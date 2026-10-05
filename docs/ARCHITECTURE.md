@@ -215,6 +215,11 @@ linked and in place; their per-copy tweaks are cleared), re-adding deleted
 starters, reusing identical image assets, and never touching user-made
 objects. Exposed in the project menu and in the Objects right-click menu.
 
+### Top bar
+Three grid columns: Play stays centred while there is room and is pushed
+aside, never overlapping, when the window narrows (the wordmark text hides
+and names truncate below 1100 px).
+
 ### Tools
 A left tool panel switches between **Select** (arrow, `V`) and **Draw** (pen,
 `B`; draws with the last used object, shown under the pen), and opens the
@@ -355,6 +360,37 @@ Anything outside the settings is answered as not possible yet.
   purples are `color-mix` of it) and the canvas selection colors.
 - New adjustable parts are added by declaring a setting and reading it in the
   UI; the AI picks it up automatically.
+- **Overlays** (`editor/overlays/`): information drawn over the level while
+  editing, never in play. Declared data `{ kind, target: EntityRef, show }`:
+  `info` (a panel above each matching entity listing metrics such as jump
+  height/distance, speed, health, or any `Component.field`) and `jump_reach`
+  (the arc of a running jump). The AI adds/removes them with
+  `add_editor_overlay` / `remove_editor_overlay` from any prompt ("show the
+  jump height above the player"); a reply is all editor operations or all game
+  operations. The prompt is placed clear of a selected entity's panel. Jump
+  figures come from `core/model/reach.ts` (height jumpForce²/2g, running
+  distance speed·2·jumpForce/g), shared with the AI context.
+
+### AI level drawing
+- Operations `draw_tiles` (fill rectangles of the 32 px level grid with an
+  object, one copy per cell, resting on the cell bottom, no duplicates; at most
+  3000 cells per operation) and `erase_area` (clear a rectangle, optionally
+  one object only; connections to removed things go with them), next to
+  `place_instance` for single things. `LEVEL_CELL` in `placement.ts`.
+- The level payload carries the grid, the occupied area in cells, and the
+  player's reach (jump height and running-jump distance, in px and tiles), and
+  the system prompt has level-design rules (playable: gaps and steps within
+  reach, headroom, the hardest part last) and says to use or create the
+  library objects the request names.
+- Teleporters: relationship `teleports_to` (touching the source moves the
+  toucher onto the target) and rule action `teleport`; on arrival, whatever
+  the entity overlaps counts as already touched, so it doesn't bounce back.
+  Event `teleported`.
+- **Preview on the level**: a pending AI proposal is applied to a copy of the
+  project (`store.aiPreview`) and the viewport draws that copy: new things
+  with a pulsing outline, removed things as red ghosts; a large change is
+  framed. Apply commits the same operations as one transaction; Cancel
+  discards the copy.
 
 ### Navigation input
 `viewport/wheel.ts` (pure, unit-tested) tells trackpads from mice: fine-grained

@@ -17,6 +17,7 @@ import { resolveSceneEntities } from '../selectors';
 import { getActiveScene, getSelectionContext, useEditor } from '../store';
 import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
+import { drawInfoPanels, drawJumpArcs } from '../overlays/drawOverlays';
 import { createWheelInterpreter } from './wheel';
 
 export const DEFINITION_DRAG_TYPE = 'application/x-pxlbuilder-definition';
@@ -91,7 +92,9 @@ export function Viewport() {
       const dpr = canvas.width / view.width;
       const drag = dragRef.current;
 
-      let entities = resolveSceneEntities(state.project, scene.id);
+      // An AI proposal is previewed on the level: draw the level as it would be.
+      const preview = state.aiPreview?.sceneId === scene.id ? state.aiPreview : null;
+      let entities = resolveSceneEntities(preview ? preview.project : state.project, scene.id);
       if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
         const moving = new Set(drag.ids);
         entities = entities.map((e) =>
@@ -107,12 +110,16 @@ export function Viewport() {
       const camAttr = `${state.camera.x.toFixed(1)},${state.camera.y.toFixed(1)},${state.camera.zoom.toFixed(4)}`;
       if (canvas.dataset.camera !== camAttr) canvas.dataset.camera = camAttr;
       if (canvas.dataset.entities !== String(scene.entities.length)) canvas.dataset.entities = String(scene.entities.length);
+      const previewAttr = preview ? `${preview.created.length},${preview.removed.length}` : '';
+      if ((canvas.dataset.preview ?? '') !== previewAttr) canvas.dataset.preview = previewAttr;
 
       const images = imageLookup(state.project);
       drawBackground(ctx, view, dpr, scene.world, state.camera, images);
       applyCamera(ctx, state.camera, view, dpr);
       if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
       drawEntities(ctx, entities, images);
+      if (preview) drawPreviewMarks(ctx, preview, resolveSceneEntities(state.project, scene.id), byId, state.camera.zoom, time);
+      drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
@@ -128,6 +135,8 @@ export function Viewport() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const toScreen = (p: Vec2) => worldToScreen(state.camera, view, p);
       for (const l of links) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)));
+      const panels = drawInfoPanels(ctx, state.layout.overlays, entities, scene, toScreen);
+      if (canvas.dataset.overlays !== String(panels.length)) canvas.dataset.overlays = String(panels.length);
       if (selected.length === 1) drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
       if (selected.length === 2) {
         drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
@@ -148,7 +157,10 @@ export function Viewport() {
         }
         const a = toScreen({ x: rect.minX, y: rect.minY });
         const b = toScreen({ x: rect.maxX, y: rect.maxY });
-        publishAnchor({ key: anchorKey, rect: { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y }, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
+        let screenRect: Rect = { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
+        // The prompt sits beside the selection's info panels, not on top of them.
+        if (selected.length !== 2) for (const p of panels) if (state.selectedEntityIds.includes(p.entityId)) screenRect = unionRect(screenRect, p.rect);
+        publishAnchor({ key: anchorKey, rect: screenRect, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
       } else if (state.worldContext) {
         const p = state.worldContext.point ? toScreen(state.worldContext.point) : { x: view.width / 2, y: view.height / 2 };
         drawWorldMarker(ctx, p, scene.name, time);
@@ -590,6 +602,31 @@ function linksToShow(project: Project, scene: Scene, byId: Map<Id, ResolvedEntit
     }
   }
   return links;
+}
+
+/** New things in an AI proposal get a pulsing outline; things it would remove show as faded red ghosts. */
+function drawPreviewMarks(ctx: CanvasRenderingContext2D, preview: { created: Id[]; removed: Id[] }, current: ResolvedEntity[], byId: Map<Id, ResolvedEntity>, zoom: number, time: number): void {
+  ctx.save();
+  const removed = new Set(preview.removed);
+  ctx.fillStyle = 'rgba(255, 93, 115, 0.35)';
+  ctx.strokeStyle = theme.erase;
+  ctx.lineWidth = 1.5 / zoom;
+  for (const e of current) {
+    if (!removed.has(e.id)) continue;
+    const b = getWorldBounds(e);
+    ctx.fillRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+  }
+  ctx.globalAlpha = 0.55 + 0.35 * Math.sin(time / 220);
+  ctx.strokeStyle = theme.select;
+  ctx.lineWidth = 2 / zoom;
+  for (const id of preview.created) {
+    const e = byId.get(id);
+    if (!e) continue;
+    const b = getWorldBounds(e);
+    ctx.strokeRect(b.minX + 1 / zoom, b.minY + 1 / zoom, b.maxX - b.minX - 2 / zoom, b.maxY - b.minY - 2 / zoom);
+  }
+  ctx.restore();
 }
 
 function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2): void {

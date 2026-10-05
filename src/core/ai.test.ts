@@ -250,3 +250,50 @@ describe('logic operations (the relationships proof of concept, without a model)
     expect(prompt).toMatch(/targets \(recorded in the design only; NOT simulated/);
   });
 });
+
+describe('drawing levels', () => {
+  it('draw_tiles fills rectangles of 32px cells, one copy per cell, without duplicates', () => {
+    const { project, sceneId, def } = level();
+    const platform = def('Platform').id;
+    const before = project.scenes[0].entities.length;
+    const p = apply(project, [
+      { op: 'draw_tiles', sceneId, definitionRef: platform, rects: [{ col: -2, row: 3, width: 5, height: 1 }, { col: 0, row: 3, width: 2, height: 2 }] },
+    ]);
+    const tiles = p.scenes[0].entities.filter((e) => e.definitionId === platform);
+    // 5 in row 3, plus 2 new in row 4 (the two in row 3 already exist).
+    expect(tiles).toHaveLength(7);
+    expect(p.scenes[0].entities.length).toBe(before + 7);
+    expect(tiles.map((e) => e.transform.position).filter((pos) => pos.y === 112).map((pos) => pos.x)).toEqual([-48, -16, 16, 48, 80]);
+  });
+
+  it('a shorter object rests on the bottom of its cell (spikes sit on the ground below)', () => {
+    const { project, sceneId, def } = level();
+    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: 0, width: 1, height: 1 }] }]);
+    const hazard = p.scenes[0].entities.at(-1)!;
+    // Hazard is 64x16: centered at x=16, bottom at y=32.
+    expect(hazard.transform.position).toEqual({ x: 16, y: 24 });
+  });
+
+  it('erase_area removes what is in the cells (optionally one object only), with its connections', () => {
+    const { project, sceneId, def } = level();
+    const p1 = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 10, row: 0, width: 4, height: 1 }] }, { op: 'draw_tiles', sceneId, definitionRef: def('Stone').id, rects: [{ col: 10, row: 1, width: 4, height: 1 }] }]);
+    const p2 = apply(p1, [{ op: 'erase_area', sceneId, col: 10, row: 0, width: 2, height: 2, definitionRef: def('Stone').id }]);
+    expect(p2.scenes[0].entities.length).toBe(p1.scenes[0].entities.length - 2);
+    const p3 = apply(p1, [{ op: 'erase_area', sceneId, col: 10, row: 0, width: 4, height: 2, definitionRef: null }]);
+    expect(p3.scenes[0].entities.length).toBe(p1.scenes[0].entities.length - 8);
+  });
+
+  it('refuses huge fills', () => {
+    const { project, sceneId, def } = level();
+    expect(() => apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 0, row: 0, width: 100, height: 100 }] }])).toThrow(/too many/);
+  });
+
+  it('the AI is told the grid and what the player can reach', () => {
+    const { project, sceneId } = level();
+    const payload = buildAIPayload(project, { kind: 'level', sceneId, point: null }, registry);
+    expect(payload.level.grid.cell).toBe(32);
+    expect(payload.level.grid.occupied).toEqual({ minCol: 0, maxCol: 15, minRow: 0, maxRow: 0 });
+    expect(payload.level.playerReach).toMatchObject({ character: 'Player', jumpHeightPx: 44, jumpHeightTiles: 1.4 });
+    expect(payload.level.playerReach!.runningJumpDistanceTiles).toBeCloseTo(3.8, 1);
+  });
+});

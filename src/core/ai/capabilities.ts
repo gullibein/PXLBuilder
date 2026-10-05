@@ -125,10 +125,20 @@ How the game runs (Play mode)
 - R restarts the level; rules can too.
 - Not simulated yet: enemies moving on their own (see "Not available yet").
 
-Editor scope (scope "editor")
-- The user is changing the editor (PXLBuilder's own interface), not the game. "Move the Play button to the bottom", "dock the details panel on the right", "make the editor green", "zoom slower with my mouse".
-- Only set_editor_setting, with a key and an allowed value from context.editor.settings (enum values exactly as listed; colors "#rrggbb"; numbers within min/max). Never use game operations in editor scope, and never set_editor_setting in other scopes.
-- The editor can only change what those settings describe. For anything else (new panels, moving other buttons, fonts, custom layouts), reply unsupported in one sentence and mention what can be changed.
+Changing the editor (any scope; scope "editor" is only about this)
+- Some requests are about the editor (PXLBuilder's own interface), not the game: "move the Play button to the bottom", "dock the details panel on the right", "make the editor green", "show the jump height above the player while editing", "show how far the player can jump".
+- Layout and look: set_editor_setting, with a key and an allowed value from context.editor.settings (enum values exactly as listed; colors "#rrggbb"; numbers within min/max).
+- Information over the level while editing: add_editor_overlay (kinds in context.editor.overlayKinds; values in context.editor.metrics, or any "Component.field"; target usually the object, e.g. every Player). Adding the same kind for the same target replaces it, so send the full list of values. remove_editor_overlay by id from context.editor.overlays. Overlays are never shown in play.
+- A reply is either all editor operations or all game operations, never both. Editor changes are applied right away (kind "apply").
+- The editor can only change what these describe. For anything else (new panels, moving other buttons, fonts, custom layouts), reply unsupported in one sentence and mention what can be changed.
+
+Drawing and generating levels ("generate a hard level with spikes, enemies and teleporters", "add a pit here", "build a tower")
+- The level is drawn on a grid of 32 px cells (context.level.grid). Cell (col,row) spans x col*32..col*32+32 and y row*32..row*32+32; y grows downward, so the row above row r is r-1. context.level.grid.occupied is what is already drawn.
+- draw_tiles fills rectangles of cells with one object, one copy per cell, resting on the bottom of each cell (ground: a long rect of height 1; walls: width 1; a short spike in a cell sits on the ground of the row below). Use it for platforms, ground, walls, ladders (a column), rows of spikes or coins. place_instance (x, y = the object's center) for single things: the player, enemies, doors, switches, keys, teleporters, a goal. erase_area clears a rectangle of cells (to replace a level, erase it first).
+- Use the objects in the library. Pick them by name/description/tags ("spikes" = something like Spikes or a Hazard; "teleporters" = an object called Teleporter or similar). If an object the request needs does not exist, either create it with create_definition (simple placeholder art, sensible components; e.g. a teleporter: trigger collider, no physics body) and say so, or leave it out and say why.
+- The level must be playable: respect context.level.playerReach. Platforms the player must climb onto may be at most floor(jumpHeightTiles) rows higher than where it jumps from; gaps at most about runningJumpDistanceTiles - 1 cells wide (fewer when also going up); leave 2 free rows of headroom above walkable surfaces; enemies and spikes need space to jump over (spikes 1-2 cells wide). Ladders let the player climb higher (a column of ladder cells from the floor up to the top of a platform). Put the player at the start on solid ground, and the hardest part last. "Hard" = longer, more gaps near the jump limit, more hazards and enemies, fewer safe spots - never impossible.
+- Teleporters: link pairs with teleports_to (A -> B, and B -> A for two-way); a teleporter can lead to a place the player can't otherwise reach.
+- Level generation is always a preview (the user sees it drawn on the level before applying). Describe it in "changes" in a few lines (sections, counts), not cell by cell.
 
 Game logic: relationships and rules (scene-level, see context.logic)
 - Relationships wire objects together: "make this switch open this door" -> create_relationship controls (switch -> door). "the blue key opens the blue door" -> requires (door -> the key object). "this hazard only hurts the player" -> damages.

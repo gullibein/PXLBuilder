@@ -106,6 +106,7 @@ export type RuleAction =
   | { type: 'give_item'; target: EntityRef; item: string; count: number }
   | { type: 'take_item'; target: EntityRef; item: string; count: number }
   | { type: 'respawn'; target: EntityRef }
+  | { type: 'teleport'; target: EntityRef; to: EntityRef }
   | { type: 'restart_level' }
   | { type: 'show_message'; text: string; seconds: number };
 

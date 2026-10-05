@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
 import * as logic from '../core/logic/mutations';
-import { createProject, instantiateDefinition } from '../core/model/factory';
+import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
@@ -318,5 +318,52 @@ describe('gameplay', () => {
     });
     walkRight(rt, input, 0.8);
     expect(p.health!.current).toBe(1);
+  });
+
+  /** Two teleporters (trigger pads) on the ground: A at x=60, B at x=-120 (a wall at x=-80 keeps the player from walking there). */
+  function teleporters(extra: (b: Builder, a: string, bId: string) => void) {
+    return level((b) => {
+      const def = createDefinition('Teleporter', { Sprite: registry.createDefault('Sprite', { width: 24, height: 8 }), Collider: registry.createDefault('Collider', { size: { x: 24, y: 8 }, isTrigger: true }) });
+      m.addDefinition(b.d, def, registry);
+      const a = b.place('Teleporter', { x: 60, y: 28 }, 'A');
+      const bId = b.place('Teleporter', { x: -120, y: 28 }, 'B');
+      b.place('Stone', { x: -80, y: 16 });
+      extra(b, a, bId);
+    });
+  }
+
+  it('"teleports_to": stepping on teleporter A puts the player on B, and it does not bounce back', () => {
+    const { rt, input, p } = teleporters((b, a, bId) => {
+      logic.addRelationship(b.d, b.sceneId, { type: 'teleports_to', source: { kind: 'entity', id: a }, target: { kind: 'entity', id: bId }, params: {}, conditions: [] });
+      logic.addRelationship(b.d, b.sceneId, { type: 'teleports_to', source: { kind: 'entity', id: bId }, target: { kind: 'entity', id: a }, params: {}, conditions: [] });
+    });
+    input.press('right');
+    run(rt, input, 1, () => {
+      if (events(rt, 'teleported').length) input.release('right');
+    });
+    input.release('right');
+    expect(events(rt, 'teleported')).toEqual([expect.objectContaining({ subject: 'Player', other: 'B' })]);
+    run(rt, input, 0.5);
+    expect(p.x).toBeCloseTo(-120, 0);
+    expect(p.y).toBeCloseTo(16, 0); // standing on the ground where B is
+    expect(events(rt, 'teleported')).toHaveLength(1);
+  });
+
+  it('a teleport action in a rule works the same', () => {
+    const { rt, input, p } = teleporters((b, a, bId) => {
+      logic.addRule(b.d, b.sceneId, {
+        name: '',
+        enabled: true,
+        when: { event: 'touch_started', subject: { kind: 'any' }, other: { kind: 'entity', id: a } },
+        conditions: [],
+        actions: [{ type: 'teleport', target: { kind: 'subject' }, to: { kind: 'entity', id: bId } }],
+      });
+    });
+    input.press('right');
+    run(rt, input, 1, () => {
+      if (events(rt, 'teleported').length) input.release('right');
+    });
+    input.release('right');
+    expect(p.x).toBeCloseTo(-120, 0);
   });
 });

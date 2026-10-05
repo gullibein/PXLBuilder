@@ -9,6 +9,8 @@
 import type { ComponentRegistry } from '../components/registry';
 import { describeRelationship, describeRule } from '../logic/describe';
 import { getEntitySize } from '../model/geometry';
+import { LEVEL_CELL } from '../model/placement';
+import { characterReach } from '../model/reach';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
 import type { Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
@@ -89,11 +91,15 @@ export interface EntityBrief {
  */
 export interface EditorSettingsPayload {
   settings: { key: string; label: string; description: string; type: string; options?: readonly string[]; min?: number; max?: number; value: unknown }[];
+  /** Information drawn over the level while editing (labels, guides): what is shown now, and what can be. */
+  overlays?: unknown[];
+  overlayKinds?: Record<string, string>;
+  metrics?: { key: string; label: string; description: string }[];
 }
 
 export interface AIPayload {
   scope: AIContext['kind'];
-  /** Present in editor scope: the editor's adjustable settings and their current values. */
+  /** The editor's adjustable settings and overlays, with their current values (editor changes are possible from any scope). */
   editor?: EditorSettingsPayload;
   scope_note: string;
   level: {
@@ -103,6 +109,10 @@ export interface AIPayload {
     backgroundColor: string;
     background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile'; parallax: number };
     isStartLevel: boolean;
+    /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
+    grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
+    /** What the player-controlled character can do: the limits a level must respect to be playable. */
+    playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
   };
   /** The selected/target entities, in full. */
   targets: EntityDetail[];
@@ -144,8 +154,27 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
   editor:
-    'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks and behaves), not the game. Use only set_editor_setting with keys from editor.settings. If the request needs something those settings cannot do, reply unsupported and say what can be changed instead.',
+    'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks, what it shows over the level), not the game. Use only editor operations (set_editor_setting, add_editor_overlay, remove_editor_overlay). If the request needs something they cannot do, reply unsupported and say what can be changed instead.',
 };
+
+function occupiedCells(scene: Scene): AIPayload['level']['grid']['occupied'] {
+  if (!scene.entities.length) return null;
+  const cols = scene.entities.map((e) => Math.floor(e.transform.position.x / LEVEL_CELL));
+  const rows = scene.entities.map((e) => Math.floor(e.transform.position.y / LEVEL_CELL));
+  return { minCol: Math.min(...cols), maxCol: Math.max(...cols), minRow: Math.min(...rows), maxRow: Math.max(...rows) };
+}
+
+/** Reach of the level's player character (the first placed one, else the library's). */
+function playerReach(project: Project, scene: Scene, registry: ComponentRegistry): AIPayload['level']['playerReach'] {
+  const placed = scene.entities.map((e) => resolveEntity(project, e, registry)).find((r) => r.components.CharacterController);
+  const def = project.definitions.find((d) => d.components.CharacterController);
+  const components = placed?.components ?? (def ? def.components : null);
+  if (!components) return null;
+  const r = characterReach(components, scene.world.gravity.y);
+  if (!r) return null;
+  const t = (px: number) => Math.round((px / LEVEL_CELL) * 10) / 10;
+  return { character: placed?.name ?? def!.name, jumpHeightPx: Math.round(r.height), jumpHeightTiles: t(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
+}
 
 export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
@@ -191,7 +220,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
   return {
     scope: ctx.kind,
     scope_note: SCOPE_NOTES[ctx.kind],
-    ...(ctx.kind === 'editor' && editor ? { editor } : {}),
+    ...(editor ? { editor } : {}),
     level: {
       id: scene.id,
       name: scene.name,
@@ -206,6 +235,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         parallax: scene.world.background.parallax,
       },
       isStartLevel: project.startSceneId === scene.id,
+      grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
+      playerReach: playerReach(project, scene, registry),
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     point: ctx.kind === 'level' ? ctx.point : null,

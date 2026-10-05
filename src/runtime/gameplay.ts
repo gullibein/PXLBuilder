@@ -179,6 +179,33 @@ export class Gameplay {
     }
   }
 
+  /**
+   * Moves `e` onto `to`: centered on it, with its feet where `to`'s bottom is.
+   * Whatever it overlaps on arrival counts as already touched, so arriving on
+   * a teleporter doesn't send it straight back.
+   */
+  private teleport(e: RuntimeEntity, to: RuntimeEntity): void {
+    if (!e.alive) return;
+    const eb = this.rt.boxOf(e);
+    const tb = this.rt.boxOf(to);
+    e.x = to.x;
+    e.y = tb && eb ? tb.y + tb.hh - eb.hh - (eb.y - e.y) : to.y;
+    e.vx = 0;
+    e.vy = 0;
+    e.climbing = false;
+    e.touching = this.overlapping(e);
+    this.emit('teleported', e, to);
+  }
+
+  private overlapping(e: RuntimeEntity): Set<string> {
+    const box = this.rt.boxOf(e);
+    const out = new Set<string>();
+    if (!box) return out;
+    const grown: Box = { ...box, hw: box.hw + TOUCH_SLOP, hh: box.hh + TOUCH_SLOP };
+    for (const o of this.rt.entities) if (o !== e && o.alive && o.collider && overlaps(grown, this.rt.boxOf(o)!)) out.add(o.id);
+    return out;
+  }
+
   private addItem(e: RuntimeEntity, item: string, count: number): void {
     e.inventory ??= new Map();
     e.inventory.set(item, (e.inventory.get(item) ?? 0) + count);
@@ -238,6 +265,17 @@ export class Gameplay {
         if (!this.check(r.conditions, { subject: toucher, other: touched })) continue;
         if (r.params.consume === true) this.takeItem(toucher, item, 1);
         this.setOpen(touched, true, toucher);
+      }
+    }
+    if (ev.type === 'touch_started' && ev.subject && ev.other) {
+      // "Teleporter A teleports to Teleporter B".
+      for (const r of this.relationships('teleports_to')) {
+        if (!refMatches(r.source, ev.other) || !this.check(r.conditions, { subject: ev.subject, other: ev.other })) continue;
+        const to = this.resolve(r.target, ev).find((t) => t !== ev.other);
+        if (to) {
+          this.teleport(ev.subject, to);
+          break;
+        }
       }
     }
     if (ev.type === 'switch_activated' && ev.subject) {
@@ -332,6 +370,11 @@ export class Gameplay {
       case 'respawn':
         for (const t of targets()) this.rt.respawn(t);
         break;
+      case 'teleport': {
+        const to = this.resolve(a.to, ev)[0];
+        if (to) for (const t of targets()) this.teleport(t, to);
+        break;
+      }
       case 'restart_level':
         this.rt.restart();
         break;
