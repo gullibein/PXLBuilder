@@ -1040,8 +1040,15 @@ try {
   const sw_bow = Math.min(80, sw_dist * 0.25) * (sw_ny <= 0 ? 1 : -1);
   const sw_ctrlPt = { x: (sw_pa.x + sw_pb.x) / 2 + sw_nx * sw_bow, y: (sw_pa.y + sw_pb.y) / 2 + sw_ny * sw_bow };
   const sw_mid = { x: 0.25 * sw_pa.x + 0.5 * sw_ctrlPt.x + 0.25 * sw_pb.x, y: 0.25 * sw_pa.y + 0.5 * sw_ctrlPt.y + 0.25 * sw_pb.y };
-  await swp.mouse.click(sw_sAt(sw_mid.x, sw_mid.y).x, sw_sAt(sw_mid.x, sw_mid.y).y);
+  // 9 screen pixels beside the line still counts (easier to hit than before).
+  const sw_near = { x: sw_sAt(sw_mid.x, sw_mid.y).x, y: sw_sAt(sw_mid.x, sw_mid.y).y + 9 };
+  await check(async () => ((await sw_sCanvas.getAttribute('data-hover-link')) ?? '') === '', 'no arrow is lit before hovering');
+  await swp.mouse.move(sw_near.x, sw_near.y, { steps: 3 });
+  await check(async () => ((await sw_sCanvas.getAttribute('data-hover-link')) ?? '') !== '', 'hovering near the arrow lights it up a little');
+  await swp.screenshot({ path: `${OUT}/23b-connection-hover.png` });
+  await swp.mouse.click(sw_near.x, sw_near.y);
   await check(async () => (await sw_sPrompt.getAttribute('data-context')) === 'connection', 'clicking the line selects the connection');
+  await swp.screenshot({ path: `${OUT}/23c-connection-clicked.png` });
   await sw_sAsk('The switch moves the door three squares upwards.');
   await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await sw_sPrompt.getByTestId('connection-header').innerText()).includes('moves'), 'describing it changes what the connection does (now it moves the door)');
   await check(aiRequests.at(-1).context.scope === 'connection' && aiRequests.at(-1).context.targets.map((t) => t.name).join('>') === 'Switch>Door', 'the AI gets the connection and both of its ends');

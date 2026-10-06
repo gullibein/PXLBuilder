@@ -14,6 +14,10 @@ export const theme = {
   erase: '#ff5d73',
   /** Existing connections between objects (relationships). */
   logic: '#ffc65c',
+  /** The selected connection: the logic color, lit up. */
+  logicBright: '#ffe08f',
+  /** Dark "ink" outlines for the blueprint-style annotations (connections and their labels). */
+  ink: '#141a33',
   /** The red connector circles on a switch, and the line dragged from them. */
   connector: '#ff4d5e',
 };

@@ -62,6 +62,8 @@ export function Viewport() {
   const viewRef = useRef<ViewSize>({ width: 1, height: 1 });
   const dragRef = useRef<Drag | null>(null);
   const hoverRef = useRef<Id | null>(null);
+  /** The connection (arrow) under the pointer, if any. */
+  const hoverLinkRef = useRef<Id | null>(null);
   /** Pointer position in world space (for the brush ghost). */
   const pointerWorldRef = useRef<Vec2 | null>(null);
   const spaceDownRef = useRef(false);
@@ -149,12 +151,17 @@ export function Viewport() {
       const links = linksToShow(state.project, scene, byId).map((l) => ({
         ...l,
         selected: l.relId === state.selectedConnectionId,
+        hovered: l.relId === hoverLinkRef.current && !drag,
         related: state.logicOpen || selectedSet.has(l.a.id) || selectedSet.has(l.b.id),
       }));
-      for (const l of links) {
-        if (l.selected) drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, width: 4, glow: true });
-        else drawRelation(ctx, l.a, l.b, state.camera.zoom, { color: theme.logic, dashed: false, faded: !l.simulated || !l.related });
+      // Hovered and selected arrows are drawn last, on top.
+      const order = (l: (typeof links)[number]) => (l.selected ? 2 : l.hovered ? 1 : 0);
+      for (const l of [...links].sort((x, y) => order(x) - order(y))) {
+        const look = l.selected ? 'selected' : l.hovered ? 'hover' : !l.simulated || !l.related ? 'faded' : 'normal';
+        drawLink(ctx, l.a, l.b, state.camera.zoom, look, time);
       }
+      const hoverLinkAttr = links.find((l) => l.hovered)?.relId ?? '';
+      if ((canvas.dataset.hoverLink ?? '') !== hoverLinkAttr) canvas.dataset.hoverLink = hoverLinkAttr;
       const connector = connectorsFor(state.selectedEntityIds, entities, state.camera.zoom);
       for (const c of connector) drawConnector(ctx, c.point, state.camera.zoom);
       if (drag?.kind === 'connect') {
@@ -168,7 +175,7 @@ export function Viewport() {
       // Screen-space labels and the prompt anchor.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const toScreen = (p: Vec2) => worldToScreen(state.camera, view, p);
-      for (const l of links) if (l.related || l.selected) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)));
+      for (const l of links) if (l.related || l.selected || l.hovered) drawLinkLabel(ctx, l.verb, toScreen(curveMidpoint(l.a, l.b)), l.selected ? 'selected' : l.hovered ? 'hover' : 'normal');
       const connAttr = state.selectedConnectionId ?? '';
       if ((canvas.dataset.connection ?? '') !== connAttr) canvas.dataset.connection = connAttr;
       const linksAttr = String(links.length);
@@ -351,7 +358,9 @@ export function Viewport() {
       const hit = pick(entities, world);
       hoverRef.current = hit?.id ?? null;
       const onConnector = !!connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
-      const onLine = !hit && !onConnector && !!connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
+      const line = hit || onConnector ? null : connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
+      hoverLinkRef.current = line;
+      const onLine = !!line;
       canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine ? 'pointer' : 'default';
       return;
     }
@@ -453,7 +462,10 @@ export function Viewport() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => (hoverRef.current = null)}
+        onPointerLeave={() => {
+          hoverRef.current = null;
+          hoverLinkRef.current = null;
+        }}
         onDoubleClick={onDoubleClick}
         onMouseDown={(e) => e.button === 1 && e.preventDefault() /* no autoscroll on middle-drag */}
         onContextMenu={(e) => e.preventDefault() /* right-drag erases while drawing */}
@@ -723,6 +735,9 @@ function drawConnectDrag(ctx: CanvasRenderingContext2D, from: Vec2, to: Vec2, zo
   ctx.restore();
 }
 
+/** How close (screen px) the pointer must be to an arrow to hover or click it. */
+const LINK_HIT_PX = 11;
+
 /** The connection whose line passes within a few pixels of `world`, if any. */
 function connectionAt(project: Project, scene: Scene, byId: Map<Id, ResolvedEntity>, world: Vec2, zoom: number): Id | null {
   let best: { id: Id; d: number } | null = null;
@@ -733,9 +748,12 @@ function connectionAt(project: Project, scene: Scene, byId: Map<Id, ResolvedEnti
       const t = i / 24;
       const p = { x: (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * ctrl.x + t * t * to.x, y: (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * ctrl.y + t * t * to.y };
       const d = distToSegment(world, prev, p) * zoom;
-      if (d <= 6 && (!best || d < best.d)) best = { id: l.relId, d };
+      if (d <= LINK_HIT_PX && (!best || d < best.d)) best = { id: l.relId, d };
       prev = p;
     }
+    // The label in the middle ("opens") counts too.
+    const mid = curveMidpoint(l.a, l.b);
+    if (Math.abs(world.x - mid.x) * zoom <= 28 && Math.abs(world.y - mid.y) * zoom <= 10 && (!best || best.d > 0)) best = { id: l.relId, d: 0 };
   }
   return best?.id ?? null;
 }
@@ -791,19 +809,114 @@ function drawPreviewMarks(ctx: CanvasRenderingContext2D, preview: { created: Id[
   ctx.restore();
 }
 
-function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2): void {
+function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2, look: 'normal' | 'hover' | 'selected' = 'normal'): void {
   ctx.save();
-  ctx.font = `700 10px ${theme.uiFont}`;
-  const w = ctx.measureText(text).width + 10;
-  ctx.fillStyle = theme.logic;
+  ctx.font = `800 10px ${theme.uiFont}`;
+  const w = ctx.measureText(text).width + 12;
+  // A little sticker: ink outline, flat fill, a hard offset shadow.
+  ctx.fillStyle = theme.ink;
+  ctx.beginPath();
+  ctx.roundRect(p.x - w / 2 + 1.5, p.y - 8 + 2, w, 16, 8);
+  ctx.fill();
+  if (look !== 'normal') {
+    ctx.shadowColor = theme.logic;
+    ctx.shadowBlur = look === 'selected' ? 14 : 7;
+  }
+  ctx.fillStyle = look === 'selected' ? theme.logicBright : theme.logic;
+  ctx.strokeStyle = theme.ink;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.roundRect(p.x - w / 2, p.y - 8, w, 16, 8);
   ctx.fill();
-  ctx.fillStyle = '#1a1430';
+  ctx.shadowBlur = 0;
+  ctx.stroke();
+  ctx.fillStyle = theme.ink;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, p.x, p.y + 0.5);
   ctx.restore();
+}
+
+/**
+ * An existing connection, drawn like a blueprint annotation in ink: a dark
+ * outline under bright rounded dashes, a pin where it starts and a chunky
+ * outlined arrowhead. Faded when it doesn't concern the selection (or does
+ * nothing in play yet); a soft glow on hover; fully lit, thicker and with
+ * marching dashes when selected.
+ */
+function drawLink(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number, look: 'normal' | 'faded' | 'hover' | 'selected', time: number): void {
+  const { start, end, ctrl } = linkPath(a, b, zoom);
+  const px = 1 / zoom;
+  const width = (look === 'selected' ? 3.5 : look === 'hover' ? 3 : 2.5) * px;
+  const color = look === 'selected' ? theme.logicBright : theme.logic;
+  const curve = () => {
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.quadraticCurveTo(ctrl.x, ctrl.y, end.x, end.y);
+  };
+  ctx.save();
+  ctx.globalAlpha = look === 'faded' ? 0.4 : 1;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // Glow first, so the ink stays crisp on top.
+  if (look === 'hover' || look === 'selected') {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = look === 'selected' ? 0.55 : 0.28;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = look === 'selected' ? 18 : 9;
+    ctx.lineWidth = width + (look === 'selected' ? 6 : 4) * px;
+    curve();
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Ink underlay (solid), then the bright dashes.
+  ctx.strokeStyle = theme.ink;
+  ctx.lineWidth = width + 3 * px;
+  curve();
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash([7 * px, 6 * px]);
+  if (look === 'selected') ctx.lineDashOffset = (-time / 40) * px;
+  curve();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Pin at the start.
+  ctx.beginPath();
+  ctx.arc(start.x, start.y, 2.5 * px + width / 2, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1.5 * px;
+  ctx.strokeStyle = theme.ink;
+  ctx.stroke();
+  // Arrowhead.
+  const angle = Math.atan2(end.y - ctrl.y, end.x - ctrl.x);
+  const s = (look === 'selected' ? 13 : 11) * px;
+  ctx.beginPath();
+  ctx.moveTo(end.x + Math.cos(angle) * 2 * px, end.y + Math.sin(angle) * 2 * px);
+  ctx.lineTo(end.x - s * Math.cos(angle - 0.5), end.y - s * Math.sin(angle - 0.5));
+  ctx.lineTo(end.x - s * 0.62 * Math.cos(angle), end.y - s * 0.62 * Math.sin(angle));
+  ctx.lineTo(end.x - s * Math.cos(angle + 0.5), end.y - s * Math.sin(angle + 0.5));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1.75 * px;
+  ctx.strokeStyle = theme.ink;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Where an arrow between two entities starts and ends (just outside each) and its curve. */
+function linkPath(a: ResolvedEntity, b: ResolvedEntity, zoom: number): { start: Vec2; end: Vec2; ctrl: Vec2 } {
+  const { from, to, ctrl } = curveControl(a, b);
+  const ra = Math.max(getEntitySize(a).x, getEntitySize(a).y) / 2 + 10 / zoom;
+  const rb = Math.max(getEntitySize(b).x, getEntitySize(b).y) / 2 + 12 / zoom;
+  const trim = (p: Vec2, toward: Vec2, r: number) => {
+    const d = Math.hypot(toward.x - p.x, toward.y - p.y) || 1;
+    return { x: p.x + ((toward.x - p.x) / d) * r, y: p.y + ((toward.y - p.y) / d) * r };
+  };
+  return { start: trim(from, ctrl, ra), end: trim(to, ctrl, rb), ctrl };
 }
 
 /**
