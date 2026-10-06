@@ -24,7 +24,7 @@ export function ToolPanel() {
         onClick={() => setTool({ kind: 'select' })}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <path d="M4 2.5v12.2l3.3-3.2 2.2 4.8 2.2-1-2.2-4.7h4.6z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+          <path d="M5.2 2.6v11.6l2.7-2.5 1.9 4.2 1.7-.8-1.9-4.1h3.6z" fill="currentColor" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
         </svg>
       </button>
       <button

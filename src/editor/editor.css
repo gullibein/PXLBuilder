@@ -109,51 +109,57 @@ code { font-family: var(--font-data); font-size: 11px; }
 .connector { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .connector line { stroke: #fff; stroke-width: 1.5; opacity: 0.85; filter: drop-shadow(0 1px 2px rgba(20, 16, 60, 0.5)); }
 .connector circle { fill: #fff; stroke: var(--accent); stroke-width: 1.5; }
-.context-prompt { position: absolute; left: 0; top: 0; width: 320px; max-width: calc(100% - 24px); pointer-events: auto; }
+.context-prompt { position: absolute; left: 0; top: 0; width: 290px; max-width: calc(100% - 24px); pointer-events: auto; }
 .context-prompt .prompt { animation: pop-in 140ms ease-out; }
 
 .prompt { color: var(--card-text); background: var(--card); border-radius: 18px; box-shadow: 0 14px 40px rgba(20, 16, 60, 0.35), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent); padding: 5px 6px 5px 14px; transition: box-shadow 120ms; }
 .prompt:focus-within { box-shadow: 0 14px 40px rgba(20, 16, 60, 0.35), 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
 /* Every context gets a small dark header, like a card title: the object's name, "A → B", a connection, World. */
 .prompt.has-header { padding: 0; background: var(--surface); border: 1px solid var(--line); }
-.prompt.has-header .prompt-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px 8px; color: var(--text); font-weight: 700; font-size: 12.5px; }
+.prompt.has-header .prompt-header { display: flex; align-items: center; gap: 8px; padding: 8px 30px 6px 12px; color: var(--text); font-weight: 700; font-size: 12px; }
 .prompt-header svg { color: #7fb6ff; }
 .prompt-header .arrow { color: var(--accent-hi); }
-.prompt.has-header .prompt-field { margin: 0 10px 10px; padding: 3px 5px 3px 12px; border-radius: 14px; background: var(--card); }
-.prompt.has-header .prompt-result { margin: 0 12px 12px; padding: 10px 12px; border: none; border-radius: 12px; background: var(--card); }
-.prompt-field { display: flex; align-items: center; gap: 9px; }
+.prompt.has-header .prompt-field { margin: 0 8px 8px; padding: 2px 4px 2px 10px; border-radius: 12px; background: var(--card); }
+.prompt.has-header .prompt-result { margin: -2px 8px 8px; padding: 6px 10px 8px; border: none; border-radius: 10px; background: var(--card); }
+.prompt-field { display: flex; align-items: center; gap: 7px; }
 .spark { color: var(--accent); font-size: 13px; user-select: none; }
 .is-working .spark { animation: spin 1.4s linear infinite; }
-.prompt textarea { flex: 1; min-width: 0; resize: none; border: none; outline: none; background: none; color: var(--card-text); font: 14px/20px var(--font-ui); padding: 8px 0; }
+.prompt textarea { flex: 1; min-width: 0; resize: none; border: none; outline: none; background: none; color: var(--card-text); font: 13px/18px var(--font-ui); padding: 6px 0; }
 .prompt textarea::placeholder { color: var(--card-muted); }
 .is-working textarea::placeholder { color: var(--card-text); opacity: 0.6; }
 .prompt { position: relative; }
 /* Close (×): a small round button on the card's top-right corner. */
-.prompt-close { position: absolute; top: -9px; right: -9px; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; background: var(--card); color: var(--card-muted); box-shadow: 0 2px 8px rgba(20, 16, 60, 0.35), 0 0 0 1px var(--card-line); }
+.prompt-close { position: absolute; top: -7px; right: -7px; z-index: 1; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; background: var(--card); color: var(--card-muted); box-shadow: 0 2px 8px rgba(20, 16, 60, 0.35), 0 0 0 1px var(--card-line); }
 .prompt-close:hover { color: var(--card-text); background: var(--card-line); }
-.prompt-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border: none; background: none; border-radius: 8px; color: var(--card-muted); --surface: var(--card); }
+.prompt-close svg { width: 8px; height: 8px; }
+/* With a header, the × sits inside the card's corner. */
+.prompt.has-header .prompt-close { top: 6px; right: 7px; background: none; box-shadow: none; color: var(--muted); }
+.prompt.has-header .prompt-close:hover { color: var(--text); background: var(--surface-3); }
+.prompt-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: none; background: none; border-radius: 8px; color: var(--card-muted); --surface: var(--card); }
 .prompt-icon:hover { background: var(--card-line); color: var(--card-text); }
-.send-btn { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: none; border-radius: 50%; color: #fff; background: var(--accent); transition: transform 120ms, opacity 120ms; }
+.send-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border: none; border-radius: 50%; color: #fff; background: var(--accent); transition: transform 120ms, opacity 120ms; }
 .send-btn:hover:not(:disabled) { transform: scale(1.06); }
 .send-btn:disabled { opacity: 0.35; }
 .prompt-progress { height: 2px; margin: 0 8px 4px 0; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat; animation: sweep 1.1s ease-in-out infinite; }
 
-.prompt-result { margin: 2px 8px 8px 0; padding-top: 9px; border-top: 1px solid var(--card-line); font-size: 12.5px; color: var(--card-text); }
+.prompt-result { margin: 0 8px 6px 0; padding-top: 6px; border-top: 1px solid var(--card-line); font-size: 12px; color: var(--card-text); }
 .result-head { display: flex; align-items: center; justify-content: space-between; }
 .ok { color: var(--ok); font-weight: 700; }
 .result-message { margin: 0 0 6px; line-height: 1.45; }
 .note .result-message { margin: 0; }
 .note.warn .result-message { color: var(--warn); }
-.changes { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; color: var(--card-muted); }
+.changes { list-style: none; margin: 3px 0 0; padding: 0; display: grid; gap: 2px; color: var(--card-muted); line-height: 1.35; }
 .changes li::before { content: '·'; margin-right: 7px; color: var(--accent); font-weight: 700; }
 .changes.proposed li { color: var(--card-text); }
 .changes.proposed li::before { content: '+'; }
 .changes .more { font-style: italic; }
-.result-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.result-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .btn-primary { border: none; padding: 7px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hi); }
 .text-btn { border: none; background: none; padding: 2px 4px; color: var(--card-muted); border-radius: 6px; }
 .text-btn:hover { color: var(--card-text); }
+.icon-text-btn { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--card-muted); }
+.icon-text-btn:hover { color: var(--card-text); background: var(--card-line); }
 
 .global-prompt { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); display: grid; gap: 8px; z-index: 15; animation: pop-in 140ms ease-out; }
 .scope-toggle { justify-self: center; display: flex; padding: 3px; border-radius: 12px; }
@@ -163,8 +169,8 @@ code { font-family: var(--font-data); font-size: 11px; }
 /* ---------------------------------------------------------------- dock */
 .dock-wrap { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 15; width: min(720px, calc(100% - 32px)); pointer-events: none; }
 .dock-wrap > * { pointer-events: auto; }
-.dock { display: flex; gap: 6px; padding: 6px; }
-.dock-btn { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 18px; border: none; border-radius: 11px; background: none; font-weight: 600; color: var(--text); }
+.dock { display: flex; gap: 4px; padding: 4px; }
+.dock-btn { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border: none; border-radius: 9px; background: none; font-weight: 600; font-size: 12.5px; color: var(--text); }
 .dock-btn:hover, .dock-btn.on { background: var(--surface-2); }
 .dock-btn.primary { background: var(--accent); color: #fff; }
 .dock-btn.primary:hover, .dock-btn.primary.on { background: var(--accent-hi); }
@@ -192,7 +198,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 
 /* ---------------------------------------------------------------- tray (bottom right) */
 .tray-chips { position: absolute; right: 16px; bottom: 16px; display: flex; gap: 8px; z-index: 15; }
-.tray-chip { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; color: var(--text); font-weight: 600; border-radius: 14px; }
+.tray-chip { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; color: var(--text); font-weight: 600; font-size: 12.5px; border-radius: 12px; }
 .tray-chip:hover { background: rgba(34, 39, 66, 0.96); }
 .spark-mini { color: var(--accent-hi); }
 .count { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
@@ -263,13 +269,14 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 }
 
 /* ---------------------------------------------------------------- tool panel (left) */
-.tool-panel { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; z-index: 15; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
-.tool { display: grid; place-items: center; width: 42px; height: 42px; border: none; border-radius: 11px; background: none; color: var(--muted); }
+.tool-panel { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; z-index: 15; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.tool { display: grid; place-items: center; width: 34px; height: 34px; border: none; border-radius: 9px; background: none; color: var(--muted); }
 .tool:hover { color: var(--text); background: var(--surface-2); }
 .tool.on { color: #fff; background: var(--accent); }
-.tool.brush-pick { width: 42px; height: 34px; }
-.tool.brush-pick .thumb { width: 26px; height: 26px; border-radius: 7px; }
-.tool-sep { width: 24px; height: 1px; margin: 3px 0; background: var(--line); }
+.tool.brush-pick { width: 34px; height: 30px; }
+.tool.brush-pick .thumb { width: 22px; height: 22px; border-radius: 6px; }
+.tool svg { width: 16px; height: 16px; }
+.tool-sep { width: 20px; height: 1px; margin: 3px 0; background: var(--line); }
 
 /* ---------------------------------------------------------------- background card */
 .background-panel { position: absolute; left: 80px; top: 16px; width: min(300px, calc(100% - 96px)); max-height: calc(100% - 100px); overflow: auto; display: grid; gap: 14px; padding: 14px; z-index: 16; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); animation: pop-in 140ms ease-out; }
@@ -395,7 +402,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 /* History and console in the bottom-left corner. */
 .tray-left .tray-chips, .tray-left .tray { right: auto; left: 16px; }
 /* Play in the bottom bar. */
-.dock .play-btn { position: static; transform: none; height: 38px; padding: 0 20px; font-size: 14px; box-shadow: none; }
+.dock .play-btn { position: static; transform: none; height: 32px; padding: 0 16px; font-size: 13px; box-shadow: none; }
 .play-float { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 6; }
 .play-float .play-btn { position: static; transform: none; }
 
@@ -460,4 +467,4 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 
 /* A prompt still running: the user can carry on, or stop it. */
 .prompt-busy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 4px 2px 2px; }
-.prompt.has-header .prompt-busy { margin: 0 14px 10px; }
+.prompt.has-header .prompt-busy { margin: -2px 12px 8px; }

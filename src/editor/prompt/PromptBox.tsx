@@ -223,8 +223,10 @@ function Outcome(props: {
           <div className="result-head">
             <span className="ok">✓ Applied</span>
             {props.canUndo ? (
-              <button className="text-btn" data-testid="result-undo" onClick={props.onUndo}>
-                Undo
+              <button className="icon-text-btn" data-testid="result-undo" aria-label="Undo" title="Undo this change" onClick={props.onUndo}>
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M5.5 3.5 2.5 6.5l3 3M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             ) : (
               <span className="muted small" title="Other changes came after it: undo them first, or use the AI History">in history</span>
