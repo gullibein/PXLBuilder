@@ -7,7 +7,9 @@
 import { buildAIPayload, contextKey, type AIContext } from '../../core/ai/context';
 import { AIUnavailableError, type AIExchange, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
-import { getApiKey } from './apiKey';
+import { geminiKey, getApiKey } from './apiKey';
+import { getAISettings } from './aiSettings';
+import { GeminiProvider } from './geminiProvider';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
@@ -37,13 +39,20 @@ export function setAIProvider(next: AIProvider | null): void {
 
 /**
  * Where the AI comes from: inside claude.ai (the published app) the viewer's
- * Claude account; else the user's own key (AI connection) when set; else this
- * computer's PXLBuilder server.
+ * Claude account (pages there can't contact other services); else Gemini when
+ * chosen in AI connection; else the user's own Anthropic key when set; else
+ * this computer's PXLBuilder server.
  */
 async function currentProvider(): Promise<AIProvider> {
   if (override) return override;
   const sample = await claudeSample();
   if (sample) return new SampleAIProvider(sample);
+  const settings = getAISettings();
+  if (settings.vendor === 'gemini') {
+    const gKey = geminiKey.get();
+    if (!gKey) throw new AIUnavailableError('Gemini is chosen as the AI, but there is no Gemini API key yet. Add one in ⋯ → AI connection (or switch back to Claude there).');
+    return new GeminiProvider(gKey, settings.geminiModel);
+  }
   const key = getApiKey();
   return key ? new BrowserClaudeProvider(key) : httpProvider;
 }
@@ -69,6 +78,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }),
     request,
     history: conversations.get(contextKey(ctx)) ?? [],
+    speed: getAISettings().speed,
   };
   let response: AIResponse;
   try {

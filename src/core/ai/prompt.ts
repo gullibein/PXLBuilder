@@ -1,5 +1,25 @@
-/** The request text sent to the model (shared by every way of reaching Claude). */
-import type { AIRequestBody } from './protocol';
+/** The request text sent to the model (shared by every way of reaching the AI). */
+import { z } from 'zod';
+import { componentRegistry } from '../components/builtin';
+import { buildSystemPrompt } from './capabilities';
+import { aiResponseSchema, type AIRequestBody } from './protocol';
+
+let jsonInstructions: string | null = null;
+
+/**
+ * The system prompt plus the reply format spelled out as a JSON Schema, for
+ * AI connections that return plain JSON (claude.ai's sample, Gemini) rather
+ * than enforcing the schema themselves. The answer is checked against the
+ * same schema before anything is applied.
+ */
+export function systemPromptWithReplyFormat(): string {
+  jsonInstructions ??= `${buildSystemPrompt(componentRegistry)}
+
+REPLY FORMAT
+Reply with only one JSON object matching this JSON Schema (no other text). Every operation must have all of its fields; use null where a field allows it.
+${JSON.stringify(z.toJSONSchema(aiResponseSchema))}`;
+  return jsonInstructions;
+}
 
 export function userMessage(body: AIRequestBody): string {
   const history = body.history.length

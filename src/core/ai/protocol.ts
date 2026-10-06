@@ -11,9 +11,14 @@ export interface AIExchange {
   reply: string;
 }
 
+/** best: the most capable setting; fast: answers sooner, may handle hard requests less well. */
+export type AISpeed = 'best' | 'fast';
+
 export interface AIRequestBody {
   context: AIPayload;
   request: string;
+  /** Default 'best'. */
+  speed?: AISpeed;
   /** Recent requests in the same context (conversational memory; not authoritative). */
   history: AIExchange[];
 }

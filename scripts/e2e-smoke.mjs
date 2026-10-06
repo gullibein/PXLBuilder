@@ -267,7 +267,8 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   // Ignored: the expected 401 from the keyless AI endpoint, and web-font hosts (unreachable in sandboxed CI; the UI falls back to system fonts).
-  const ignorable = (m) => m.text().includes('401') || /fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '');
+  // The browser logs rejected requests itself: the deliberately wrong keys (Anthropic answers 401, Google 400).
+  const ignorable = (m) => m.text().includes('401') || (m.text().includes('400') && /generativelanguage\.googleapis\.com/.test(m.location()?.url ?? '')) || /fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '');
   page.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -1294,6 +1295,7 @@ try {
     if (headers['x-api-key'] !== VALID) return json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
     if (r.url().includes('/v1/models/')) return json(200, { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-01-01T00:00:00Z' });
     const sent = JSON.parse(r.postData());
+    anthropicCalls.at(-1).effort = sent.output_config?.effort;
     const text = sent.messages[0].content;
     const context = JSON.parse(text.split('\n')[1]);
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
@@ -1359,6 +1361,75 @@ try {
   await check(async () => (await kPrompt.getByTestId('result-where').innerText()) === 'Changed: Mushroom (every copy, 2 in this level)', 'the prompt shows which object changed');
   await check(async () => (await kCanvas.getAttribute('data-flash')) === '2', 'the two mushrooms glow on the level');
   await kp.screenshot({ path: `${OUT}/21-change-elsewhere.png` });
+  await kp.keyboard.press('Escape');
+
+  step = 'AI speed and Gemini';
+  await check(anthropicCalls.at(-1).effort === 'medium', 'by default Claude answers at its best-quality setting');
+  await kp.getByTestId('main-menu').click();
+  await kp.getByTestId('menu-ai-connection').click();
+  await dialog.getByTestId('ai-speed-fast').click();
+  await check(async () => (await dialog.getByTestId('ai-speed-fast').getAttribute('aria-checked')) === 'true', 'Speed can be set to Fast');
+  await kp.keyboard.press('Escape');
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await kAsk('Make the gravity a bit weaker.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '(a prompt in Fast mode)');
+  await check(anthropicCalls.at(-1).effort === 'low', 'Fast: Claude is asked to think less');
+  await kp.keyboard.press('Escape');
+
+  // A stand-in for Google's Gemini API: the model list, and answers from the stub model.
+  const GKEY = 'AIza-test-gemini-key-5678';
+  const googleCalls = [];
+  await kp.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    const r = route.request();
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+    if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const headers = await r.allHeaders();
+    const json = (status, body) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const call = { url: r.url(), key: headers['x-goog-api-key'] };
+    googleCalls.push(call);
+    if (headers['x-goog-api-key'] !== GKEY) return json(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } });
+    if (r.method() === 'GET') {
+      const m = (name, methods = ['generateContent']) => ({ name: `models/${name}`, supportedGenerationMethods: methods });
+      return json(200, { models: [m('gemini-3.5-pro'), m('gemini-3.8-flash-lite'), m('gemini-3.8-flash'), m('text-embedding-9', ['embedContent'])] });
+    }
+    const sent = JSON.parse(r.postData());
+    call.body = sent;
+    const text = sent.contents[0].parts[0].text;
+    const context = JSON.parse(text.split('\n')[1]);
+    const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
+    const out = stubModel({ context, request, history: [] });
+    return json(200, { candidates: [{ content: { role: 'model', parts: [{ text: 'thinking it over', thought: true }, { text: JSON.stringify(out) }] }, finishReason: 'STOP' }] });
+  });
+  await kp.getByTestId('main-menu').click();
+  await kp.getByTestId('menu-ai-connection').click();
+  await dialog.getByTestId('ai-vendor-gemini').click();
+  await check(async () => (await dialog.getByTestId('gemini-status').innerText()).includes('Add your Gemini API key'), 'choosing Gemini asks for a Gemini key');
+  await kp.keyboard.press('Escape');
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await kAsk('Make the gravity a bit weaker.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').innerText()).includes('no Gemini API key'), 'without a Gemini key, a prompt says what is missing (and does not quietly use Claude)');
+  await kp.keyboard.press('Escape');
+  await kp.getByTestId('main-menu').click();
+  await kp.getByTestId('menu-ai-connection').click();
+  await dialog.getByTestId('gemini-key-input').fill('AIza-wrong');
+  await dialog.getByTestId('gemini-key-save').click();
+  await check(async () => (await dialog.getByTestId('gemini-key-result').innerText()).includes('not accepted'), 'a wrong Gemini key is checked and not saved');
+  await dialog.getByTestId('gemini-key-input').fill(GKEY);
+  await dialog.getByTestId('gemini-key-save').click();
+  await check(async () => (await dialog.getByTestId('gemini-key-result').innerText()).includes('Connected'), 'a valid Gemini key connects');
+  await check(async () => (await dialog.getByTestId('gemini-model').locator('option').allInnerTexts()).join() === 'gemini-3.8-flash,gemini-3.8-flash-lite,gemini-3.5-pro', 'the models the key can use are listed, Flash first (no embedding models)');
+  await check(async () => (await dialog.getByTestId('gemini-model').inputValue()) === 'gemini-3.8-flash', 'Gemini Flash is chosen');
+  await check(async () => (await dialog.getByTestId('gemini-status').innerText()).includes('AIza-te…5678'), 'the Gemini key is shown masked');
+  await kp.screenshot({ path: `${OUT}/31-ai-connection-gemini.png` });
+  await kp.keyboard.press('Escape');
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  const claudeBefore = anthropicCalls.length;
+  await kAsk('Make the gravity a bit weaker.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'Gemini answers the prompt and its change applies (its thinking is left out, the JSON answer is checked)');
+  const gCall = googleCalls.at(-1);
+  await check(gCall.url.endsWith('/models/gemini-3.8-flash:generateContent') && gCall.key === GKEY && !gCall.url.includes(GKEY), 'the request goes to the chosen Gemini model with the key in a header (not in the URL)');
+  await check(gCall.body.generationConfig.responseMimeType === 'application/json' && gCall.body.generationConfig.thinkingConfig?.thinkingLevel === 'low' && gCall.body.systemInstruction.parts[0].text.includes('REPLY FORMAT'), 'JSON mode with the reply format; Fast asks Gemini to think less');
+  await check(anthropicCalls.length === claudeBefore, 'Claude was not asked');
   await kc.close();
 
   step = 'AI draws: overlays and a generated level';

@@ -589,8 +589,21 @@ capability (the viewer's own Claude account, consent once per visit; the page
 itself may not contact other hosts, so keys cannot work there). It has no
 structured-output mode, so the reply format is the zod schema rendered as
 JSON Schema in the prompt, and the answer is validated with the same schema
-before anything is applied. Order: claude.ai account, else the user's key,
-else the server. The prompt text is shared (`core/ai/prompt.ts`).
+before anything is applied. A fourth, `GeminiProvider`
+(`editor/ai/geminiProvider.ts`), calls Google's Gemini REST API from the
+browser with the user's own Gemini key (`x-goog-api-key` header, never in
+the URL; same key handling as the Anthropic key, `editor/ai/apiKey.ts`), in
+JSON mode with the same rendered schema in the prompt and the same
+validation; the dialog lists the models the key can use (Flash first).
+Order: claude.ai account, else Gemini when chosen, else the user's
+Anthropic key, else the server. The prompt text is shared
+(`core/ai/prompt.ts`).
+
+**Speed** (`editor/ai/aiSettings.ts`, saved in this browser with the chosen
+AI and Gemini model): `best` or `fast`, sent as `speed` in the request.
+Fast means the same Claude model at effort `low` instead of `medium`
+(`askClaude`), claude.ai's `quick` model tier for `sample`, and Gemini's
+`thinkingLevel: low` (dropped and retried once if a model rejects it).
 `editor/claudeViewer.ts` reaches the viewer's capabilities; Save uses its
 `downloads` capability in a published page (pages cannot download by
 themselves), and a normal browser download elsewhere. The single-page build

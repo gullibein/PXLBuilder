@@ -8,12 +8,9 @@
  * (from the same schema the server uses) and checked against it before any
  * operation is applied.
  */
-import { z } from 'zod';
-import { buildSystemPrompt } from '../../core/ai/capabilities';
-import { userMessage } from '../../core/ai/prompt';
+import { systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
-import { componentRegistry } from '../../core/components/builtin';
 import { claudeCapability } from '../claudeViewer';
 
 interface SampleError {
@@ -27,15 +24,8 @@ export function claudeSample(): Promise<SampleFn | null> {
   return claudeCapability<SampleFn>('sample');
 }
 
-let instructions: string | null = null;
-
 function prompt(body: AIRequestBody): string {
-  instructions ??= `${buildSystemPrompt(componentRegistry)}
-
-REPLY FORMAT
-Reply with only one JSON object matching this JSON Schema (no other text). Every operation must have all of its fields; use null where a field allows it.
-${JSON.stringify(z.toJSONSchema(aiResponseSchema))}`;
-  return `${instructions}\n\n${userMessage(body)}`;
+  return `${systemPromptWithReplyFormat()}\n\n${userMessage(body)}`;
 }
 
 const MESSAGES: Record<string, string> = {
@@ -55,7 +45,8 @@ export class SampleAIProvider implements AIProvider {
     let raw: unknown;
     try {
       // Every request is new work: no replay of an earlier answer.
-      raw = await this.sample.json(prompt(body), { signal, cache: false });
+      // Fast: claude.ai's quicker model tier.
+      raw = await this.sample.json(prompt(body), { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
     } catch (e) {
       const err = e as SampleError;
       if (err?.code === 'cancelled') throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });

@@ -28,4 +28,18 @@ describe('Claude through claude.ai (sample)', () => {
     await expect(failing('rate_limited').respond(body)).rejects.toBeInstanceOf(AIUnavailableError);
     await expect(failing('cancelled').respond(body)).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('Fast uses claude.ai\'s quick model tier', async () => {
+    const seen: unknown[] = [];
+    const provider = new SampleAIProvider({
+      json: async (_input, options) => {
+        seen.push(options);
+        return { kind: 'answer', message: 'Hi', changes: [], operations: [] };
+      },
+    });
+    await provider.respond({ ...body, speed: 'fast' });
+    await provider.respond(body);
+    expect(seen[0]).toMatchObject({ modelTier: 'quick' });
+    expect(seen[1]).not.toHaveProperty('modelTier');
+  });
 });

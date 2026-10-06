@@ -29,7 +29,8 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        output_config: { effort: 'medium', format: betaZodOutputFormat(aiResponseSchema) },
+        // Fast: the same model thinking less (the biggest part of the wait).
+        output_config: { effort: body.speed === 'fast' ? 'low' : 'medium', format: betaZodOutputFormat(aiResponseSchema) },
         system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userMessage(body) }],
       },
