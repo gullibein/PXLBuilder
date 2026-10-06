@@ -48,6 +48,35 @@ function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
   const t = body.context.targets;
+  if (req.includes('locked door test room')) {
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const sceneId = body.context.level.id;
+    return {
+      kind: 'apply',
+      message: 'Built a room with a door that needs the key.',
+      changes: ['Ground, a player and a locked door'],
+      operations: [
+        { op: 'draw_tiles', sceneId, definitionRef: lib('Platform'), rects: [{ col: -4, row: 1, width: 12, height: 1 }] },
+        { op: 'place_instance', sceneId, definitionRef: lib('Player'), x: 0, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId, definitionRef: lib('Door'), x: 112, y: 0, name: null, ref: null },
+        { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'requires', source: { kind: 'object', id: lib('Door') }, target: { kind: 'object', id: lib('Key') }, params: {}, conditions: [] }) },
+      ],
+    };
+  }
+  if (req.startsWith('why didn')) {
+    // A diagnosis from what the editor sends: the problems it found and the last play.
+    const locked = body.context.debug.lastPlay?.events.find((e) => e.includes(' locked '));
+    const problem = body.context.debug.problems.find((p) => p.severity === 'error');
+    return { kind: 'answer', message: `The door works, but ${locked ? 'the player touched it without the key' : 'it was never touched'}. ${problem ? problem.text : ''}`, changes: [], operations: [] };
+  }
+  if (req.startsWith('fix this problem:')) {
+    return {
+      kind: 'preview',
+      message: 'Placed a key before the door.',
+      changes: ['Key: placed before the door'],
+      operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: body.context.library.find((d) => d.name === 'Key').id, x: 48, y: 20, name: null, ref: null }],
+    };
+  }
   if (req.includes('five hearts')) {
     const set = (field) => ({ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Health', field, valueJson: '5' });
     return { kind: 'apply', message: 'Gave the player 5 hearts.', changes: [`${t[0].name}: 5 hearts`], operations: [set('maxHealth'), set('currentHealth')] };
@@ -1399,6 +1428,63 @@ try {
   await gp.keyboard.press('Escape');
   await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', 'overlays are only drawn while editing');
   await gc.close();
+
+  step = 'debugging';
+  {
+    const dc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+    const dp = await dc.newPage();
+    dp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    dp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+    await dp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+    });
+    await dp.goto(URL);
+    await dp.getByTestId('global-prompt-toggle').click();
+    const lp = dp.getByTestId('global-prompt');
+    const lAsk = async (text) => {
+      const input = lp.getByTestId('prompt-input');
+      await input.fill(text);
+      await input.press('Enter');
+    };
+    await lAsk('Build a locked door test room');
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a level with a locked door (and no key) is built');
+    await check(aiRequests.at(-1).context.debug.lastPlay === null && aiRequests.at(-1).context.debug.problems.length === 0, 'the AI gets the debug section (no play yet, no problems in an empty level)');
+    await lp.getByTestId('prompt-close').click();
+    await check(async () => (await dp.getByTestId('problem-count').innerText()) === '1', 'the Debug chip counts one problem');
+    await dp.getByTestId('debug-toggle').click();
+    const panel = dp.getByTestId('debug-panel');
+    await check(async () => (await panel.getByTestId('problem').first().innerText()).includes('nothing in this level gives "key"'), 'Debug lists it: the door needs a key nothing gives');
+    await check(async () => (await panel.innerText()).includes('Play the level'), 'without a play yet, it says to play first');
+
+    await dp.getByTestId('play').click();
+    await dp.getByTestId('play-canvas').click();
+    await dp.keyboard.down('ArrowRight');
+    await dp.waitForTimeout(1200);
+    await dp.keyboard.up('ArrowRight');
+    await dp.keyboard.press('Escape');
+    await dp.getByTestId('debug-toggle').click().catch(() => {});
+    await dp.getByTestId('tab-debug').click();
+    const log = dp.getByTestId('play-log');
+    await check(async () => /Player touches Door, which stays locked \(needs key\)/.test(await log.innerText()), 'the last play log shows the player touching the locked door');
+    await check(async () => (await panel.getByTestId('ask-why').allInnerTexts()).some((x) => x.includes("Why didn't Door open?")), 'and offers "Why didn\'t Door open?"');
+    await dp.screenshot({ path: `${OUT}/30-debug.png` });
+    await panel.getByTestId('ask-why').filter({ hasText: "Why didn't Door open?" }).click();
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'message', 'asking opens the level card with the answer');
+    const why = aiRequests.at(-1);
+    await check(why.context.debug.lastPlay?.counts.locked >= 1 && why.context.debug.lastPlay.traces[0].name === 'Player' && why.context.debug.lastPlay.note.includes('Nothing was changed'), 'the AI got the last play: the locked touch, the player\'s movement, and that it is current');
+    await check(async () => (await lp.innerText()).includes('the player touched it without the key'), 'the answer explains from the recorded play');
+    await lp.getByTestId('prompt-close').click();
+
+    await dp.getByTestId('tab-debug').click().catch(async () => dp.getByTestId('debug-toggle').click());
+    await panel.getByTestId('fix-with-ai').first().click();
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', '✦ Fix asks the AI and shows its fix to confirm');
+    await check(aiRequests.at(-1).request.startsWith('Fix this problem: Door only opens'), 'the AI is told exactly which problem to fix');
+    await lp.getByTestId('proposal-apply').click();
+    await check(async () => (await dp.getByTestId('problem-count').count()) === 0, 'after applying the fix the problem is gone');
+    await check(async () => (await panel.innerText()).includes('the game changed since'), 'the last play is marked as older than the game now');
+    await dc.close();
+  }
 
   step = 'editor prompt';
   const ec = await browser.newContext({ viewport: { width: 1400, height: 860 } });

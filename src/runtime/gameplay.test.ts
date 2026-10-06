@@ -8,7 +8,9 @@ import { createDefinition, createProject, instantiateDefinition } from '../core/
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
+import { PlayRecorder } from './recorder';
 import { Runtime } from './runtime';
+import { summarizePlay } from '../core/debug/playReport';
 
 const registry = createBuiltinRegistry();
 
@@ -130,6 +132,8 @@ describe('gameplay', () => {
     walkRight(rt, input, 1.5);
     expect(rt.find('Door')!.open).toBe(false);
     expect(p.x).toBeLessThan(80);
+    // Logged, so "why won't the door open?" has an answer.
+    expect(events(rt, 'locked')[0]).toMatchObject({ subject: 'Door', other: 'Player', detail: { needs: 'key' } });
   });
 
   it('"consume" uses the key up', () => {
@@ -944,3 +948,47 @@ describe('the example scripts the AI learns from', () => {
 function rt0(b: Builder, name: string): string {
   return b.d.scenes.find((s) => s.id === b.sceneId)!.entities.find((e) => e.name === name)!.id;
 }
+
+describe('the play recorder (for debugging)', () => {
+  it('records events, a trace of the player and the end state; falling off is logged with its reason', () => {
+    const { rt, input, p } = level((b) => {
+      const e = b.place('Enemy', { x: -100, y: 17 });
+      m.addEntityComponent(b.d, b.sceneId, e, 'Health', registry, { maxHealth: 2, currentHealth: 2 });
+    });
+    const rec = new PlayRecorder(rt);
+    input.press('right');
+    for (let t = 0; t < 3; t += 1 / 60) {
+      rt.update(1 / 60, input);
+      rec.sample();
+    }
+    const report = rec.report();
+    rec.stop();
+    expect(report.events[0].type).toBe('level_started');
+    const fell = report.events.find((e) => e.type === 'respawned');
+    expect(fell).toMatchObject({ subject: 'Player', subjectId: p.id, detail: { reason: 'fell' } });
+    const trace = report.traces.find((tr) => tr.id === p.id)!;
+    expect(trace.samples.length).toBeGreaterThanOrEqual(10);
+    expect(Math.max(...trace.samples.map((s) => s.x))).toBeGreaterThan(144);
+    expect(report.traces.some((tr) => tr.name === 'Enemy')).toBe(true); // it has health
+    expect(report.final.find((s) => s.id === p.id)).toMatchObject({ alive: true, respawns: 1 });
+    expect(report.duration).toBeGreaterThan(2.9);
+
+    const summary = summarizePlay(report, [], [p.id]);
+    expect(summary.counts.respawned).toBe(1);
+    expect(summary.events.some((e) => /respawned Player#\w{4} \{"reason":"fell"\}/.test(e))).toBe(true);
+    expect(summary.events.some((e) => e.includes('touch_ended'))).toBe(false);
+    expect(summary.final[0].id).toBe(p.id);
+    expect(summary.traces.map((tr) => tr.id)).toEqual([p.id]);
+  });
+
+  it('counts restarts and keeps listening after one', () => {
+    const { rt, input } = level();
+    const rec = new PlayRecorder(rt);
+    rt.update(0.2, input);
+    rt.restart();
+    rt.update(0.2, input);
+    const report = rec.report();
+    expect(report.restarts).toBe(1);
+    expect(report.events.filter((e) => e.type === 'level_started')).toHaveLength(2);
+  });
+});

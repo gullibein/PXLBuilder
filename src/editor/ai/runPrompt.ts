@@ -66,7 +66,7 @@ export function labelFor(request: string): string {
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal): Promise<PromptOutcome> {
   const state = useEditor.getState();
   const body = {
-    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout)),
+    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }),
     request,
     history: conversations.get(contextKey(ctx)) ?? [],
   };

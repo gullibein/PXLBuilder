@@ -439,6 +439,43 @@ saved and shown like any other edit.
   (`script/describe.ts`), on/off, remove, and "Edit as code" (JSON, checked
   the same way before saving).
 
+### Debugging (Phase 9): play recording, problem checker, AI diagnosis
+- **Event log** (`runtime/gameplay.ts`): every game event, with names and
+  ids of who took part. `respawned` says why (`fell`, `died`, `rule`,
+  `script`); `locked` is logged (and usable in rules) when a player touches
+  something that requires an item without carrying it, so "nothing happened"
+  is visible too.
+- **Play recorder** (`runtime/recorder.ts`): listens to the log
+  (`runtime.onLog`, survives restarts), samples the player and things that
+  move or can be hurt every 0.25 s (last 30 s), and at the end snapshots
+  every entity (health, items, open, script state and variables, speed and
+  gravity changes, what it touches). It only reads the runtime. PlayView
+  hands the `PlayReport` (`core/debug/playReport.ts`) to the editor store as
+  `lastPlay` (with the project it played, to tell whether the game changed
+  since); it is not saved. A console line sums up notable sessions.
+- **Problem checker** (`core/debug/diagnose.ts`): static checks that mirror
+  what the runtime does: a "requires" item nothing gives (no collectible, no
+  starting inventory, no rule or script give_item), a requires/controls
+  target that isn't Openable, controls from something without a Switch,
+  damages onto something without Health, Damage no receiver accepts,
+  collectibles nobody can pick up, no player, connections to things not in
+  the level, design-only connection types, stored scripts that no longer
+  check out, and script statements without "on" that change nothing
+  (speed_factor on something that doesn't walk, gravity on something that
+  doesn't fall). Copies of one object are one problem. Checks that could be
+  wrong are left out.
+- **AI**: every payload has `debug.problems` and `debug.lastPlay` (a summary
+  from `summarizePlay`: counts per event, the last 160 events with repeated
+  touches merged, traces of the player and the selection, end states,
+  script errors, messages, and whether the game changed since). The system
+  prompt's Debugging section says to explain from this data, distinguish
+  "works as set up, but…" from a setup problem, and return fixes as a
+  preview.
+- **Editor**: the tray's Debug tab lists problems (Show selects the
+  entities; ✦ Fix starts a level prompt "Fix this problem: …") and the last
+  play's notable events (all events on request; a row selects what it is
+  about), with suggested questions that start a level prompt.
+
 ### Game logic (Phase 3): relationships, events, rules, graph
 The design principle: logic is **data in the project**, built from a small
 vocabulary, never generated code. Everything lives per level
@@ -730,4 +767,5 @@ one version at a time, and refuses files from a newer editor.
 5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.
 - Behaviors: **done** (ready-made components, plus behavior scripts the AI programs).
-8–10. Design planning, debugging, asset generation (simple pixel-art sprites are done).
+9. AI debugging: **done** (event log with reasons, play recording, problem checker, AI diagnosis with fixes to confirm, Debug tab).
+8, 10. Design planning, asset generation (simple pixel-art sprites are done).

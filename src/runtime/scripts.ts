@@ -375,7 +375,7 @@ export class ScriptSystem {
       }
       case 'respawn': {
         const t = ent(s.target);
-        if (t) this.rt.respawn(t);
+        if (t) this.rt.respawn(t, 'script');
         break;
       }
       case 'restart_level':

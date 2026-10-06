@@ -16,7 +16,7 @@ import type { Camera, RenderEntity } from '../render/renderer';
 import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
-import { Gameplay } from './gameplay';
+import { Gameplay, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import type { InputState } from './input';
 import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
@@ -284,6 +284,8 @@ export class Runtime {
   /** Behavior scripts. */
   readonly scripts: ScriptSystem;
   time = 0;
+  /** Called for every logged event (the play recorder listens here; it survives restarts). */
+  onLog: ((ev: LoggedEvent) => void) | null = null;
   private accumulator = 0;
   /** Solids that never move: recomputed only when something opens, closes, appears or goes away. */
   private staticSolids: Box[] = [];
@@ -293,7 +295,7 @@ export class Runtime {
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
   private ladders: Ladder[] = [];
   private fallLimit = 0;
-  private readonly scene: Scene;
+  readonly scene: Scene;
 
   constructor(
     private readonly project: Project,
@@ -424,7 +426,7 @@ export class Runtime {
         // Climbing down onto the floor (or standing on it) ends the climb.
         if (e.climbing && e.grounded && e.vy >= 0) e.climbing = false;
       }
-      if (e.y > this.fallLimit) this.respawn(e);
+      if (e.y > this.fallLimit) this.respawn(e, 'fell');
     }
     this.behaviors.after(dt);
     this.gameplay.update(dt, input);
@@ -641,7 +643,7 @@ export class Runtime {
   }
 
   /** Puts an entity back at its start with full health (after falling out of the level or dying). */
-  respawn(e: RuntimeEntity): void {
+  respawn(e: RuntimeEntity, reason: 'fell' | 'died' | 'rule' | 'script' = 'rule'): void {
     e.x = e.spawn.x;
     e.y = e.spawn.y;
     e.vx = 0;
@@ -657,7 +659,7 @@ export class Runtime {
       this.solidsDirty = true;
     }
     e.respawns++;
-    this.gameplay.emit('respawned', e);
+    this.gameplay.emit('respawned', e, null, { reason });
   }
 
   /** Where the camera is (without shake). */

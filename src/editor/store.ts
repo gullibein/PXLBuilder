@@ -13,6 +13,7 @@ import { DEFAULT_LAYOUT, loadLayout, saveLayout, type EditorLayout } from './lay
 import { produce } from 'immer';
 import { create } from 'zustand';
 import { contextFromSelection, type AIContext } from '../core/ai/context';
+import type { PlayReport } from '../core/debug/playReport';
 import { EMPTY_HISTORY, record, redo, undo, type History, type TransactionSource } from '../core/commands/history';
 import type { Operation } from '../core/commands/operations';
 import { componentRegistry } from '../core/components/builtin';
@@ -41,7 +42,7 @@ export type DockPanel = 'library' | 'create' | null;
 
 /** Select (click, drag, box-select) or brush (draw copies of a library object onto the level). */
 export type Tool = { kind: 'select' } | { kind: 'brush'; definitionId: Id };
-export type TrayTab = 'history' | 'console';
+export type TrayTab = 'history' | 'console' | 'debug';
 
 export interface EditorState {
   project: Project;
@@ -83,6 +84,8 @@ export interface EditorState {
   stylePickerOpen: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
+  /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
+  lastPlay: { report: PlayReport; project: Project } | null;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
   mode: 'edit' | 'play';
 
@@ -122,6 +125,7 @@ export interface EditorState {
   setAIPreview(preview: EditorState['aiPreview']): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
+  setLastPlay(report: PlayReport, project: Project): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -174,6 +178,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     stylePickerOpen: false,
     flash: null,
     mode: 'edit',
+    lastPlay: null,
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -217,6 +222,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         selectedDefinitionId: null,
         worldContext: null,
         dirty: true,
+        lastPlay: null,
         history: record(s.history, { label, source: 'user', time: Date.now(), before, after: project, changes: [], operations: [] }),
       }));
     },
@@ -232,6 +238,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         camera: { x: 0, y: 0, zoom: 1 },
         dirty: false,
         history: EMPTY_HISTORY,
+        lastPlay: null,
       });
     },
 
@@ -346,6 +353,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         project.definitions.find((d) => d.metadata.placement === 'tile') ??
         project.definitions[0];
       if (pick) get().setTool({ kind: 'brush', definitionId: pick.id });
+    },
+
+    setLastPlay(report, project) {
+      set({ lastPlay: { report, project } });
     },
 
     setMode(mode) {

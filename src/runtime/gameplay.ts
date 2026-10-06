@@ -29,6 +29,9 @@ export interface LoggedEvent {
   type: string;
   subject: string | null;
   other: string | null;
+  /** Ids of the subject and other (names can repeat: "Enemy", "Enemy"). */
+  subjectId?: string;
+  otherId?: string;
   detail?: Record<string, unknown>;
 }
 
@@ -38,7 +41,7 @@ export interface Message {
 }
 
 const MAX_EVENTS_PER_STEP = 200;
-const MAX_LOG = 300;
+const MAX_LOG = 2000;
 const KNOCKBACK = { x: 160, y: 220 };
 /** Touching includes standing on something or pressing against it. */
 const TOUCH_SLOP = 0.5;
@@ -259,7 +262,7 @@ export class Gameplay {
     if (victim.health.current <= 0) {
       this.emit('died', victim, source);
       // Characters come back at their start; anything else is gone.
-      if (victim.controller) this.rt.respawn(victim);
+      if (victim.controller) this.rt.respawn(victim, 'died');
       else {
         victim.alive = false;
         this.rt.markSolidsDirty();
@@ -349,8 +352,18 @@ export class Gameplay {
   }
 
   private record(ev: GameEvent): void {
-    this.log.push({ time: Math.round(this.rt.time * 1000) / 1000, type: ev.type, subject: ev.subject?.name ?? null, other: ev.other?.name ?? null, ...(ev.detail ? { detail: ev.detail } : {}) });
+    const logged: LoggedEvent = {
+      time: Math.round(this.rt.time * 1000) / 1000,
+      type: ev.type,
+      subject: ev.subject?.name ?? null,
+      other: ev.other?.name ?? null,
+      ...(ev.subject ? { subjectId: ev.subject.id } : {}),
+      ...(ev.other ? { otherId: ev.other.id } : {}),
+      ...(ev.detail ? { detail: ev.detail } : {}),
+    };
+    this.log.push(logged);
     if (this.log.length > MAX_LOG) this.log.splice(0, this.log.length - MAX_LOG);
+    this.rt.onLog?.(logged);
   }
 
   /** Built-in reactions: what relationships mean during play. */
@@ -362,7 +375,12 @@ export class Gameplay {
       for (const r of this.relationships('requires')) {
         if (!refMatches(r.source, touched) || touched.open) continue;
         const item = this.itemOfRef(r.target);
-        if (!item || (toucher.inventory?.get(item) ?? 0) < 1) continue;
+        if (!item) continue;
+        if ((toucher.inventory?.get(item) ?? 0) < 1) {
+          // Worth knowing when something doesn't open ("why won't this door open?").
+          if (toucher.controller) this.emit('locked', touched, toucher, { needs: item });
+          continue;
+        }
         if (!this.check(r.conditions, { subject: toucher, other: touched })) continue;
         if (r.params.consume === true) this.takeItem(toucher, item, 1);
         this.setOpen(touched, true, toucher);
@@ -475,7 +493,7 @@ export class Gameplay {
         for (const t of targets()) this.takeItem(t, a.item, a.count);
         break;
       case 'respawn':
-        for (const t of targets()) this.rt.respawn(t);
+        for (const t of targets()) this.rt.respawn(t, 'rule');
         break;
       case 'teleport': {
         const to = this.resolve(a.to, ev)[0];

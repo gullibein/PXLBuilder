@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
+import { DebugPanel, useLevelProblems } from './DebugPanel';
 
 /** Collapsible utility area: change history (AI and manual) and the console. Closed by default. */
 export function Tray() {
@@ -8,6 +9,7 @@ export function Tray() {
   const log = useEditor((s) => s.log);
   const setTray = useEditor((s) => s.setTray);
   const errors = log.filter((l) => l.level === 'error').length;
+  const problems = useLevelProblems().filter((p) => p.severity !== 'note').length;
 
   if (!tray.open) {
     return (
@@ -25,6 +27,14 @@ export function Tray() {
           <span className="chip-label">Console</span>
           {errors > 0 && <span className="error-dot" title={`${errors} error(s)`} />}
         </button>
+        <button className="tray-chip" data-testid="debug-toggle" aria-label="Debug" title="Debug: problems in this level and what happened in the last play" onClick={() => setTray({ open: true, tab: 'debug' })}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <ellipse cx="7" cy="8" rx="3.2" ry="4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M7 4V12M3.8 6.5 1.8 5.5M10.2 6.5l2-1M3.8 9.5l-2 1M10.2 9.5l2 1M5.5 4.3 4.6 2.6M8.5 4.3l.9-1.7" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          <span className="chip-label">Debug</span>
+          {problems > 0 && <span className="count warn-count" data-testid="problem-count">{problems}</span>}
+        </button>
       </div>
     );
   }
@@ -38,6 +48,9 @@ export function Tray() {
           <button role="tab" aria-selected={tray.tab === 'console'} className={tray.tab === 'console' ? 'on' : ''} data-testid="tab-console" onClick={() => setTray({ tab: 'console' })}>
             Console{errors > 0 && <span className="error-dot" />}
           </button>
+          <button role="tab" aria-selected={tray.tab === 'debug'} className={tray.tab === 'debug' ? 'on' : ''} data-testid="tab-debug" onClick={() => setTray({ tab: 'debug' })}>
+            Debug{problems > 0 && <span className="count warn-count">{problems}</span>}
+          </button>
         </div>
         <button className="icon-btn" aria-label="Close" onClick={() => setTray({ open: false })}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -45,7 +58,7 @@ export function Tray() {
           </svg>
         </button>
       </header>
-      <div className="tray-body">{tray.tab === 'history' ? <HistoryList /> : <ConsoleList />}</div>
+      <div className="tray-body">{tray.tab === 'history' ? <HistoryList /> : tray.tab === 'debug' ? <DebugPanel /> : <ConsoleList />}</div>
     </section>
   );
 }

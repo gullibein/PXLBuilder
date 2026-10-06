@@ -7,6 +7,8 @@
  * The model never receives the raw project file.
  */
 import type { ComponentRegistry } from '../components/registry';
+import { diagnoseLevel, type Problem } from '../debug/diagnose';
+import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
 import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camera';
 import { describeRelationship, describeRule } from '../logic/describe';
 import { getEntitySize } from '../model/geometry';
@@ -171,6 +173,18 @@ export interface AIPayload {
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
   coordinateSystem: string;
+  /** For debugging questions ("why…?"): what can't work as set up, and what happened the last time the level was played. */
+  debug: {
+    problems: (Omit<Problem, 'key'> & { entities: string[] })[];
+    lastPlay: (PlaySummary & { note: string }) | null;
+  };
+}
+
+/** The last play session, as the editor kept it. */
+export interface LastPlay {
+  report: PlayReport;
+  /** The game was changed since that play (it shows the game as it was). */
+  changedSince: boolean;
 }
 
 const MAX_BRIEFS = 200;
@@ -210,7 +224,7 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
   return { character: placed?.name ?? def!.name, jumpHeightPx: Math.round(r.height), jumpHeightTiles: t(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
 }
 
-export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload): AIPayload {
+export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const connection = ctx.kind === 'connection' ? scene.relationships.find((r) => r.id === ctx.relationshipId) : undefined;
   const endIds = (ref: EntityRef) => (ref.kind === 'entity' ? [ref.id] : []);
@@ -325,6 +339,18 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => (ctx.kind === 'project' ? { id: s.id, name: s.name, entities: briefs(s, new Set()) } : { id: s.id, name: s.name })),
+    debug: debugPayload(project, scene, registry, targetIds, lastPlay ?? null),
     coordinateSystem: 'Pixels. x grows to the right, y grows DOWNWARD (so gravity y > 0 pulls down, and "above" means smaller y). Entity positions are centers.',
   };
+}
+
+function debugPayload(project: Project, scene: Scene, registry: ComponentRegistry, focus: Id[], lastPlay: LastPlay | null): AIPayload['debug'] {
+  const nameOf = (id: Id) => scene.entities.find((e) => e.id === id)?.name ?? id;
+  const problems = diagnoseLevel(project, scene.id, registry).map(({ severity, text, entityIds }) => ({ severity, text, entityIds, entities: entityIds.map(nameOf) }));
+  if (!lastPlay || lastPlay.report.sceneId !== scene.id) return { problems, lastPlay: null };
+  const players = scene.entities.filter((e) => resolveEntity(project, e, registry).components.CharacterController).map((e) => e.id);
+  const note = lastPlay.changedSince
+    ? 'The game was changed after this play, so it shows the game as it was then; things may already be different.'
+    : 'Nothing was changed since this play: it shows the game as it is now.';
+  return { problems, lastPlay: { ...summarizePlay(lastPlay.report, focus, players), note } };
 }

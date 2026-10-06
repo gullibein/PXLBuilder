@@ -24,7 +24,7 @@ export const aiResponseSchema = z.object({
     .describe(
       'apply: small, explicit change - apply immediately. preview: larger or interpretive change - show for confirmation. clarify: request too ambiguous - ask one short question, no operations. answer: a question about the game - answer it, no operations. unsupported: the engine cannot do this yet.',
     ),
-  message: z.string().describe('One or two short sentences for the user. Plain language, no engine jargon, no ids.'),
+  message: z.string().describe('One or two short sentences for the user (an explanation of why something happened may take up to four). Plain language, no engine jargon, no ids.'),
   changes: z.array(z.string()).describe('One short line per change, in plain language, e.g. "Player: 3 hearts". Empty when there are no operations.'),
   operations: z.array(operationSchema),
 });

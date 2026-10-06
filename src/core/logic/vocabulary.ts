@@ -32,6 +32,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'stomped', description: 'Something Stompable is jumped on from above.', subject: 'what was stomped', other: 'who jumped on it', phrase: '{other} stomps on {subject}' },
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
+  { type: 'locked', description: 'A player touches something that requires an item (a "requires" door) without carrying it, so it stays shut (detail.needs is the item).', subject: 'what stayed shut', other: 'who touched it', phrase: '{other} touches {subject}, which stays locked' },
   { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },
   { type: 'teleported', description: 'Something is moved to another place (by a teleporter or a teleport action).', subject: 'who was moved', other: 'where it arrived', phrase: '{subject} is teleported to {other}' },
   { type: 'timer', description: 'A Timer component goes off (every `interval` seconds, or once).', subject: 'what has the Timer', other: null, phrase: "{subject}'s timer goes off" },
