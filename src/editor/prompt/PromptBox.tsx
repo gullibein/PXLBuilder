@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { produce } from 'immer';
 import { applyOperations, isEditorOperation, type ApplyResult } from '../../core/commands/operations';
@@ -101,6 +102,7 @@ export function PromptBox(props: PromptBoxProps) {
   const undo = useEditor((s) => s.undo);
   const undoLayout = useEditor((s) => s.undoLayout);
   const working = runner.state.phase === 'working';
+  const [expanded, setExpanded] = useState(false);
   const lastId = useEditor((s) => s.history.past.at(-1)?.id);
   const applied = runner.state.phase === 'done' && runner.state.outcome.status === 'applied' ? runner.state.outcome : null;
   // Editor changes have their own undo; a game change only while nothing else came after it.
@@ -197,10 +199,65 @@ export function PromptBox(props: PromptBoxProps) {
             if (o?.status === 'applied' && o.editor) undoLayout();
             else undo();
             runner.reset();
-          }} canUndo={canUndo} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} />}
+          }} canUndo={canUndo} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} onExpand={() => setExpanded(true)} />}
+      {expanded &&
+        runner.state.phase === 'done' &&
+        createPortal(
+          <div
+            className="dialog-backdrop result-backdrop"
+            onMouseDown={(e) => e.target === e.currentTarget && setExpanded(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                setExpanded(false);
+              }
+            }}
+          >
+            <section className="dialog result-dialog" role="dialog" aria-label="AI result" data-testid="result-dialog" tabIndex={-1} ref={(el) => el?.focus()}>
+              <header className="bg-head">
+                <span className="result-dialog-title">{props.header ?? 'AI result'}</span>
+                <button className="icon-btn" aria-label="Close" data-testid="result-dialog-close" onClick={() => setExpanded(false)}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                    <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </header>
+              <p className="result-dialog-request">
+                <span className="muted">You asked:</span> {runner.state.request}
+              </p>
+              <div className="result-dialog-body">
+                <Outcome
+                  full
+                  outcome={runner.state.outcome}
+                  onApply={() => {
+                    setExpanded(false);
+                    runner.apply();
+                  }}
+                  onCancel={() => {
+                    setExpanded(false);
+                    runner.reset();
+                  }}
+                  onUndo={() => {
+                    setExpanded(false);
+                    const o = runner.state.phase === 'done' ? runner.state.outcome : null;
+                    if (o?.status === 'applied' && o.editor) undoLayout();
+                    else undo();
+                    runner.reset();
+                  }}
+                  canUndo={canUndo}
+                  selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []}
+                />
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
+
+/** Changes listed on the card; the rest are a click away (the result dialog). */
+const MAX_CHANGES = 5;
 
 function Outcome(props: {
   outcome: PromptOutcome;
@@ -212,8 +269,29 @@ function Outcome(props: {
   renderApplied?: PromptBoxProps['renderApplied'];
   /** What the prompt is about; a change made elsewhere is pointed out. */
   selectedIds: readonly string[];
+  /** Show everything (in the dialog) instead of the first few changes. */
+  full?: boolean;
+  /** Opens the dialog with everything. */
+  onExpand?: () => void;
 }) {
   const { outcome } = props;
+  const list = (changes: string[], className: string) => {
+    const shown = props.full ? changes : changes.slice(0, MAX_CHANGES);
+    return (
+      <ul className={className}>
+        {shown.map((c, i) => (
+          <li key={i}>{c}</li>
+        ))}
+        {shown.length < changes.length && (
+          <li>
+            <button className="more-btn" data-testid="result-more" onClick={props.onExpand}>
+              +{changes.length - shown.length} more
+            </button>
+          </li>
+        )}
+      </ul>
+    );
+  };
   // The AI may put a change on another object than the one asked about (a mushroom's behavior goes on the Mushroom, not the player).
   const elsewhere = outcome.status === 'applied' && !outcome.editor && (outcome.touched ?? []).some((t) => !t.entityIds.length || t.entityIds.some((id) => !props.selectedIds.includes(id)));
   switch (outcome.status) {
@@ -242,14 +320,7 @@ function Outcome(props: {
               </p>
             </>
           )}
-          {outcome.changes.length > 0 && (
-            <ul className="changes">
-              {outcome.changes.slice(0, 5).map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-              {outcome.changes.length > 5 && <li className="more">+{outcome.changes.length - 5} more</li>}
-            </ul>
-          )}
+          {outcome.changes.length > 0 && list(outcome.changes, 'changes')}
           {props.renderApplied?.(outcome)}
         </div>
       );
@@ -257,11 +328,7 @@ function Outcome(props: {
       return (
         <div className="prompt-result proposal" data-testid="prompt-result" data-status="proposal">
           <p className="result-message">{outcome.message}</p>
-          <ul className="changes proposed">
-            {outcome.changes.map((c, i) => (
-              <li key={i}>{c}</li>
-            ))}
-          </ul>
+          {list(outcome.changes, 'changes proposed')}
           <div className="result-actions">
             <button className="btn-primary" data-testid="proposal-apply" onClick={props.onApply}>
               Apply

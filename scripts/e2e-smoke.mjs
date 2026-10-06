@@ -198,7 +198,7 @@ function stubModel(body) {
     ops.push({ op: 'place_instance', sceneId, definitionRef: 'tp', x: 30, y: 60, name: 'Teleporter A', ref: 'tpA' });
     ops.push({ op: 'place_instance', sceneId, definitionRef: 'tp', x: 320, y: -76, name: 'Teleporter B', ref: 'tpB' });
     ops.push({ op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'teleports_to', source: { kind: 'entity', id: 'tpA' }, target: { kind: 'entity', id: 'tpB' } }) });
-    return { kind: 'preview', message: 'A hard level: three stretches of ground with pits, spikes, three enemies and a teleporter up to a high ledge.', changes: ['Ground: 3 stretches with 2 pits', 'Spikes: 4', 'Enemies: 3', 'Teleporter A → B (up to the ledge)'], operations: ops };
+    return { kind: 'preview', message: 'A hard level: three stretches of ground with pits, spikes, three enemies and a teleporter up to a high ledge.', changes: ['Cleared the level area', 'Ground: 3 stretches with 2 pits', 'Spikes: 4', 'Enemies: 3', 'Teleporter A → B (up to the ledge)', 'Ledge: high, reached by the teleporter', 'Player: on the ground at the start', 'Hardest part last'], operations: ops };
   }
   if (body.context.scope === 'connection') {
     const c = body.context.connection;
@@ -1328,6 +1328,14 @@ try {
   await check(async () => Number(await gCanvas.getAttribute('data-entities')) === before, 'nothing is changed yet');
   await gp.waitForTimeout(300);
   await gp.screenshot({ path: `${OUT}/19-level-preview.png` });
+  await check(async () => (await gPrompt.getByTestId('prompt-result').locator('.changes li').count()) === 6 && (await gPrompt.getByTestId('result-more').innerText()) === '+3 more', 'a long list shows the first five changes and "+3 more"');
+  await gPrompt.getByTestId('result-more').click();
+  const resultDialog = gp.getByTestId('result-dialog');
+  await check(async () => (await resultDialog.isVisible()) && (await resultDialog.locator('.changes li').count()) === 8 && (await resultDialog.innerText()).includes('You asked:'), '"+3 more" opens a dialog with every change');
+  await gp.waitForTimeout(300);
+  await gp.screenshot({ path: `${OUT}/19b-result-dialog.png` });
+  await gp.keyboard.press('Escape');
+  await check(async () => (await resultDialog.count()) === 0 && (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'Esc closes the dialog; the proposal is still waiting on the card');
   await gPrompt.getByTestId('proposal-apply').click();
   await check(async () => Number(await gCanvas.getAttribute('data-entities')) > 30 && (await gCanvas.getAttribute('data-preview')) === '', 'Apply draws it for real');
   await gp.getByTestId('play').click();

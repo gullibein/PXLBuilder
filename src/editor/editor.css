@@ -153,6 +153,17 @@ code { font-family: var(--font-data); font-size: 11px; }
 .changes.proposed li { color: var(--card-text); }
 .changes.proposed li::before { content: '+'; }
 .changes .more { font-style: italic; }
+.more-btn { padding: 0; border: none; background: none; color: var(--accent); font: italic 600 12px var(--font-ui); text-decoration: underline; text-underline-offset: 2px; }
+.more-btn:hover { color: var(--accent-hi); }
+/* The full AI result, when the card's list is cut short. */
+.result-backdrop { position: fixed; z-index: 60; }
+.result-dialog { width: min(600px, calc(100% - 32px)); max-height: calc(100vh - 80px); grid-template-rows: auto auto minmax(0, 1fr); }
+.result-dialog:focus { outline: none; }
+.result-dialog-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.result-dialog-request { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--text); }
+.result-dialog-body { min-height: 0; overflow: auto; border-radius: 12px; background: var(--card); }
+.result-dialog-body .prompt-result { margin: 0; padding: 12px 14px; border: none; font-size: 13px; }
+.result-dialog-body .changes { gap: 4px; }
 .result-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .btn-primary { border: none; padding: 7px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hi); }
