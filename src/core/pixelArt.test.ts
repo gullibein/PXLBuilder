@@ -78,4 +78,23 @@ describe('pixel-art sprites', () => {
     expect(wide.rows).toEqual(['..g...', '..g...', '..g...']); // padded to 2:1
     expect(fitPixelArt(spike, { x: 32, y: 32 })).toBe(spike); // already right
   });
+
+  it('draws an object made in the same answer (by its ref), and reads spaces as transparent', () => {
+    const project = createProject(registry);
+    let assetId = '';
+    const next = produce(project, (d) => {
+      applyOperations(
+        d,
+        [
+          { op: 'create_definition', ref: 'mush', name: 'Mushroom', description: 'A mushroom enemy', category: 'Enemies', tags: ['enemy'], components: [{ component: 'Sprite', propsJson: '{"width":16,"height":16}' }] },
+          { op: 'draw_sprite', target: 'definition', id: 'mush', name: 'Mushroom', palette: [{ key: 'r', color: '#d33b3b' }], rows: Array.from({ length: 16 }, (_, y) => (y < 8 ? 'r'.repeat(16) : '    rrrrrrrr    ')), situation: null },
+        ],
+        registry,
+      );
+      const def = d.definitions.find((x) => x.name === 'Mushroom')!;
+      assetId = def.components.Sprite.assetId as string;
+    });
+    const asset = next.assets.find((a) => a.id === assetId)!;
+    expect(asset.pixelArt!.rows[15]).toBe('....rrrrrrrr....');
+  });
 });

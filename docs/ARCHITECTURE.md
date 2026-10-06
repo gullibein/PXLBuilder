@@ -476,6 +476,22 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Can the player get there? (`core/model/reachability.ts`)
+A static estimate of whether a level can be got through: from the surface
+under the player, it follows standable tops (solids with nothing on top,
+merged into spans) by jumping (the real arc from jumpForce, speed and
+gravity, with a safety margin; double jump and ledge grab widen it),
+falling, ladders (stacked climbable pieces) and teleporters, and lists
+needed things it never gets near (collectibles, switches, doors, exits,
+teleporters) and open platforms 2+ tiles wide it never stands on. Walls and
+headroom aren't modelled, so it errs towards "reachable"; levels with moving
+or scripted solids, switch-moved platforms or player scripts are
+"uncertain" and not judged. Used by the problem checker (Debug tab) and by
+the AI pipeline: an answer that newly makes something unreachable goes back
+to the AI once with the exact problem (same retry as for answers that don't
+apply); if the corrected answer still has it, it is shown as a preview with
+a ⚠ line.
+
 ### Game logic (Phase 3): relationships, events, rules, graph
 The design principle: logic is **data in the project**, built from a small
 vocabulary, never generated code. Everything lives per level

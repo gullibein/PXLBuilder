@@ -28,7 +28,9 @@ function check(build: (b: B) => void) {
       m.addEntity(d, sceneId, e);
       return e.id;
     };
-    place('Player');
+    // Ground under the player (a player above nothing is a problem of its own).
+    for (let x = -96; x <= 96; x += 32) place('Platform', { x, y: 48 });
+    place('Player', { x: 0, y: 16 });
     build({ d, sceneId, place, def });
   });
   return diagnoseLevel(project, sceneId, registry);
@@ -38,7 +40,7 @@ const keys = (ps: { key: string }[]) => ps.map((p) => p.key.split(':')[0]);
 describe('the problem checker', () => {
   it('a plain level with a player, a door and its key has no problems', () => {
     const problems = check((b) => {
-      const door = b.place('Door');
+      const door = b.place('Door', { x: 96, y: 0 });
       b.place('Key');
       logic.addRelationship(b.d, b.sceneId, { type: 'requires', source: { kind: 'entity', id: door }, target: { kind: 'object', id: b.def('Key') }, params: {}, conditions: [] });
       b.place('Enemy'); // the player's Damage Receiver accepts "enemy"
@@ -49,7 +51,7 @@ describe('the problem checker', () => {
   it('a door that needs a key nothing gives', () => {
     let door = '';
     const problems = check((b) => {
-      door = b.place('Door');
+      door = b.place('Door', { x: 96, y: 0 });
       logic.addRelationship(b.d, b.sceneId, { type: 'requires', source: { kind: 'entity', id: door }, target: { kind: 'object', id: b.def('Key') }, params: {}, conditions: [] });
     });
     expect(keys(problems)).toEqual(['requires-nothing-gives']);
@@ -59,7 +61,7 @@ describe('the problem checker', () => {
 
   it('…unless a rule gives the key', () => {
     const problems = check((b) => {
-      const door = b.place('Door');
+      const door = b.place('Door', { x: 96, y: 0 });
       logic.addRelationship(b.d, b.sceneId, { type: 'requires', source: { kind: 'entity', id: door }, target: { kind: 'object', id: b.def('Key') }, params: {}, conditions: [] });
       logic.addRule(b.d, b.sceneId, { name: 'gift', enabled: true, when: { event: 'level_started', subject: { kind: 'any' }, other: { kind: 'any' } }, conditions: [], actions: [{ type: 'give_item', target: { kind: 'tag', tag: 'player' }, item: 'key', count: 1 }] });
     });

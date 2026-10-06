@@ -292,7 +292,14 @@ export function applyOperations(
   const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
-  const applyOne = (op: Operation): void => {
+  const applyOne = (given: Operation): void => {
+    // A new object or entity made earlier in this list can be named by its ref ("make a Mushroom and draw it").
+    let op = given;
+    if ('target' in op && 'id' in op && typeof op.id === 'string') {
+      const id = op.target === 'definition' ? refs.get(op.id) : entityRefs.get(op.id);
+      if (id) op = { ...op, id } as Operation;
+    }
+    if (op.op === 'set_transform' && entityRefs.has(op.entityId)) op = { ...op, entityId: entityRefs.get(op.entityId)! };
     switch (op.op) {
       case 'set_component_field': {
         const value = parseJson(op.valueJson, `${op.component}.${op.field} value`);
@@ -370,7 +377,9 @@ export function applyOperations(
       case 'draw_sprite': {
         const entity = op.target === 'instance' ? m.getEntity(project, sceneOfEntity(project, op.id), op.id) : instantiateDefinition(m.getDefinition(project, op.id), { x: 0, y: 0 });
         const size = getEntitySize(resolveEntity(project, entity, registry));
-        const drawn = { palette: op.palette, rows: op.rows };
+        // Spaces are read as transparent (".") unless the palette gives them a color: models often draw empty pixels that way.
+        const spaceIsColor = op.palette.some((p) => p.key === ' ');
+        const drawn = { palette: op.palette, rows: spaceIsColor ? op.rows : op.rows.map((r) => r.replace(/ /g, '.')) };
         const err = checkPixelArt(drawn);
         if (err) throw new m.ModelError(`Sprite: ${err}`);
         // Other proportions than the object's are fitted (repeated or padded), not rejected.

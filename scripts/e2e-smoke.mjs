@@ -63,6 +63,17 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('coin up high')) {
+    // First a coin the player can't reach (no platform or ladder up there); asked again with the problem, a reachable one.
+    const retry = req.includes('could not be applied');
+    const coin = body.context.library.find((d) => d.name === 'Coin').id;
+    return {
+      kind: 'apply',
+      message: 'Added a coin.',
+      changes: ['Coin: up high'],
+      operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: coin, x: retry ? 48 : 48, y: retry ? -4 : -140, name: null, ref: null }],
+    };
+  }
   if (req.startsWith('why didn')) {
     // A diagnosis from what the editor sends: the problems it found and the last play.
     const locked = body.context.debug.lastPlay?.events.find((e) => e.includes(' locked '));
@@ -1569,6 +1580,12 @@ try {
     await lp.getByTestId('proposal-apply').click();
     await check(async () => (await dp.getByTestId('problem-count').count()) === 0, 'after applying the fix the problem is gone');
     await check(async () => (await panel.innerText()).includes('the game changed since'), 'the last play is marked as older than the game now');
+
+    if ((await lp.count()) === 0) await dp.getByTestId('global-prompt-toggle').click();
+    await lAsk('Put a coin up high');
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a level change the player could not finish is sent back and comes back fixed');
+    await check(aiRequests.at(-1).request.includes("could not be applied: The player can't get to Coin from where it starts"), "the AI is told exactly what can't be reached, with the player's jump limits");
+    await lp.getByTestId('prompt-close').click();
     await dc.close();
   }
 

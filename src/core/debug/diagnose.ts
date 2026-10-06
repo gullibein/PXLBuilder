@@ -13,6 +13,7 @@ import type { ComponentRegistry } from '../components/registry';
 import { itemNameOf } from '../graph/graph';
 import { resolveRef } from '../logic/refs';
 import { relationshipRegistry } from '../logic/vocabulary';
+import { reachabilityProblems } from '../model/reachability';
 import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import { checkScript, type Stmt } from '../script/language';
 import type { BehaviorScript, EntityRef, Id, Project, Scene } from '../types';
@@ -158,6 +159,9 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
       );
     }
   }
+
+  // ---- can the player get to everything?
+  for (const r of reachabilityProblems(project, sceneId, registry)) add(r.key, 'warning', r.text, r.entityIds);
 
   const order = { error: 0, warning: 1, note: 2 };
   return out.sort((a, b) => order[a.severity] - order[b.severity]);
