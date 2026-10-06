@@ -12,7 +12,12 @@ import type { EditorSettingsPayload } from '../../core/ai/context';
 import { validateField, type FieldSchema } from '../../core/components/schema';
 import { checkOverlay, overlaysPayload, type EditorOverlay } from '../overlays/overlays';
 
+/** The editor's look (only the editor around the level; the game itself never changes). */
+export const EDITOR_STYLES = ['classic', 'blueprint', 'arcade', 'paper', 'amber'] as const;
+export type EditorStyle = (typeof EDITOR_STYLES)[number];
+
 export interface EditorLayout {
+  editorStyle: EditorStyle;
   playButton: 'top' | 'bottom';
   inspector: 'floating' | 'docked';
   inspectorSide: 'right' | 'left';
@@ -36,6 +41,13 @@ export interface EditorSetting {
 }
 
 export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout, 'overlays'> })[] = [
+  {
+    key: 'editorStyle',
+    label: 'Editor style',
+    description:
+      'The look of the editor (never the game). classic: the default dark look. blueprint: a technical drawing with ink outlines, hard shadows, paper cards and drafting grid lines. arcade: neon on black with pixel-font headings. paper: a light, warm editor. amber: an old computer monitor, amber text glowing on black with scanlines (uses amber instead of the accent color).',
+    field: { kind: 'enum', options: [...EDITOR_STYLES], default: 'classic' },
+  },
   {
     key: 'playButton',
     label: 'Play button',

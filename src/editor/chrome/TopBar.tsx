@@ -152,6 +152,7 @@ function MainMenu() {
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
     { label: 'Camera frame', checked: frameOn, run: () => s.setLayout({ showCameraFrame: !frameOn }), testId: 'menu-camera-frame' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
+    { label: 'Editor style…', run: () => s.setStylePickerOpen(true), testId: 'menu-style' },
     { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt' },
     ...(overlayCount ? [{ label: `Hide info on the level (${overlayCount})`, run: () => s.setLayout({ overlays: [] }), testId: 'menu-clear-overlays' }] : []),
     { label: 'Reset editor layout', run: () => s.resetLayout(), testId: 'menu-reset-layout' },

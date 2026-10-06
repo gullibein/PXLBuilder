@@ -322,6 +322,16 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
+### Editor styles
+The editor's look is an editor setting (`editorStyle`: classic, the default;
+blueprint; arcade; paper; amber), chosen in ⋯ → Editor style… or by asking
+the Editor prompt. It only restyles the editor, never the game: the level
+keeps its own background and art. `applyStyle` (theme.ts) sets
+`data-style` on the page, which `styles.css` keys its overrides on (tokens
+plus a few component rules: outlines, shadows, fonts), and swaps the canvas
+colors (grid dots, drafting lines, labels). The amber style uses amber
+instead of the accent color; the others keep the user's accent.
+
 ### Behavior scripts (programmable behavior)
 Ready-made components cover common cases; everything else is programmed.
 The AI writes **behavior scripts**: programs stored as data on a library

@@ -582,6 +582,22 @@ function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize,
   while (step * camera.zoom < 10) step *= 4;
   const tl = screenToWorld(camera, view, { x: 0, y: 0 });
   const br = screenToWorld(camera, view, { x: view.width, y: view.height });
+  if (theme.gridMajor) {
+    // Drafting paper: a faint line every 8 grid steps.
+    const major = step * 8;
+    ctx.strokeStyle = theme.gridMajor;
+    ctx.lineWidth = 1 / camera.zoom;
+    ctx.beginPath();
+    for (let x = Math.floor(tl.x / major) * major; x <= br.x; x += major) {
+      ctx.moveTo(x, tl.y);
+      ctx.lineTo(x, br.y);
+    }
+    for (let y = Math.floor(tl.y / major) * major; y <= br.y; y += major) {
+      ctx.moveTo(tl.x, y);
+      ctx.lineTo(br.x, y);
+    }
+    ctx.stroke();
+  }
   // Dots at grid intersections: present but quiet, so the game stays the focus.
   ctx.fillStyle = theme.gridDot;
   const r = 1 / camera.zoom;
@@ -968,7 +984,7 @@ function drawRelation(
 function drawLabel(ctx: CanvasRenderingContext2D, text: string, toScreen: (p: Vec2) => Vec2, bounds: Rect): void {
   const p = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY });
   ctx.save();
-  ctx.font = `700 10px ${theme.uiFont}`;
+  ctx.font = theme.labelFont;
   ctx.letterSpacing = '1.2px';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';

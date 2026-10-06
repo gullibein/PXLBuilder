@@ -80,6 +80,7 @@ export interface EditorState {
   flash: { ids: Id[]; until: number } | null;
   /** The AI connection dialog (the user's own API key) is open. */
   aiConnectionOpen: boolean;
+  stylePickerOpen: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
@@ -116,6 +117,7 @@ export interface EditorState {
   setBackgroundOpen(open: boolean): void;
   setLogicOpen(open: boolean): void;
   setAIConnectionOpen(open: boolean): void;
+  setStylePickerOpen(open: boolean): void;
   flashEntities(ids: Id[]): void;
   setAIPreview(preview: EditorState['aiPreview']): void;
   openSprites(definitionId: Id | null): void;
@@ -169,6 +171,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     logicOpen: false,
     aiPreview: null,
     aiConnectionOpen: false,
+    stylePickerOpen: false,
     flash: null,
     mode: 'edit',
 
@@ -366,6 +369,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ flash: { ids, until: performance.now() + 2200 } });
     },
 
+    setStylePickerOpen(stylePickerOpen) {
+      set({ stylePickerOpen });
+    },
     setAIConnectionOpen(aiConnectionOpen) {
       set({ aiConnectionOpen });
     },

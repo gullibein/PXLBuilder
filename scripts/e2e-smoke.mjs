@@ -1305,9 +1305,33 @@ try {
   await ep.screenshot({ path: `${OUT}/17-editor-docked.png` });
   await ep.reload();
   await check(async () => (await ep.getByTestId('inspector').getAttribute('data-docked')) === 'true' && (await ep.locator('.dock [data-testid="play"]').count()) === 1, 'editor settings are remembered after a reload');
+  step = 'editor styles';
+  const htmlStyle = () => ep.evaluate(() => document.documentElement.dataset.style);
+  await check(async () => (await htmlStyle()) === 'classic', 'the editor starts in the Classic style');
+  await ep.getByTestId('main-menu').click();
+  await ep.getByTestId('menu-style').click();
+  const picker = ep.getByTestId('style-picker');
+  await check(async () => (await picker.isVisible()) && (await picker.getByRole('radio').count()) === 5 && (await picker.getByTestId('style-classic').getAttribute('aria-checked')) === 'true', 'the style picker shows five styles, Classic chosen');
+  for (const st of ['blueprint', 'arcade', 'paper', 'amber']) {
+    await picker.getByTestId(`style-${st}`).click();
+    await check(async () => (await htmlStyle()) === st && (await picker.getByTestId(`style-${st}`).getAttribute('aria-checked')) === 'true', `choosing ${st} restyles the editor at once`);
+    await ep.keyboard.press('Escape');
+    await ep.mouse.click(700, 420);
+    await ep.screenshot({ path: `${OUT}/27-style-${st}.png` });
+    await ep.keyboard.press('Escape');
+    await ep.getByTestId('main-menu').click();
+    await ep.getByTestId('menu-style').click();
+  }
+  const bg = () => ep.evaluate(() => getComputedStyle(document.querySelector('.topbar')).backgroundColor);
+  await check(async () => (await bg()) === 'rgb(17, 12, 4)', 'the amber style really changes the top bar');
+  await ep.keyboard.press('Escape');
+  await check(async () => (await picker.count()) === 0, 'Esc closes the picker');
+  await ep.reload();
+  await check(async () => (await htmlStyle()) === 'amber', 'the chosen style is remembered after a reload');
   await ep.getByTestId('main-menu').click();
   await ep.getByTestId('menu-reset-layout').click();
   await check(async () => (await ep.getByTestId('inspector').count()) === 0 && (await ep.locator('.topbar [data-testid="play"]').count()) === 1, 'Reset editor layout restores the defaults');
+  await check(async () => (await htmlStyle()) === 'classic', '(including the Classic style)');
   await ec.close();
 
   step = 'console errors';

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
 import { AIConnection } from './chrome/AIConnection';
+import { StylePicker } from './chrome/StylePicker';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
@@ -15,7 +16,7 @@ import { ContextPrompt } from './prompt/ContextPrompt';
 import { useEditor } from './store';
 import { PlayView } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
-import { applyAccent } from './theme';
+import { applyAccent, applyStyle } from './theme';
 import type { EditorLayout } from './layout/settings';
 
 /** Layout classes on the editor root: where panels and buttons go (editor settings). */
@@ -38,7 +39,10 @@ export function App() {
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const mode = useEditor((s) => s.mode);
   const layout = useEditor((s) => s.layout);
-  useEffect(() => applyAccent(layout.accentColor), [layout.accentColor]);
+  useEffect(() => {
+    applyAccent(layout.accentColor);
+    applyStyle(layout.editorStyle);
+  }, [layout.accentColor, layout.editorStyle]);
   const docked = layout.inspector === 'docked';
   if (mode === 'play') {
     // Build → Play → Game: the editor gets out of the way.
@@ -69,6 +73,7 @@ export function App() {
         <LogicPanel />
         <SpritesPanel />
         <AIConnection />
+        <StylePicker />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -145,6 +150,7 @@ function useGlobalShortcuts() {
         else if (state.backgroundOpen) state.setBackgroundOpen(false);
         else if (state.logicOpen) state.setLogicOpen(false);
         else if (state.aiConnectionOpen) state.setAIConnectionOpen(false);
+        else if (state.stylePickerOpen) state.setStylePickerOpen(false);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {
