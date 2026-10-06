@@ -167,6 +167,14 @@ code { font-family: var(--font-data); font-size: 11px; }
 .result-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .btn-primary { border: none; padding: 7px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hi); }
+.btn-secondary { border: 1px solid var(--accent); padding: 6px 14px; border-radius: 10px; background: none; color: var(--accent); font-weight: 700; }
+.btn-secondary:hover { background: var(--accent-soft); }
+.choice-actions { flex-wrap: wrap; gap: 6px; }
+.choice-actions .btn-primary, .choice-actions .btn-secondary { flex: 1 1 auto; white-space: nowrap; padding: 5px 10px; border-radius: 9px; font-size: 12px; }
+.prompt-result.choice { position: relative; }
+.prompt-result.choice .result-message { padding-right: 22px; }
+.choice-cancel { position: absolute; top: 4px; right: 4px; }
+.choice-hint { margin: 6px 0 0; color: var(--card-muted); font-size: 11px; line-height: 1.35; }
 .text-btn { border: none; background: none; padding: 2px 4px; color: var(--card-muted); border-radius: 6px; }
 .text-btn:hover { color: var(--card-text); }
 .icon-text-btn { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--card-muted); }

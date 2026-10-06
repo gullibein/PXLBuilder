@@ -6,7 +6,7 @@ import { applyOperations, isEditorOperation, type ApplyResult } from '../../core
 import { componentRegistry } from '../../core/components/builtin';
 import { frameEntities } from '../actions';
 import { cardOpened, clearJob, setJobOutcome, startJob, stopJob, useJobs } from '../ai/jobs';
-import { applyAIOperations, type PromptOutcome } from '../ai/runPrompt';
+import { applyAIOperations, applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
 
@@ -66,6 +66,10 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     },
     stop() {
       stopJob(key);
+    },
+    choose(as: 'object' | 'new') {
+      if (state.phase !== 'done' || state.outcome.status !== 'choice') return;
+      setJobOutcome(key, applyObjectChoice(state.request, state.outcome, as));
     },
     apply() {
       if (state.phase !== 'done' || state.outcome.status !== 'proposal') return;
@@ -197,7 +201,7 @@ export function PromptBox(props: PromptBoxProps) {
           </div>
         </>
       )}
-      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onCancel={runner.reset} onUndo={() => {
+      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onChoose={runner.choose} onCancel={runner.reset} onUndo={() => {
             const o = runner.state.phase === 'done' ? runner.state.outcome : null;
             if (o?.status === 'applied' && o.editor) undoLayout();
             else undo();
@@ -236,6 +240,10 @@ export function PromptBox(props: PromptBoxProps) {
                     setExpanded(false);
                     runner.apply();
                   }}
+                  onChoose={(as) => {
+                    setExpanded(false);
+                    runner.choose(as);
+                  }}
                   onCancel={() => {
                     setExpanded(false);
                     runner.reset();
@@ -265,6 +273,7 @@ const MAX_CHANGES = 5;
 function Outcome(props: {
   outcome: PromptOutcome;
   onApply: () => void;
+  onChoose: (as: 'object' | 'new') => void;
   onCancel: () => void;
   onUndo: () => void;
   /** The change is still the latest one (so Undo undoes exactly it). */
@@ -342,6 +351,32 @@ function Outcome(props: {
           </div>
         </div>
       );
+    case 'choice': {
+      const { objectName, copies } = outcome.choice;
+      return (
+        <div className="prompt-result proposal choice" data-testid="prompt-result" data-status="choice">
+          <button className="icon-text-btn choice-cancel" data-testid="proposal-cancel" aria-label="Cancel" title="Cancel: change nothing" onClick={props.onCancel}>
+              <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+          <p className="result-message">{outcome.message}</p>
+          {outcome.changes.length > 0 && list(outcome.changes, 'changes proposed')}
+          <div className="result-actions choice-actions">
+            <button className="btn-primary" data-testid="choice-object" title={`Every ${objectName} in the game gets this (${copies} placed)`} onClick={() => props.onChoose('object')}>
+              Change {objectName}
+            </button>
+            <button className="btn-secondary" data-testid="choice-new" title={`A new object with this change; the other ${objectName}s stay as they are`} onClick={() => props.onChoose('new')}>
+              Create new
+            </button>
+
+          </div>
+          <p className="choice-hint">
+            {copies > 1 ? `Change ${objectName} changes all ${copies}. ` : ''}Create new makes a new kind of {objectName} in your objects.
+          </p>
+        </div>
+      );
+    }
     case 'message':
       return (
         <div className={`prompt-result note ${outcome.tone}`} data-testid="prompt-result" data-status="message">

@@ -10,6 +10,7 @@ import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { getApiKey } from './apiKey';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
+import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
 import { applyOperations, checkOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
@@ -21,6 +22,8 @@ export type PromptOutcome =
   /** `editor`: the change was to the editor's own settings (undone with the editor's undo, not the project's). */
   | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number }
   | { status: 'proposal'; message: string; changes: string[]; operations: Operation[] }
+  /** A change to what an object is: the user picks "change the object" (every copy) or "create a new object". */
+  | { status: 'choice'; message: string; changes: string[]; operations: Operation[]; choice: ObjectChoice }
   | { status: 'message'; message: string; tone: 'info' | 'warn' }
   | { status: 'error'; message: string };
 
@@ -95,6 +98,11 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
 
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };
+  }
+  if (!response.operations.some(isEditorOperation)) {
+    const now = useEditor.getState();
+    const choice = objectChoiceFor(now.project, response.operations, 'entityIds' in ctx ? ctx.entityIds : []);
+    if (choice) return { status: 'choice', message: response.message, changes: response.changes, operations: response.operations, choice };
   }
   if (response.kind === 'apply') return applyAIOperations(request, response.message, response.changes, response.operations);
   return { status: 'proposal', message: response.message, changes: response.changes, operations: response.operations };
@@ -175,6 +183,47 @@ function applyEditorOperations(message: string, changes: string[], operations: O
   setLayout({ ...(patch as Partial<EditorLayout>), overlays });
   logMessage('info', `Editor: ${message}`);
   return { status: 'applied', message, changes, result: EMPTY_RESULT, editor: true };
+}
+
+/**
+ * Applies a change to what an object is, as the user chose: to the object
+ * (every copy), or to a new object the selected copies become.
+ */
+export function applyObjectChoice(request: string, outcome: Extract<PromptOutcome, { status: 'choice' }>, as: 'object' | 'new'): PromptOutcome {
+  const { edit, logMessage } = useEditor.getState();
+  const { choice } = outcome;
+  let result: ApplyResult = EMPTY_RESULT;
+  let newName = '';
+  const ok = edit(
+    `✨ ${labelFor(request)}${as === 'new' ? ' (new object)' : ''}`,
+    (p) => {
+      if (as === 'new') {
+        const r = applyAsNewObject(p, outcome.operations, choice, componentRegistry);
+        newName = p.definitions.find((d) => d.id === r.newDefinitionId)?.name ?? '';
+        result = r;
+      } else result = applyToObject(p, outcome.operations, choice, componentRegistry);
+    },
+    { source: 'ai', changes: outcome.changes, operations: outcome.operations },
+  );
+  if (!ok) {
+    const last = useEditor.getState().log.at(-1);
+    return { status: 'error', message: `The AI's change couldn't be applied. ${last?.message.split(': ').slice(1).join(': ') ?? ''}`.trim() };
+  }
+  const after = useEditor.getState();
+  const scene = after.project.scenes.find((s) => s.id === after.activeSceneId);
+  const defId = as === 'new' ? result.createdDefinitionIds[0] : choice.definitionId;
+  const copies = scene?.entities.filter((e) => e.definitionId === defId).map((e) => e.id) ?? [];
+  if (copies.length) after.flashEntities(copies);
+  const label = as === 'new' ? `${newName} (new object, ${copies.length} in this level)` : `${choice.objectName} (every copy${copies.length ? `, ${copies.length} in this level` : ''})`;
+  logMessage('info', `AI: ${outcome.message}${as === 'new' ? ` — as a new object, ${newName}` : ''}`);
+  return {
+    status: 'applied',
+    message: as === 'new' ? `Created ${newName}: ${choice.objectName} with this change. The other ${choice.objectName}s stay as they were.` : outcome.message,
+    changes: outcome.changes,
+    result,
+    touched: [{ label, entityIds: copies }],
+    transactionId: after.history.past.at(-1)?.id,
+  };
 }
 
 /** Applies AI operations as one transaction. Invalid operations reject the whole set. */

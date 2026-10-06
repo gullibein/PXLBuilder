@@ -322,6 +322,18 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
+### Change the object, or create a new one
+Behavior and looks belong to library objects, never to one placed copy.
+When an AI change alters what one library object is (components, scripts,
+sprites, tags; whether the AI aimed at a copy or at the object), the card
+does not apply it: it shows the change with **Change <Object>** (every copy
+gets it; ops aimed at a copy are re-aimed at the object) and **Create new**
+(a copy of the object, "Enemy 2", gets the change and the selected copies
+become it; the old object and its other copies are unchanged). One undo
+step either way (`core/commands/objectChoice.ts`). Moving or renaming a
+copy, connections, rules and level changes apply as before. The AI is told
+to always target the object.
+
 ### AI prompts run in the background
 Prompt runs live in a job list (`editor/ai/jobs.ts`), one per context key
 (an object, a pair, the level…), not in the prompt card, so closing a card
