@@ -158,7 +158,7 @@ export function Viewport() {
       const order = (l: (typeof links)[number]) => (l.selected ? 2 : l.hovered ? 1 : 0);
       for (const l of [...links].sort((x, y) => order(x) - order(y))) {
         const look = l.selected ? 'selected' : l.hovered ? 'hover' : !l.simulated || !l.related ? 'faded' : 'normal';
-        drawLink(ctx, l.a, l.b, state.camera.zoom, look, time);
+        drawLink(ctx, l.a, l.b, state.camera.zoom, look);
       }
       const hoverLinkAttr = links.find((l) => l.hovered)?.relId ?? '';
       if ((canvas.dataset.hoverLink ?? '') !== hoverLinkAttr) canvas.dataset.hoverLink = hoverLinkAttr;
@@ -819,10 +819,10 @@ function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2, loo
   ctx.roundRect(p.x - w / 2 + 1.5, p.y - 8 + 2, w, 16, 8);
   ctx.fill();
   if (look !== 'normal') {
-    ctx.shadowColor = theme.logic;
+    ctx.shadowColor = theme.link;
     ctx.shadowBlur = look === 'selected' ? 14 : 7;
   }
-  ctx.fillStyle = look === 'selected' ? theme.logicBright : theme.logic;
+  ctx.fillStyle = theme.link;
   ctx.strokeStyle = theme.ink;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -841,14 +841,14 @@ function drawLinkLabel(ctx: CanvasRenderingContext2D, text: string, p: Vec2, loo
  * An existing connection, drawn like a blueprint annotation in ink: a dark
  * outline under bright rounded dashes, a pin where it starts and a chunky
  * outlined arrowhead. Faded when it doesn't concern the selection (or does
- * nothing in play yet); a soft glow on hover; fully lit, thicker and with
- * marching dashes when selected.
+ * nothing in play yet); a soft glow on hover; fully lit and thicker when
+ * selected (no animation).
  */
-function drawLink(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number, look: 'normal' | 'faded' | 'hover' | 'selected', time: number): void {
+function drawLink(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedEntity, zoom: number, look: 'normal' | 'faded' | 'hover' | 'selected'): void {
   const { start, end, ctrl } = linkPath(a, b, zoom);
   const px = 1 / zoom;
   const width = (look === 'selected' ? 3.5 : look === 'hover' ? 3 : 2.5) * px;
-  const color = look === 'selected' ? theme.logicBright : theme.logic;
+  const color = theme.link;
   const curve = () => {
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
@@ -878,7 +878,6 @@ function drawLink(ctx: CanvasRenderingContext2D, a: ResolvedEntity, b: ResolvedE
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.setLineDash([7 * px, 6 * px]);
-  if (look === 'selected') ctx.lineDashOffset = (-time / 40) * px;
   curve();
   ctx.stroke();
   ctx.setLineDash([]);
