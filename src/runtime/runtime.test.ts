@@ -396,7 +396,7 @@ describe('runtime', () => {
   });
 
   it('the camera follows the camera target', () => {
-    const { project, sceneId } = level();
+    const { project, sceneId } = level((p, sid) => m.setCameraSettings(p, sid, { bounds: 'none' }));
     const rt = new Runtime(project, sceneId, registry);
     const input = new InputState();
     input.press('right');

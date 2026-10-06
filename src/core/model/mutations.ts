@@ -5,6 +5,7 @@
  * command/transaction system and AI operations later.
  */
 import type { ComponentRegistry } from '../components/registry';
+import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
 import { createStarterAssets, createStarterDefinitions, type StarterAssets } from './factory';
@@ -123,6 +124,16 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
 }
 
 // ---------------------------------------------------------------- assets
+
+/** Changes some camera settings of a level; the result is checked as a whole. */
+export function setCameraSettings(project: Project, sceneId: Id, patch: Partial<CameraSettings>): void {
+  const scene = getScene(project, sceneId);
+  const unknown = Object.keys(patch).find((k) => !(k in scene.camera));
+  if (unknown) throw new ModelError(`Camera has no setting "${unknown}"`);
+  const checked = checkCamera({ ...scene.camera, ...cloneValue(patch) });
+  if ('error' in checked) throw new ModelError(checked.error);
+  scene.camera = checked.camera;
+}
 
 export function addAsset(project: Project, asset: AssetRecord): void {
   if (project.assets.some((a) => a.id === asset.id)) throw new ModelError(`Asset "${asset.id}" already exists`);

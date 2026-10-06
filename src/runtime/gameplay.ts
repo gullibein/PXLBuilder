@@ -441,7 +441,7 @@ export class Gameplay {
   }
 
   private act(a: RuleAction, ev: GameEvent): void {
-    const targets = () => ('target' in a ? this.resolve(a.target, ev, a.type === 'respawn') : []);
+    const targets = () => ('target' in a && a.target ? this.resolve(a.target, ev, a.type === 'respawn') : []);
     switch (a.type) {
       case 'open':
       case 'close':
@@ -486,6 +486,23 @@ export class Gameplay {
         break;
       case 'show_message':
         this.messages.push({ text: a.text, until: this.rt.time + a.seconds });
+        break;
+      case 'camera_shake':
+        this.rt.cam.startShake(a.strength, a.seconds);
+        break;
+      case 'camera_flash':
+        this.rt.cam.startFlash(a.color, a.seconds);
+        break;
+      case 'camera_zoom':
+        this.rt.cam.zoomTo(a.zoom, a.seconds);
+        break;
+      case 'camera_focus': {
+        const t = this.resolve(a.target, ev)[0];
+        if (t) this.rt.cam.focusOn(t, a.seconds);
+        break;
+      }
+      case 'camera_follow':
+        this.rt.cam.follow(a.target ? (this.resolve(a.target, ev)[0] ?? null) : null);
         break;
     }
   }

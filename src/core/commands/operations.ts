@@ -163,6 +163,11 @@ export const operationSchema = z.union([
     id: z.string().describe('Overlay id from editor.overlays'),
   }),
   z.object({
+    op: z.literal('set_camera'),
+    sceneId: z.string(),
+    cameraJson: z.string().describe('JSON with only the camera settings to change, e.g. {"zoom":1.5,"bounds":"level"} (see level.camera)'),
+  }),
+  z.object({
     op: z.literal('set_script'),
     target,
     id: z.string().describe('Object definition id (definition: every copy runs it) or entity id (instance: only this one); also a create_definition / place_instance ref from earlier in this list'),
@@ -429,6 +434,9 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
       }
       case 'remove_rule':
         logic.removeRule(project, op.sceneId, op.id);
+        break;
+      case 'set_camera':
+        m.setCameraSettings(project, op.sceneId, parseProps(op.cameraJson, 'Camera settings'));
         break;
       case 'set_script':
       case 'remove_script':

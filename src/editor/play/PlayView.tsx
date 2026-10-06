@@ -27,10 +27,10 @@ export function PlayView() {
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const { project, activeSceneId, camera } = useEditor.getState();
+    const { project, activeSceneId } = useEditor.getState();
     const images = imageLookup(project);
-    const zoom = Math.min(3, Math.max(0.75, camera.zoom));
-    const runtime = new Runtime(project, activeSceneId, componentRegistry, { zoom });
+    // The level's own camera settings decide the zoom (not how far the editor is zoomed).
+    const runtime = new Runtime(project, activeSceneId, componentRegistry);
     const hasSwitches = runtime.entities.some((e) => e.switch);
     const canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
     let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot };
@@ -38,14 +38,19 @@ export function PlayView() {
     const scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
 
     const size = { width: 1, height: 1 };
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       size.width = rect.width;
       size.height = rect.height;
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
-    });
+      runtime.cam.setView(rect.width, rect.height);
+    };
+    // Measured now, so the camera starts inside its limits for this screen; then on every resize.
+    measure();
+    runtime.cam.snap();
+    const ro = new ResizeObserver(measure);
     ro.observe(canvas);
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -77,9 +82,19 @@ export function PlayView() {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const dpr = canvas.width / size.width;
-      drawBackground(ctx, size, dpr, scene.world, runtime.camera, images);
-      applyCamera(ctx, runtime.camera, size, dpr);
+      const view = runtime.cam.frame();
+      drawBackground(ctx, size, dpr, scene.world, view, images);
+      applyCamera(ctx, view, size, dpr);
       drawEntities(ctx, runtime.renderList(), images);
+      const flash = runtime.cam.flash();
+      if (flash) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = flash.alpha;
+        ctx.fillStyle = flash.color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+      }
+      canvas.dataset.camera = `${runtime.camera.x.toFixed(1)},${runtime.camera.y.toFixed(1)},${runtime.camera.zoom.toFixed(2)}`;
       // Observable play state for tests and debugging.
       const player = runtime.entities.find((e) => e.controller);
       if (player) canvas.dataset.player = `${player.x.toFixed(1)},${player.y.toFixed(1)},${player.grounded ? 1 : 0},${player.climbing ? 1 : 0}`;

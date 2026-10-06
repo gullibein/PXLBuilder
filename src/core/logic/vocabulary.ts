@@ -207,6 +207,11 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('teleport'), target: entityRefSchema, to: entityRefSchema }),
   z.object({ type: z.literal('restart_level') }),
   z.object({ type: z.literal('show_message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(3) }),
+  z.object({ type: z.literal('camera_shake'), strength: z.number().positive().max(64).default(6), seconds: z.number().positive().max(10).default(0.4) }),
+  z.object({ type: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ffffff'), seconds: z.number().positive().max(10).default(0.3) }),
+  z.object({ type: z.literal('camera_zoom'), zoom: z.number().min(0.25).max(4), seconds: z.number().min(0).max(30).default(0.5) }),
+  z.object({ type: z.literal('camera_focus'), target: entityRefSchema, seconds: z.number().positive().max(30).default(2) }),
+  z.object({ type: z.literal('camera_follow'), target: entityRefSchema.nullable() }),
 ]);
 
 export const ruleSchema = z.object({
@@ -253,4 +258,9 @@ export const ACTION_HELP: Record<string, string> = {
   teleport: 'move target to where `to` is (standing on the same floor); it does not bounce straight back',
   restart_level: 'start the level again from the beginning',
   show_message: 'show `text` on screen for `seconds`',
+  camera_shake: 'shake the screen (`strength` px, fading out over `seconds`)',
+  camera_flash: 'flash the screen in `color` ("#rrggbb"), fading over `seconds`',
+  camera_zoom: 'change the zoom to `zoom` over `seconds` (0 = at once); stays until changed again or the level restarts',
+  camera_focus: 'the camera looks at `target` for `seconds`, then goes back',
+  camera_follow: 'the camera follows `target` from now on (null: stays where it is) until the level restarts',
 };

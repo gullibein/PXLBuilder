@@ -80,7 +80,7 @@ export function refsInConditions(conditions: Condition[]): EntityRef[] {
 export function refsInActions(actions: RuleAction[]): EntityRef[] {
   const out: EntityRef[] = [];
   for (const a of actions) {
-    if ('target' in a) out.push(a.target);
+    if ('target' in a && a.target) out.push(a.target);
     if (a.type === 'teleport') out.push(a.to);
     if (a.type === 'spawn') {
       out.push({ kind: 'object', id: a.object });

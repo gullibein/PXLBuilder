@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
+import { cameraSchema } from '../model/camera';
 import { scriptSchema } from '../script/language';
 
 /** Structural schemas for the current format version (component props are checked against the component registry separately). */
@@ -37,6 +38,7 @@ export const sceneSchema = z.object({
   entities: z.array(entitySchema),
   relationships: z.array(relationshipSchema),
   rules: z.array(ruleSchema),
+  camera: cameraSchema,
 });
 
 export const definitionSchema = z.object({

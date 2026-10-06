@@ -4,6 +4,7 @@
  * from and writes to these structures; nothing here depends on React or the DOM.
  */
 
+import type { CameraSettings } from './model/camera';
 import type { BehaviorScript } from './script/language';
 
 export type { BehaviorScript };
@@ -116,7 +117,12 @@ export type RuleAction =
   | { type: 'respawn'; target: EntityRef }
   | { type: 'teleport'; target: EntityRef; to: EntityRef }
   | { type: 'restart_level' }
-  | { type: 'show_message'; text: string; seconds: number };
+  | { type: 'show_message'; text: string; seconds: number }
+  | { type: 'camera_shake'; strength: number; seconds: number }
+  | { type: 'camera_flash'; color: string; seconds: number }
+  | { type: 'camera_zoom'; zoom: number; seconds: number }
+  | { type: 'camera_focus'; target: EntityRef; seconds: number }
+  | { type: 'camera_follow'; target: EntityRef | null };
 
 /** WHEN event (about `subject` and `other`) AND all conditions DO actions. */
 export interface Rule {
@@ -151,6 +157,8 @@ export interface Scene {
   entities: EntityInstance[];
   relationships: Relationship[];
   rules: Rule[];
+  /** How the camera behaves in play (zoom, look-ahead, limits…). */
+  camera: CameraSettings;
 }
 
 export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music';

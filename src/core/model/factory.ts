@@ -1,4 +1,5 @@
 import type { ComponentRegistry } from '../components/registry';
+import { defaultCamera } from './camera';
 import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
 import type { AssetRecord, ComponentMap, EntityInstance, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
@@ -15,6 +16,7 @@ export function createScene(name: string): Scene {
     entities: [],
     relationships: [],
     rules: [],
+    camera: defaultCamera(),
   };
 }
 

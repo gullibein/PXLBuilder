@@ -58,7 +58,12 @@ export type Stmt =
   | { do: 'message'; text: string; seconds: number }
   | { do: 'alpha'; value: string }
   | { do: 'respawn'; target: string | null }
-  | { do: 'restart_level' };
+  | { do: 'restart_level' }
+  | { do: 'camera_shake'; strength: string; seconds: string }
+  | { do: 'camera_flash'; color: string; seconds: string }
+  | { do: 'camera_zoom'; zoom: string; seconds: string }
+  | { do: 'camera_focus'; target: string; seconds: string }
+  | { do: 'camera_follow'; target: string | null };
 
 export interface Handler {
   when: Trigger;
@@ -193,6 +198,11 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
   restart_level: { example: '{"do":"restart_level"}', doc: 'start the level again' },
+  camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
+  camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
+  camera_zoom: { example: '{"do":"camera_zoom","zoom":"1.5","seconds":"0.5"}', doc: 'zoom to a value (0.25–4) over seconds (0 = at once)' },
+  camera_focus: { example: '{"do":"camera_focus","target":"nearest(\\"door\\")","seconds":"2"}', doc: 'the camera looks at an entity for a while, then goes back' },
+  camera_follow: { example: '{"do":"camera_follow","target":"self"}', doc: 'the camera follows this entity from now on (null: stays still)' },
 };
 
 export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> = {
@@ -245,6 +255,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('alpha'), value: expr }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
+    z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
+    z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
+    z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
+    z.object({ do: z.literal('camera_focus'), target: expr, seconds: expr.default('2') }),
+    z.object({ do: z.literal('camera_follow'), target: nexpr }),
   ]),
 ) as z.ZodType<Stmt>;
 
@@ -330,6 +345,16 @@ export function exprSlots(s: Stmt): string[] {
       return messageParts(s.text);
     case 'alpha':
       return [s.value];
+    case 'camera_shake':
+      return [s.strength, s.seconds];
+    case 'camera_flash':
+      return [s.seconds];
+    case 'camera_zoom':
+      return [s.zoom, s.seconds];
+    case 'camera_focus':
+      return [s.target, s.seconds];
+    case 'camera_follow':
+      return s.target ? [s.target] : [];
   }
 }
 

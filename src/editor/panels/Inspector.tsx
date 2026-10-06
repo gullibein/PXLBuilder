@@ -1,5 +1,6 @@
 import { componentRegistry } from '../../core/components/builtin';
 import { ScriptList } from './ScriptList';
+import { CAMERA_HELP, type CameraSettings } from '../../core/model/camera';
 import * as m from '../../core/model/mutations';
 import { resolveEntity } from '../../core/model/resolve';
 import type { ComponentMap, Id, ObjectDefinition, Scene } from '../../core/types';
@@ -404,6 +405,7 @@ function SceneInspector({ scene }: { scene: Scene }) {
           />
         </Row>
       </Section>
+      <CameraSection scene={scene} />
       <Section title={`In this level (${scene.entities.length})`} testId="outline">
         {scene.entities.length === 0 && <p className="muted">Nothing here yet. Open the Library to add objects.</p>}
         <ul className="outline">
@@ -430,5 +432,75 @@ function SceneInspector({ scene }: { scene: Scene }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** The level's camera settings, and the camera frame outline on the level. */
+function CameraSection({ scene }: { scene: Scene }) {
+  const edit = useEditor((s) => s.edit);
+  const frameOn = useEditor((s) => s.layout.showCameraFrame);
+  const setLayout = useEditor((s) => s.setLayout);
+  const follows = useEditor((s) => s.project.scenes.find((x) => x.id === scene.id)?.entities.find((e) => resolveEntity(s.project, e, componentRegistry).components.CameraTarget)?.name ?? null);
+  const c = scene.camera;
+  const sid = scene.id;
+  const set = (label: string, patch: Partial<CameraSettings>, key?: string) => edit(label, (p) => m.setCameraSettings(p, sid, patch), key ? { coalesceKey: `${sid}.camera.${key}` } : undefined);
+  return (
+    <Section title="Camera" testId="camera">
+      <Row label="follows" hint="The object with a Camera Target component. Remove it for a still camera.">
+        <span className="muted" data-testid="camera-follows">{follows ?? 'nothing (stays still)'}</span>
+      </Row>
+      <Row label="zoom" hint={CAMERA_HELP.zoom}>
+        <NumberInput value={c.zoom} step={0.25} testId="camera-zoom" onCommit={(zoom) => set('Camera zoom', { zoom }, 'zoom')} />
+      </Row>
+      <Row label="look ahead" hint={CAMERA_HELP.lookAhead}>
+        <NumberInput value={c.lookAhead} step={16} testId="camera-lookahead" onCommit={(lookAhead) => set('Camera look-ahead', { lookAhead }, 'lookAhead')} />
+      </Row>
+      <Row label="dead zone" hint={CAMERA_HELP.deadZone}>
+        <Vec2Input value={c.deadZone} step={8} testId="camera-deadzone" onCommit={(deadZone) => set('Camera dead zone', { deadZone })} />
+      </Row>
+      <Row label="limits" hint={CAMERA_HELP.bounds}>
+        <select
+          value={c.bounds}
+          data-testid="camera-bounds"
+          onChange={(e) => {
+            const bounds = e.target.value as CameraSettings['bounds'];
+            set('Camera limits', bounds === 'custom' && !c.customBounds ? { bounds, customBounds: { minX: -480, minY: -320, maxX: 480, maxY: 320 } } : { bounds });
+          }}
+        >
+          <option value="none">none</option>
+          <option value="level">inside the level</option>
+          <option value="custom">custom area</option>
+        </select>
+      </Row>
+      {c.bounds === 'custom' && c.customBounds && (
+        <>
+          <Row label="from (x, y)">
+            <Vec2Input value={{ x: c.customBounds.minX, y: c.customBounds.minY }} step={32} onCommit={(v) => set('Camera limits', { customBounds: { ...c.customBounds!, minX: v.x, minY: v.y } })} />
+          </Row>
+          <Row label="to (x, y)">
+            <Vec2Input value={{ x: c.customBounds.maxX, y: c.customBounds.maxY }} step={32} onCommit={(v) => set('Camera limits', { customBounds: { ...c.customBounds!, maxX: v.x, maxY: v.y } })} />
+          </Row>
+        </>
+      )}
+      {!follows && (
+        <Row label="looks at" hint={CAMERA_HELP.fixedAt}>
+          {c.fixedAt ? (
+            <span className="camera-fixed">
+              <Vec2Input value={c.fixedAt} step={32} testId="camera-fixed" onCommit={(fixedAt) => set('Camera position', { fixedAt })} />
+              <button className="link small" onClick={() => set('Camera position', { fixedAt: null })}>
+                middle
+              </button>
+            </span>
+          ) : (
+            <button className="link small" data-testid="camera-fixed-set" onClick={() => set('Camera position', { fixedAt: { x: 0, y: 0 } })}>
+              middle of the level · set a point
+            </button>
+          )}
+        </Row>
+      )}
+      <Row label="show frame" hint="Outline on the level: what Play shows when the level starts, and the limits.">
+        <input type="checkbox" checked={frameOn} data-testid="camera-show-frame" onChange={(e) => setLayout({ showCameraFrame: e.target.checked })} />
+      </Row>
+    </Section>
   );
 }

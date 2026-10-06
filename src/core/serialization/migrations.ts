@@ -1,5 +1,6 @@
 import { componentRegistry } from '../components/builtin';
 import { generateId } from '../ids';
+import { defaultCamera } from '../model/camera';
 import { createStarterAssets, createStarterDefinitions } from '../model/factory';
 import { FORMAT_VERSION } from './version';
 
@@ -169,11 +170,23 @@ function migrateV4toV5(raw: Raw): Raw {
   return structuredClone(raw);
 }
 
+/**
+ * v5 -> v6
+ * - Levels get camera settings. Existing levels keep how they played: zoom 1,
+ *   no limits (new levels keep the camera inside the level).
+ */
+function migrateV5toV6(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  for (const scene of project.scenes ?? []) scene.camera ??= defaultCamera(false);
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
   { from: 3, to: 4, migrate: migrateV3toV4 },
   { from: 4, to: 5, migrate: migrateV4toV5 },
+  { from: 5, to: 6, migrate: migrateV5toV6 },
 ];
 
 export class MigrationError extends Error {

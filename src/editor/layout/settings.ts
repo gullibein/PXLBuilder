@@ -22,6 +22,8 @@ export interface EditorLayout {
   mouseZoomSpeed: number;
   showGrid: boolean;
   snapToGrid: boolean;
+  /** Outline what the camera shows when play starts, and its limits. */
+  showCameraFrame: boolean;
   /** Extra information drawn over the level while editing (see overlays.ts). */
   overlays: EditorOverlay[];
 }
@@ -78,6 +80,12 @@ export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout
   },
   { key: 'showGrid', label: 'Grid', description: 'Show the dot grid on the level.', field: { kind: 'boolean', default: true } },
   { key: 'snapToGrid', label: 'Snap to grid', description: 'Snap objects to the grid when placing and moving them.', field: { kind: 'boolean', default: true } },
+  {
+    key: 'showCameraFrame',
+    label: 'Camera frame',
+    description: 'Outline on the level showing what Play shows when the level starts (at this window size) and the camera limits.',
+    field: { kind: 'boolean', default: false },
+  },
 ];
 
 export const DEFAULT_LAYOUT: EditorLayout = { ...(Object.fromEntries(EDITOR_SETTINGS.map((s) => [s.key, s.field.default])) as Omit<EditorLayout, 'overlays'>), overlays: [] };

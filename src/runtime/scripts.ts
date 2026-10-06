@@ -355,6 +355,23 @@ export class ScriptSystem {
       case 'restart_level':
         this.rt.restart();
         break;
+      case 'camera_shake':
+        this.rt.cam.startShake(n(s.strength), n(s.seconds));
+        break;
+      case 'camera_flash':
+        this.rt.cam.startFlash(s.color, n(s.seconds));
+        break;
+      case 'camera_zoom':
+        this.rt.cam.zoomTo(n(s.zoom), Math.max(0, n(s.seconds)));
+        break;
+      case 'camera_focus': {
+        const t = ent(s.target);
+        if (t) this.rt.cam.focusOn(t, n(s.seconds));
+        break;
+      }
+      case 'camera_follow':
+        this.rt.cam.follow(s.target === null ? null : ent(s.target));
+        break;
     }
   }
 

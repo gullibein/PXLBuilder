@@ -140,6 +140,7 @@ function MainMenu() {
   const { open, setOpen, ref } = usePopover();
   const showGrid = useEditor((s) => s.layout.showGrid);
   const snap = useEditor((s) => s.layout.snapToGrid);
+  const frameOn = useEditor((s) => s.layout.showCameraFrame);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const overlayCount = useEditor((s) => s.layout.overlays.length);
   const s = useEditor.getState();
@@ -149,6 +150,7 @@ function MainMenu() {
     { label: 'Frame everything', hint: 'F', run: frameView, sep: true },
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
+    { label: 'Camera frame', checked: frameOn, run: () => s.setLayout({ showCameraFrame: !frameOn }), testId: 'menu-camera-frame' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
     { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt' },
     ...(overlayCount ? [{ label: `Hide info on the level (${overlayCount})`, run: () => s.setLayout({ overlays: [] }), testId: 'menu-clear-overlays' }] : []),

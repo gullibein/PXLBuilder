@@ -29,7 +29,7 @@ function checkConditions(project: Project, scene: Scene, conditions: Condition[]
 function checkActions(project: Project, scene: Scene, actions: RuleAction[]): void {
   actions.forEach((a, i) => {
     const where = `Action ${i + 1} (${a.type})`;
-    if ('target' in a) {
+    if ('target' in a && a.target) {
       if (a.target.kind === 'any') throw new ModelError(`${where}: must name its target`);
       check(project, scene, a.target, where, true);
     }

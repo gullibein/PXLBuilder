@@ -264,9 +264,28 @@ clears the selection, and selecting something closes it.
   gravity 980 gives a ~44px (1.4 tile) jump: one row up, never two. Format
   v3 applies this to older saves unless the user changed those values.
 - Falling far below the level puts an entity back at its start.
-- Camera: follows the entity with a `CameraTarget` (smoothed). With none, it
-  stays still on the middle of the level; there is deliberately no fallback
-  to the player, so what the project (and the AI) says is what happens.
+- Camera (`runtime/camera.ts`, settings and math in `core/model/camera.ts`):
+  - It follows the entity with a `CameraTarget` (its `followStrength` is the
+    smoothing). With none, it stays still on `fixedAt`, or the middle of the
+    level; there is deliberately no fallback to the player, so what the
+    project (and the AI) says is what happens.
+  - Per-level settings (`scene.camera`, format v6): `zoom` (0.25–4; Play no
+    longer uses the editor's zoom), `lookAhead` (px ahead of where the target
+    faces), `deadZone` (px the target moves before the camera does),
+    `bounds` (`none` / `level`: never past the box around everything placed /
+    `custom`: `customBounds`), `fixedAt`. New levels keep the camera inside
+    the level; levels from older files get no limits (as they played before).
+    A level smaller than the screen is centered.
+  - Effects, from rule actions and script statements of the same names:
+    `camera_shake`, `camera_flash` (drawn over the screen by Play),
+    `camera_zoom` (over time), `camera_focus` (look at something, then back),
+    `camera_follow` (another target, or null: stay still). Restart resets them.
+  - `startCamera`/`clampCamera` are shared with the editor's **camera frame**
+    (menu → Camera frame, or the level's details): a dashed outline of what
+    Play shows at the start on this window size, and the limits.
+  - The AI changes settings with `set_camera` (only the settings that
+    change, checked as a whole) and gets `level.camera` (settings, what it
+    follows, the level box).
 - `input.ts` maps keys to actions (arrows/WASD, Space/Z jump, E use, X fire); the runtime
   only sees actions.
 - `PlayView` draws the runtime with the same renderer as the editor

@@ -47,6 +47,8 @@ describe('format v1 -> v2', () => {
     const { project, warnings } = projectFromFiles(v1Files(), registry);
     expect(project.formatVersion).toBe(FORMAT_VERSION);
     expect(warnings).toEqual([]);
+    // Old levels keep how they played: no camera limits, normal zoom (format v6).
+    expect(project.scenes[0].camera).toEqual({ zoom: 1, lookAhead: 0, deadZone: { x: 0, y: 0 }, bounds: 'none', customBounds: null, fixedAt: null });
     const def = project.definitions.find((d) => d.name === 'Platform')!;
     expect(def.components.Sprite).toMatchObject({ width: 32, height: 32, color: '#5fa83f' });
     expect(def.metadata.placement).toBe('tile');

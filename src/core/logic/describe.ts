@@ -56,6 +56,16 @@ export function describeAction(project: Project, scene: Scene | null, a: RuleAct
       return 'restart the level';
     case 'show_message':
       return `show "${a.text}"`;
+    case 'camera_shake':
+      return 'shake the screen';
+    case 'camera_flash':
+      return 'flash the screen';
+    case 'camera_zoom':
+      return `zoom the camera to ${a.zoom}×`;
+    case 'camera_focus':
+      return `show ${ref(a.target)} for ${a.seconds} s`;
+    case 'camera_follow':
+      return a.target ? `make the camera follow ${ref(a.target)}` : 'stop the camera';
   }
 }
 

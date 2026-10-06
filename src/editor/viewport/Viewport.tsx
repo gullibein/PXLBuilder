@@ -18,6 +18,7 @@ import { resolveSceneEntities } from '../selectors';
 import { getActiveScene, getSelectionContext, useEditor } from '../store';
 import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
+import { cameraFrame, drawCameraFrame } from '../overlays/cameraFrame';
 import { drawInfoPanels, drawJumpArcs } from '../overlays/drawOverlays';
 import { createWheelInterpreter } from './wheel';
 
@@ -127,6 +128,13 @@ export function Viewport() {
       drawEntities(ctx, entities, images);
       if (preview) drawPreviewMarks(ctx, preview, resolveSceneEntities(state.project, scene.id), byId, state.camera.zoom, time);
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
+      let frameAttr = '';
+      if (state.layout.showCameraFrame) {
+        const f = cameraFrame(scene, entities, view);
+        drawCameraFrame(ctx, f, state.camera.zoom);
+        frameAttr = [f.frame.minX, f.frame.minY, f.frame.maxX, f.frame.maxY].map((v) => v.toFixed(0)).join(',');
+      }
+      if ((canvas.dataset.cameraFrame ?? '') !== frameAttr) canvas.dataset.cameraFrame = frameAttr;
       if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;

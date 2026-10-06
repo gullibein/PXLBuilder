@@ -70,6 +70,9 @@ function stubModel(body) {
     };
     return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', target: 'instance', id: t[0].id, scriptJson: JSON.stringify(script) }] };
   }
+  if (req.includes('zoom the camera in')) {
+    return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
+  }
   if (req.includes('patrol')) {
     return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
   }
@@ -695,6 +698,42 @@ try {
     return x < x0 && y < y0;
   }, 'middle-button drag pans the view');
   await check(async () => (await prompts.count()) === 0, 'panning does not select anything');
+
+  step = 'camera';
+  await page.keyboard.press('Escape');
+  const frameOf = async () => ((await canvas.getAttribute('data-camera-frame')) ?? '').split(',').filter(Boolean).map(Number);
+  await check(async () => (await frameOf()).length === 0, 'no camera frame on the level by default');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-camera-frame').click();
+  await page.keyboard.press('Escape');
+  const f1 = await frameOf();
+  await check(async () => f1.length === 4 && f1[2] - f1[0] > 200, 'the menu shows the camera frame: what Play shows at the start');
+  await page.getByTestId('global-prompt-toggle').click();
+  const camPrompt = page.getByTestId('global-prompt');
+  await camPrompt.locator('.scope-toggle button').first().click();
+  await camPrompt.getByTestId('prompt-input').fill('Zoom the camera in 2x during play.');
+  await camPrompt.getByTestId('prompt-input').press('Enter');
+  await check(async () => (await camPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the AI changes the camera settings');
+  await check(aiRequests.at(-1).context.level.camera.zoom === 1 && aiRequests.at(-1).context.level.camera.follows === 'Player', 'the AI gets the camera settings and what it follows');
+  await check(async () => {
+    const f2 = await frameOf();
+    return f2.length === 4 && Math.abs((f2[2] - f2[0]) * 2 - (f1[2] - f1[0])) <= 2;
+  }, 'the camera frame shrinks to half: zoomed in 2×');
+  await page.screenshot({ path: `${OUT}/26-camera-frame.png` });
+  await camPrompt.getByTestId('prompt-close').click();
+  await page.getByTestId('play').click();
+  await check(async () => ((await page.getByTestId('play-canvas').getAttribute('data-camera')) ?? '').endsWith(',2.00'), 'Play uses the level camera zoom');
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
+  await check(async () => {
+    const f3 = await frameOf();
+    return f3.length === 4 && Math.abs(f3[2] - f3[0] - (f1[2] - f1[0])) <= 2;
+  }, 'Undo restores the zoom');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-camera-frame').click();
+  await page.keyboard.press('Escape');
+  await check(async () => (await frameOf()).length === 0, 'the camera frame can be hidden again');
 
   step = 'save and reload';
   await page.waitForTimeout(500);

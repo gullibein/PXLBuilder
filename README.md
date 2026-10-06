@@ -14,7 +14,10 @@ for anything else the AI **programs the behavior**: it writes a behavior
 script for the object ("charges at the player when it gets close, then rests",
 "a jetpack with fuel", "a platform that crumbles"). Scripts are data in a small
 event-based language (variables, states, expressions, game actions), checked
-before they are applied and readable in the details panel.
+before they are applied and readable in the details panel. The camera has
+per-level settings (zoom, look-ahead, dead zone, limits, a still camera aimed
+at a spot) and effects for rules and scripts (shake, flash, zoom, focus on
+something, follow something else).
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run

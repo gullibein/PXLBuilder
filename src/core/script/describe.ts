@@ -93,6 +93,16 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
     case 'restart_level':
       return one('restart the level');
+    case 'camera_shake':
+      return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
+    case 'camera_flash':
+      return one(`flash the screen ${s.color} for ${x(s.seconds)} s`);
+    case 'camera_zoom':
+      return one(`zoom to ${x(s.zoom)} over ${x(s.seconds)} s`);
+    case 'camera_focus':
+      return one(`camera looks at ${x(s.target)} for ${x(s.seconds)} s`);
+    case 'camera_follow':
+      return one(s.target ? `camera follows ${x(s.target)}` : 'camera stays still');
   }
 }
 

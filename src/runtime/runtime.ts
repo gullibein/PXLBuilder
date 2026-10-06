@@ -13,7 +13,9 @@ import { getEntitySize } from '../core/model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
 import type { Camera, RenderEntity } from '../render/renderer';
+import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
+import { CameraController } from './camera';
 import { Gameplay } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import type { InputState } from './input';
@@ -110,23 +112,6 @@ const LADDER_GRIP = 0.5;
 const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
-
-/** The middle of everything placed in the level (where a camera without a target looks). */
-function levelCenter(entities: RuntimeEntity[]): Vec2 {
-  if (!entities.length) return { x: 0, y: 0 };
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const e of entities) {
-    const s = getEntitySize(e.base);
-    minX = Math.min(minX, e.x - s.x / 2);
-    maxX = Math.max(maxX, e.x + s.x / 2);
-    minY = Math.min(minY, e.y - s.y / 2);
-    maxY = Math.max(maxY, e.y + s.y / 2);
-  }
-  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-}
 
 function boxOf(e: RuntimeEntity): Box | null {
   return e.collider ? { x: e.x + e.collider.ox, y: e.y + e.collider.oy, hw: e.collider.hw, hh: e.collider.hh } : null;
@@ -274,7 +259,8 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
 export class Runtime {
   entities: RuntimeEntity[] = [];
   readonly gravity: Vec2;
-  readonly camera: Camera;
+  /** The camera: following, limits and effects (shake, flash, zoom…). */
+  readonly cam = new CameraController();
   /** Events, rules and gameplay systems. */
   readonly gameplay: Gameplay;
   /** What things do on their own (patrol, shoot, move…). */
@@ -291,19 +277,15 @@ export class Runtime {
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
   private ladders: Ladder[] = [];
   private fallLimit = 0;
-  private cameraTarget: RuntimeEntity | null = null;
-  private followStrength = 0.15;
   private readonly scene: Scene;
 
   constructor(
     private readonly project: Project,
     sceneId: Id,
     private readonly registry: ComponentRegistry,
-    opts: { zoom?: number } = {},
   ) {
     this.scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.gravity = { ...this.scene.world.gravity };
-    this.camera = { x: 0, y: 0, zoom: opts.zoom ?? 1 };
     this.gameplay = new Gameplay(this, project, this.scene);
     this.behaviors = new BehaviorSystem(this);
     this.scripts = new ScriptSystem(this, project);
@@ -323,12 +305,15 @@ export class Runtime {
 
     // Only what the project says: the camera follows the entity with a CameraTarget. Without one it
     // stays still, on the middle of the level (there is no hidden fallback to the player).
-    this.cameraTarget = this.entities.find((e) => e.base.components.CameraTarget) ?? null;
-    const fs = this.cameraTarget?.base.components.CameraTarget?.followStrength;
-    this.followStrength = typeof fs === 'number' ? fs : 0.15;
-    const still = this.cameraTarget ? null : levelCenter(this.entities);
-    this.camera.x = this.cameraTarget?.x ?? still!.x;
-    this.camera.y = this.cameraTarget?.y ?? still!.y;
+    const target = this.entities.find((e) => e.base.components.CameraTarget) ?? null;
+    const fs = target?.base.components.CameraTarget?.followStrength;
+    const level = boundsOf(
+      this.entities.map((e) => {
+        const s = getEntitySize(e.base);
+        return { x: e.x, y: e.y, w: s.x, h: s.y };
+      }),
+    );
+    this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level);
     this.scripts.reset();
     this.gameplay.reset();
   }
@@ -351,7 +336,7 @@ export class Runtime {
         first = false;
       }
     }
-    this.followCamera(frameDt);
+    this.cam.update(frameDt);
   }
 
   step(dt: number, input: InputState): void {
@@ -655,12 +640,9 @@ export class Runtime {
     this.gameplay.emit('respawned', e);
   }
 
-  private followCamera(dt: number): void {
-    const t = this.cameraTarget;
-    if (!t) return;
-    const k = 1 - Math.pow(1 - Math.min(0.999, Math.max(0.001, this.followStrength)), dt * 60);
-    this.camera.x += (t.x - this.camera.x) * k;
-    this.camera.y += (t.y - this.camera.y) * k;
+  /** Where the camera is (without shake). */
+  get camera(): Camera {
+    return this.cam.camera;
   }
 
   /**

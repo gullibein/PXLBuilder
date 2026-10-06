@@ -7,6 +7,7 @@
  * The model never receives the raw project file.
  */
 import type { ComponentRegistry } from '../components/registry';
+import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camera';
 import { describeRelationship, describeRule } from '../logic/describe';
 import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
@@ -124,6 +125,8 @@ export interface AIPayload {
     isStartLevel: boolean;
     /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
+    /** The camera in play: its settings, what it follows (the entity with a CameraTarget), and the box around everything placed. */
+    camera: CameraSettings & { follows: string | null; levelBounds: CameraBounds | null };
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
     playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
   };
@@ -260,6 +263,16 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
       playerReach: playerReach(project, scene, registry),
+      camera: {
+        ...scene.camera,
+        follows: scene.entities.find((e) => resolveEntity(project, e, registry).components.CameraTarget)?.name ?? null,
+        levelBounds: boundsOf(
+          scene.entities.map((e) => {
+            const s = getEntitySize(resolveEntity(project, e, registry));
+            return { x: e.transform.position.x, y: e.transform.position.y, w: s.x, h: s.y };
+          }),
+        ),
+      },
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     point: ctx.kind === 'level' ? ctx.point : null,
