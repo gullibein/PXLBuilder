@@ -397,14 +397,21 @@ saved and shown like any other edit.
     a tag, as `it`), `velocity`, `push`, `move_toward`, `glide_to`,
     `position`, `jump`, `face`, `gravity`, `shoot`, `spawn`, `remove`,
     `damage`, `heal`, `give_item`, `take_item`, `set_open`, `state`, `signal`,
-    `message` (with `{expression}` parts), `alpha`, `respawn`,
-    `restart_level`;
+    `message` (with `{expression}` parts), `alpha`, `speed_factor`,
+    `respawn`, `restart_level`;
+  - movement and look statements (`velocity`, `push`, `glide_to`,
+    `position`, `jump`, `face`, `gravity`, `speed_factor`, `alpha`) act on
+    the script's own entity, or on another given by `on` (an expression:
+    `other`, `it`, `player`…). That is how an area acts on what enters it:
+    water slows and lightens the player from the water's own script;
+    `speed_factor` scales the walking speed of the player's controller and
+    of patrols (respawning resets it and the gravity);
   - expressions (`expr.ts`, a hand-written parser): numbers, text, booleans,
     arithmetic, comparisons, and/or/not, `?:`, names (`self`, `player`,
     `other`, `it`, `time`, `dt`, `state`, `state_time`, variables), entity
     properties (`x`, `vy`, `grounded`, `health`, `facing`, `spawn_x`…) and
     functions (`dist`, `dx`, `nearest`, `count`, `solid_at`, `can_see`,
-    `key`, `pressed`, `rand`, `chance`, `sin`, `clamp`, `get`…).
+    `key`, `pressed`, `touching(tag[, e])`, `overlaps(e)`, `rand`, `chance`, `sin`, `clamp`, `get`…).
 - **Checking** (`checkScript`): structure, every expression parsed, every
   name/property/function/state/event/object known (with "did you mean"),
   `other` only where it exists, size limits (40 handlers, 400 steps, depth
@@ -422,7 +429,8 @@ saved and shown like any other edit.
 - **AI**: operations `set_script` (whole script; same id replaces),
   `remove_script`, `set_script_enabled`. Targets carry their scripts in
   full; the system prompt carries the generated language reference and
-  three example scripts (`script/examples.ts`; tests run each one in the
+  the example scripts (`script/examples.ts`: Charger, Jetpack, Crumble,
+  Water, Swim; tests run each one in the
   engine). If the AI's answer doesn't apply (any operation, not only
   scripts), the editor sends the exact problem back once and uses the
   corrected answer.

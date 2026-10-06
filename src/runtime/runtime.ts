@@ -45,6 +45,10 @@ export interface RuntimeEntity {
   vy: number;
   body: BodyKind;
   gravityScale: number;
+  /** The gravity it starts with (respawning restores it). */
+  baseGravity: number;
+  /** Scales how fast it walks, climbs and patrols (1: normal; scripts set it, e.g. water). */
+  speedFactor: number;
   /** Collision box relative to the position (null: no collider). */
   collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean } | null;
   controller: Controller | null;
@@ -229,6 +233,8 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     vy: vel.y,
     body: pb ? (pb.bodyType as BodyKind) : 'none',
     gravityScale: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
+    baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
+    speedFactor: 1,
     collider,
     controller: cc ? { speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
@@ -480,8 +486,8 @@ export class Runtime {
     }
     if (e.climbing && ladder) {
       const vertical = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
-      e.vy = vertical * c.speed;
-      e.vx = dir * c.speed;
+      e.vy = vertical * c.speed * e.speedFactor;
+      e.vx = dir * c.speed * e.speedFactor;
       // Climbing straight up or down eases you into the middle of the ladder; Left/Right overrides it.
       if (vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
       e.grounded = false;
@@ -500,7 +506,7 @@ export class Runtime {
     if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
     if (e.hanging && this.hang(e, input, dir)) return;
 
-    const target = dir * c.speed;
+    const target = dir * c.speed * e.speedFactor;
     const rate = c.acceleration * (e.grounded ? 1 : c.airControl);
     const diff = target - e.vx;
     e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
@@ -642,6 +648,9 @@ export class Runtime {
     e.vy = 0;
     e.climbing = false;
     e.touching = new Set();
+    // Whatever slowed it or changed its gravity (water, a power-up) does not follow it back.
+    e.speedFactor = 1;
+    e.gravityScale = e.baseGravity;
     if (e.health) e.health.current = e.health.max;
     if (!e.alive) {
       e.alive = true;

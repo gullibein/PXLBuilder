@@ -29,4 +29,16 @@ export const SCRIPT_EXAMPLES: { title: string; json: string }[] = [
  {"when":{"on":"tick"},"state":"shaking","if":"state_time > 0.6","do":[{"do":"set_open","target":"self","open":"true"},{"do":"alpha","value":"0"},{"do":"state","name":"gone"}]},
  {"when":{"on":"tick"},"state":"gone","if":"state_time > 3","do":[{"do":"position","x":"self.spawn_x","y":"self.y"},{"do":"set_open","target":"self","open":"false"},{"do":"alpha","value":"1"},{"do":"state","name":"solid"}]}]}`,
   },
+  {
+    title: 'water (tag it "water"): the player moves slowly and sinks gently in it, and is back to normal when out of all water',
+    json: `{"name":"Water","description":"The player moves at 45% speed and sinks slowly while in the water.","vars":[{"name":"slow","value":0.45},{"name":"sink","value":0.25},{"name":"max_sink","value":60}],"states":[],"handlers":[
+ {"when":{"on":"event","event":"touch_started","with":"player"},"state":null,"if":null,"do":[{"do":"speed_factor","value":"slow","on":"other"},{"do":"gravity","scale":"sink","on":"other"},{"do":"velocity","x":null,"y":"min(other.vy, max_sink)","on":"other"}]},
+ {"when":{"on":"tick"},"state":null,"if":null,"do":[{"do":"each","tag":"player","then":[{"do":"if","cond":"overlaps(it) and it.vy > max_sink","then":[{"do":"velocity","x":null,"y":"max_sink","on":"it"}],"else":[]}]}]},
+ {"when":{"on":"event","event":"touch_ended","with":"player"},"state":null,"if":"not touching('water', other)","do":[{"do":"speed_factor","value":"1","on":"other"},{"do":"gravity","scale":"1","on":"other"}]}]}`,
+  },
+  {
+    title: 'the player swims: Jump in water makes a stroke upward (works with the Water example)',
+    json: `{"name":"Swim","description":"Pressing Jump while in water pushes the player up.","vars":[{"name":"stroke","value":160}],"states":[],"handlers":[
+ {"when":{"on":"key","key":"jump","edge":"pressed"},"state":null,"if":"touching('water')","do":[{"do":"velocity","x":null,"y":"-stroke"}]}]}`,
+  },
 ];

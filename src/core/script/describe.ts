@@ -40,6 +40,11 @@ export function describeHandler(h: Handler): string {
   return `${parts.join(', ')}:`;
 }
 
+/** "other: " when a statement acts on another entity than this one. */
+function who(on: string | null): string {
+  return on ? `${x(on)}: ` : '';
+}
+
 function stmtLines(s: Stmt, indent: string): string[] {
   const one = (text: string) => [`${indent}${text}`];
   switch (s.do) {
@@ -50,21 +55,23 @@ function stmtLines(s: Stmt, indent: string): string[] {
     case 'each':
       return [`${indent}for each ${s.tag} (it):`, ...s.then.flatMap((t) => stmtLines(t, `${indent}  `))];
     case 'velocity':
-      return one(`speed ${[s.x !== null ? `x = ${x(s.x)}` : '', s.y !== null ? `y = ${x(s.y)}` : ''].filter(Boolean).join(', ')}`);
+      return one(`${who(s.on)}speed ${[s.x !== null ? `x = ${x(s.x)}` : '', s.y !== null ? `y = ${x(s.y)}` : ''].filter(Boolean).join(', ')}`);
     case 'push':
-      return one(`push by ${x(s.x)}, ${x(s.y)}`);
+      return one(`${who(s.on)}push by ${x(s.x)}, ${x(s.y)}`);
     case 'move_toward':
       return one(`move toward ${x(s.target)} at ${x(s.speed)}`);
     case 'glide_to':
-      return one(`glide to ${x(s.x)}, ${x(s.y)} at ${x(s.speed)}`);
+      return one(`${who(s.on)}glide to ${x(s.x)}, ${x(s.y)} at ${x(s.speed)}`);
     case 'position':
-      return one(`put at ${x(s.x)}, ${x(s.y)}`);
+      return one(`${who(s.on)}put at ${x(s.x)}, ${x(s.y)}`);
     case 'jump':
-      return one(`jump (${x(s.force)})`);
+      return one(`${who(s.on)}jump (${x(s.force)})`);
     case 'face':
-      return one(`face ${x(s.dir)}`);
+      return one(`${who(s.on)}face ${x(s.dir)}`);
     case 'gravity':
-      return one(`gravity × ${x(s.scale)}`);
+      return one(`${who(s.on)}gravity × ${x(s.scale)}`);
+    case 'speed_factor':
+      return one(`${who(s.on)}speed × ${x(s.value)}`);
     case 'shoot':
       return one(`shoot ${s.object ? 'object ' : ''}toward ${x(s.dx)}, ${x(s.dy)} at ${x(s.speed)} (damage ${x(s.damage)}, range ${x(s.range)})`);
     case 'spawn':
@@ -88,7 +95,7 @@ function stmtLines(s: Stmt, indent: string): string[] {
     case 'message':
       return one(`show "${s.text}" for ${s.seconds} s`);
     case 'alpha':
-      return one(`see-through ${x(s.value)}`);
+      return one(`${who(s.on)}see-through ${x(s.value)}`);
     case 'respawn':
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
     case 'restart_level':

@@ -37,14 +37,15 @@ export type Stmt =
   | { do: 'set'; var: string; value: string; on: string | null }
   | { do: 'if'; cond: string; then: Stmt[]; else: Stmt[] }
   | { do: 'each'; tag: string; then: Stmt[] }
-  | { do: 'velocity'; x: string | null; y: string | null }
-  | { do: 'push'; x: string; y: string }
+  | { do: 'velocity'; x: string | null; y: string | null; on: string | null }
+  | { do: 'push'; x: string; y: string; on: string | null }
   | { do: 'move_toward'; target: string; speed: string }
-  | { do: 'glide_to'; x: string; y: string; speed: string }
-  | { do: 'position'; x: string; y: string }
-  | { do: 'jump'; force: string }
-  | { do: 'face'; dir: string }
-  | { do: 'gravity'; scale: string }
+  | { do: 'glide_to'; x: string; y: string; speed: string; on: string | null }
+  | { do: 'position'; x: string; y: string; on: string | null }
+  | { do: 'jump'; force: string; on: string | null }
+  | { do: 'face'; dir: string; on: string | null }
+  | { do: 'gravity'; scale: string; on: string | null }
+  | { do: 'speed_factor'; value: string; on: string | null }
   | { do: 'shoot'; dx: string; dy: string; speed: string; damage: string; range: string; object: string | null }
   | { do: 'spawn'; object: string; x: string; y: string }
   | { do: 'remove'; target: string | null }
@@ -56,7 +57,7 @@ export type Stmt =
   | { do: 'state'; name: string }
   | { do: 'signal'; name: string }
   | { do: 'message'; text: string; seconds: number }
-  | { do: 'alpha'; value: string }
+  | { do: 'alpha'; value: string; on: string | null }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
   | { do: 'camera_shake'; strength: string; seconds: string }
@@ -123,6 +124,8 @@ export const MEMBERS: Record<string, string> = {
   on: 'switched on (switches)',
   spawn_x: 'x where it started',
   spawn_y: 'y where it started',
+  gravity: 'its gravity scale now (1 = normal)',
+  speed_factor: 'its walking/running speed factor now (1 = normal)',
   name: 'its name',
 };
 
@@ -163,6 +166,8 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   pressed: { args: 'key', min: 1, max: 1, doc: 'the key was pressed this step' },
   solid_at: { args: 'x, y', min: 2, max: 2, doc: 'a wall/floor is at that point (for ledge and wall checks)' },
   can_see: { args: 'e', min: 1, max: 1, doc: 'no wall between self and e' },
+  touching: { args: 'tag, e?', min: 1, max: 2, doc: 'self (or e) overlaps a living entity with the tag right now: touching("water"), touching("water", other)' },
+  overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
 };
 
@@ -177,13 +182,14 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   if: { example: '{"do":"if","cond":"dist(player) < 100","then":[…],"else":[…]}', doc: 'choose' },
   each: { example: '{"do":"each","tag":"enemy","then":[{"do":"damage","target":"it","amount":"1"}]}', doc: 'run "then" for every living entity with the tag, as "it" (at most 200)' },
   velocity: { example: '{"do":"velocity","x":"-80","y":null}', doc: 'set speed in px/s; null keeps that axis. Things with gravity keep falling; set y only to fly or launch' },
-  push: { example: '{"do":"push","x":"0","y":"-200"}', doc: 'add to speed' },
+  push: { example: '{"do":"push","x":"0","y":"-200","on":"other"}', doc: 'add to speed (here: bounce whoever touched it upward)' },
   move_toward: { example: '{"do":"move_toward","target":"player","speed":"90"}', doc: 'head for an entity: walkers (with gravity) only sideways, flyers (gravity 0) straight at it; sets facing' },
   glide_to: { example: '{"do":"glide_to","x":"self.spawn_x","y":"self.spawn_y - 64","speed":"60"}', doc: 'move smoothly to a point (no gravity while gliding; speed 0 = at once)' },
   position: { example: '{"do":"position","x":"self.x","y":"self.y - 32"}', doc: 'jump to a point instantly' },
   jump: { example: '{"do":"jump","force":"320"}', doc: 'leap up (sets vy = -force); usually guarded with self.grounded' },
   face: { example: '{"do":"face","dir":"sign(dx(player))"}', doc: '1 = right, -1 = left (drawn mirrored)' },
-  gravity: { example: '{"do":"gravity","scale":"0"}', doc: 'change its gravity scale (0 = floats)' },
+  gravity: { example: '{"do":"gravity","scale":"0.3","on":"other"}', doc: 'change a gravity scale (0 = floats, 1 = normal); it stays until changed again (or it respawns)' },
+  speed_factor: { example: '{"do":"speed_factor","value":"0.4","on":"other"}', doc: 'scale how fast it walks/runs: 1 normal, 0.4 slow (water, mud), 1.5 fast; works on the player (whose own running speed is otherwise fixed) and on patrollers; stays until changed (or it respawns)' },
   shoot: { example: '{"do":"shoot","dx":"self.facing","dy":"0","speed":"260","damage":"1","range":"400","object":null}', doc: 'fire a shot in direction (dx, dy) (normalized). It hurts like this entity (same tags + "projectile") through normal damage rules, never its shooter, and vanishes on hits and walls. object: a library object id to fire, or null for a small built-in shot' },
   spawn: { example: '{"do":"spawn","object":"<library object id>","x":"self.x","y":"self.y - 40"}', doc: 'create a copy of a library object' },
   remove: { example: '{"do":"remove","target":null}', doc: 'take it out of play (null = self)' },
@@ -225,14 +231,15 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('set'), var: z.string().min(1), value: expr, on: nexpr }),
     z.object({ do: z.literal('if'), cond: expr, then: z.array(stmt).default([]), else: z.array(stmt).default([]) }),
     z.object({ do: z.literal('each'), tag: z.string().min(1), then: z.array(stmt) }),
-    z.object({ do: z.literal('velocity'), x: nexpr, y: nexpr }),
-    z.object({ do: z.literal('push'), x: expr.default('0'), y: expr.default('0') }),
+    z.object({ do: z.literal('velocity'), x: nexpr, y: nexpr, on: nexpr }),
+    z.object({ do: z.literal('push'), x: expr.default('0'), y: expr.default('0'), on: nexpr }),
     z.object({ do: z.literal('move_toward'), target: expr, speed: expr }),
-    z.object({ do: z.literal('glide_to'), x: expr, y: expr, speed: expr.default('60') }),
-    z.object({ do: z.literal('position'), x: expr, y: expr }),
-    z.object({ do: z.literal('jump'), force: expr }),
-    z.object({ do: z.literal('face'), dir: expr }),
-    z.object({ do: z.literal('gravity'), scale: expr }),
+    z.object({ do: z.literal('glide_to'), x: expr, y: expr, speed: expr.default('60'), on: nexpr }),
+    z.object({ do: z.literal('position'), x: expr, y: expr, on: nexpr }),
+    z.object({ do: z.literal('jump'), force: expr, on: nexpr }),
+    z.object({ do: z.literal('face'), dir: expr, on: nexpr }),
+    z.object({ do: z.literal('gravity'), scale: expr, on: nexpr }),
+    z.object({ do: z.literal('speed_factor'), value: expr, on: nexpr }),
     z.object({
       do: z.literal('shoot'),
       dx: expr,
@@ -252,7 +259,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('state'), name: z.string().min(1) }),
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
     z.object({ do: z.literal('message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(2) }),
-    z.object({ do: z.literal('alpha'), value: expr }),
+    z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
@@ -312,20 +319,22 @@ export function exprSlots(s: Stmt): string[] {
     case 'restart_level':
       return [];
     case 'velocity':
-      return [s.x, s.y].filter((x): x is string => x !== null);
+      return [s.x, s.y, s.on].filter((x): x is string => x !== null);
     case 'push':
     case 'position':
-      return [s.x, s.y];
+      return [s.x, s.y, ...(s.on ? [s.on] : [])];
     case 'move_toward':
       return [s.target, s.speed];
     case 'glide_to':
-      return [s.x, s.y, s.speed];
+      return [s.x, s.y, s.speed, ...(s.on ? [s.on] : [])];
     case 'jump':
-      return [s.force];
+      return [s.force, ...(s.on ? [s.on] : [])];
     case 'face':
-      return [s.dir];
+      return [s.dir, ...(s.on ? [s.on] : [])];
     case 'gravity':
-      return [s.scale];
+      return [s.scale, ...(s.on ? [s.on] : [])];
+    case 'speed_factor':
+      return [s.value, ...(s.on ? [s.on] : [])];
     case 'shoot':
       return [s.dx, s.dy, s.speed, s.damage, s.range];
     case 'spawn':
@@ -344,7 +353,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'message':
       return messageParts(s.text);
     case 'alpha':
-      return [s.value];
+      return [s.value, ...(s.on ? [s.on] : [])];
     case 'camera_shake':
       return [s.strength, s.seconds];
     case 'camera_flash':
@@ -462,6 +471,7 @@ ${Object.entries(TRIGGERS)
   .join('\n')}
 
 Statements ("do"); every value is an expression given as a JSON string ("90", "self.vx * -1", "\\"left\\"")
+Movement and look statements (velocity, push, glide_to, position, jump, face, gravity, speed_factor, alpha) act on this entity, or on another one given by "on" (an expression: "other", "it", "player", nearest("enemy")). A zone that affects what enters it (water, wind, a trampoline, a conveyor belt) does it with "on": "other" in its touch handlers, or "on": "it" inside "each" with overlaps(it).
 ${Object.entries(STATEMENTS)
   .map(([k, s]) => `  ${k}: ${s.doc}. ${s.example}`)
   .join('\n')}

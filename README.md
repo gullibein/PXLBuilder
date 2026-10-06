@@ -12,7 +12,9 @@ behave on their own. A few common behaviors are ready-made components
 (Patrol, Jumper, Shooter, MovingPlatform, Timer, DoubleJump, LedgeGrab), and
 for anything else the AI **programs the behavior**: it writes a behavior
 script for the object ("charges at the player when it gets close, then rests",
-"a jetpack with fuel", "a platform that crumbles"). Scripts are data in a small
+"a jetpack with fuel", "a platform that crumbles", "water the player swims in").
+A script can act on other things too, so an area (water, mud, a trampoline)
+changes whatever enters it. Scripts are data in a small
 event-based language (variables, states, expressions, game actions), checked
 before they are applied and readable in the details panel. The camera has
 per-level settings (zoom, look-ahead, dead zone, limits, a still camera aimed

@@ -17,6 +17,7 @@ import { checkScript, type BehaviorScript, type Handler, type Stmt } from '../co
 import type { Project } from '../core/types';
 import type { GameEvent } from './gameplay';
 import type { InputState } from './input';
+import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
 
 export interface ScriptInstance {
@@ -244,14 +245,21 @@ export class ScriptSystem {
         ctx.it = prev;
         break;
       }
-      case 'velocity':
-        if (s.x !== null) e.vx = n(s.x);
-        if (s.y !== null) e.vy = n(s.y);
+      case 'velocity': {
+        const t = ent(s.on);
+        if (!t) break;
+        if (s.x !== null) t.vx = n(s.x);
+        if (s.y !== null) t.vy = n(s.y);
         break;
-      case 'push':
-        e.vx += n(s.x);
-        e.vy += n(s.y);
+      }
+      case 'push': {
+        const t = ent(s.on);
+        if (!t) break;
+        t.vx += n(s.x);
+        t.vy += n(s.y);
+        if (t.vy < 0) t.grounded = false;
         break;
+      }
       case 'move_toward': {
         const t = ent(s.target);
         const speed = n(s.speed);
@@ -267,26 +275,42 @@ export class ScriptSystem {
         this.makeMovable(e);
         break;
       }
-      case 'glide_to':
-        this.rt.moveTo(e, { x: n(s.x), y: n(s.y) }, Math.max(0, n(s.speed)));
-        break;
-      case 'position':
-        e.x = n(s.x);
-        e.y = n(s.y);
-        if (e.body !== 'dynamic') this.rt.markSolidsDirty();
-        break;
-      case 'jump':
-        e.vy = -n(s.force);
-        e.grounded = false;
-        break;
-      case 'face': {
-        const d = n(s.dir);
-        if (d !== 0) e.facing = d < 0 ? -1 : 1;
+      case 'glide_to': {
+        const t = ent(s.on);
+        if (t) this.rt.moveTo(t, { x: n(s.x), y: n(s.y) }, Math.max(0, n(s.speed)));
         break;
       }
-      case 'gravity':
-        e.gravityScale = n(s.scale);
+      case 'position': {
+        const t = ent(s.on);
+        if (!t) break;
+        t.x = n(s.x);
+        t.y = n(s.y);
+        if (t.body !== 'dynamic') this.rt.markSolidsDirty();
         break;
+      }
+      case 'jump': {
+        const t = ent(s.on);
+        if (!t) break;
+        t.vy = -n(s.force);
+        t.grounded = false;
+        break;
+      }
+      case 'face': {
+        const t = ent(s.on);
+        const d = n(s.dir);
+        if (t && d !== 0) t.facing = d < 0 ? -1 : 1;
+        break;
+      }
+      case 'gravity': {
+        const t = ent(s.on);
+        if (t) t.gravityScale = n(s.scale);
+        break;
+      }
+      case 'speed_factor': {
+        const t = ent(s.on);
+        if (t) t.speedFactor = Math.max(0, Math.min(10, n(s.value)));
+        break;
+      }
       case 'shoot': {
         let dx = n(s.dx);
         let dy = n(s.dy);
@@ -344,9 +368,11 @@ export class ScriptSystem {
         gp.messages.push({ text, until: this.rt.time + s.seconds });
         break;
       }
-      case 'alpha':
-        e.alpha = Math.min(1, Math.max(0, n(s.value)));
+      case 'alpha': {
+        const t = ent(s.on);
+        if (t) t.alpha = Math.min(1, Math.max(0, n(s.value)));
         break;
+      }
       case 'respawn': {
         const t = ent(s.target);
         if (t) this.rt.respawn(t);
@@ -577,6 +603,18 @@ export class ScriptSystem {
         }
         return true;
       }
+      case 'touching': {
+        const tag = show(v[0]);
+        const who = v.length > 1 ? asEntity(v[1]) : self;
+        const box = who && this.rt.boxOf(who);
+        if (!who || !box) return false;
+        return this.rt.entities.some((o) => o !== who && o.alive && !o.projectile && o.tags.includes(tag) && boxesOverlap(box, this.rt.boxOf(o)));
+      }
+      case 'overlaps': {
+        const a = asEntity(v[0]);
+        const box = this.rt.boxOf(self);
+        return !!a && a !== self && a.alive && !!box && boxesOverlap(box, this.rt.boxOf(a));
+      }
       case 'get': {
         const a = asEntity(v[0]);
         const name = show(v[1]);
@@ -596,6 +634,10 @@ export class ScriptSystem {
 }
 
 // ---------------------------------------------------------------- values
+
+function boxesOverlap(a: Box, b: Box | null): boolean {
+  return !!b && overlaps(a, b);
+}
 
 function isEntity(v: Value): v is RuntimeEntity {
   return typeof v === 'object' && v !== null;
@@ -665,6 +707,10 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.spawn.x;
     case 'spawn_y':
       return e.spawn.y;
+    case 'gravity':
+      return e.gravityScale;
+    case 'speed_factor':
+      return e.speedFactor;
     case 'name':
       return e.name;
   }

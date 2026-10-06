@@ -771,6 +771,29 @@ describe('behavior scripts', () => {
     expect(rt.renderList().find((r) => r.name === 'Stone' && r.transform.position.x === 60)?.alpha).toBe(0.5);
   });
 
+  it('"on": a trampoline script throws the player up; "speed_factor" on other slows it', () => {
+    const { rt, input, p } = level((b) => {
+      const s = b.place('Stone', { x: 60, y: 16 });
+      script(b, s, { handlers: [{ when: { on: 'event', event: 'touch_started', with: 'player' }, do: [{ do: 'velocity', x: null, y: '-400', on: 'other' }, { do: 'speed_factor', value: '0.5', on: 'player' }] }] });
+    });
+    let top = p.y;
+    walkRight(rt, input, 0.6);
+    run(rt, input, 0.3, () => (top = Math.min(top, p.y)));
+    expect(top).toBeLessThan(16 - 60);
+    expect(p.speedFactor).toBe(0.5);
+    rt.respawn(p);
+    expect(p.speedFactor).toBe(1);
+  });
+
+  it('touching(tag) and member reads: gravity and speed_factor', () => {
+    const { rt, input, p } = level((b) => {
+      script(b, rt0(b, 'Player'), { vars: [{ name: 'on_ground_tile', value: 0 }, { name: 'g', value: 0 }], handlers: [{ when: { on: 'tick' }, do: [{ do: 'set', var: 'on_ground_tile', value: "touching('nothing') or 1" }, { do: 'gravity', scale: '0.5', on: null }, { do: 'set', var: 'g', value: 'self.gravity + self.speed_factor' }] }] });
+    });
+    run(rt, input, 0.1);
+    expect(p.scripts[0].vars.get('g')).toBe(1.5);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
   it('signals: one script tells others, which react', () => {
     const { rt, input } = level((b) => {
       script(b, b.place('Coin', { x: -100, y: 0 }), { handlers: [{ when: { on: 'every', seconds: 0.5 }, do: [{ do: 'signal', name: 'ping' }] }] });
@@ -807,7 +830,7 @@ describe('behavior scripts', () => {
       const id = b.place('Enemy', { x: 100, y: 17 });
       script(b, id, { handlers: [{ when: { on: 'tick' }, do: [{ do: 'jump', force: '300' }] }] });
       const e = b.d.scenes[0].entities.find((x) => x.id === id)!;
-      e.scripts![0].handlers[0].do = [{ do: 'jump', force: 'nonsense(1)' }];
+      e.scripts![0].handlers[0].do = [{ do: 'jump', force: 'nonsense(1)', on: null }];
     });
     run(rt, input, 0.3);
     expect(rt.find('Enemy')!.y).toBeCloseTo(17, 0);
@@ -853,6 +876,49 @@ describe('the example scripts the AI learns from', () => {
     expect(p.scripts[0].vars.get('fuel') as number).toBeLessThanOrEqual(0);
     run(rt, input, 2);
     expect(p.y).toBeCloseTo(16, 0); // back down when the fuel ran out
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  /** A pool of water (a trigger tagged "water", with the Water script): `size` wide/high, centered at `at`. */
+  function pool(b: Builder, at: Vec2, size: Vec2): string {
+    const def = createDefinition('Water', { Sprite: registry.createDefault('Sprite', { width: size.x, height: size.y }), Collider: registry.createDefault('Collider', { size, isTrigger: true }) }, ['water']);
+    m.addDefinition(b.d, def, registry);
+    setScript(b.d, { target: 'definition', id: def.id }, example('Water'));
+    return b.place('Water', at);
+  }
+
+  it('Water: the player walks slowly through it and at full speed again once out', () => {
+    const { rt, input, p } = level((b) => pool(b, { x: 100, y: 0 }, { x: 64, y: 64 }));
+    const speeds: { x: number; vx: number }[] = [];
+    input.press('right');
+    run(rt, input, 2.5, () => speeds.push({ x: p.x, vx: p.vx }));
+    const before = Math.max(...speeds.filter((s) => s.x > 40 && s.x < 60).map((s) => s.vx));
+    const inside = Math.max(...speeds.filter((s) => s.x > 90 && s.x < 110).map((s) => s.vx));
+    const after = Math.max(...speeds.filter((s) => s.x > 150).map((s) => s.vx));
+    expect(inside).toBeLessThan(before * 0.5);
+    expect(after).toBeCloseTo(before, 0);
+    expect(p.gravityScale).toBe(1);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('Water: falling into it, the player sinks gently; Swim makes Jump a stroke upward in it', () => {
+    const { rt, input, p } = level((b) => {
+      pool(b, { x: 0, y: -40 }, { x: 96, y: 96 });
+      setScript(b.d, { target: 'instance', id: rt0(b, 'Player') }, example('Swim'));
+    });
+    p.y = -220;
+    let fastest = 0;
+    run(rt, input, 1.5, () => {
+      if (p.y > -60 && p.y < 0) fastest = Math.max(fastest, p.vy);
+    });
+    expect(fastest).toBeGreaterThan(0);
+    expect(fastest).toBeLessThan(65); // the cap, plus at most one step of (water) gravity
+    expect(p.speedFactor).toBeCloseTo(0.45);
+    const y = p.y;
+    input.press('jump');
+    run(rt, input, 0.1);
+    input.release('jump');
+    expect(p.y).toBeLessThan(y - 5);
     expect(rt.scripts.errors).toEqual([]);
   });
 

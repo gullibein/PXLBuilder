@@ -97,7 +97,7 @@ export class BehaviorSystem {
       }
     }
     if (turn) p.dir = p.dir === 1 ? -1 : 1;
-    e.vx = p.dir * p.speed;
+    e.vx = p.dir * p.speed * e.speedFactor;
     if (e.gravityScale === 0 || e.body !== 'dynamic') e.vy = 0;
     e.facing = p.dir;
   }
