@@ -181,12 +181,36 @@ function migrateV5toV6(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v6 -> v7
+ * - The starter Player and Enemy get their pixel art (eyes and outlines),
+ *   but only while they still look like the starters: no image of their own
+ *   and the original color.
+ */
+function migrateV6toV7(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const art = createStarterAssets();
+  const defs: Raw[] = project.definitions ?? [];
+  const give = (name: string, color: string, asset: Raw) => {
+    const def = defs.find((d) => (d.metadata?.starter ?? d.name) === name);
+    const sprite = def?.components?.Sprite;
+    if (!sprite || sprite.assetId || String(sprite.color).toLowerCase() !== color) return;
+    sprite.assetId = asset.id;
+    sprite.frame = 1;
+    project.assets = [...(project.assets ?? []), asset];
+  };
+  give('Player', '#4fa3ff', art.player);
+  give('Enemy', '#e5534b', art.enemy);
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
   { from: 3, to: 4, migrate: migrateV3toV4 },
   { from: 4, to: 5, migrate: migrateV4toV5 },
   { from: 5, to: 6, migrate: migrateV5toV6 },
+  { from: 6, to: 7, migrate: migrateV6toV7 },
 ];
 
 export class MigrationError extends Error {

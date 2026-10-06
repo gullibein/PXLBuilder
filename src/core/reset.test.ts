@@ -38,7 +38,10 @@ describe('resetting objects to defaults', () => {
     const fresh = createProject(registry);
     const player = p.definitions.find((d) => d.id === playerId)!;
     expect(player.name).toBe('Player');
-    expect(player.components).toEqual(fresh.definitions.find((d) => d.name === 'Player')!.components);
+    const freshPlayer = fresh.definitions.find((d) => d.name === 'Player')!.components;
+    // Same components; its picture is the project's own copy (reused, so its id differs from a new project's).
+    expect({ ...player.components, Sprite: { ...player.components.Sprite, assetId: null } }).toEqual({ ...freshPlayer, Sprite: { ...freshPlayer.Sprite, assetId: null } });
+    expect(p.assets.find((a) => a.id === player.components.Sprite.assetId)?.name).toBe('Player');
     expect(player.components.CharacterController.jumpForce).toBe(295);
     // The placed copy stays (same place, same name) but loses its own tweaks.
     const hero = m.getEntity(p, sceneId, placedId);
@@ -52,6 +55,7 @@ describe('resetting objects to defaults', () => {
     expect(counts.reset).toBe(fresh.definitions.length - 1);
     // The Ladder's picture is reused, not duplicated.
     expect(p.assets.filter((a) => a.name === 'Ladder')).toHaveLength(1);
+    expect(p.assets.filter((a) => a.name === 'Player')).toHaveLength(1);
   });
 
   it('resets a single starter object', () => {

@@ -84,14 +84,40 @@ export function createLeverAsset(): AssetRecord {
   return createImageAsset('Lever', svgDataUrl(LEVER_SVG), 32, 32, 'svg');
 }
 
+/** Starter art: the player, a blue block with an ink outline and one eye on the side it faces (right; it is drawn mirrored going left). */
+const PLAYER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="32" viewBox="0 0 28 32" shape-rendering="crispEdges">
+<rect x="2" y="0" width="24" height="32" fill="#0f1a33"/><rect x="0" y="2" width="28" height="28" fill="#0f1a33"/>
+<rect x="2" y="2" width="24" height="28" fill="#4fa3ff"/><rect x="2" y="2" width="24" height="3" fill="#8cc6ff"/><rect x="2" y="24" width="24" height="6" fill="#2f7dd6"/>
+<rect x="16" y="9" width="5" height="7" fill="#0f1a33"/><rect x="17" y="10" width="2" height="2" fill="#ffffff"/>
+</svg>`;
+
+/** Starter art: the enemy, a red blob with a rounded top and two eyes. */
+const ENEMY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" shape-rendering="crispEdges">
+<rect x="6" y="0" width="18" height="30" fill="#0f1a33"/><rect x="2" y="2" width="26" height="28" fill="#0f1a33"/><rect x="0" y="6" width="30" height="24" fill="#0f1a33"/>
+<rect x="6" y="2" width="18" height="26" fill="#e5534b"/><rect x="4" y="4" width="22" height="24" fill="#e5534b"/><rect x="2" y="6" width="26" height="22" fill="#e5534b"/>
+<rect x="6" y="2" width="18" height="2" fill="#ff8a80"/><rect x="2" y="22" width="26" height="6" fill="#b83a33"/>
+<rect x="8" y="10" width="5" height="6" fill="#0f1a33"/><rect x="17" y="10" width="5" height="6" fill="#0f1a33"/>
+<rect x="9" y="11" width="2" height="2" fill="#ffffff"/><rect x="18" y="11" width="2" height="2" fill="#ffffff"/>
+</svg>`;
+
+export function createPlayerAsset(): AssetRecord {
+  return createImageAsset('Player', svgDataUrl(PLAYER_SVG), 28, 32, 'svg');
+}
+
+export function createEnemyAsset(): AssetRecord {
+  return createImageAsset('Enemy', svgDataUrl(ENEMY_SVG), 30, 30, 'svg');
+}
+
 /** Images the starter objects use. */
 export interface StarterAssets {
   ladder: AssetRecord;
   lever: AssetRecord;
+  player: AssetRecord;
+  enemy: AssetRecord;
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset() };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset() };
 }
 
 /** Library categories of the starter objects. */
@@ -126,7 +152,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       'Player',
       {
         // As tall as a tile, so one-row-high steps and ladders line up.
-        Sprite: c('Sprite', { width: 28, height: 32, color: '#4fa3ff' }),
+        Sprite: c('Sprite', { width: 28, height: 32, color: '#4fa3ff', assetId: assets.player.id }),
         Collider: c('Collider', { size: { x: 28, y: 32 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
         CharacterController: c('CharacterController'),
@@ -153,7 +179,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
     createDefinition(
       'Enemy',
       {
-        Sprite: c('Sprite', { width: 30, height: 30, color: '#e5534b' }),
+        Sprite: c('Sprite', { width: 30, height: 30, color: '#e5534b', assetId: assets.enemy.id }),
         Collider: c('Collider', { size: { x: 30, y: 30 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
         Damage: c('Damage', { amount: 1 }),
@@ -234,6 +260,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever],
+    assets: [assets.ladder, assets.lever, assets.player, assets.enemy],
   };
 }

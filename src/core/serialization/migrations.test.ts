@@ -107,4 +107,21 @@ describe('format v2 -> v3', () => {
     const { project } = projectFromFiles(v2Files(true), registry);
     expect(project.definitions.find((d) => d.name === 'Player')!.components.CharacterController.jumpForce).toBe(600);
   });
+
+  it('v6 -> v7: the starter Player and Enemy get eyes, unless they were already restyled', async () => {
+    const { migrateProject } = await import('./migrations');
+    const def = (name: string, sprite: Record<string, unknown>) => ({ id: `def_${name}`, name, description: '', tags: [], metadata: {}, components: { Sprite: { width: 30, height: 30, frame: 1, assetId: null, ...sprite } } });
+    const raw = {
+      formatVersion: 6,
+      assets: [],
+      scenes: [],
+      definitions: [def('Player', { color: '#4fa3ff' }), def('Enemy', { color: '#00ff00' })],
+    };
+    const out = migrateProject(raw) as { assets: { id: string; name: string }[]; definitions: { name: string; components: { Sprite: { assetId: string | null } } }[] };
+    const player = out.definitions.find((d) => d.name === 'Player')!;
+    expect(out.assets.find((a) => a.id === player.components.Sprite.assetId)?.name).toBe('Player');
+    // A recolored enemy keeps its own look.
+    expect(out.definitions.find((d) => d.name === 'Enemy')!.components.Sprite.assetId).toBeNull();
+    expect(out.assets).toHaveLength(1);
+  });
 });

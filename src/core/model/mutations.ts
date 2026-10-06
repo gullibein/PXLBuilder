@@ -381,7 +381,7 @@ function freshStarters(project: Project, registry: ComponentRegistry): { defs: O
     if (!existing) newAssets.push(a);
     return existing ?? a;
   };
-  const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever) };
+  const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever), player: reuse(fresh.player), enemy: reuse(fresh.enemy) };
   return { defs: createStarterDefinitions(registry, assets), newAssets };
 }
 
