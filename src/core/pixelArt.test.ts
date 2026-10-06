@@ -59,6 +59,23 @@ describe('pixel-art sprites', () => {
     expect(resolveEntity(one, one.scenes[0].entities.at(-1)!, registry).components.Sprite.assetId).toBe(one.assets.at(-1)!.id);
     expect(one.definitions.find((d) => d.id === hazard.id)!.components.Sprite.assetId).toBeNull();
 
-    expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry))).toThrow(/object is 64×16/);
+    // Other proportions are fitted, not rejected: a square drawn for the 4:1 hazard is resampled to 32×8.
+    const square = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry));
+    expect(square.assets.find((a) => a.name === 'Square')).toMatchObject({ width: 32, height: 8 });
+  });
+
+  it('art in other proportions is fitted: a pattern repeats, anything else gets transparent space', async () => {
+    const { fitPixelArt } = await import('./model/pixelArt');
+    const spike = { palette: [{ key: 'g', color: '#cccccc' }], rows: ['...g....', '..ggg...', '.ggggg..', 'gggggggg', 'gggggggg', 'gggggggg', 'gggggggg', 'gggggggg'] };
+    const row = fitPixelArt(spike, { x: 64, y: 16 });
+    expect(row.rows).toHaveLength(8);
+    expect(row.rows[0]).toBe('...g....'.repeat(4)); // four spikes in a row
+    const tall = fitPixelArt({ palette: spike.palette, rows: ['gggg', 'gggg', 'gggg'] }, { x: 32, y: 48 });
+    expect(tall.rows).toEqual(['....', '....', '....', 'gggg', 'gggg', 'gggg']); // standing on the bottom
+    const knight = fitPixelArt({ palette: spike.palette, rows: ['.gg.', '.gg.', 'gggg', '.gg.'] }, { x: 64, y: 32 });
+    expect(knight.rows).toEqual(['...gg...', '...gg...', '..gggg..', '...gg...']); // a character is never copied: centered with space
+    const wide = fitPixelArt({ palette: spike.palette, rows: ['.g.', '.g.', '.g.'] }, { x: 32, y: 16 });
+    expect(wide.rows).toEqual(['..g...', '..g...', '..g...']); // padded to 2:1
+    expect(fitPixelArt(spike, { x: 32, y: 32 })).toBe(spike); // already right
   });
 });

@@ -200,6 +200,21 @@ export function Viewport() {
       }
       for (const id of marks.waiting) {
         const e = byId.get(id);
+        // Blinks while its finished prompt waits for the user (a choice, a proposal, an answer).
+        if (e && !marks.working.has(id)) {
+          ctx.save();
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const b = getWorldBounds(e);
+          const tl = toScreen({ x: b.minX, y: b.minY });
+          const br = toScreen({ x: b.maxX, y: b.maxY });
+          ctx.globalAlpha = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(time / 180));
+          ctx.strokeStyle = theme.select;
+          ctx.shadowColor = theme.select;
+          ctx.shadowBlur = 10;
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(tl.x - 4, tl.y - 4, br.x - tl.x + 8, br.y - tl.y + 8);
+          ctx.restore();
+        }
         if (e && !marks.working.has(id)) drawWaitingBadge(ctx, toScreen, getWorldBounds(e), Object.values(jobs).some((j) => !j.seen && j.outcome?.status === 'error' && 'entityIds' in j.ctx && j.ctx.entityIds.includes(id)));
       }
       const marksAttr = `${marks.working.size},${marks.waiting.size}`;

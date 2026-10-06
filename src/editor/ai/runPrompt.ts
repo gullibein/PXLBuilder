@@ -11,7 +11,7 @@ import { getApiKey } from './apiKey';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
-import { applyOperations, checkOperations, isEditorOperation, type ApplyResult, type Operation } from '../../core/commands/operations';
+import { applyOperations, checkOperations, isEditorOperation, pruneOperations, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
@@ -87,6 +87,15 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         },
         signal,
       );
+      // Still not right: keep what applies, leave out the rest, and say so.
+      const again = response.operations.length && !response.operations.some(isEditorOperation) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
+      if (again) {
+        const { kept, skipped } = pruneOperations(useEditor.getState().project, response.operations, componentRegistry);
+        state.logMessage('warn', `AI answer still didn't check out; left out ${skipped.length} part(s): ${skipped.join('; ')}`);
+        if (!kept.length) return { status: 'error', message: `The AI's change couldn't be applied. ${skipped[0]}` };
+        const note = skipped.length === 1 ? `Left out one part that couldn't be applied: ${skipped[0]}` : `Left out ${skipped.length} parts that couldn't be applied (first: ${skipped[0]})`;
+        response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
+      }
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;

@@ -364,7 +364,7 @@ function Outcome(props: {
           {outcome.changes.length > 0 && list(outcome.changes, 'changes proposed')}
           <div className="result-actions choice-actions">
             <button className="btn-primary" data-testid="choice-object" title={`Every ${objectName} in the game gets this (${copies} placed)`} onClick={() => props.onChoose('object')}>
-              Change {objectName}
+              Apply
             </button>
             <button className="btn-secondary" data-testid="choice-new" title={`A new object with this change; the other ${objectName}s stay as they are`} onClick={() => props.onChoose('new')}>
               Create new
@@ -372,7 +372,7 @@ function Outcome(props: {
 
           </div>
           <p className="choice-hint">
-            {copies > 1 ? `Change ${objectName} changes all ${copies}. ` : ''}Create new makes a new kind of {objectName} in your objects.
+            Apply changes {copies > 1 ? `every ${objectName} (${copies} placed)` : `the ${objectName}`}. Create new makes a new kind of {objectName} in your objects.
           </p>
         </div>
       );

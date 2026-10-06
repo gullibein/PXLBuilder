@@ -73,6 +73,18 @@ function stubModel(body) {
   if (req.includes('zoom the camera in')) {
     return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
   }
+  if (req.includes('broken twice')) {
+    // Both the first answer and the corrected one have a part that can't be applied.
+    return {
+      kind: 'apply',
+      message: 'Lower gravity, and a tidy-up.',
+      changes: ['Gravity: 600', 'Removed an old connection'],
+      operations: [
+        { op: 'set_world', sceneId: body.context.level.id, gravityX: null, gravityY: 600, backgroundColor: null },
+        { op: 'remove_relationship', sceneId: body.context.level.id, id: 'rel_does_not_exist' },
+      ],
+    };
+  }
   if (req.includes('take your time') && req.includes('bigger')) {
     return { kind: 'apply', message: 'Made it bigger.', changes: [`${t[0].name}: wider`], operations: [{ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Sprite', field: 'color', valueJson: '"#00ff88"' }] };
   }
@@ -374,7 +386,7 @@ try {
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Enter moves focus into the prompt');
   await ask('Give the player five hearts.');
   await check(async () => (await result.getAttribute('data-status')) === 'choice', 'a change to what the Player is asks first');
-  await check(async () => (await prompts.getByTestId('choice-object').innerText()) === 'Change Player' && (await prompts.getByTestId('choice-new').innerText()) === 'Create new', 'with two buttons: "Change Player" and "Create new"');
+  await check(async () => (await prompts.getByTestId('choice-object').innerText()) === 'Apply' && (await prompts.getByTestId('choice-new').innerText()) === 'Create new' && (await result.innerText()).includes('Apply changes the Player'), 'with two buttons: "Apply" (changes the Player) and "Create new"');
   await changeObject();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the AI change is applied');
   await check(async () => (await result.innerText()).includes('Player: 5 hearts'), 'a short confirmation lists what changed');
@@ -405,7 +417,7 @@ try {
   await check(async () => (await prompts.count()) === 1, 'selecting the Enemy again brings the prompt back');
   await check(async () => !(await result.count()), 'the new prompt starts fresh');
   await ask('Make the enemy patrol between these two points.');
-  await check(async () => (await result.getAttribute('data-status')) === 'choice' && (await prompts.getByTestId('choice-object').innerText()) === 'Change Enemy', 'a behavior request offers "Change Enemy" or "Create new"');
+  await check(async () => (await result.getAttribute('data-status')) === 'choice' && (await result.innerText()).includes('Apply changes every Enemy (2 placed)'), 'a behavior request offers "Apply" (all 2 enemies) or "Create new"');
   await page.screenshot({ path: `${OUT}/4b-object-choice.png` });
   await prompts.getByTestId('choice-new').click();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', '"Create new" applies it');
@@ -823,6 +835,12 @@ try {
     return f2.length === 4 && Math.abs((f2[2] - f2[0]) * 2 - (f1[2] - f1[0])) <= 2;
   }, 'the camera frame shrinks to half: zoomed in 2×');
   await page.screenshot({ path: `${OUT}/26-camera-frame.png` });
+  const askedBefore2 = aiRequests.length;
+  await camPrompt.getByTestId('prompt-input').fill('Lower the gravity (broken twice).');
+  await camPrompt.getByTestId('prompt-input').press('Enter');
+  await check(async () => (await camPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal' && (await camPrompt.getByTestId('prompt-result').innerText()).includes('Left out one part'), 'an answer still broken after its retry keeps the parts that work, shows what was left out, and asks first');
+  await check(aiRequests.length === askedBefore2 + 2, '(the AI was asked once more, not again and again)');
+  await camPrompt.getByTestId('proposal-cancel').click();
   await camPrompt.getByTestId('prompt-close').click();
   await page.getByTestId('play').click();
   await check(async () => ((await page.getByTestId('play-canvas').getAttribute('data-camera')) ?? '').endsWith(',2.00'), 'Play uses the level camera zoom');
@@ -1305,7 +1323,7 @@ try {
   await kDrop('Enemy', 200, -150);
   await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
-  await check(async () => (await kPrompt.getByTestId('choice-object').innerText()) === 'Change Mushroom', 'asked on the player, the choice is about the Mushroom ("Change Mushroom")');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').innerText()).includes('Apply changes every Mushroom (2 placed)'), 'asked on the player, the choice is about the Mushroom');
   await changeObject(kPrompt);
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asked on the player, the change is applied');
   await check(async () => (await kPrompt.getByTestId('result-message').innerText()).startsWith("I'll add this to the Mushroom enemy"), 'the AI says it put it on the mushroom, not the player');

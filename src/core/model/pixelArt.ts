@@ -73,3 +73,48 @@ export function pixelArtToSvg(art: PixelArt): string {
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges">${rects.join('')}</svg>`;
 }
+
+/**
+ * Makes art fit an object's proportions instead of rejecting it: a strip
+ * whose bottom row runs edge to edge (a row of spikes, a tile) and
+ * fits a whole number of times is repeated sideways (an 8×8 spike for a 4:1
+ * hazard becomes a row of four); anything else, a character for instance,
+ * gets transparent space around it (centered sideways, standing on the
+ * bottom), never copies of itself. Art that would get too big
+ * is resampled to the suggested grid. Well-proportioned art is returned as is.
+ */
+export function fitPixelArt(art: PixelArt, size: { x: number; y: number }): PixelArt {
+  const w = art.rows[0].length;
+  const h = art.rows.length;
+  const fits = (cw: number, ch: number) => Math.abs((cw * size.y) / size.x - ch) <= 1;
+  if (fits(w, h)) return art;
+  const target = size.x / size.y;
+  const ratio = w / h;
+  let rows: string[] | null = null;
+  if (target > ratio) {
+    const k = Math.round(target / ratio);
+    // A strip has a base running edge to edge along the bottom (spikes, tiles); a character stands on its feet.
+    const base = art.rows[h - 1];
+    const edgeToEdge = base[0] !== '.' && base[w - 1] !== '.';
+    if (edgeToEdge && k >= 2 && w * k <= MAX_PIXEL_SIDE && fits(w * k, h)) rows = art.rows.map((r) => r.repeat(k));
+    else {
+      const nw = Math.round(h * target);
+      if (nw <= MAX_PIXEL_SIDE) {
+        const left = Math.floor((nw - w) / 2);
+        rows = art.rows.map((r) => '.'.repeat(left) + r + '.'.repeat(nw - w - left));
+      }
+    }
+  } else {
+    const nh = Math.round(w / target);
+    if (nh <= MAX_PIXEL_SIDE) rows = [...Array.from({ length: nh - h }, () => '.'.repeat(w)), ...art.rows];
+  }
+  if (!rows) {
+    // Too big to pad: sample it onto the suggested grid.
+    const g = suggestedGrid(size);
+    rows = Array.from({ length: g.height }, (_, y) => {
+      const sy = Math.min(h - 1, Math.floor((y * h) / g.height));
+      return Array.from({ length: g.width }, (_, x) => art.rows[sy][Math.min(w - 1, Math.floor((x * w) / g.width))]).join('');
+    });
+  }
+  return { palette: art.palette, rows };
+}

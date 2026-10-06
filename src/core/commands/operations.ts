@@ -11,7 +11,7 @@ import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
-import { checkPixelArt, pixelArtToSvg } from '../model/pixelArt';
+import { checkPixelArt, fitPixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize } from '../model/geometry';
@@ -280,13 +280,19 @@ export function checkOperations(project: Project, ops: Operation[], registry: Co
  * first invalid operation; callers run this inside one immer `produce`, so a
  * failure leaves the project untouched.
  */
-export function applyOperations(project: Project, ops: Operation[], registry: ComponentRegistry): ApplyResult {
+export function applyOperations(
+  project: Project,
+  ops: Operation[],
+  registry: ComponentRegistry,
+  /** When given, an invalid operation is reported here and skipped instead of failing the whole list. */
+  onInvalid?: (index: number, message: string) => void,
+): ApplyResult {
   const refs = new Map<string, Id>();
   const entityRefs = new Map<string, Id>();
   const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
-  for (const op of ops) {
+  const applyOne = (op: Operation): void => {
     switch (op.op) {
       case 'set_component_field': {
         const value = parseJson(op.valueJson, `${op.component}.${op.field} value`);
@@ -364,10 +370,12 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
       case 'draw_sprite': {
         const entity = op.target === 'instance' ? m.getEntity(project, sceneOfEntity(project, op.id), op.id) : instantiateDefinition(m.getDefinition(project, op.id), { x: 0, y: 0 });
         const size = getEntitySize(resolveEntity(project, entity, registry));
-        const art = { palette: op.palette, rows: op.rows };
-        const err = checkPixelArt(art, size);
+        const drawn = { palette: op.palette, rows: op.rows };
+        const err = checkPixelArt(drawn);
         if (err) throw new m.ModelError(`Sprite: ${err}`);
-        const asset = { ...createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), op.rows[0].length, op.rows.length, 'svg'), pixelArt: { palette: op.palette.map((p) => ({ ...p })), rows: [...op.rows] } };
+        // Other proportions than the object's are fitted (repeated or padded), not rejected.
+        const art = fitPixelArt(drawn, size);
+        const asset = { ...createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), art.rows[0].length, art.rows.length, 'svg'), pixelArt: { palette: art.palette.map((p) => ({ ...p })), rows: [...art.rows] } };
         m.addAsset(project, asset);
         const situation = op.situation ?? null;
         if (situation) {
@@ -473,6 +481,28 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         // Editor settings are not part of the game; the editor applies them (see isEditorOperation).
         throw new m.ModelError('Editor settings cannot be changed together with the game');
     }
-  }
+  };
+
+  ops.forEach((op, i) => {
+    if (!onInvalid) return applyOne(op);
+    try {
+      applyOne(op);
+    } catch (e) {
+      if (!(e instanceof m.ModelError)) throw e;
+      onInvalid(i, e.message);
+    }
+  });
   return result;
+}
+
+/**
+ * The operations that apply, without the ones that don't (and what was wrong
+ * with each): for a big change where a few parts fail, the rest still goes in.
+ */
+export function pruneOperations(project: Project, ops: Operation[], registry: ComponentRegistry): { kept: Operation[]; skipped: string[] } {
+  const bad = new Map<number, string>();
+  produce(project, (d) => {
+    applyOperations(d, ops, registry, (i, message) => bad.set(i, message));
+  });
+  return { kept: ops.filter((_, i) => !bad.has(i)), skipped: [...bad.values()] };
 }
