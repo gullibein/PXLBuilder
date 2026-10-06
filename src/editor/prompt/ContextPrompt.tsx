@@ -76,6 +76,10 @@ export function ContextPrompt() {
   const { setInspectorOpen, selectEntities, setWorldContext, selectConnection, project } = useEditor.getState();
   const scene = project.scenes.find((sc) => sc.id === ctx.sceneId);
   const nameOf = (id: string) => scene?.entities.find((e) => e.id === id)?.name ?? '?';
+  const objectNameOf = (id: string) => {
+    const defId = scene?.entities.find((e) => e.id === id)?.definitionId;
+    return defId ? (project.definitions.find((d) => d.id === defId)?.name ?? null) : null;
+  };
   const header =
     ctx.kind === 'level' ? (
       <>
@@ -93,6 +97,8 @@ export function ContextPrompt() {
       </>
     ) : ctx.kind === 'group' ? (
       <>{ctx.entityIds.length} objects</>
+    ) : ctx.kind === 'entity' ? (
+      <EntityHeader name={nameOf(ctx.entityIds[0])} objectName={objectNameOf(ctx.entityIds[0])} />
     ) : undefined;
   const close = () => {
     selectEntities([]);
@@ -116,6 +122,16 @@ export function ContextPrompt() {
         />
       </div>
     </div>
+  );
+}
+
+/** The selected object's name, and the library object it is a copy of when that has another name. */
+function EntityHeader({ name, objectName }: { name: string; objectName: string | null }) {
+  return (
+    <span className="entity-head" data-testid="entity-header">
+      {name}
+      {objectName && objectName !== name && <span className="entity-kind">{objectName}</span>}
+    </span>
   );
 }
 

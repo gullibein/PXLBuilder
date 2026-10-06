@@ -375,6 +375,8 @@ try {
   step = 'golden test 2: enemy';
   await clickWorld(-32, 0);
   await check(async () => (await prompts.count()) === 1, 'selecting the Enemy replaces the Player prompt (still one prompt)');
+  await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Enemy', "the object's card has its name as a header");
+  await check(async () => (await prompts.locator('.prompt-header').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))) <= 13, '(in the smaller header size, the same for every card)');
   await prompts.getByTestId('prompt-close').click();
   await check(async () => (await prompts.count()) === 0, 'the × on the prompt card closes it');
   await clickWorld(-32, 0);
