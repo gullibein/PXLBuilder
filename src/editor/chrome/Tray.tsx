@@ -12,17 +12,17 @@ export function Tray() {
   if (!tray.open) {
     return (
       <div className="tray-chips">
-        <button className="tray-chip" data-testid="tray-toggle" onClick={() => setTray({ open: true, tab: 'history' })}>
+        <button className="tray-chip" data-testid="tray-toggle" aria-label="AI History" title="AI History" onClick={() => setTray({ open: true, tab: 'history' })}>
           <span className="spark-mini" aria-hidden="true">✦</span>
-          AI History
+          <span className="chip-label">AI History</span>
           {past.length > 0 && <span className="count">{past.length}</span>}
         </button>
-        <button className="tray-chip" data-testid="console-toggle" onClick={() => setTray({ open: true, tab: 'console' })}>
+        <button className="tray-chip" data-testid="console-toggle" aria-label="Console" title="Console" onClick={() => setTray({ open: true, tab: 'console' })}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <rect x="1.5" y="2.5" width="11" height="9" rx="1.8" fill="none" stroke="currentColor" strokeWidth="1.2" />
             <path d="m4 6 1.8 1.5L4 9M7.5 9H10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
-          Console
+          <span className="chip-label">Console</span>
           {errors > 0 && <span className="error-dot" title={`${errors} error(s)`} />}
         </button>
       </div>

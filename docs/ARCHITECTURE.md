@@ -332,6 +332,13 @@ plus a few component rules: outlines, shadows, fonts), and swaps the canvas
 colors (grid dots, drafting lines, labels). The amber style uses amber
 instead of the accent color; the others keep the user's accent.
 
+**Wireframe view** (editor setting `wireframe`; W, the tool panel's cube
+button, or the ⋯ menu): while editing, every object is drawn as the outline
+of its collider shape with a faint fill and a center mark, colored by kind
+(player, dangerous, item, see-through and dashed, solid) in the current
+style's colors (`theme.wire`) on the style's ground. Play always shows the
+real game.
+
 ### Behavior scripts (programmable behavior)
 Ready-made components cover common cases; everything else is programmed.
 The AI writes **behavior scripts**: programs stored as data on a library

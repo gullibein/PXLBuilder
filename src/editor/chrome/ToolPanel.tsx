@@ -11,7 +11,8 @@ export function ToolPanel() {
     return scene.relationships.length + scene.rules.length;
   });
   const brush = useEditor((s) => (s.tool.kind === 'brush' ? s.project.definitions.find((d) => d.id === (s.tool as { definitionId: string }).definitionId) : undefined));
-  const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock } = useEditor.getState();
+  const wireframe = useEditor((s) => s.layout.wireframe);
+  const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
   return (
     <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel">
       <button
@@ -73,6 +74,19 @@ export function ToolPanel() {
           <path d="M6.5 5.5 11.4 8M6.5 12.5l4.9-2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
         {logicCount > 0 && <span className="tool-badge">{logicCount}</span>}
+      </button>
+      <span className="tool-sep" />
+      <button
+        className={`tool${wireframe ? ' on' : ''}`}
+        title="Wireframe view: outlines in the editor style's colors (W)"
+        aria-label="Wireframe view"
+        aria-pressed={wireframe}
+        data-testid="tool-wireframe"
+        onClick={() => setLayout({ wireframe: !wireframe })}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path d="M9 2 15 5.5v7L9 16 3 12.5v-7z M3 5.5 9 9l6-3.5M9 9v7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
       </button>
     </nav>
   );

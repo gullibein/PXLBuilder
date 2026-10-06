@@ -22,6 +22,18 @@ export const theme = {
   connector: '#ff4d5e',
   /** Faint lines every few grid cells (drafting paper), or null for dots only. */
   gridMajor: null as string | null,
+  /** Wireframe view: the ground and the line colors by kind of object. */
+  wire: {
+    ground: '#151a2b',
+    solid: '#c9d1ff',
+    character: '#8b7bff',
+    danger: '#ff6b81',
+    item: '#ffd166',
+    trigger: '#7fd6c2',
+    fill: 0.07,
+    glow: 0,
+    dash: false,
+  },
   /** Font of the object name under a selection. */
   labelFont: "700 10px 'Figtree', ui-sans-serif, system-ui, sans-serif",
 };
@@ -36,6 +48,7 @@ const STYLE_CANVAS: Record<string, Partial<typeof theme>> = {
     labelShadow: 'rgba(5, 11, 32, 0.9)',
     labelFont: "700 10px 'JetBrains Mono', ui-monospace, monospace",
     ink: '#0a1230',
+    wire: { ground: '#0f1d44', solid: '#e9f2ff', character: '#5cc8ff', danger: '#ff9f9f', item: '#ffe08f', trigger: '#9fe0ff', fill: 0.06, glow: 0, dash: false },
   },
   arcade: {
     gridDot: 'rgba(255, 60, 200, 0.35)',
@@ -43,9 +56,11 @@ const STYLE_CANVAS: Record<string, Partial<typeof theme>> = {
     labelShadow: 'rgba(255, 60, 200, 0.8)',
     labelFont: "400 10px 'Silkscreen', ui-monospace, monospace",
     connector: '#ff3cc8',
+    wire: { ground: '#07060f', solid: '#00f0ff', character: '#ff3cc8', danger: '#ff3cc8', item: '#fff36b', trigger: '#7c5cff', fill: 0.05, glow: 8, dash: false },
   },
   paper: {
     gridDot: 'rgba(255, 255, 255, 0.22)',
+    wire: { ground: '#f3eddf', solid: '#3b3424', character: '#5a4bd6', danger: '#c0392b', item: '#b7791f', trigger: '#6b8f71', fill: 0.05, glow: 0, dash: true },
   },
   amber: {
     gridDot: 'rgba(255, 176, 0, 0.3)',
@@ -55,6 +70,7 @@ const STYLE_CANVAS: Record<string, Partial<typeof theme>> = {
     hover: 'rgba(255, 196, 80, 0.75)',
     link: '#ffc94d',
     connector: '#ff7a1a',
+    wire: { ground: '#0b0803', solid: '#ffb000', character: '#ffd277', danger: '#ff7a1a', item: '#ffe3a1', trigger: '#b98516', fill: 0.05, glow: 7, dash: false },
   },
 };
 

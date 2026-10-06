@@ -18,6 +18,8 @@ export type EditorStyle = (typeof EDITOR_STYLES)[number];
 
 export interface EditorLayout {
   editorStyle: EditorStyle;
+  /** Draw every object as outlines in the editor style's colors (editing only). */
+  wireframe: boolean;
   playButton: 'top' | 'bottom';
   inspector: 'floating' | 'docked';
   inspectorSide: 'right' | 'left';
@@ -47,6 +49,12 @@ export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout
     description:
       'The look of the editor (never the game). classic: the default dark look. blueprint: a technical drawing with ink outlines, hard shadows, paper cards and drafting grid lines. arcade: neon on black with pixel-font headings. paper: a light, warm editor. amber: an old computer monitor, amber text glowing on black with scanlines (uses amber instead of the accent color).',
     field: { kind: 'enum', options: [...EDITOR_STYLES], default: 'classic' },
+  },
+  {
+    key: 'wireframe',
+    label: 'Wireframe view',
+    description: "While editing, draw every object as simple outlines in the editor style's colors instead of its sprite (W toggles it). Play always shows the real game.",
+    field: { kind: 'boolean', default: false },
   },
   {
     key: 'playButton',

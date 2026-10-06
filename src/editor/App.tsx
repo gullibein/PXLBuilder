@@ -165,6 +165,8 @@ function useGlobalShortcuts() {
         state.usePen();
       } else if (key === 'f' && !mod) {
         frameView();
+      } else if (key === 'w' && !mod) {
+        state.setLayout({ wireframe: !state.layout.wireframe });
       } else if (key === 'i' && !mod) {
         state.setInspectorOpen(!state.inspectorOpen);
       } else if (e.key.startsWith('Arrow')) {

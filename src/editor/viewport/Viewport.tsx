@@ -124,10 +124,17 @@ export function Viewport() {
       if ((canvas.dataset.preview ?? '') !== previewAttr) canvas.dataset.preview = previewAttr;
 
       const images = imageLookup(state.project);
-      drawBackground(ctx, view, dpr, scene.world, state.camera, images);
+      const wire = state.layout.wireframe;
+      if (wire) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = theme.wire.ground;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else drawBackground(ctx, view, dpr, scene.world, state.camera, images);
       applyCamera(ctx, state.camera, view, dpr);
-      if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize);
-      drawEntities(ctx, entities, images);
+      if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize, wire);
+      if (wire) drawWireframe(ctx, entities, state.camera.zoom);
+      else drawEntities(ctx, entities, images);
+      if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       if (preview) drawPreviewMarks(ctx, preview, resolveSceneEntities(state.project, scene.id), byId, state.camera.zoom, time);
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
@@ -577,7 +584,7 @@ function isTextInput(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize, gridSize: number): void {
+function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize, gridSize: number, wire = false): void {
   let step = gridSize;
   while (step * camera.zoom < 10) step *= 4;
   const tl = screenToWorld(camera, view, { x: 0, y: 0 });
@@ -599,15 +606,71 @@ function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize,
     ctx.stroke();
   }
   // Dots at grid intersections: present but quiet, so the game stays the focus.
-  ctx.fillStyle = theme.gridDot;
+  ctx.fillStyle = wire ? withAlpha(theme.wire.solid, 0.22) : theme.gridDot;
   const r = 1 / camera.zoom;
   for (let x = Math.floor(tl.x / step) * step; x <= br.x; x += step) {
     for (let y = Math.floor(tl.y / step) * step; y <= br.y; y += step) ctx.fillRect(x - r / 2, y - r / 2, r, r);
   }
 }
 
+/** What kind of thing an entity is, for its wireframe color. */
+function wireKind(e: ResolvedEntity): keyof Omit<typeof theme.wire, 'ground' | 'fill' | 'glow' | 'dash'> {
+  const c = e.components;
+  if (c.CharacterController) return 'character';
+  if (c.Damage || e.tags.includes('enemy') || e.tags.includes('hazard')) return 'danger';
+  if (c.Collectible) return 'item';
+  if (!c.Collider || c.Collider.isTrigger === true) return 'trigger';
+  return 'solid';
+}
+
+/** "#rrggbb" with an alpha. */
+function withAlpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+/**
+ * Wireframe view: every object as its outline (its collider's shape and
+ * size), colored by kind (player, dangerous, item, see-through, solid) in
+ * the editor style's colors, with a faint fill. Things you can walk through
+ * are dashed; a cross marks each object's center.
+ */
+function drawWireframe(ctx: CanvasRenderingContext2D, entities: ResolvedEntity[], zoom: number): void {
+  const w = theme.wire;
+  const px = 1 / zoom;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  if (w.glow) ctx.shadowBlur = w.glow;
+  for (const e of entities) {
+    const kind = wireKind(e);
+    const color = w[kind];
+    ctx.save();
+    traceShape(ctx, e, 0, false);
+    ctx.fillStyle = withAlpha(color, w.fill);
+    ctx.shadowColor = 'transparent';
+    ctx.fill();
+    if (w.glow) ctx.shadowColor = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (kind === 'solid' ? 1.25 : 1.75) * px;
+    ctx.setLineDash(kind === 'trigger' || (w.dash && kind === 'item') ? [5 * px, 4 * px] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Center mark.
+    const s = 3 * px;
+    ctx.beginPath();
+    ctx.moveTo(-s, 0);
+    ctx.lineTo(s, 0);
+    ctx.moveTo(0, -s);
+    ctx.lineTo(0, s);
+    ctx.lineWidth = 1 * px;
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /** Traces the entity's own shape (rect or ellipse) in local space. */
-function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: number): void {
+function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: number, rounded = true): void {
   const size = getEntitySize(e);
   const { position, rotation, scale } = e.transform;
   const w = size.x * Math.abs(scale.x) + pad * 2;
@@ -616,7 +679,8 @@ function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: numbe
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.beginPath();
   if (e.components.Collider?.shape === 'circle') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-  else ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(6, w / 4, h / 4));
+  else if (rounded) ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(6, w / 4, h / 4));
+  else ctx.rect(-w / 2, -h / 2, w, h);
 }
 
 function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: number): void {

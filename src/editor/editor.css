@@ -59,8 +59,8 @@ code { font-family: var(--font-data); font-size: 11px; }
   border-radius: var(--radius);
 }
 
-.editor { display: grid; grid-template-rows: 60px 1fr; width: 100%; height: 100%; overflow: clip; }
-.stage { position: relative; min-height: 0; overflow: clip; }
+.editor { display: grid; grid-template-rows: 60px 1fr; grid-template-columns: minmax(0, 1fr); width: 100%; height: 100%; overflow: clip; }
+.stage { position: relative; min-height: 0; overflow: clip; container: stage / inline-size; }
 
 /* ---------------------------------------------------------------- canvas */
 .viewport { position: absolute; inset: 0; background: var(--ink); }
@@ -430,3 +430,28 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .script-error { margin-top: 4px; color: var(--danger); font-size: 11.5px; line-height: 1.4; }
 .script-editor-actions { display: flex; gap: 6px; margin-top: 6px; }
 .small { font-size: 11.5px; }
+
+/* A narrow level view: the History/Console chips must not run into the centered bottom bar.
+   First they shrink to icons; narrower still, they move up above the bar. */
+@container stage (max-width: 980px) {
+  .tray-chip { padding: 0 12px; }
+  .tray-chip .chip-label { display: none; }
+}
+@container stage (max-width: 600px) {
+  .tray-chips { bottom: 72px; }
+}
+
+/* A small window: the top bar gives up the game name and some padding so everything stays on screen. */
+@media (max-width: 760px) {
+  .topbar { column-gap: 8px; padding: 0 10px; }
+  .topbar .project-btn { display: none; }
+  .scene-btn { min-width: 0; }
+  .topbar > .play-btn { padding: 0 16px; }
+  .icon-group { margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .wordmark { display: none; }
+  .topbar > .play-btn { padding: 0 14px; }
+  .topbar > .play-btn .play-label { display: none; }
+  .scene-btn { max-width: 120px; }
+}

@@ -141,6 +141,7 @@ function MainMenu() {
   const showGrid = useEditor((s) => s.layout.showGrid);
   const snap = useEditor((s) => s.layout.snapToGrid);
   const frameOn = useEditor((s) => s.layout.showCameraFrame);
+  const wireOn = useEditor((s) => s.layout.wireframe);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const overlayCount = useEditor((s) => s.layout.overlays.length);
   const s = useEditor.getState();
@@ -150,6 +151,7 @@ function MainMenu() {
     { label: 'Frame everything', hint: 'F', run: frameView, sep: true },
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
+    { label: 'Wireframe view', hint: 'W', checked: wireOn, run: () => s.setLayout({ wireframe: !wireOn }), testId: 'menu-wireframe' },
     { label: 'Camera frame', checked: frameOn, run: () => s.setLayout({ showCameraFrame: !frameOn }), testId: 'menu-camera-frame' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
     { label: 'Editor style…', run: () => s.setStylePickerOpen(true), testId: 'menu-style' },
@@ -213,7 +215,7 @@ export function PlayButton() {
           <path d="M3 1.8v8.4L10 6z" fill="currentColor" />
         </svg>
       )}
-      {playing ? 'Stop' : 'Play'}
+      <span className="play-label">{playing ? 'Stop' : 'Play'}</span>
     </button>
   );
 }

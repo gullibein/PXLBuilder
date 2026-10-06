@@ -735,6 +735,33 @@ try {
   await page.keyboard.press('Escape');
   await check(async () => (await frameOf()).length === 0, 'the camera frame can be hidden again');
 
+  step = 'wireframe view';
+  await page.keyboard.press('Escape');
+  await page.mouse.click(emptySpot.x, emptySpot.y);
+  await page.keyboard.press('KeyF');
+  const wireOn = async () => ((await canvas.getAttribute('data-wireframe')) ?? '') === '1';
+  await check(async () => !(await wireOn()), 'the level shows the real sprites by default');
+  await page.keyboard.press('KeyW');
+  await check(wireOn, 'W switches to the wireframe view');
+  await check(async () => (await page.getByTestId('tool-wireframe').getAttribute('aria-pressed')) === 'true', 'the tool panel button shows it is on');
+  for (const st of ['classic', 'blueprint', 'arcade', 'paper', 'amber']) {
+    await page.getByTestId('main-menu').click();
+    await page.getByTestId('menu-style').click();
+    await page.getByTestId(`style-${st}`).click();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: `${OUT}/28-wireframe-${st}.png` });
+  }
+  await page.getByTestId('play').click();
+  await check(async () => (await page.getByTestId('play-canvas').isVisible()), 'Play still shows the real game');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('tool-wireframe').click();
+  await check(async () => !(await wireOn()), 'the tool panel button switches it off again');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-style').click();
+  await page.getByTestId('style-classic').click();
+  await page.keyboard.press('Escape');
+
   step = 'save and reload';
   await page.waitForTimeout(500);
   await page.reload();
@@ -1257,6 +1284,21 @@ try {
     return others.every((o) => play.x >= o.x + o.width || play.x + play.width <= o.x);
   }, 'in a narrower window the Play button never covers the level menu or undo/redo');
   await ep.screenshot({ path: `${OUT}/20-narrow-topbar.png` });
+  const bottomClear = async () => {
+    const dock = await ep.locator('.dock').first().boundingBox();
+    const chips = await ep.locator('.tray-chips').boundingBox();
+    const apart = dock.x + dock.width <= chips.x || chips.x + chips.width <= dock.x || dock.y + dock.height <= chips.y || chips.y + chips.height <= dock.y;
+    const menu = await ep.getByTestId('main-menu').boundingBox();
+    const vw = (await ep.viewportSize()).width;
+    return apart && chips.x + chips.width <= vw && menu.x + menu.width <= vw;
+  };
+  for (const w of [1400, 1000, 900, 760, 640, 520, 420]) {
+    await ep.setViewportSize({ width: w, height: 860 });
+    await check(bottomClear, `at ${w}px wide the bottom bar and the History/Console buttons don't overlap, and everything stays on screen`);
+  }
+  await ep.setViewportSize({ width: 520, height: 860 });
+  await ep.screenshot({ path: `${OUT}/20b-narrow-bottom.png` });
+  await ep.setViewportSize({ width: 900, height: 860 });
   await ep.setViewportSize({ width: 1400, height: 860 });
   const eCanvas = ep.getByTestId('viewport-canvas');
   const canvasWidth = (await eCanvas.boundingBox()).width;
@@ -1303,6 +1345,11 @@ try {
   await eAsk('Add a timeline panel.');
   await check(async () => (await eResult.getAttribute('data-status')) === 'message' && (await eResult.innerText()).includes("can't do that yet"), 'what the editor cannot do gets a plain answer');
   await ep.screenshot({ path: `${OUT}/17-editor-docked.png` });
+  for (const w of [1400, 1100, 900, 700]) {
+    await ep.setViewportSize({ width: w, height: 860 });
+    await check(bottomClear, `with the details docked and Play at the bottom, at ${w}px the bottom controls don't overlap`);
+  }
+  await ep.setViewportSize({ width: 1400, height: 860 });
   await ep.reload();
   await check(async () => (await ep.getByTestId('inspector').getAttribute('data-docked')) === 'true' && (await ep.locator('.dock [data-testid="play"]').count()) === 1, 'editor settings are remembered after a reload');
   step = 'editor styles';
