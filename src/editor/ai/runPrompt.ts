@@ -19,7 +19,7 @@ import type { Id, Project } from '../../core/types';
 
 export type PromptOutcome =
   /** `editor`: the change was to the editor's own settings (undone with the editor's undo, not the project's). */
-  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[] }
+  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number }
   | { status: 'proposal'; message: string; changes: string[]; operations: Operation[] }
   | { status: 'message'; message: string; tone: 'info' | 'warn' }
   | { status: 'error'; message: string };
@@ -198,5 +198,5 @@ export function applyAIOperations(request: string, message: string, changes: str
   const touched = touchedBy(after.project, after.activeSceneId, operations);
   const ids = touched.flatMap((t) => t.entityIds);
   if (ids.length) after.flashEntities(ids);
-  return { status: 'applied', message, changes, result, touched };
+  return { status: 'applied', message, changes, result, touched, transactionId: after.history.past.at(-1)?.id };
 }

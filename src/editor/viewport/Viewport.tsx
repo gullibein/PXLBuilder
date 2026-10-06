@@ -18,6 +18,7 @@ import { resolveSceneEntities } from '../selectors';
 import { getActiveScene, getSelectionContext, useEditor } from '../store';
 import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
+import { jobMarks, useJobs } from '../ai/jobs';
 import { cameraFrame, drawCameraFrame } from '../overlays/cameraFrame';
 import { drawInfoPanels, drawJumpArcs } from '../overlays/drawOverlays';
 import { createWheelInterpreter } from './wheel';
@@ -189,6 +190,20 @@ export function Viewport() {
       if (canvas.dataset.links !== linksAttr) canvas.dataset.links = linksAttr;
       const panels = drawInfoPanels(ctx, state.layout.overlays, entities, scene, toScreen);
       if (canvas.dataset.overlays !== String(panels.length)) canvas.dataset.overlays = String(panels.length);
+      // AI prompts still running (dots) or finished and waiting to be looked at (a badge), above their objects.
+      const jobs = useJobs.getState().jobs;
+      const openCtx = getSelectionContext(state);
+      const marks = jobMarks(jobs, openCtx ? contextKey(openCtx) : null);
+      for (const id of marks.working) {
+        const e = byId.get(id);
+        if (e) drawWorkingDots(ctx, toScreen, getWorldBounds(e), time);
+      }
+      for (const id of marks.waiting) {
+        const e = byId.get(id);
+        if (e && !marks.working.has(id)) drawWaitingBadge(ctx, toScreen, getWorldBounds(e), Object.values(jobs).some((j) => !j.seen && j.outcome?.status === 'error' && 'entityIds' in j.ctx && j.ctx.entityIds.includes(id)));
+      }
+      const marksAttr = `${marks.working.size},${marks.waiting.size}`;
+      if ((canvas.dataset.aiJobs ?? '') !== marksAttr) canvas.dataset.aiJobs = marksAttr;
       if (selected.length === 1) drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
       if (selected.length === 2) {
         drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
@@ -1042,6 +1057,53 @@ function drawRelation(
   ctx.lineTo(end.x - s * Math.cos(angle + 0.45), end.y - s * Math.sin(angle + 0.45));
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+/** Three bouncing dots in a little bubble above an object whose AI prompt is still running. */
+function drawWorkingDots(ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2, bounds: Rect, time: number): void {
+  const p = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.minY });
+  const cx = p.x;
+  const cy = p.y - 16;
+  ctx.save();
+  ctx.fillStyle = theme.ink;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.roundRect(cx - 19, cy - 9, 38, 18, 9);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = theme.select;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = theme.select;
+  for (let i = 0; i < 3; i++) {
+    const phase = (time / 160 - i * 0.9) % (Math.PI * 2);
+    const lift = Math.max(0, Math.sin(phase)) * 3;
+    ctx.beginPath();
+    ctx.arc(cx - 9 + i * 9, cy - lift, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** A small badge above an object whose AI prompt finished while its card was closed (a proposal, an answer or an error). */
+function drawWaitingBadge(ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2, bounds: Rect, error: boolean): void {
+  const p = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.minY });
+  const cx = p.x;
+  const cy = p.y - 16;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+  ctx.fillStyle = error ? theme.erase : theme.select;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = theme.ink;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `800 12px ${theme.uiFont}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(error ? '!' : '✦', cx, cy + 0.5);
   ctx.restore();
 }
 

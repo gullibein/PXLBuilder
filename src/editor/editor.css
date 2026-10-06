@@ -457,3 +457,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
   .topbar > .play-btn .play-label { display: none; }
   .scene-btn { max-width: 120px; }
 }
+
+/* A prompt still running: the user can carry on, or stop it. */
+.prompt-busy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 4px 2px 2px; }
+.prompt.has-header .prompt-busy { margin: 0 14px 10px; }

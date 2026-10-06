@@ -1,31 +1,43 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { AIContext } from '../../core/ai/context';
+import { contextKey, type AIContext } from '../../core/ai/context';
 import { produce } from 'immer';
 import { applyOperations, isEditorOperation, type ApplyResult } from '../../core/commands/operations';
 import { componentRegistry } from '../../core/components/builtin';
 import { frameEntities } from '../actions';
-import { applyAIOperations, runPrompt, type PromptOutcome } from '../ai/runPrompt';
+import { cardOpened, clearJob, setJobOutcome, startJob, stopJob, useJobs } from '../ai/jobs';
+import { applyAIOperations, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
 
 type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
 
-/** Runs prompts for one context. Each context gets a fresh runner (the component is keyed by context). */
+/**
+ * The prompt run for one context. The run itself lives in the job list
+ * (ai/jobs.ts), so it carries on when the card closes; the card shows it.
+ */
 function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => void) {
-  const [state, setState] = useState<RunState>({ phase: 'idle' });
-  const abortRef = useRef<AbortController | null>(null);
-  useEffect(() => () => abortRef.current?.abort(), []);
+  const key = contextKey(ctx);
+  const job = useJobs((s) => s.jobs[key]);
+  const state: RunState = !job ? { phase: 'idle' } : job.phase === 'working' ? { phase: 'working', request: job.request } : { phase: 'done', request: job.request, outcome: job.outcome! };
 
-  const finish = (request: string, outcome: PromptOutcome) => {
-    setState({ phase: 'done', request, outcome });
-    if (outcome.status === 'applied') onApplied?.(outcome);
-  };
+  // While this card is on screen, what finishes here counts as seen.
+  useEffect(() => cardOpened(key), [key]);
+
+  // Tell the owner about an applied change once (also one that finished while the card was closed).
+  const told = useRef<PromptOutcome | null>(null);
+  useEffect(() => {
+    if (state.phase === 'done' && state.outcome.status === 'applied' && told.current !== state.outcome) {
+      told.current = state.outcome;
+      onApplied?.(state.outcome);
+    }
+  }, [state.phase === 'done' ? state.outcome : null]);
 
   // A pending proposal is drawn on the level (new things highlighted, removed things faded) until applied or cancelled.
+  const proposal = state.phase === 'done' && state.outcome.status === 'proposal' ? state.outcome : null;
   useEffect(() => {
-    if (state.phase !== 'done' || state.outcome.status !== 'proposal' || state.outcome.operations.some(isEditorOperation)) return;
+    if (!proposal || proposal.operations.some(isEditorOperation)) return;
     const { project, activeSceneId, setAIPreview } = useEditor.getState();
-    const operations = state.outcome.operations;
+    const operations = proposal.operations;
     let result: ApplyResult | null = null;
     let next = project;
     try {
@@ -44,29 +56,23 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
       frameEntities(resolveSceneEntities(next, activeSceneId).filter((e) => created.has(e.id)));
     }
     return () => setAIPreview(null);
-  }, [state]);
+  }, [proposal]);
 
   return {
     state,
     submit(request: string) {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setState({ phase: 'working', request });
-      runPrompt(ctx, request, controller.signal).then(
-        (outcome) => !controller.signal.aborted && finish(request, outcome),
-        (e) => {
-          if ((e as Error).name !== 'AbortError') finish(request, { status: 'error', message: (e as Error).message });
-        },
-      );
+      startJob(ctx, request);
+    },
+    stop() {
+      stopJob(key);
     },
     apply() {
       if (state.phase !== 'done' || state.outcome.status !== 'proposal') return;
       const { message, changes, operations } = state.outcome;
-      finish(state.request, applyAIOperations(state.request, message, changes, operations));
+      setJobOutcome(key, applyAIOperations(state.request, message, changes, operations));
     },
     reset() {
-      setState({ phase: 'idle' });
+      clearJob(key);
     },
   };
 }
@@ -95,6 +101,10 @@ export function PromptBox(props: PromptBoxProps) {
   const undo = useEditor((s) => s.undo);
   const undoLayout = useEditor((s) => s.undoLayout);
   const working = runner.state.phase === 'working';
+  const lastId = useEditor((s) => s.history.past.at(-1)?.id);
+  const applied = runner.state.phase === 'done' && runner.state.outcome.status === 'applied' ? runner.state.outcome : null;
+  // Editor changes have their own undo; a game change only while nothing else came after it.
+  const canUndo = !!applied && (applied.editor === true || applied.transactionId === undefined || applied.transactionId === lastId);
 
   // Auto-grow up to four lines.
   useLayoutEffect(() => {
@@ -171,13 +181,23 @@ export function PromptBox(props: PromptBoxProps) {
           </svg>
         </button>
       </div>
-      {working && <div className="prompt-progress" aria-label="Working" />}
+      {working && (
+        <>
+          <div className="prompt-progress" aria-label="Working" />
+          <div className="prompt-busy">
+            <span className="muted small">Working on it… you can keep editing.</span>
+            <button className="text-btn" data-testid="prompt-stop" onClick={runner.stop}>
+              Stop
+            </button>
+          </div>
+        </>
+      )}
       {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onCancel={runner.reset} onUndo={() => {
             const o = runner.state.phase === 'done' ? runner.state.outcome : null;
             if (o?.status === 'applied' && o.editor) undoLayout();
             else undo();
             runner.reset();
-          }} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} />}
+          }} canUndo={canUndo} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} />}
     </div>
   );
 }
@@ -187,6 +207,8 @@ function Outcome(props: {
   onApply: () => void;
   onCancel: () => void;
   onUndo: () => void;
+  /** The change is still the latest one (so Undo undoes exactly it). */
+  canUndo: boolean;
   renderApplied?: PromptBoxProps['renderApplied'];
   /** What the prompt is about; a change made elsewhere is pointed out. */
   selectedIds: readonly string[];
@@ -200,9 +222,13 @@ function Outcome(props: {
         <div className="prompt-result applied" data-testid="prompt-result" data-status="applied">
           <div className="result-head">
             <span className="ok">✓ Applied</span>
-            <button className="text-btn" data-testid="result-undo" onClick={props.onUndo}>
-              Undo
-            </button>
+            {props.canUndo ? (
+              <button className="text-btn" data-testid="result-undo" onClick={props.onUndo}>
+                Undo
+              </button>
+            ) : (
+              <span className="muted small" title="Other changes came after it: undo them first, or use the AI History">in history</span>
+            )}
           </div>
           {elsewhere && (
             <>

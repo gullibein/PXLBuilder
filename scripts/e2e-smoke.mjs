@@ -73,6 +73,12 @@ function stubModel(body) {
   if (req.includes('zoom the camera in')) {
     return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
   }
+  if (req.includes('take your time') && req.includes('bigger')) {
+    return { kind: 'apply', message: 'Made it bigger.', changes: [`${t[0].name}: wider`], operations: [{ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Sprite', field: 'color', valueJson: '"#00ff88"' }] };
+  }
+  if (req.includes('take your time') && req.includes('propose')) {
+    return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
+  }
   if (req.includes('jumping sprite')) {
     const g = t[0].spriteGrid;
     const base = t[0].look.sprite?.pixelArt;
@@ -224,7 +230,8 @@ try {
   page.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());
-    await new Promise((r) => setTimeout(r, 150));
+    // "Take your time" requests answer slowly, so the test can carry on editing meanwhile.
+    await new Promise((r) => setTimeout(r, /take your time/i.test(body.request) ? 2500 : 150));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   // Diagnostics, printed only if the test fails: input events and when the prompt comes and goes.
@@ -433,6 +440,41 @@ try {
   await prompts.getByTestId('prompt-details').click();
   await check(async () => (await page.getByTestId('script-Hopper').count()) === 0, 'Undo removes the script again (edit, then the AI change)');
   await page.getByTestId('close-details').click();
+
+  step = 'prompts keep running in the background';
+  const jobsAttr = async () => (await canvas.getAttribute('data-ai-jobs')) ?? '0,0';
+  await ask('Take your time: make this enemy bigger.');
+  await check(async () => (await prompts.getByTestId('prompt-stop').isVisible()), 'while the AI works, the card is busy and offers Stop');
+  await clickWorld(-256, 0);
+  await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', 'another object can be selected while the AI works');
+  await check(async () => (await jobsAttr()) === '1,0', 'the enemy shows the working dots');
+  await page.screenshot({ path: `${OUT}/29-working-dots.png` });
+  await ask('Give the player five hearts.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'meanwhile a prompt for the player runs and applies');
+  await clickWorld(-32, 0);
+  await check(async () => (await prompts.getByTestId('prompt-stop').count()) === 1 || (await result.getAttribute('data-status')) === 'applied', "clicking the enemy again opens its card busy (or already done)");
+  await check(async () => (await jobsAttr()) === '0,0' && (await result.getAttribute('data-status')) === 'applied', 'the enemy prompt finished and was applied though its card had been closed');
+  await check(async () => (await prompts.getByTestId('result-undo').count()) === 1, "its change is the latest, so its card offers Undo");
+  await clickWorld(-256, 0);
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await result.innerText()).includes('in history') && (await prompts.getByTestId('result-undo').count()) === 0, "the player's card still shows its result, but no Undo: the enemy's change came after it");
+  await prompts.getByTestId('prompt-close').click();
+  await clickWorld(-32, 0);
+  await ask('Take your time: propose a new color for this enemy.');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await check(async () => (await prompts.count()) === 0, 'the card closed while the AI works');
+  await check(async () => (await jobsAttr()) === '0,1', 'when it finishes, a badge waits above the enemy (a proposal to look at)');
+  await page.screenshot({ path: `${OUT}/29b-waiting-badge.png` });
+  await clickWorld(-32, 0);
+  await check(async () => (await result.getAttribute('data-status')) === 'proposal' && (await jobsAttr()) === '0,0', 'opening the enemy shows the proposal, and the badge goes away');
+  await prompts.getByTestId('proposal-cancel').click();
+  await ask('Take your time: make this enemy bigger.');
+  await prompts.getByTestId('prompt-stop').click();
+  await check(async () => (await prompts.getByTestId('prompt-stop').count()) === 0 && (await jobsAttr()) === '0,0', 'Stop ends a running prompt');
+  await page.waitForTimeout(2700);
+  await check(async () => (await result.count()) === 0, '(and its answer is ignored when it arrives)');
+  // Put the enemy's color back (the player already had five hearts, so that prompt changed nothing).
+  await page.getByTestId('undo').click();
 
   step = 'relationship context';
   await clickWorld(224, -16, { modifiers: ['Shift'] });

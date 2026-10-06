@@ -322,6 +322,18 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
+### AI prompts run in the background
+Prompt runs live in a job list (`editor/ai/jobs.ts`), one per context key
+(an object, a pair, the level…), not in the prompt card, so closing a card
+never cancels its prompt (it used to). The user keeps editing and can give
+other objects prompts meanwhile; one prompt per context at a time. The level
+draws three bouncing dots over objects whose prompt is running, and a badge
+over ones whose finished prompt waits to be looked at (a proposal, an
+answer, or an error in red); applied changes just glow as before. Opening
+the object's card shows the run (busy, with Stop) or its result. A card's
+Undo is offered only while its change is still the latest in the history
+(`transactionId`), so it never undoes someone else's change.
+
 ### Sprites by situation
 `SpriteStates` (component, "Sprites by situation") holds an image per
 situation: run, jump, fall, climb, hang, hurt, shoot. `Runtime.lookOf`
