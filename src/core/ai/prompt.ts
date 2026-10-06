@@ -29,3 +29,9 @@ export function userMessage(body: AIRequestBody): string {
     : '';
   return `CONTEXT\n${JSON.stringify(body.context)}\n\n${history}REQUEST\n${body.request}`;
 }
+
+/** The JSON object in a plain-JSON reply (tolerates a ```json fence around it). */
+export function parseJsonReply(text: string): unknown {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  return JSON.parse(trimmed);
+}

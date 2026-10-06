@@ -9,7 +9,7 @@
  * checked against the schema before any operation is applied, and the usual
  * "send the exact problem back once" retry applies on top.
  */
-import { systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 
@@ -50,11 +50,7 @@ function problem(status: number, reply: GeminiReply | null, model: string): stri
   return `Gemini request failed (${status}${msg ? `: ${msg}` : ''}).`;
 }
 
-/** The JSON object in a reply (Gemini in JSON mode returns bare JSON; tolerate a ```json fence anyway). */
-export function parseJsonReply(text: string): unknown {
-  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  return JSON.parse(trimmed);
-}
+export { parseJsonReply };
 
 export class GeminiProvider implements AIProvider {
   /**
