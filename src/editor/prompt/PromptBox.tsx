@@ -103,6 +103,14 @@ export function PromptBox(props: PromptBoxProps) {
   const undoLayout = useEditor((s) => s.undoLayout);
   const working = runner.state.phase === 'working';
   const [expanded, setExpanded] = useState(false);
+  // In the header's corner; on a card without a header, at the end of the input row.
+  const closeButton = props.onClose && (
+    <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={props.onClose}>
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
   const lastId = useEditor((s) => s.history.past.at(-1)?.id);
   const applied = runner.state.phase === 'done' && runner.state.outcome.status === 'applied' ? runner.state.outcome : null;
   // Editor changes have their own undo; a game change only while nothing else came after it.
@@ -130,13 +138,7 @@ export function PromptBox(props: PromptBoxProps) {
 
   return (
     <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId}>
-      {props.onClose && (
-        <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={props.onClose}>
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-            <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
-      )}
+      {props.onClose && props.header && closeButton}
       {props.header && <div className="prompt-header">{props.header}</div>}
       <div className="prompt-field">
         <span className="spark" aria-hidden="true">
@@ -182,6 +184,7 @@ export function PromptBox(props: PromptBoxProps) {
             <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+        {!props.header && closeButton}
       </div>
       {working && (
         <>

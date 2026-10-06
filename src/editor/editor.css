@@ -59,7 +59,7 @@ code { font-family: var(--font-data); font-size: 11px; }
   border-radius: var(--radius);
 }
 
-.editor { display: grid; grid-template-rows: 60px 1fr; grid-template-columns: minmax(0, 1fr); width: 100%; height: 100%; overflow: clip; }
+.editor { display: grid; grid-template-rows: 50px 1fr; grid-template-columns: minmax(0, 1fr); width: 100%; height: 100%; overflow: clip; }
 .stage { position: relative; min-height: 0; overflow: clip; container: stage / inline-size; }
 
 /* ---------------------------------------------------------------- canvas */
@@ -83,7 +83,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 }
 .wordmark { display: flex; align-items: center; gap: 9px; margin-right: 18px; font-weight: 800; font-size: 17px; letter-spacing: 0.01em; }
 .wordmark-mark { width: 24px; height: 24px; border-radius: 50%; background: conic-gradient(from 200deg, #6a5cf0, #b18cff, #5aa7ff, #6a5cf0); box-shadow: inset 0 0 0 5px rgba(21, 26, 46, 0.55); }
-.scene-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 128px; height: 32px; padding: 0 10px 0 12px; font-size: 12.5px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; font-weight: 600; }
+.scene-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 120px; height: 28px; padding: 0 8px 0 11px; font-size: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; font-weight: 600; }
 .scene-btn:hover { background: var(--surface-3); }
 .icon-group { display: flex; gap: 4px; margin-left: 18px; }
 .icon-btn { position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; border: none; background: none; border-radius: 10px; color: var(--muted); }
@@ -92,7 +92,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 .spark-btn { font-size: 18px; color: var(--accent-hi); }
 .spark-btn.active, .spark-btn:hover { color: #c3baff !important; background: var(--accent-soft) !important; }
 .dirty-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hi); }
-.play-btn { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 20px; border: none; border-radius: 99px; font-weight: 700; font-size: 13px; color: #fff; background: var(--accent); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 45%, transparent); }
+.play-btn { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 18px; border: none; border-radius: 99px; font-weight: 700; font-size: 12.5px; color: #fff; background: var(--accent); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 45%, transparent); }
 .play-btn:disabled { color: rgba(255, 255, 255, 0.55); background: color-mix(in srgb, var(--accent) 35%, transparent); box-shadow: none; }
 
 .popover-anchor { position: relative; }
@@ -172,9 +172,10 @@ code { font-family: var(--font-data); font-size: 11px; }
 .icon-text-btn { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--card-muted); }
 .icon-text-btn:hover { color: var(--card-text); background: var(--card-line); }
 
-.global-prompt { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); display: grid; gap: 8px; z-index: 15; animation: pop-in 140ms ease-out; }
+/* Centered with margins, not a transform: the pop-in animation animates transform and would throw it off center while it plays. */
+.global-prompt { position: absolute; top: 14px; left: 0; right: 0; margin: 0 auto; width: min(560px, calc(100% - 32px)); display: grid; gap: 8px; z-index: 15; animation: pop-in 140ms ease-out; }
 .scope-toggle { justify-self: center; display: flex; padding: 3px; border-radius: 12px; }
-.scope-toggle button { border: none; background: none; padding: 5px 14px; border-radius: 9px; color: var(--muted); font-weight: 600; }
+.scope-toggle button { border: none; background: none; padding: 4px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12px; }
 .scope-toggle button.on { background: var(--accent-soft); color: #d4ceff; }
 
 /* ---------------------------------------------------------------- dock */
@@ -363,7 +364,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .editor.playing .topbar-left > :not(.wordmark), .editor.playing .topbar-right { visibility: hidden; }
 
 /* ---------------------------------------------------------------- project menu */
-.project-btn { display: flex; align-items: center; gap: 6px; max-width: 200px; height: 32px; padding: 0 10px; font-size: 12.5px; margin-right: 6px; border: none; background: none; border-radius: 10px; color: var(--muted); font-weight: 600; }
+.project-btn { display: flex; align-items: center; gap: 6px; max-width: 200px; height: 28px; padding: 0 8px; font-size: 12px; margin-right: 6px; border: none; background: none; border-radius: 10px; color: var(--muted); font-weight: 600; }
 .project-btn:hover, .project-btn:focus-visible { color: var(--text); background: var(--surface-2); }
 .dirty-dot.inline { position: static; flex: none; }
 .menu-pop.wide { min-width: 300px; }
@@ -479,3 +480,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 /* A prompt still running: the user can carry on, or stop it. */
 .prompt-busy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 4px 2px 2px; }
 .prompt.has-header .prompt-busy { margin: -2px 12px 8px; }
+
+/* A compact top bar. */
+.topbar .icon-btn { width: 32px; height: 32px; border-radius: 8px; }
+/* Cards without a header keep the × inside, at the end of the input row. */
+.prompt-field .prompt-close { position: static; flex: none; width: 22px; height: 22px; background: none; box-shadow: none; color: var(--card-muted); }
+.prompt-field .prompt-close:hover { background: var(--card-line); color: var(--card-text); }

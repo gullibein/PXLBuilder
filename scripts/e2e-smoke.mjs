@@ -780,6 +780,18 @@ try {
   await check(async () => f1.length === 4 && f1[2] - f1[0] > 200, 'the menu shows the camera frame: what Play shows at the start');
   await page.getByTestId('global-prompt-toggle').click();
   const camPrompt = page.getByTestId('global-prompt');
+  {
+    // It must not appear off to the side and then jump to the middle.
+    const vw = (await page.viewportSize()).width;
+    const centerNow = async () => {
+      const b = await camPrompt.boundingBox();
+      return b.x + b.width / 2;
+    };
+    const first = await centerNow();
+    await page.waitForTimeout(250);
+    const later = await centerNow();
+    await check(Math.abs(first - later) < 2 && Math.abs(later - vw / 2) < 40, `the ✦ card opens in place, centered (center ${first.toFixed(0)} → ${later.toFixed(0)})`);
+  }
   await camPrompt.locator('.scope-toggle button').first().click();
   await camPrompt.getByTestId('prompt-input').fill('Zoom the camera in 2x during play.');
   await camPrompt.getByTestId('prompt-input').press('Enter');
