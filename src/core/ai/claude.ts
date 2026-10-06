@@ -50,9 +50,16 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
     }
     if (e instanceof Anthropic.RateLimitError) return { ok: false, status: 429, error: 'The AI is rate limited. Try again in a moment.', kind: 'rate' };
     if (e instanceof Anthropic.APIConnectionError) return { ok: false, status: 502, error: 'Could not reach the Anthropic API (network or browser blocked the request).', kind: 'other' };
-    if (e instanceof Anthropic.APIError) return { ok: false, status: 502, error: `AI request failed (${e.status ?? 'network'}).`, kind: 'other' };
+    if (e instanceof Anthropic.APIError) return { ok: false, status: 502, error: `AI request failed (${e.status ?? 'network'}): ${apiErrorText(e)}`, kind: 'other' };
     const message = (e as Error).message ?? '';
     if (/api key|apiKey|credentials|authentication/i.test(message)) return { ok: false, status: 401, error: 'No Anthropic API key found.', kind: 'auth' };
     return { ok: false, status: 500, error: `AI request failed: ${message}`, kind: 'other' };
   }
+}
+
+/** Anthropic's own explanation of a failed request (and its id, for support), instead of a bare status code. */
+export function apiErrorText(e: InstanceType<typeof Anthropic.APIError>): string {
+  const body = e.error as { error?: { message?: unknown } } | undefined;
+  const message = typeof body?.error?.message === 'string' ? body.error.message : e.message.replace(/^\d{3}\s+/, '');
+  return `${message || 'no details given'}${e.requestID ? ` (request ${e.requestID})` : ''}`;
 }
