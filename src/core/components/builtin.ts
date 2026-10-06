@@ -21,6 +21,22 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'SpriteStates',
+    label: 'Sprites by situation',
+    description:
+      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
+    category: 'Rendering',
+    fields: {
+      run: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving along the ground' },
+      jump: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While going up in the air' },
+      fall: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While coming down in the air (else the jumping image)' },
+      climb: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While on a ladder' },
+      hang: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While hanging from a ledge' },
+      hurt: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after being hurt' },
+      shoot: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after shooting' },
+    },
+  },
+  {
     type: 'Collider',
     label: 'Collider',
     description: 'Collision shape. A trigger detects overlaps without blocking movement.',

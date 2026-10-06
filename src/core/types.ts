@@ -188,6 +188,8 @@ export interface AssetRecord {
   height: number;
   /** Cell layout, for sprite sheets. */
   grid?: SpriteGrid;
+  /** The pixels, for images drawn as pixel art (by the AI or the starter art): so variations can start from them. */
+  pixelArt?: { palette: { key: string; color: string }[]; rows: string[] };
 }
 
 export interface ProjectSettings {

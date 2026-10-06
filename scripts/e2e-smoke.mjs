@@ -73,6 +73,14 @@ function stubModel(body) {
   if (req.includes('zoom the camera in')) {
     return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
   }
+  if (req.includes('jumping sprite')) {
+    const g = t[0].spriteGrid;
+    const base = t[0].look.sprite?.pixelArt;
+    // A variation of the current drawing: same palette and grid, a different pose (here: just shifted up a row).
+    const rows = base ? [...base.rows.slice(1), base.rows[0]] : Array.from({ length: g.height }, () => 'j'.repeat(g.width));
+    const palette = base ? base.palette : [{ key: 'j', color: '#ff00ff' }];
+    return { kind: 'apply', message: 'Drew a jumping sprite; it shows while the player is in the air.', changes: ['Player: jumping sprite'], operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Player jumping', palette, rows, situation: 'jump' }] };
+  }
   if (req.includes('patrol')) {
     return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
   }
@@ -100,7 +108,7 @@ function stubModel(body) {
       kind: 'apply',
       message: `Gave every ${t[0].object.name} a spikes sprite.`,
       changes: [`${t[0].object.name}: looks like spikes (${width}×${height} pixels)`],
-      operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Spikes', palette: [{ key: 'g', color: '#d9dde6' }, { key: 'd', color: '#5b6070' }], rows }],
+      operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Spikes', palette: [{ key: 'g', color: '#d9dde6' }, { key: 'd', color: '#5b6070' }], rows, situation: null }],
     };
   }
   if (req.includes('mushroom-enemies by jumping')) {
@@ -598,6 +606,24 @@ try {
     const scrolled = await page.evaluate(() => [document.scrollingElement.scrollTop, document.querySelector('.stage').scrollTop, document.querySelector('.editor').scrollTop].some((v) => v !== 0));
     return !scrolled && b.y === stageBox.y && b.height === stageBox.height;
   }, 'switching console tabs and minimising leaves the editor in place');
+
+  step = 'sprite for a situation';
+  await page.keyboard.press('Escape');
+  await clickWorld(-256, 0);
+  await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', 'the player is selected');
+  await ask('Draw a jumping sprite for the player.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a jumping sprite is drawn');
+  await check(aiRequests.at(-1).context.targets[0].look.sprite.pixelArt.rows.length === 32, "the AI got the player's current drawing (its pixels) to start from");
+  await prompts.getByTestId('prompt-close').click();
+  await page.getByTestId('play').click();
+  const lookNow = async () => (await page.getByTestId('play-canvas').getAttribute('data-look')) ?? '';
+  await check(async () => (await lookNow()) === 'idle', 'standing still, the player has its normal look');
+  await page.keyboard.down('Space');
+  await check(async () => (await lookNow()) === 'jump:image', 'jumping, the player shows the jumping sprite');
+  await page.keyboard.up('Space');
+  await check(async () => (await lookNow()) === 'idle', 'back on the ground, the normal look again');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('undo').click();
 
   step = 'play';
   await clickWorld(-256, 0);

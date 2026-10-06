@@ -71,6 +71,7 @@ export const assetSchema = z.object({
       spacingY: z.number().nonnegative(),
     })
     .optional(),
+  pixelArt: z.object({ palette: z.array(z.object({ key: z.string(), color: z.string() })), rows: z.array(z.string()) }).optional(),
 });
 
 export const projectSchema = z.object({

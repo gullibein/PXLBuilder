@@ -78,6 +78,9 @@ export interface RuntimeEntity {
   scripts: ScriptInstance[];
   /** See-through amount set by a script (null: normal). */
   alpha: number | null;
+  /** Play time it was last hurt / last fired a shot (for the hurt and shoot looks). */
+  hurtAt: number;
+  shotAt: number;
   /** Being steered by a "follows" relationship this step (so it isn't also patrolling). */
   chasing: boolean;
   /** Behaviors (from behavior components) and their running state. */
@@ -142,6 +145,11 @@ function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
   }
   return ladders;
 }
+
+export type Situation = 'idle' | 'run' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot';
+/** How long the hurt and shoot looks last (seconds). */
+const HURT_LOOK = 0.4;
+const SHOOT_LOOK = 0.25;
 
 export interface Behaviors {
   patrol: { speed: number; distance: number; turnAtLedges: boolean; originX: number; originY: number; dir: 1 | -1 } | null;
@@ -242,6 +250,8 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     stompGrace: 0,
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
     bumped: 0,
+    hurtAt: -Infinity,
+    shotAt: -Infinity,
     chasing: false,
     scripts: instantiateScripts(r.scripts),
     alpha: null,
@@ -583,6 +593,7 @@ export class Runtime {
           Sprite: this.registry.createDefault('Sprite', { width: 8, height: 8, color: '#ffd166' }),
           Collider: this.registry.createDefault('Collider', { shape: 'circle', size: { x: 8, y: 8 }, isTrigger: true }),
         });
+    from.shotAt = this.time;
     const e = buildEntity(this.project, instance, this.registry);
     // A shot flies straight and is never solid, whatever the object says.
     e.body = 'kinematic';
@@ -658,11 +669,31 @@ export class Runtime {
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
       let r: RenderEntity = moved || mirrored ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } } : e.base;
+      const look = this.lookOf(e);
+      if (look.assetId && r.components.Sprite) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, assetId: look.assetId, frame: 1 } } };
       const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1);
       if (alpha !== 1) r = { ...r, alpha };
       out.push(r);
     }
     return out;
+  }
+
+  /**
+   * What the entity is doing right now (for "Sprites by situation"), and the
+   * image to show for it, if it has one.
+   */
+  lookOf(e: RuntimeEntity): { situation: Situation; assetId: string | null } {
+    let situation: Situation = 'idle';
+    if (this.time - e.hurtAt < HURT_LOOK) situation = 'hurt';
+    else if (this.time - e.shotAt < SHOOT_LOOK) situation = 'shoot';
+    else if (e.hanging) situation = 'hang';
+    else if (e.climbing) situation = 'climb';
+    else if (e.body === 'dynamic' && !e.grounded && e.gravityScale !== 0) situation = e.vy < 0 ? 'jump' : 'fall';
+    else if (Math.abs(e.vx) > 5) situation = 'run';
+    const states = e.base.components.SpriteStates as Record<string, unknown> | undefined;
+    if (!states || situation === 'idle') return { situation, assetId: null };
+    const pick = (k: string) => (typeof states[k] === 'string' && states[k] ? (states[k] as string) : null);
+    return { situation, assetId: pick(situation) ?? (situation === 'fall' ? pick('jump') : null) };
   }
 
   /** On-screen messages from rules ("You win!"). */

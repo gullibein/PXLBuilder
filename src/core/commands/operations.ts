@@ -105,6 +105,10 @@ export const operationSchema = z.union([
     name: z.string().describe('Short name for the image, e.g. "Spikes"'),
     palette: z.array(z.object({ key: z.string().describe('One character'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
     rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object)'),
+    situation: z
+      .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot'])
+      .nullable()
+      .describe('null: the normal look. A situation: an extra image shown only while that happens (e.g. "jump" for a jumping sprite); the normal look stays'),
   }),
   z.object({
     op: z.literal('draw_tiles'),
@@ -363,9 +367,22 @@ export function applyOperations(project: Project, ops: Operation[], registry: Co
         const art = { palette: op.palette, rows: op.rows };
         const err = checkPixelArt(art, size);
         if (err) throw new m.ModelError(`Sprite: ${err}`);
-        const asset = createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), op.rows[0].length, op.rows.length, 'svg');
+        const asset = { ...createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), op.rows[0].length, op.rows.length, 'svg'), pixelArt: { palette: op.palette.map((p) => ({ ...p })), rows: [...op.rows] } };
         m.addAsset(project, asset);
-        if (op.target === 'definition') m.useDefinitionSprite(project, op.id, { assetId: asset.id, frame: 1 }, registry);
+        const situation = op.situation ?? null;
+        if (situation) {
+          // An extra image for one situation: the normal look stays as it is.
+          if (op.target === 'definition') {
+            const def = m.getDefinition(project, op.id);
+            if (!def.components.SpriteStates) m.addDefinitionComponent(project, op.id, 'SpriteStates', registry);
+            m.setDefinitionComponentField(project, op.id, 'SpriteStates', situation, asset.id, registry);
+            m.addDefinitionSprite(project, op.id, { assetId: asset.id, frame: 1 });
+          } else {
+            const sceneId = sceneOfEntity(project, op.id);
+            if (!resolveEntity(project, entity, registry).components.SpriteStates) m.addEntityComponent(project, sceneId, op.id, 'SpriteStates', registry);
+            m.setEntityComponentField(project, sceneId, op.id, 'SpriteStates', situation, asset.id, registry);
+          }
+        } else if (op.target === 'definition') m.useDefinitionSprite(project, op.id, { assetId: asset.id, frame: 1 }, registry);
         else {
           const sceneId = sceneOfEntity(project, op.id);
           if (!resolveEntity(project, entity, registry).components.Sprite) m.addEntityComponent(project, sceneId, op.id, 'Sprite', registry, { width: size.x, height: size.y });

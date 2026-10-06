@@ -1,4 +1,5 @@
 import type { ComponentRegistry } from '../components/registry';
+import { pixelArtToSvg, type PixelArt } from './pixelArt';
 import { defaultCamera } from './camera';
 import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
@@ -84,28 +85,94 @@ export function createLeverAsset(): AssetRecord {
   return createImageAsset('Lever', svgDataUrl(LEVER_SVG), 32, 32, 'svg');
 }
 
-/** Starter art: the player, a blue block with an ink outline and one eye on the side it faces (right; it is drawn mirrored going left). */
-const PLAYER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="32" viewBox="0 0 28 32" shape-rendering="crispEdges">
-<rect x="2" y="0" width="24" height="32" fill="#0f1a33"/><rect x="0" y="2" width="28" height="28" fill="#0f1a33"/>
-<rect x="2" y="2" width="24" height="28" fill="#4fa3ff"/><rect x="2" y="2" width="24" height="3" fill="#8cc6ff"/><rect x="2" y="24" width="24" height="6" fill="#2f7dd6"/>
-<rect x="16" y="9" width="5" height="7" fill="#0f1a33"/><rect x="17" y="10" width="2" height="2" fill="#ffffff"/>
-</svg>`;
+/** Starter art: the player, a blue block with an ink outline and one eye on the side it faces (right; it is drawn mirrored going left). Pixel art, so the AI can draw variations of it. */
+const PLAYER_ART: PixelArt = {
+  palette: [{ key: 'o', color: '#0f1a33' }, { key: 'a', color: '#4fa3ff' }, { key: 'b', color: '#8cc6ff' }, { key: 'c', color: '#2f7dd6' }, { key: 'd', color: '#ffffff' }],
+  rows: [
+    '..oooooooooooooooooooooooo..',
+    '..oooooooooooooooooooooooo..',
+    'oobbbbbbbbbbbbbbbbbbbbbbbboo',
+    'oobbbbbbbbbbbbbbbbbbbbbbbboo',
+    'oobbbbbbbbbbbbbbbbbbbbbbbboo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaoooooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoddooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoddooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoooooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoooooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoooooaaaaaoo',
+    'ooaaaaaaaaaaaaaaoooooaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccoo',
+    '..oooooooooooooooooooooooo..',
+    '..oooooooooooooooooooooooo..',
+  ],
+};
 
 /** Starter art: the enemy, a red blob with a rounded top and two eyes. */
-const ENEMY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" shape-rendering="crispEdges">
-<rect x="6" y="0" width="18" height="30" fill="#0f1a33"/><rect x="2" y="2" width="26" height="28" fill="#0f1a33"/><rect x="0" y="6" width="30" height="24" fill="#0f1a33"/>
-<rect x="6" y="2" width="18" height="26" fill="#e5534b"/><rect x="4" y="4" width="22" height="24" fill="#e5534b"/><rect x="2" y="6" width="26" height="22" fill="#e5534b"/>
-<rect x="6" y="2" width="18" height="2" fill="#ff8a80"/><rect x="2" y="22" width="26" height="6" fill="#b83a33"/>
-<rect x="8" y="10" width="5" height="6" fill="#0f1a33"/><rect x="17" y="10" width="5" height="6" fill="#0f1a33"/>
-<rect x="9" y="11" width="2" height="2" fill="#ffffff"/><rect x="18" y="11" width="2" height="2" fill="#ffffff"/>
-</svg>`;
+const ENEMY_ART: PixelArt = {
+  palette: [{ key: 'o', color: '#0f1a33' }, { key: 'a', color: '#e5534b' }, { key: 'b', color: '#ff8a80' }, { key: 'c', color: '#b83a33' }, { key: 'd', color: '#ffffff' }],
+  rows: [
+    '......oooooooooooooooooo......',
+    '......oooooooooooooooooo......',
+    '..oooobbbbbbbbbbbbbbbbbboooo..',
+    '..oooobbbbbbbbbbbbbbbbbboooo..',
+    '..ooaaaaaaaaaaaaaaaaaaaaaaoo..',
+    '..ooaaaaaaaaaaaaaaaaaaaaaaoo..',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaoooooaaaaoooooaaaaaaoo',
+    'ooaaaaaaoddooaaaaoddooaaaaaaoo',
+    'ooaaaaaaoddooaaaaoddooaaaaaaoo',
+    'ooaaaaaaoooooaaaaoooooaaaaaaoo',
+    'ooaaaaaaoooooaaaaoooooaaaaaaoo',
+    'ooaaaaaaoooooaaaaoooooaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooccccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccccoo',
+    'ooccccccccccccccccccccccccccoo',
+    'oooooooooooooooooooooooooooooo',
+    'oooooooooooooooooooooooooooooo',
+  ],
+};
+
+/** An image asset drawn from pixel art; it keeps the pixels, so they can be redrawn and varied later. */
+export function createPixelArtAsset(name: string, art: PixelArt): AssetRecord {
+  const asset = createImageAsset(name, svgDataUrl(pixelArtToSvg(art)), art.rows[0].length, art.rows.length, 'svg');
+  return { ...asset, pixelArt: { palette: art.palette.map((p) => ({ ...p })), rows: [...art.rows] } };
+}
 
 export function createPlayerAsset(): AssetRecord {
-  return createImageAsset('Player', svgDataUrl(PLAYER_SVG), 28, 32, 'svg');
+  return createPixelArtAsset('Player', PLAYER_ART);
 }
 
 export function createEnemyAsset(): AssetRecord {
-  return createImageAsset('Enemy', svgDataUrl(ENEMY_SVG), 30, 30, 'svg');
+  return createPixelArtAsset('Enemy', ENEMY_ART);
 }
 
 /** Images the starter objects use. */

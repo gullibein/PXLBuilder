@@ -81,8 +81,22 @@ export interface EntityDetail {
   instanceOverrides: string[];
   /** The pixel grid to use when drawing a sprite for it (draw_sprite): same proportions as its size. */
   spriteGrid: { width: number; height: number };
+  /**
+   * How it looks now: the normal image and the extra images for situations
+   * (jump, run…), each with its pixels when it is pixel art, so a variation
+   * ("a jumping sprite") can start from the same drawing.
+   */
+  look: {
+    sprite: LookImage | null;
+    situations: Record<string, LookImage>;
+  };
   /** Behavior scripts, in full: its object's (every copy runs them) and its own (only this one). */
   scripts: { object: BehaviorScript[]; own: BehaviorScript[] };
+}
+
+export interface LookImage {
+  image: string;
+  pixelArt: { palette: { key: string; color: string }[]; rows: string[] } | null;
 }
 
 export interface EntityBrief {
@@ -221,7 +235,21 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       instanceOverrides: [...r.overriddenFields],
       spriteGrid: suggestedGrid(getEntitySize(r)),
       scripts: { object: def?.scripts ?? [], own: entity.scripts ?? [] },
+      look: lookOf(r.components),
     };
+  };
+
+  const image = (assetId: unknown): LookImage | null => {
+    const a = typeof assetId === 'string' ? project.assets.find((x) => x.id === assetId) : undefined;
+    return a ? { image: a.name, pixelArt: a.pixelArt ?? null } : null;
+  };
+  const lookOf = (c: Record<string, Record<string, unknown>>): EntityDetail['look'] => {
+    const situations: Record<string, LookImage> = {};
+    for (const [k, v] of Object.entries(c.SpriteStates ?? {})) {
+      const img = image(v);
+      if (img) situations[k] = img;
+    }
+    return { sprite: image(c.Sprite?.assetId), situations };
   };
 
   const briefs = (s: Scene, exclude: Set<Id>): EntityBrief[] =>

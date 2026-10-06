@@ -322,6 +322,19 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
+### Sprites by situation
+`SpriteStates` (component, "Sprites by situation") holds an image per
+situation: run, jump, fall, climb, hang, hurt, shoot. `Runtime.lookOf`
+works out what an entity is doing each frame (hurt for 0.4 s after a hit,
+shoot for 0.25 s after firing, then hanging, climbing, in the air going up
+or down, moving) and `renderList` swaps the Sprite's image for that
+situation's (falling uses the jumping image when there is no falling one);
+empty slots keep the normal image. The AI's `draw_sprite` takes a
+`situation` (null = the normal look). Images drawn as pixel art keep their
+pixels (`AssetRecord.pixelArt`, the starter Player and Enemy too), and the
+AI gets them as `targets[].look`, so "a jumping sprite" is a variation of the
+same drawing. One image per situation; frame animations are not built yet.
+
 ### Editor styles
 The editor's look is an editor setting (`editorStyle`: classic, the default;
 blueprint; arcade; paper; amber), chosen in ⋯ → Editor style… or by asking

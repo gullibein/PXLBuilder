@@ -247,6 +247,7 @@ export class Gameplay {
   hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
     if (!victim.health || !victim.alive) return;
     victim.health.current = Math.max(0, victim.health.current - amount);
+    victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
     if (victim.body === 'dynamic' && source) {
       // A small knock back, away from what hurt it.

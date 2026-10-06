@@ -47,7 +47,7 @@ describe('pixel-art sprites', () => {
     const hazard = project.definitions.find((d) => d.name === 'Hazard')!;
     const placed = instantiateDefinition(hazard, { x: 0, y: 0 });
     project = produce(project, (d) => m.addEntity(d, sceneId, placed));
-    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Spikes', palette, rows: spikes }], registry));
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
     const asset = p.assets.find((a) => a.name === 'Spikes')!;
     expect(asset).toMatchObject({ kind: 'image', width: 32, height: 8 });
     expect(asset.data.startsWith('data:image/svg+xml')).toBe(true);
@@ -55,10 +55,10 @@ describe('pixel-art sprites', () => {
     expect(def.components.Sprite).toMatchObject({ assetId: asset.id, frame: 1, width: 64, height: 16 }); // size unchanged
     expect(m.getDefinitionSprites(def)).toContainEqual({ assetId: asset.id, frame: 1 });
 
-    const one = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'instance', id: placed.id, name: 'Spikes', palette, rows: spikes }], registry));
+    const one = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'instance', id: placed.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
     expect(resolveEntity(one, one.scenes[0].entities.at(-1)!, registry).components.Sprite.assetId).toBe(one.assets.at(-1)!.id);
     expect(one.definitions.find((d) => d.id === hazard.id)!.components.Sprite.assetId).toBeNull();
 
-    expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)) }], registry))).toThrow(/object is 64×16/);
+    expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry))).toThrow(/object is 64×16/);
   });
 });
