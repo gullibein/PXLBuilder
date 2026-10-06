@@ -51,7 +51,7 @@ async function currentProvider(): Promise<AIProvider> {
   if (settings.vendor === 'gemini') {
     const gKey = geminiKey.get();
     if (!gKey) throw new AIUnavailableError('Gemini is chosen as the AI, but there is no Gemini API key yet. Add one in ⋯ → AI connection (or switch back to Claude there).');
-    return new GeminiProvider(gKey, settings.geminiModel);
+    return new GeminiProvider(gKey, settings.geminiModel, settings.geminiBackup || null, (note) => useEditor.getState().logMessage('info', note));
   }
   const key = getApiKey();
   return key ? new BrowserClaudeProvider(key) : httpProvider;

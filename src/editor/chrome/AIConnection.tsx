@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { geminiKey, getApiKey, isKeyRemembered, maskKey, onApiKeyChange, setApiKey } from '../ai/apiKey';
-import { setAISettings, useAISettings } from '../ai/aiSettings';
+import { GEMINI_FLASH_MODELS, setAISettings, useAISettings } from '../ai/aiSettings';
 import { testApiKey } from '../ai/browserProvider';
 import { listGeminiModels } from '../ai/geminiProvider';
 import { claudeSample } from '../ai/sampleProvider';
@@ -197,7 +197,7 @@ function ClaudeSection() {
 
 function GeminiSection() {
   const key = useGeminiKey();
-  const { geminiModel } = useAISettings();
+  const { geminiModel, geminiBackup } = useAISettings();
   const [draft, setDraft] = useState('');
   const [remember, setRemember] = useState(geminiKey.isRemembered());
   const [status, setStatus] = useState<Status>(null);
@@ -229,11 +229,17 @@ function GeminiSection() {
     geminiKey.set(value, remember);
     setDraft('');
     // Keep the chosen model if the key can use it; else the first Flash model it offers.
-    if (result.models.length && !result.models.includes(geminiModel)) setAISettings({ geminiModel: result.models[0] });
+    const model = result.models.length && !result.models.includes(geminiModel) ? result.models[0] : geminiModel;
+    // A backup the key can't use (or the same model) is replaced by the next Flash model, if there is one.
+    const backup = geminiBackup && result.models.includes(geminiBackup) && geminiBackup !== model ? geminiBackup : (result.models.find((m) => m !== model && /flash/.test(m)) ?? '');
+    setAISettings({ geminiModel: model, geminiBackup: backup });
     setStatus({ tone: 'ok', text: 'Connected. The AI now uses Gemini with your key.' });
   };
 
-  const options = models.includes(geminiModel) || !geminiModel ? models : [geminiModel, ...models];
+  // The Flash models are always offered (even if Google's list for the key names them differently), then the rest.
+  const all = [...new Set([...GEMINI_FLASH_MODELS, ...models, ...(geminiModel ? [geminiModel] : []), ...(geminiBackup ? [geminiBackup] : [])])];
+  const options = all;
+  const backupOptions = all.filter((m) => m !== geminiModel);
   return (
     <>
       <p className="dialog-text" data-testid="gemini-status">
@@ -283,6 +289,17 @@ function GeminiSection() {
           </label>
           <select id="gemini-model" data-testid="gemini-model" value={geminiModel} onChange={(e) => setAISettings({ geminiModel: e.target.value })}>
             {options.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <label className="bg-label" htmlFor="gemini-backup">
+            When it's busy, use
+          </label>
+          <select id="gemini-backup" data-testid="gemini-backup" value={geminiBackup === geminiModel ? '' : geminiBackup} onChange={(e) => setAISettings({ geminiBackup: e.target.value })}>
+            <option value="">No backup (say it's busy)</option>
+            {backupOptions.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>

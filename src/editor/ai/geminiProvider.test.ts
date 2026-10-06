@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AIRequestBody } from '../../core/ai/protocol';
-import { GeminiProvider, listGeminiModels, parseJsonReply } from './geminiProvider';
+import { GeminiProvider, listGeminiModels, parseJsonReply, resetGeminiBusy } from './geminiProvider';
 
 const body = (speed?: 'best' | 'fast'): AIRequestBody => ({ context: { scope: 'level' } as never, request: 'Make gravity weaker', history: [], ...(speed ? { speed } : {}) });
 const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [] };
@@ -17,7 +17,10 @@ function fakeFetch(...replies: { status: number; json: unknown }[]) {
 }
 const ok = (text: string, finishReason = 'STOP') => ({ status: 200, json: { candidates: [{ content: { parts: [{ text: 'hmm', thought: true }, { text }] }, finishReason }] } });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetGeminiBusy();
+});
 
 describe('Google Gemini', () => {
   it('asks the chosen model in JSON mode with the reply format, key in a header; skips thoughts; checks the answer', async () => {
@@ -47,6 +50,7 @@ describe('Google Gemini', () => {
     await expect(p.respond(body())).rejects.toThrow(/"gemini-nope" isn't available/);
     fakeFetch({ status: 429, json: {} });
     await expect(p.respond(body())).rejects.toThrow(/rate limited/);
+    resetGeminiBusy();
     fakeFetch(ok('{"kind":', 'MAX_TOKENS'));
     await expect(p.respond(body())).rejects.toThrow(/incomplete/);
     fakeFetch(ok('not json'));
@@ -71,5 +75,34 @@ describe('Google Gemini', () => {
     expect(await listGeminiModels('k')).toEqual({ ok: true, models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.8-flash-lite', 'gemini-3.5-pro'] });
     fakeFetch({ status: 400, json: { error: { message: 'API key not valid' } } });
     expect(await listGeminiModels('bad')).toMatchObject({ ok: false, message: 'The key was not accepted.' });
+  });
+
+  it('a busy model hands the request to the backup, which then answers directly for a while', async () => {
+    const overloaded = { status: 503, json: { error: { code: 503, message: 'The model is overloaded. Please try again later.', status: 'UNAVAILABLE' } } };
+    const calls = fakeFetch(overloaded, ok(JSON.stringify(answer)), ok(JSON.stringify(answer)));
+    const notes: string[] = [];
+    const p = new GeminiProvider('k', 'gemini-3.8-flash', 'gemini-3.5-flash', (n) => notes.push(n));
+    expect(await p.respond(body())).toEqual(answer);
+    expect(calls.map((c) => c.url.split('/models/')[1])).toEqual(['gemini-3.8-flash:generateContent', 'gemini-3.5-flash:generateContent']);
+    expect(notes).toEqual(['Gemini: gemini-3.8-flash is busy, so gemini-3.5-flash answers instead (for the next couple of minutes).']);
+    // The next request doesn't wait to be turned away again.
+    expect(await p.respond(body())).toEqual(answer);
+    expect(calls[2].url).toContain('/models/gemini-3.5-flash:');
+    expect(notes).toHaveLength(1);
+  });
+
+  it('without a backup (or when the backup is busy too) it says so', async () => {
+    const overloaded = { status: 503, json: { error: { message: 'The model is overloaded.' } } };
+    fakeFetch(overloaded);
+    await expect(new GeminiProvider('k', 'gemini-3.8-flash').respond(body())).rejects.toThrow(/gemini-3.8-flash\) is busy right now/);
+    const calls = fakeFetch(overloaded);
+    await expect(new GeminiProvider('k', 'gemini-3.8-flash', 'gemini-3.5-flash').respond(body())).rejects.toThrow(/gemini-3.5-flash\) is busy right now/);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('other failures are not passed to the backup', async () => {
+    const calls = fakeFetch({ status: 400, json: { error: { message: 'API key not valid' } } });
+    await expect(new GeminiProvider('k', 'gemini-3.8-flash', 'gemini-3.5-flash').respond(body())).rejects.toThrow(/not accepted/);
+    expect(calls).toHaveLength(1);
   });
 });

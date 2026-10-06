@@ -267,8 +267,8 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   // Ignored: the expected 401 from the keyless AI endpoint, and web-font hosts (unreachable in sandboxed CI; the UI falls back to system fonts).
-  // The browser logs rejected requests itself: the deliberately wrong keys (Anthropic answers 401, Google 400).
-  const ignorable = (m) => m.text().includes('401') || (m.text().includes('400') && /generativelanguage\.googleapis\.com/.test(m.location()?.url ?? '')) || /fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '');
+  // The browser logs rejected requests itself: the deliberately wrong keys (Anthropic answers 401, Google 400) and the faked busy Gemini model (503).
+  const ignorable = (m) => m.text().includes('401') || (/\b(400|503)\b/.test(m.text()) && /generativelanguage\.googleapis\.com/.test(m.location()?.url ?? '')) || /fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '');
   page.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -1379,6 +1379,7 @@ try {
   // A stand-in for Google's Gemini API: the model list, and answers from the stub model.
   const GKEY = 'AIza-test-gemini-key-5678';
   const googleCalls = [];
+  let geminiBusy = false;
   await kp.route('https://generativelanguage.googleapis.com/**', async (route) => {
     const r = route.request();
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
@@ -1390,10 +1391,11 @@ try {
     if (headers['x-goog-api-key'] !== GKEY) return json(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } });
     if (r.method() === 'GET') {
       const m = (name, methods = ['generateContent']) => ({ name: `models/${name}`, supportedGenerationMethods: methods });
-      return json(200, { models: [m('gemini-3.5-pro'), m('gemini-3.8-flash-lite'), m('gemini-3.8-flash'), m('text-embedding-9', ['embedContent'])] });
+      return json(200, { models: [m('gemini-3.5-pro'), m('gemini-3.8-flash-lite'), m('gemini-3.8-flash'), m('gemini-3.5-flash'), m('text-embedding-9', ['embedContent'])] });
     }
     const sent = JSON.parse(r.postData());
     call.body = sent;
+    if (geminiBusy && r.url().includes('gemini-3.8-flash:')) return json(503, { error: { code: 503, message: 'The model is overloaded. Please try again later.', status: 'UNAVAILABLE' } });
     const text = sent.contents[0].parts[0].text;
     const context = JSON.parse(text.split('\n')[1]);
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
@@ -1417,8 +1419,9 @@ try {
   await dialog.getByTestId('gemini-key-input').fill(GKEY);
   await dialog.getByTestId('gemini-key-save').click();
   await check(async () => (await dialog.getByTestId('gemini-key-result').innerText()).includes('Connected'), 'a valid Gemini key connects');
-  await check(async () => (await dialog.getByTestId('gemini-model').locator('option').allInnerTexts()).join() === 'gemini-3.8-flash,gemini-3.8-flash-lite,gemini-3.5-pro', 'the models the key can use are listed, Flash first (no embedding models)');
+  await check(async () => (await dialog.getByTestId('gemini-model').locator('option').allInnerTexts()).join() === 'gemini-3.8-flash,gemini-3.5-flash,gemini-3.8-flash-lite,gemini-3.5-pro', 'the models the key can use are listed, Flash first (no embedding models)');
   await check(async () => (await dialog.getByTestId('gemini-model').inputValue()) === 'gemini-3.8-flash', 'Gemini Flash is chosen');
+  await check(async () => (await dialog.getByTestId('gemini-backup').inputValue()) === 'gemini-3.5-flash', 'with Gemini 3.5 Flash as the backup when it is busy');
   await check(async () => (await dialog.getByTestId('gemini-status').innerText()).includes('AIza-te…5678'), 'the Gemini key is shown masked');
   await kp.screenshot({ path: `${OUT}/31-ai-connection-gemini.png` });
   await kp.keyboard.press('Escape');
@@ -1430,6 +1433,18 @@ try {
   await check(gCall.url.endsWith('/models/gemini-3.8-flash:generateContent') && gCall.key === GKEY && !gCall.url.includes(GKEY), 'the request goes to the chosen Gemini model with the key in a header (not in the URL)');
   await check(gCall.body.generationConfig.responseMimeType === 'application/json' && gCall.body.generationConfig.thinkingConfig?.thinkingLevel === 'low' && gCall.body.systemInstruction.parts[0].text.includes('REPLY FORMAT'), 'JSON mode with the reply format; Fast asks Gemini to think less');
   await check(anthropicCalls.length === claudeBefore, 'Claude was not asked');
+  geminiBusy = true;
+  await kAsk('Make the gravity a bit weaker.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'when Gemini 3.8 Flash is busy, the prompt still gets an answer');
+  await check(googleCalls.at(-2).url.includes('/gemini-3.8-flash:') && googleCalls.at(-1).url.includes('/gemini-3.5-flash:'), '…from the backup, Gemini 3.5 Flash');
+  await kp.getByTestId('console-toggle').click();
+  await check(async () => (await kp.getByTestId('console').innerText()).includes('gemini-3.8-flash is busy, so gemini-3.5-flash answers instead'), 'the console says the backup answered');
+  await kp.keyboard.press('Escape');
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  const callsBefore = googleCalls.length;
+  await kAsk('Make the gravity a bit weaker.');
+  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && googleCalls.length === callsBefore + 1 && googleCalls.at(-1).url.includes('/gemini-3.5-flash:'), 'the next prompt goes straight to the backup for a while (no waiting on the busy model)');
+  geminiBusy = false;
   await kc.close();
 
   step = 'AI draws: overlays and a generated level';

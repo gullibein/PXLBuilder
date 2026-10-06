@@ -594,7 +594,10 @@ before anything is applied. A fourth, `GeminiProvider`
 browser with the user's own Gemini key (`x-goog-api-key` header, never in
 the URL; same key handling as the Anthropic key, `editor/ai/apiKey.ts`), in
 JSON mode with the same rendered schema in the prompt and the same
-validation; the dialog lists the models the key can use (Flash first).
+validation; the dialog lists the models the key can use (Flash first; 3.8
+and 3.5 Flash always offered) and a backup model: a busy answer (429, 500,
+503, 504) sends the same request to the backup, and the busy model is
+skipped for two minutes (a console line says so).
 Order: claude.ai account, else Gemini when chosen, else the user's
 Anthropic key, else the server. The prompt text is shared
 (`core/ai/prompt.ts`).

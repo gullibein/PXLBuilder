@@ -12,13 +12,18 @@ export interface AISettings {
   speed: AISpeed;
   /** The Gemini model to use (picked from the ones the key can use). */
   geminiModel: string;
+  /** Asked instead when geminiModel is busy ('' = no backup). */
+  geminiBackup: string;
 }
 
 /** Google's Flash model at the time of writing; the dialog lists what the key can actually use. */
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_GEMINI_BACKUP = 'gemini-3.5-flash';
+/** Always offered in AI connection, newest first. */
+export const GEMINI_FLASH_MODELS = [DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKUP];
 
 const STORAGE_KEY = 'pxlbuilder.aiSettings';
-const DEFAULTS: AISettings = { vendor: 'claude', speed: 'best', geminiModel: DEFAULT_GEMINI_MODEL };
+const DEFAULTS: AISettings = { vendor: 'claude', speed: 'best', geminiModel: DEFAULT_GEMINI_MODEL, geminiBackup: DEFAULT_GEMINI_BACKUP };
 const listeners = new Set<() => void>();
 
 function load(): AISettings {
@@ -28,6 +33,7 @@ function load(): AISettings {
       vendor: raw.vendor === 'gemini' ? 'gemini' : 'claude',
       speed: raw.speed === 'fast' ? 'fast' : 'best',
       geminiModel: typeof raw.geminiModel === 'string' && raw.geminiModel.trim() ? raw.geminiModel.trim() : DEFAULT_GEMINI_MODEL,
+      geminiBackup: typeof raw.geminiBackup === 'string' ? raw.geminiBackup.trim() : DEFAULT_GEMINI_BACKUP,
     };
   } catch {
     return { ...DEFAULTS };

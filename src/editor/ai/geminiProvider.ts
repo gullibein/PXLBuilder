@@ -30,13 +30,23 @@ function headers(apiKey: string): Record<string, string> {
   return { 'content-type': 'application/json', 'x-goog-api-key': apiKey };
 }
 
+/** Answers that mean "busy or out of quota right now", worth trying another model for. */
+const BUSY_STATUSES = new Set([429, 500, 503, 504]);
+/** After a busy answer, go straight to the backup for this long (instead of waiting to be turned away each time). */
+const BUSY_PAUSE_MS = 2 * 60_000;
+const busyUntil = new Map<string, number>();
+
+/** The model was busy (or the quota for it was used up): another model may still answer. */
+class BusyError extends AIUnavailableError {}
+
 /** A plain-language message for a failed call. */
 function problem(status: number, reply: GeminiReply | null, model: string): string {
   const msg = reply?.error?.message ?? '';
   if (status === 400 && /api key/i.test(msg)) return 'Your Gemini API key was not accepted. Check it in ⋯ → AI connection.';
   if (status === 401 || status === 403) return 'Your Gemini API key was not accepted (or may not use this model). Check it in ⋯ → AI connection.';
   if (status === 404) return `The Gemini model "${model}" isn't available for your key. Pick another model in ⋯ → AI connection.`;
-  if (status === 429) return 'Gemini is rate limited (or your quota is used up). Try again in a moment.';
+  if (status === 429) return `Gemini (${model}) is rate limited, or your quota for it is used up. Try again in a moment.`;
+  if (BUSY_STATUSES.has(status)) return `Gemini (${model}) is busy right now (high demand). Try again in a moment.`;
   return `Gemini request failed (${status}${msg ? `: ${msg}` : ''}).`;
 }
 
@@ -47,15 +57,21 @@ export function parseJsonReply(text: string): unknown {
 }
 
 export class GeminiProvider implements AIProvider {
+  /**
+   * `backup`: the model to ask when `model` is busy (null: none). `onBackup`
+   * hears when that happens, in words for the console.
+   */
   constructor(
     private readonly apiKey: string,
     private readonly model: string,
+    private readonly backup: string | null = null,
+    private readonly onBackup?: (note: string) => void,
   ) {}
 
-  private async call(body: AIRequestBody, signal: AbortSignal | undefined, thinkLess: boolean): Promise<{ status: number; reply: GeminiReply | null }> {
+  private async call(model: string, body: AIRequestBody, signal: AbortSignal | undefined, thinkLess: boolean): Promise<{ status: number; reply: GeminiReply | null }> {
     let res: Response;
     try {
-      res = await fetch(`${API}/models/${encodeURIComponent(this.model)}:generateContent`, {
+      res = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
         headers: headers(this.apiKey),
         signal,
@@ -65,7 +81,7 @@ export class GeminiProvider implements AIProvider {
           generationConfig: {
             responseMimeType: 'application/json',
             maxOutputTokens: 32768,
-            // Fast: think less (models without thinking levels reject this; see respond()).
+            // Fast: think less (models without thinking levels reject this; see ask()).
             ...(thinkLess ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
           },
         }),
@@ -79,11 +95,28 @@ export class GeminiProvider implements AIProvider {
   }
 
   async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+    const backup = this.backup && this.backup !== this.model ? this.backup : null;
+    // The chosen model was busy a moment ago: go straight to the backup for now.
+    if (backup && (busyUntil.get(this.model) ?? 0) > Date.now()) return this.ask(backup, body, signal);
+    try {
+      return await this.ask(this.model, body, signal);
+    } catch (e) {
+      if (!(e instanceof BusyError) || !backup) throw e;
+      busyUntil.set(this.model, Date.now() + BUSY_PAUSE_MS);
+      this.onBackup?.(`Gemini: ${this.model} is busy, so ${backup} answers instead (for the next couple of minutes).`);
+      return this.ask(backup, body, signal);
+    }
+  }
+
+  private async ask(model: string, body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
     const fast = body.speed === 'fast';
-    let { status, reply } = await this.call(body, signal, fast);
+    let { status, reply } = await this.call(model, body, signal, fast);
     // A model without thinking levels: ask again without that setting.
-    if (fast && status === 400 && /thinking/i.test(reply?.error?.message ?? '')) ({ status, reply } = await this.call(body, signal, false));
-    if (status !== 200 || !reply) throw new AIUnavailableError(problem(status, reply, this.model));
+    if (fast && status === 400 && /thinking/i.test(reply?.error?.message ?? '')) ({ status, reply } = await this.call(model, body, signal, false));
+    if (BUSY_STATUSES.has(status)) {
+      throw new BusyError(problem(status, reply, model));
+    }
+    if (status !== 200 || !reply) throw new AIUnavailableError(problem(status, reply, model));
     if (reply.promptFeedback?.blockReason) throw new AIUnavailableError('Gemini declined this request.');
     const candidate = reply.candidates?.[0];
     if (candidate?.finishReason === 'MAX_TOKENS') throw new AIUnavailableError('The AI response was incomplete. Try a smaller request.');
@@ -102,6 +135,11 @@ export class GeminiProvider implements AIProvider {
     if (!parsed.success) throw new AIUnavailableError("Gemini's answer was not in the expected form. Try again.");
     return parsed.data;
   }
+}
+
+/** For tests: forget which models were busy. */
+export function resetGeminiBusy(): void {
+  busyUntil.clear();
 }
 
 /** The Gemini models this key may use for answers (also checks the key; spends no tokens). Flash models first. */
