@@ -103,9 +103,7 @@ export function Viewport() {
       const dpr = canvas.width / view.width;
       const drag = dragRef.current;
 
-      // An AI proposal is previewed on the level: draw the level as it would be.
-      const preview = state.aiPreview?.sceneId === scene.id ? state.aiPreview : null;
-      let entities = resolveSceneEntities(preview ? preview.project : state.project, scene.id);
+      let entities = resolveSceneEntities(state.project, scene.id);
       if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
         const moving = new Set(drag.ids);
         entities = entities.map((e) =>
@@ -121,8 +119,6 @@ export function Viewport() {
       const camAttr = `${state.camera.x.toFixed(1)},${state.camera.y.toFixed(1)},${state.camera.zoom.toFixed(4)}`;
       if (canvas.dataset.camera !== camAttr) canvas.dataset.camera = camAttr;
       if (canvas.dataset.entities !== String(scene.entities.length)) canvas.dataset.entities = String(scene.entities.length);
-      const previewAttr = preview ? `${preview.created.length},${preview.removed.length}` : '';
-      if ((canvas.dataset.preview ?? '') !== previewAttr) canvas.dataset.preview = previewAttr;
 
       const images = imageLookup(state.project);
       const wire = state.layout.wireframe;
@@ -136,7 +132,6 @@ export function Viewport() {
       if (wire) drawWireframe(ctx, entities, state.camera.zoom);
       else drawEntities(ctx, entities, images);
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
-      if (preview) drawPreviewMarks(ctx, preview, resolveSceneEntities(state.project, scene.id), byId, state.camera.zoom, time);
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
       if (state.layout.showCameraFrame) {
@@ -890,31 +885,6 @@ function drawFlash(ctx: CanvasRenderingContext2D, ids: Id[], byId: Map<Id, Resol
     const b = getWorldBounds(e);
     const pad = 4 / zoom;
     ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad);
-  }
-  ctx.restore();
-}
-
-/** New things in an AI proposal get a pulsing outline; things it would remove show as faded red ghosts. */
-function drawPreviewMarks(ctx: CanvasRenderingContext2D, preview: { created: Id[]; removed: Id[] }, current: ResolvedEntity[], byId: Map<Id, ResolvedEntity>, zoom: number, time: number): void {
-  ctx.save();
-  const removed = new Set(preview.removed);
-  ctx.fillStyle = 'rgba(255, 93, 115, 0.35)';
-  ctx.strokeStyle = theme.erase;
-  ctx.lineWidth = 1.5 / zoom;
-  for (const e of current) {
-    if (!removed.has(e.id)) continue;
-    const b = getWorldBounds(e);
-    ctx.fillRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
-    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
-  }
-  ctx.globalAlpha = 0.55 + 0.35 * Math.sin(time / 220);
-  ctx.strokeStyle = theme.select;
-  ctx.lineWidth = 2 / zoom;
-  for (const id of preview.created) {
-    const e = byId.get(id);
-    if (!e) continue;
-    const b = getWorldBounds(e);
-    ctx.strokeRect(b.minX + 1 / zoom, b.minY + 1 / zoom, b.maxX - b.minX - 2 / zoom, b.maxY - b.minY - 2 / zoom);
   }
   ctx.restore();
 }

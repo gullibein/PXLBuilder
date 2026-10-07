@@ -22,12 +22,26 @@ import { reachabilityProblems } from '../../core/model/reachability';
 import { useEditor } from '../store';
 import type { Id, Project } from '../../core/types';
 
+/** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
+export interface ObjectChange {
+  message: string;
+  changes: string[];
+  operations: Operation[];
+  choice: ObjectChoice;
+}
+
+/**
+ * What a prompt did. The AI's changes are always applied at once, as one
+ * undoable step (the user tries them on the level and undoes what they don't
+ * want); nothing waits for an Apply.
+ */
 export type PromptOutcome =
-  /** `editor`: the change was to the editor's own settings (undone with the editor's undo, not the project's). */
-  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number }
-  | { status: 'proposal'; message: string; changes: string[]; operations: Operation[] }
-  /** A change to what an object is: the user picks "change the object" (every copy) or "create a new object". */
-  | { status: 'choice'; message: string; changes: string[]; operations: Operation[]; choice: ObjectChoice }
+  /**
+   * `editor`: the change was to the editor's own settings (undone with the editor's undo, not the project's).
+   * `asNew`: the change went to an object (every copy); it can be made a new object instead.
+   * `note`: a line worth showing on the card (e.g. that a new object was made).
+   */
+  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string }
   | { status: 'message'; message: string; tone: 'info' | 'warn' }
   | { status: 'error'; message: string };
 
@@ -131,10 +145,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   if (!response.operations.some(isEditorOperation)) {
     const now = useEditor.getState();
     const choice = objectChoiceFor(now.project, response.operations, 'entityIds' in ctx ? ctx.entityIds : []);
-    if (choice) return { status: 'choice', message: response.message, changes: response.changes, operations: response.operations, choice };
+    if (choice) {
+      // A change to what an object is goes to the object (every copy); the card offers "a new object instead".
+      const change: ObjectChange = { message: response.message, changes: response.changes, operations: response.operations, choice };
+      const out = applyObjectChoice(request, change, 'object');
+      return out.status === 'applied' ? { ...out, asNew: change } : out;
+    }
   }
-  if (response.kind === 'apply') return applyAIOperations(request, response.message, response.changes, response.operations);
-  return { status: 'proposal', message: response.message, changes: response.changes, operations: response.operations };
+  return applyAIOperations(request, response.message, response.changes, response.operations);
 }
 
 /** An object or entity an AI change was made to (shown so the user sees where it went). */
@@ -218,7 +236,7 @@ function applyEditorOperations(message: string, changes: string[], operations: O
  * Applies a change to what an object is, as the user chose: to the object
  * (every copy), or to a new object the selected copies become.
  */
-export function applyObjectChoice(request: string, outcome: Extract<PromptOutcome, { status: 'choice' }>, as: 'object' | 'new'): PromptOutcome {
+export function applyObjectChoice(request: string, outcome: ObjectChange, as: 'object' | 'new'): PromptOutcome {
   const { edit, logMessage } = useEditor.getState();
   const { choice } = outcome;
   let result: ApplyResult = EMPTY_RESULT;
@@ -252,6 +270,7 @@ export function applyObjectChoice(request: string, outcome: Extract<PromptOutcom
     result,
     touched: [{ label, entityIds: copies }],
     transactionId: after.history.past.at(-1)?.id,
+    ...(as === 'new' ? { note: `Created ${newName}: ${choice.objectName} with this change. The other ${choice.objectName}s stay as they were.` } : {}),
   };
 }
 

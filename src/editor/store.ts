@@ -75,8 +75,6 @@ export interface EditorState {
   backgroundOpen: boolean;
   /** Object whose Sprites panel is open. */
   spritesFor: Id | null;
-  /** An AI proposal shown on the level before it is applied: the project as it would be. */
-  aiPreview: { project: Project; sceneId: Id; created: Id[]; removed: Id[] } | null;
   /** Entities that just changed (by the AI) glow briefly on the level. */
   flash: { ids: Id[]; until: number } | null;
   /** The AI connection dialog (the user's own API key) is open. */
@@ -122,7 +120,6 @@ export interface EditorState {
   setAIConnectionOpen(open: boolean): void;
   setStylePickerOpen(open: boolean): void;
   flashEntities(ids: Id[]): void;
-  setAIPreview(preview: EditorState['aiPreview']): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
   setLastPlay(report: PlayReport, project: Project): void;
@@ -173,7 +170,6 @@ export const useEditor = create<EditorState>()((set, get) => {
     backgroundOpen: false,
     spritesFor: null,
     logicOpen: false,
-    aiPreview: null,
     aiConnectionOpen: false,
     stylePickerOpen: false,
     flash: null,
@@ -387,9 +383,6 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ aiConnectionOpen });
     },
 
-    setAIPreview(aiPreview) {
-      set({ aiPreview });
-    },
 
     setLogicOpen(open) {
       if (open) set({ spritesFor: null, backgroundOpen: false, logicOpen: true, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, selectedDefinitionId: null, globalPrompt: { ...get().globalPrompt, open: false } });

@@ -1,12 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
-import { produce } from 'immer';
-import { applyOperations, isEditorOperation, type ApplyResult } from '../../core/commands/operations';
-import { componentRegistry } from '../../core/components/builtin';
 import { frameEntities } from '../actions';
 import { cardOpened, clearJob, setJobOutcome, startJob, stopJob, useJobs } from '../ai/jobs';
-import { applyAIOperations, applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
+import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
 
@@ -30,34 +27,16 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     if (state.phase === 'done' && state.outcome.status === 'applied' && told.current !== state.outcome) {
       told.current = state.outcome;
       onApplied?.(state.outcome);
+      // A big change (a generated level) is framed so it can be seen whole.
+      const created = state.outcome.result.createdEntityIds;
+      if (created.length >= 10) {
+        const { project, activeSceneId } = useEditor.getState();
+        const ids = new Set(created);
+        frameEntities(resolveSceneEntities(project, activeSceneId).filter((e) => ids.has(e.id)));
+      }
     }
   }, [state.phase === 'done' ? state.outcome : null]);
 
-  // A pending proposal is drawn on the level (new things highlighted, removed things faded) until applied or cancelled.
-  const proposal = state.phase === 'done' && state.outcome.status === 'proposal' ? state.outcome : null;
-  useEffect(() => {
-    if (!proposal || proposal.operations.some(isEditorOperation)) return;
-    const { project, activeSceneId, setAIPreview } = useEditor.getState();
-    const operations = proposal.operations;
-    let result: ApplyResult | null = null;
-    let next = project;
-    try {
-      next = produce(project, (d) => {
-        result = applyOperations(d, operations, componentRegistry);
-      });
-    } catch {
-      return; // Invalid proposals are reported when applied.
-    }
-    const r = result as ApplyResult | null;
-    if (!r || (!r.createdEntityIds.length && !r.removedEntityIds.length)) return;
-    setAIPreview({ project: next, sceneId: activeSceneId, created: r.createdEntityIds, removed: r.removedEntityIds });
-    // A big change (a generated level) is framed so it can be seen whole.
-    if (r.createdEntityIds.length >= 10) {
-      const created = new Set(r.createdEntityIds);
-      frameEntities(resolveSceneEntities(next, activeSceneId).filter((e) => created.has(e.id)));
-    }
-    return () => setAIPreview(null);
-  }, [proposal]);
 
   return {
     state,
@@ -67,14 +46,12 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     stop() {
       stopJob(key);
     },
-    choose(as: 'object' | 'new') {
-      if (state.phase !== 'done' || state.outcome.status !== 'choice') return;
-      setJobOutcome(key, applyObjectChoice(state.request, state.outcome, as));
-    },
-    apply() {
-      if (state.phase !== 'done' || state.outcome.status !== 'proposal') return;
-      const { message, changes, operations } = state.outcome;
-      setJobOutcome(key, applyAIOperations(state.request, message, changes, operations));
+    /** The change went to the object (every copy): make it a new object instead (undo it, apply it as a new one). */
+    asNew() {
+      if (state.phase !== 'done' || state.outcome.status !== 'applied' || !state.outcome.asNew) return;
+      const change = state.outcome.asNew;
+      useEditor.getState().undo();
+      setJobOutcome(key, applyObjectChoice(state.request, change, 'new'));
     },
     reset() {
       clearJob(key);
@@ -158,7 +135,7 @@ export function PromptBox(props: PromptBoxProps) {
           data-testid="prompt-input"
           onChange={(e) => {
             setText(e.target.value);
-            if (runner.state.phase === 'done' && runner.state.outcome.status !== 'proposal') runner.reset();
+            if (runner.state.phase === 'done') runner.reset();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -201,7 +178,7 @@ export function PromptBox(props: PromptBoxProps) {
           </div>
         </>
       )}
-      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onApply={runner.apply} onChoose={runner.choose} onCancel={runner.reset} onUndo={() => {
+      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onAsNew={runner.asNew} onUndo={() => {
             const o = runner.state.phase === 'done' ? runner.state.outcome : null;
             if (o?.status === 'applied' && o.editor) undoLayout();
             else undo();
@@ -236,17 +213,9 @@ export function PromptBox(props: PromptBoxProps) {
                 <Outcome
                   full
                   outcome={runner.state.outcome}
-                  onApply={() => {
+                  onAsNew={() => {
                     setExpanded(false);
-                    runner.apply();
-                  }}
-                  onChoose={(as) => {
-                    setExpanded(false);
-                    runner.choose(as);
-                  }}
-                  onCancel={() => {
-                    setExpanded(false);
-                    runner.reset();
+                    runner.asNew();
                   }}
                   onUndo={() => {
                     setExpanded(false);
@@ -272,9 +241,8 @@ const MAX_CHANGES = 5;
 
 function Outcome(props: {
   outcome: PromptOutcome;
-  onApply: () => void;
-  onChoose: (as: 'object' | 'new') => void;
-  onCancel: () => void;
+  /** Make an object change a new object instead. */
+  onAsNew: () => void;
   onUndo: () => void;
   /** The change is still the latest one (so Undo undoes exactly it). */
   canUndo: boolean;
@@ -305,7 +273,11 @@ function Outcome(props: {
     );
   };
   // The AI may put a change on another object than the one asked about (a mushroom's behavior goes on the Mushroom, not the player).
-  const elsewhere = outcome.status === 'applied' && !outcome.editor && (outcome.touched ?? []).some((t) => !t.entityIds.length || t.entityIds.some((id) => !props.selectedIds.includes(id)));
+  // (A change to the selected copy's own object is not "elsewhere", even though every copy got it.)
+  const elsewhere =
+    outcome.status === 'applied' &&
+    !outcome.editor &&
+    (outcome.asNew ? outcome.asNew.choice.switchIds.length === 0 : (outcome.touched ?? []).some((t) => !t.entityIds.length || t.entityIds.some((id) => !props.selectedIds.includes(id))));
   switch (outcome.status) {
     case 'applied':
       return (
@@ -332,51 +304,23 @@ function Outcome(props: {
               </p>
             </>
           )}
+          {outcome.note && (
+            <p className="result-where" data-testid="result-note">
+              {outcome.note}
+            </p>
+          )}
           {outcome.changes.length > 0 && list(outcome.changes, 'changes')}
+          {outcome.asNew && props.canUndo && (
+            <p className="as-new" data-testid="result-as-new-row">
+              {!elsewhere && (outcome.asNew.choice.copies > 1 ? `Changed every ${outcome.asNew.choice.objectName} (${outcome.asNew.choice.copies} placed). ` : `Changed the ${outcome.asNew.choice.objectName} object. `)}
+              <button className="link-btn" data-testid="result-as-new" title={`Keep the ${outcome.asNew.choice.objectName}s as they were and make a new object with this change instead`} onClick={props.onAsNew}>
+                Make it a new object instead
+              </button>
+            </p>
+          )}
           {props.renderApplied?.(outcome)}
         </div>
       );
-    case 'proposal':
-      return (
-        <div className="prompt-result proposal" data-testid="prompt-result" data-status="proposal">
-          <p className="result-message">{outcome.message}</p>
-          {list(outcome.changes, 'changes proposed')}
-          <div className="result-actions">
-            <button className="btn-primary" data-testid="proposal-apply" onClick={props.onApply}>
-              Apply
-            </button>
-            <button className="text-btn" data-testid="proposal-cancel" onClick={props.onCancel}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      );
-    case 'choice': {
-      const { objectName, copies } = outcome.choice;
-      return (
-        <div className="prompt-result proposal choice" data-testid="prompt-result" data-status="choice">
-          <button className="icon-text-btn choice-cancel" data-testid="proposal-cancel" aria-label="Cancel" title="Cancel: change nothing" onClick={props.onCancel}>
-              <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
-                <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            </button>
-          <p className="result-message">{outcome.message}</p>
-          {outcome.changes.length > 0 && list(outcome.changes, 'changes proposed')}
-          <div className="result-actions choice-actions">
-            <button className="btn-primary" data-testid="choice-object" title={`Every ${objectName} in the game gets this (${copies} placed)`} onClick={() => props.onChoose('object')}>
-              Apply
-            </button>
-            <button className="btn-secondary" data-testid="choice-new" title={`A new object with this change; the other ${objectName}s stay as they are`} onClick={() => props.onChoose('new')}>
-              Create new
-            </button>
-
-          </div>
-          <p className="choice-hint">
-            Apply changes {copies > 1 ? `every ${objectName} (${copies} placed)` : `the ${objectName}`}. Create new makes a new kind of {objectName} in your objects.
-          </p>
-        </div>
-      );
-    }
     case 'message':
       return (
         <div className={`prompt-result note ${outcome.tone}`} data-testid="prompt-result" data-status="message">

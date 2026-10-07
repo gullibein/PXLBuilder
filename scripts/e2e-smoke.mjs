@@ -313,9 +313,9 @@ try {
     await promptInput.press('Enter');
   };
   const result = page.locator('[data-testid="context-prompt"] [data-testid="prompt-result"]');
-  /** A change to what an object is offers "Change <object>" / "Create new": take "Change". */
+  /** A change to what an object is goes to the object right away; wait for it. */
   const changeObject = async (where = page.getByTestId('context-prompt')) => {
-    await where.getByTestId('choice-object').click({ timeout: 10000 });
+    await where.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
   };
   const clickWorld = async (wx, wy, opts = {}) => {
     const p = toScreen(wx, wy);
@@ -426,10 +426,8 @@ try {
   await page.keyboard.press('Enter');
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Enter moves focus into the prompt');
   await ask('Give the player five hearts.');
-  await check(async () => (await result.getAttribute('data-status')) === 'choice', 'a change to what the Player is asks first');
-  await check(async () => (await prompts.getByTestId('choice-object').innerText()) === 'Apply' && (await prompts.getByTestId('choice-new').innerText()) === 'Create new' && (await result.innerText()).includes('Apply changes the Player'), 'with two buttons: "Apply" (changes the Player) and "Create new"');
-  await changeObject();
-  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the AI change is applied');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the AI change is applied at once (no Apply step)');
+  await check(async () => (await result.innerText()).includes('Changed the Player object.') && (await prompts.getByTestId('result-as-new').innerText()) === 'Make it a new object instead', 'it went to the Player object; "Make it a new object instead" is offered');
   await check(async () => (await result.innerText()).includes('Player: 5 hearts'), 'a short confirmation lists what changed');
   const last = aiRequests.at(-1);
   await check(last.context.scope === 'entity' && last.context.targets[0].name === 'Player', 'the AI received the selected Player as context');
@@ -458,10 +456,10 @@ try {
   await check(async () => (await prompts.count()) === 1, 'selecting the Enemy again brings the prompt back');
   await check(async () => !(await result.count()), 'the new prompt starts fresh');
   await ask('Make the enemy patrol between these two points.');
-  await check(async () => (await result.getAttribute('data-status')) === 'choice' && (await result.innerText()).includes('Apply changes every Enemy (2 placed)'), 'a behavior request offers "Apply" (all 2 enemies) or "Create new"');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await result.innerText()).includes('Changed every Enemy (2 placed).'), 'a behavior request changes every Enemy at once (2 placed)');
   await page.screenshot({ path: `${OUT}/4b-object-choice.png` });
-  await prompts.getByTestId('choice-new').click();
-  await check(async () => (await result.getAttribute('data-status')) === 'applied', '"Create new" applies it');
+  await prompts.getByTestId('result-as-new').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await result.innerText()).includes('Created Enemy 2'), '"Make it a new object instead" swaps it for a new object');
   await check(aiRequests.at(-1).context.targets[0].name === 'Enemy', 'the AI received the Enemy as context');
   await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Enemy 2', 'the selected enemy is now the new kind, "Enemy 2"');
   await page.getByTestId('dock-library').click();
@@ -521,11 +519,9 @@ try {
   await ask('Give the player five hearts.');
   await changeObject();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'meanwhile a prompt for the player runs and applies');
-  await check(async () => (await jobsAttr()) === '0,1', "when the enemy's prompt finishes, it waits (a badge): it changes what the Enemy is, so it needs the user's choice");
+  await check(async () => (await jobsAttr()) === '0,0', "when the enemy's prompt finishes it is applied too, with nothing left waiting (no badge)");
   await clickWorld(-32, 0);
-  await check(async () => (await result.getAttribute('data-status')) === 'choice' && (await jobsAttr()) === '0,0', 'clicking the enemy again shows its result, ready to choose');
-  await changeObject();
-  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'the enemy prompt is applied');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'clicking the enemy again shows its applied result');
   await check(async () => (await prompts.getByTestId('result-undo').count()) === 1, "its change is the latest, so its card offers Undo");
   await clickWorld(-256, 0);
   await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await result.innerText()).includes('in history') && (await prompts.getByTestId('result-undo').count()) === 0, "the player's card still shows its result, but no Undo: the enemy's change came after it");
@@ -535,11 +531,10 @@ try {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await check(async () => (await prompts.count()) === 0, 'the card closed while the AI works');
-  await check(async () => (await jobsAttr()) === '0,1', 'when it finishes, a badge waits above the enemy (a proposal to look at)');
-  await page.screenshot({ path: `${OUT}/29b-waiting-badge.png` });
+  await check(async () => (await jobsAttr()) === '0,0', 'when it finishes with the card closed, the change is applied anyway: closing the card loses nothing');
   await clickWorld(-32, 0);
-  await check(async () => (await result.getAttribute('data-status')) === 'choice' && (await jobsAttr()) === '0,0', 'opening the enemy shows the proposal, and the badge goes away');
-  await prompts.getByTestId('proposal-cancel').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await prompts.getByTestId('result-undo').count()) === 1, 'opening the enemy shows the applied change, with Undo');
+  await prompts.getByTestId('result-undo').click();
   await ask('Take your time: make this enemy bigger.');
   await prompts.getByTestId('prompt-stop').click();
   await check(async () => (await prompts.getByTestId('prompt-stop').count()) === 0 && (await jobsAttr()) === '0,0', 'Stop ends a running prompt');
@@ -568,11 +563,11 @@ try {
   await clickWorld(-256, 0, { modifiers: ['Shift'] });
   await check(async () => (await prompts.getAttribute('data-context')) === 'group' && (await prompts.count()) === 1, 'three selected objects still give one shared prompt');
   await ask('Make these enemies move faster.');
-  await check(async () => (await result.getAttribute('data-status')) === 'proposal', 'a multi-object change is shown as a preview first');
-  await check(async () => (await result.locator('.changes li').count()) === 3, 'the preview lists one line per affected object');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a multi-object change is applied at once too');
+  await check(async () => (await result.locator('.changes li').count()) === 3, 'the result lists one line per affected object');
   await page.screenshot({ path: `${OUT}/5-preview.png` });
-  await prompts.getByTestId('proposal-cancel').click();
-  await check(async () => (await result.count()) === 0, 'Cancel discards the preview without changing anything');
+  await prompts.getByTestId('result-undo').click();
+  await check(async () => (await result.count()) === 0, 'Undo on the card takes the whole change back');
 
   step = 'golden test 5: world';
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
@@ -593,9 +588,8 @@ try {
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) === 'TEXTAREA', 'Create opens a focused prompt');
   await create.getByTestId('prompt-input').fill('Create a flying robot enemy that shoots lasers.');
   await create.getByTestId('prompt-input').press('Enter');
-  await check(async () => (await create.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'creation is previewed before it happens');
+  await check(async () => (await create.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the new object is created at once');
   await page.screenshot({ path: `${OUT}/6-create-preview.png` });
-  await create.getByTestId('proposal-apply').click();
   await check(async () => (await create.locator('[data-testid="definition-Flying Robot"]').count()) === 1, 'the new object is offered right away, ready to drag');
   await page.dragAndDrop('[data-testid="create-prompt"] [data-testid="definition-Flying Robot"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: center.x + 96, y: center.y - 160 } });
   await page.mouse.click(emptySpot.x, emptySpot.y);
@@ -879,9 +873,9 @@ try {
   const askedBefore2 = aiRequests.length;
   await camPrompt.getByTestId('prompt-input').fill('Lower the gravity (broken twice).');
   await camPrompt.getByTestId('prompt-input').press('Enter');
-  await check(async () => (await camPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal' && (await camPrompt.getByTestId('prompt-result').innerText()).includes('Left out one part'), 'an answer still broken after its retry keeps the parts that work, shows what was left out, and asks first');
+  await check(async () => (await camPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await camPrompt.getByTestId('prompt-result').innerText()).includes('Left out one part'), 'an answer still broken after its retry applies the parts that work and shows what was left out');
   await check(aiRequests.length === askedBefore2 + 2, '(the AI was asked once more, not again and again)');
-  await camPrompt.getByTestId('proposal-cancel').click();
+  await camPrompt.getByTestId('result-undo').click();
   await camPrompt.getByTestId('prompt-close').click();
   await page.getByTestId('play').click();
   await check(async () => ((await page.getByTestId('play-canvas').getAttribute('data-camera')) ?? '').endsWith(',2.00'), 'Play uses the level camera zoom');
@@ -1358,15 +1352,15 @@ try {
   const kCreate = kp.getByTestId('create-prompt');
   await kCreate.getByTestId('prompt-input').fill('Create a mushroom enemy.');
   await kCreate.getByTestId('prompt-input').press('Enter');
-  await kCreate.getByTestId('proposal-apply').click();
+  await kCreate.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor();
   await kp.keyboard.press('Escape');
   await kDrop('Mushroom', 0, -150);
   await kDrop('Mushroom', 100, -150);
   await kDrop('Enemy', 200, -150);
   await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
-  await check(async () => (await kPrompt.getByTestId('prompt-result').innerText()).includes('Apply changes every Mushroom (2 placed)'), 'asked on the player, the choice is about the Mushroom');
   await changeObject(kPrompt);
+  await check(async () => (await kPrompt.getByTestId('result-as-new').count()) === 1, 'asked on the player, the change goes to the Mushroom object (which could become a new object instead)');
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asked on the player, the change is applied');
   await check(async () => (await kPrompt.getByTestId('result-message').innerText()).startsWith("I'll add this to the Mushroom enemy"), 'the AI says it put it on the mushroom, not the player');
   await check(async () => (await kPrompt.getByTestId('result-where').innerText()) === 'Changed: Mushroom (every copy, 2 in this level)', 'the prompt shows which object changed');
@@ -1501,12 +1495,8 @@ try {
   await check(async () => (await gPrompt.getAttribute('data-context')) === 'level', 'double-clicking empty space gives the level prompt');
   const before = Number(await gCanvas.getAttribute('data-entities'));
   await gAsk('Generate a hard level with spikes, enemies and teleporters.');
-  await check(async () => (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'level generation is a preview');
-  await check(async () => {
-    const [created, removed] = ((await gCanvas.getAttribute('data-preview')) ?? '').split(',').map(Number);
-    return created > 30 && removed === before;
-  }, 'the proposed level is drawn on the canvas (new things outlined, removed things in red) before applying');
-  await check(async () => Number(await gCanvas.getAttribute('data-entities')) === before, 'nothing is changed yet');
+  await check(async () => (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'level generation is applied at once (Undo takes it back)');
+  await check(async () => Number(await gCanvas.getAttribute('data-entities')) > 30, 'the generated level is drawn for real');
   await gp.waitForTimeout(300);
   await gp.screenshot({ path: `${OUT}/19-level-preview.png` });
   await check(async () => (await gPrompt.getByTestId('prompt-result').locator('.changes li').count()) === 6 && (await gPrompt.getByTestId('result-more').innerText()) === '+3 more', 'a long list shows the first five changes and "+3 more"');
@@ -1516,9 +1506,9 @@ try {
   await gp.waitForTimeout(300);
   await gp.screenshot({ path: `${OUT}/19b-result-dialog.png` });
   await gp.keyboard.press('Escape');
-  await check(async () => (await resultDialog.count()) === 0 && (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', 'Esc closes the dialog; the proposal is still waiting on the card');
-  await gPrompt.getByTestId('proposal-apply').click();
-  await check(async () => Number(await gCanvas.getAttribute('data-entities')) > 30 && (await gCanvas.getAttribute('data-preview')) === '', 'Apply draws it for real');
+  await check(async () => (await resultDialog.count()) === 0 && (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'Esc closes the dialog; the result stays on the card');
+  await gPrompt.getByTestId('prompt-close').click();
+  await check(async () => Number(await gCanvas.getAttribute('data-entities')) > 30, 'closing the card keeps the level (nothing is lost)');
   await gp.getByTestId('play').click();
   const gPlay = gp.getByTestId('play-canvas');
   await check(async () => ((await gPlay.getAttribute('data-player')) ?? '').split(',')[2] === '1', 'the generated level is playable: the player starts on solid ground');
@@ -1575,11 +1565,9 @@ try {
 
     await dp.getByTestId('tab-debug').click().catch(async () => dp.getByTestId('debug-toggle').click());
     await panel.getByTestId('fix-with-ai').first().click();
-    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', '✦ Fix asks the AI and shows its fix to confirm');
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '✦ Fix asks the AI and applies its fix');
     await check(aiRequests.at(-1).request.startsWith('Fix this problem: Door only opens'), 'the AI is told exactly which problem to fix');
-    await check(async () => (await panel.getByTestId('fix-review').count()) === 1, 'while the fix waits to be applied, the problem says so (Review the fix)');
-    await lp.getByTestId('proposal-apply').click();
-    await check(async () => (await dp.getByTestId('problem-count').count()) === 0, 'after applying the fix the problem is gone');
+    await check(async () => (await dp.getByTestId('problem-count').count()) === 0, 'after the fix the problem is gone');
     await check(async () => (await panel.innerText()).includes('the game changed since'), 'the last play is marked as older than the game now');
 
     if ((await lp.count()) === 0) await dp.getByTestId('global-prompt-toggle').click();

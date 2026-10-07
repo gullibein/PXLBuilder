@@ -322,17 +322,22 @@ clears the selection, and selecting something closes it.
   - Entities face the way they move (`facing`); the renderer mirrors them.
   - New events: `timer`, `shot`, `ledge_grabbed`.
 
-### Change the object, or create a new one
+### AI changes apply at once (no Apply step)
+Every AI change is applied immediately as one undoable step; the user looks
+at it, plays it, and undoes what they don't want. (A proposal used to wait
+for Apply; closing the card lost it.) The `kind` apply/preview from the AI
+no longer changes this. A big change (a generated level) is framed.
+
+### Change the object, or make a new one
 Behavior and looks belong to library objects, never to one placed copy.
 When an AI change alters what one library object is (components, scripts,
-sprites, tags; whether the AI aimed at a copy or at the object), the card
-does not apply it: it shows the change with **Change <Object>** (every copy
-gets it; ops aimed at a copy are re-aimed at the object) and **Create new**
-(a copy of the object, "Enemy 2", gets the change and the selected copies
-become it; the old object and its other copies are unchanged). One undo
-step either way (`core/commands/objectChoice.ts`). Moving or renaming a
-copy, connections, rules and level changes apply as before. The AI is told
-to always target the object.
+sprites, tags; whether the AI aimed at a copy or at the object), it goes to
+the object (every copy; ops aimed at a copy are re-aimed at the object), and
+the card offers **Make it a new object instead**: that undoes it and applies
+it to a copy of the object ("Enemy 2") that the selected copies become, the
+old object and its other copies unchanged (`core/commands/objectChoice.ts`).
+Offered while the change is still the latest one. The AI is told to always
+target the object.
 
 ### AI prompts run in the background
 Prompt runs live in a job list (`editor/ai/jobs.ts`), one per context key
@@ -340,8 +345,8 @@ Prompt runs live in a job list (`editor/ai/jobs.ts`), one per context key
 never cancels its prompt (it used to). The user keeps editing and can give
 other objects prompts meanwhile; one prompt per context at a time. The level
 draws three bouncing dots over objects whose prompt is running, and a badge
-over ones whose finished prompt waits to be looked at (a proposal, an
-answer, or an error in red); applied changes just glow as before. Opening
+over ones whose finished prompt has an answer or an error (red) not seen
+yet; applied changes just glow. Opening
 the object's card shows the run (busy, with Stop) or its result. A card's
 Undo is offered only while its change is still the latest in the history
 (`transactionId`), so it never undoes someone else's change.
@@ -469,8 +474,8 @@ saved and shown like any other edit.
   touches merged, traces of the player and the selection, end states,
   script errors, messages, and whether the game changed since). The system
   prompt's Debugging section says to explain from this data, distinguish
-  "works as set up, but…" from a setup problem, and return fixes as a
-  preview.
+  "works as set up, but…" from a setup problem, and send fixes (applied
+  at once, undoable).
 - **Editor**: the tray's Debug tab lists problems (Show selects the
   entities; ✦ Fix starts a level prompt "Fix this problem: …") and the last
   play's notable events (all events on request; a row selects what it is
@@ -492,8 +497,8 @@ copy becomes two one-tile copies covering the same ground.
   beside them; collectibles inside something that hurts the player; a copy
   renamed after another library object (a Coin called "Key").
 - The AI gets each library object's size and cells.
-- Debug's Fix follows its fix: "Fixing…", "Review the fix" while a proposal
-  waits, and "Still there after the AI's fix" with Try again (which tells the
+- Debug's Fix follows its fix: "Fixing…", then "Still there after the AI's
+  fix" with Try again (which tells the
   AI its previous fix missed) when the problem survives.
 
 ### Format v8
@@ -527,8 +532,8 @@ or scripted solids, switch-moved platforms or player scripts are
 "uncertain" and not judged. Used by the problem checker (Debug tab) and by
 the AI pipeline: an answer that newly makes something unreachable goes back
 to the AI once with the exact problem (same retry as for answers that don't
-apply); if the corrected answer still has it, it is shown as a preview with
-a ⚠ line.
+apply); if the corrected answer still has it, it is applied with a ⚠ line
+saying so.
 
 ### Game logic (Phase 3): relationships, events, rules, graph
 The design principle: logic is **data in the project**, built from a small
@@ -721,11 +726,6 @@ stomper bounces off unhurt; side contact works as before. Event `stomped`.
   toucher onto the target) and rule action `teleport`; on arrival, whatever
   the entity overlaps counts as already touched, so it doesn't bounce back.
   Event `teleported`.
-- **Preview on the level**: a pending AI proposal is applied to a copy of the
-  project (`store.aiPreview`) and the viewport draws that copy: new things
-  with a pulsing outline, removed things as red ghosts; a large change is
-  framed. Apply commits the same operations as one transaction; Cancel
-  discards the copy.
 
 ### Viewport size
 The viewport is measured synchronously when it mounts (and then by a
@@ -749,7 +749,7 @@ zooms. Space+drag and middle-button drag pan.
 prompt -> AIContext -> buildAIPayload (targets in full, others briefly, library)
        -> AIProvider (HTTP) -> server: system prompt (capabilities) + Claude, structured output
        -> AIResponse { kind, message, changes[], operations[] }
-       -> apply (small/explicit) | preview -> Apply/Cancel | clarify | answer | unsupported
+       -> applied at once (apply/preview) | clarify | answer | unsupported
        -> applyOperations() inside one edit() = one transaction (all-or-nothing, undoable)
 ```
 - The model never sees raw project JSON and never mutates state; it returns
@@ -758,7 +758,7 @@ prompt -> AIContext -> buildAIPayload (targets in full, others briefly, library)
 - The capability description is generated from the component, relationship
   and event registries, and explicitly lists what is **not available yet**
   (behaviors, timers, level transitions, ...). The model is instructed to say so ("unsupported") or
-  to preview only the possible part, rather than invent features.
+  to do only the possible part and say what was left out, rather than invent features.
 - Instance vs definition is explicit in every operation (`target`), so "this
   robot" and "all robots" map to different changes.
 - Conversational memory (last few exchanges per context) is sent for
@@ -834,7 +834,7 @@ one version at a time, and refuses files from a newer editor.
 2. Runtime: **done** (game loop, arcade physics, collisions, running, jumping, ladders, camera follow, Play/Stop with runtime state separate from the project).
 3. Graph: **done** (relationship model, event system with a log, rule system, graph queries, entity references; shown in the editor and available to the AI).
 4. Commands: **done** (operations, transactions, undo/redo).
-5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, preview/apply).
+5. AI foundation: **done** (provider interface, context builder, capabilities, structured operations, applied as undoable steps).
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.
 - Behaviors: **done** (ready-made components, plus behavior scripts the AI programs).
 9. AI debugging: **done** (event log with reasons, play recording, problem checker, AI diagnosis with fixes to confirm, Debug tab).

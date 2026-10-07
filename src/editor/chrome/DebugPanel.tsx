@@ -145,7 +145,7 @@ function PlayLog({ report, onShow }: { report: PlayReport; onShow: (ids: Id[]) =
 const fixRequests = new Map<string, string>();
 
 /**
- * Fix with AI, and what became of it: working, a fix to review, or still
+ * Fix with AI, and what became of it: working, or still
  * there after an applied fix (then "Try again" tells the AI its fix missed).
  * A fixed problem simply disappears from the list.
  */
@@ -168,13 +168,6 @@ function FixButton({ problem, sceneId }: { problem: Problem; sceneId: string }) 
     );
   }
   const status = mine?.outcome?.status;
-  if (status === 'proposal' || status === 'choice') {
-    return (
-      <button className="text-btn ai" data-testid="fix-review" onClick={() => useEditor.getState().setGlobalPrompt(true, 'level')}>
-        ✦ Review the fix
-      </button>
-    );
-  }
   if (status === 'applied' || sent) {
     // Still listed after a fix was applied (or tried): it didn't solve it.
     return (

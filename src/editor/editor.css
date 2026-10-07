@@ -164,17 +164,10 @@ code { font-family: var(--font-data); font-size: 11px; }
 .result-dialog-body { min-height: 0; overflow: auto; border-radius: 12px; background: var(--card); }
 .result-dialog-body .prompt-result { margin: 0; padding: 12px 14px; border: none; font-size: 13px; }
 .result-dialog-body .changes { gap: 4px; }
-.result-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .btn-primary { border: none; padding: 7px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hi); }
 .btn-secondary { border: 1px solid var(--accent); padding: 6px 14px; border-radius: 10px; background: none; color: var(--accent); font-weight: 700; }
 .btn-secondary:hover { background: var(--accent-soft); }
-.choice-actions { flex-wrap: wrap; gap: 6px; }
-.choice-actions .btn-primary, .choice-actions .btn-secondary { flex: 1 1 auto; white-space: nowrap; padding: 5px 10px; border-radius: 9px; font-size: 12px; }
-.prompt-result.choice { position: relative; }
-.prompt-result.choice .result-message { padding-right: 22px; }
-.choice-cancel { position: absolute; top: 4px; right: 4px; }
-.choice-hint { margin: 6px 0 0; color: var(--card-muted); font-size: 11px; line-height: 1.35; }
 .text-btn { border: none; background: none; padding: 2px 4px; color: var(--card-muted); border-radius: 6px; }
 .text-btn:hover { color: var(--card-text); }
 .icon-text-btn { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--card-muted); }
@@ -236,6 +229,9 @@ button.history-row:hover { background: var(--surface-2); }
 .history .time, .log-line .time { font-family: var(--font-data); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .history li.ai .grow { color: #c9c1ff; }
 .history li.undone { opacity: 0.4; }
+.as-new { margin: 6px 0 0; color: var(--card-muted); font-size: 11.5px; line-height: 1.4; }
+.link-btn { border: none; background: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link-btn:hover { color: var(--accent-hi); }
 .history .changes { margin: 2px 0 6px 58px; color: var(--muted); }
 .console { font-family: var(--font-data); font-size: 11.5px; display: grid; gap: 2px; justify-items: start; }
 .log-line { display: flex; gap: 10px; }
