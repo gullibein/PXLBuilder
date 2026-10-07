@@ -188,6 +188,10 @@ function MainMenu() {
               </button>
             </div>
           ))}
+          <div className="menu-sep" />
+          <div className="menu-version" data-testid="app-version" title="The version of PXLBuilder on this page (commit and build time)">
+            Version {__PXL_VERSION__}
+          </div>
         </div>
       )}
     </div>

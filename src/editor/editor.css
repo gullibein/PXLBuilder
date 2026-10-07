@@ -534,3 +534,5 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 /* Cards without a header keep the × inside, at the end of the input row. */
 .prompt-field .prompt-close { position: static; flex: none; width: 22px; height: 22px; background: none; box-shadow: none; color: var(--card-muted); }
 .prompt-field .prompt-close:hover { background: var(--card-line); color: var(--card-text); }
+
+.menu-version { padding: 4px 10px 6px 30px; font-size: 11px; color: var(--muted); user-select: text; }
