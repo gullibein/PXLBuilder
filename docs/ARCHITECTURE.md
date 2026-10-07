@@ -476,6 +476,21 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Level layout checks and placement help
+- `draw_tiles` places objects bigger than a cell side by side (a 2-cell
+  row of spikes every 2 cells; a 2-cell-tall door stands on the bottom of the
+  row it is drawn in), never stacked half over each other.
+- After an AI answer's operations, new non-tile objects sunk into the top of
+  a solid by up to half their height are lifted onto it (`settleOnSurfaces`).
+- `layoutProblems` (part of the level check, so in Debug and in the AI
+  retry): spikes, doors and switches floating with nothing under, over or
+  beside them; collectibles inside something that hurts the player; a copy
+  renamed after another library object (a Coin called "Key").
+- The AI gets each library object's size and cells.
+- Debug's Fix follows its fix: "Fixing…", "Review the fix" while a proposal
+  waits, and "Still there after the AI's fix" with Try again (which tells the
+  AI its previous fix missed) when the problem survives.
+
 ### Format v8
 The starter Player jumps with 350 (about 1.9 tiles) instead of 295, and the
 starter Hazard has pixel-art spikes; older games get both if those starters

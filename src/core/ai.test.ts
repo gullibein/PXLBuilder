@@ -272,8 +272,32 @@ describe('drawing levels', () => {
     const { project, sceneId, def } = level();
     const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: 0, width: 1, height: 1 }] }]);
     const hazard = p.scenes[0].entities.at(-1)!;
-    // Hazard is 64x16: centered at x=16, bottom at y=32.
-    expect(hazard.transform.position).toEqual({ x: 16, y: 24 });
+    // Hazard is 64x16 (two cells wide): it takes cells 0-1, centered at x=32, bottom at y=32.
+    expect(hazard.transform.position).toEqual({ x: 32, y: 24 });
+  });
+
+  it('objects wider or taller than a cell are placed side by side, not on top of each other', () => {
+    const { project, sceneId, def } = level();
+    const before = project.scenes[0].entities.length;
+    // A 4-cell row of 2-cell spikes: two copies.
+    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: -1, width: 4, height: 1 }] }]);
+    expect(p.scenes[0].entities.slice(before).map((e) => e.transform.position)).toEqual([{ x: 32, y: -8 }, { x: 96, y: -8 }]);
+    // A door (one cell wide, two tall) drawn in one row stands on that row's bottom, not sunk into the ground.
+    const d = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Door').id, rects: [{ col: 3, row: -1, width: 1, height: 1 }] }]);
+    expect(d.scenes[0].entities.at(-1)!.transform.position).toEqual({ x: 112, y: -32 });
+  });
+
+  it('something placed half into the ground is lifted onto it; something in the air stays', () => {
+    const { project, sceneId, def } = level();
+    const ground = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 20, row: 0, width: 4, height: 1 }] }]);
+    // The ground row's top is at y=0. A 64-tall door centered at y=-16 is sunk 16 px into it.
+    const p = apply(ground, [
+      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 680, y: -16, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Coin').id, x: 720, y: -60, name: null, ref: null },
+    ]);
+    const [door, coin] = p.scenes[0].entities.slice(-2);
+    expect(door.transform.position).toEqual({ x: 680, y: -32 });
+    expect(coin.transform.position).toEqual({ x: 720, y: -60 });
   });
 
   it('erase_area removes what is in the cells (optionally one object only), with its connections', () => {

@@ -112,4 +112,24 @@ describe('can the player get there?', () => {
     const beside = level((place) => place('Hazard', 96, 24));
     expect(beside.problems()).toEqual([]);
   });
+
+  it('layout mistakes: floating spikes and doors, an item inside spikes, a renamed stand-in', () => {
+    const fine = level((place) => {
+      place('Hazard', 96, 24); // on the ground
+      place('Door', -96, 0); // standing on the ground
+      place('Key', -40, 20);
+    });
+    expect(fine.problems()).toEqual([]);
+    const wrong = level((place, d, sceneId) => {
+      place('Hazard', 96, -40); // in the air
+      place('Hazard', 32, 24);
+      place('Key', 32, 24); // inside spikes
+      const coin = place('Coin', -64, 20);
+      m.renameEntity(d, sceneId, coin, 'Key');
+    });
+    const texts = wrong.problems().map((p) => p.text);
+    expect(texts.some((x) => /^Hazard floats in mid-air/.test(x))).toBe(true);
+    expect(texts.some((x) => /^Key is inside something that hurts the player/.test(x))).toBe(true);
+    expect(texts.some((x) => /^The "Key" here is really a Coin \(renamed\), not the Key object/.test(x))).toBe(true);
+  });
 });

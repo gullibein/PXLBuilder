@@ -4,7 +4,8 @@ import { diagnoseLevel, type Problem } from '../../core/debug/diagnose';
 import type { PlayEvent, PlayReport } from '../../core/debug/playReport';
 import { eventRegistry } from '../../core/logic/vocabulary';
 import type { Id } from '../../core/types';
-import { startJob } from '../ai/jobs';
+import { contextKey } from '../../core/ai/context';
+import { startJob, useJobs } from '../ai/jobs';
 import { getActiveScene, useEditor } from '../store';
 
 /** Problems in the level as set up (errors and warnings; notes are informational). */
@@ -56,11 +57,7 @@ export function DebugPanel() {
                     Show
                   </button>
                 )}
-                {p.severity !== 'note' && (
-                  <button className="text-btn ai" data-testid="fix-with-ai" onClick={() => askLevel(`Fix this problem: ${p.text}`)}>
-                    ✦ Fix
-                  </button>
-                )}
+                {p.severity !== 'note' && <FixButton problem={p} sceneId={scene.id} />}
               </span>
             </li>
           ))}
@@ -141,5 +138,59 @@ function PlayLog({ report, onShow }: { report: PlayReport; onShow: (ids: Id[]) =
         <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Show every event (touches, signals, timers…){!all && hidden > 0 ? ` · ${hidden} more` : ''}
       </label>
     </>
+  );
+}
+
+/** The request each problem's fix was sent with (so its row can follow that fix). */
+const fixRequests = new Map<string, string>();
+
+/**
+ * Fix with AI, and what became of it: working, a fix to review, or still
+ * there after an applied fix (then "Try again" tells the AI its fix missed).
+ * A fixed problem simply disappears from the list.
+ */
+function FixButton({ problem, sceneId }: { problem: Problem; sceneId: string }) {
+  const job = useJobs((s) => s.jobs[contextKey({ kind: 'level', sceneId, point: null })]);
+  const sent = fixRequests.get(problem.key);
+  const mine = job && sent && job.request === sent ? job : null;
+  const fix = (again: boolean) => {
+    const request = again
+      ? `Fix this problem. Your previous fix did not solve it: the level checker still finds it after the change was applied. Look again at the cause. Problem: ${problem.text}`
+      : `Fix this problem: ${problem.text}`;
+    fixRequests.set(problem.key, request);
+    askLevel(request);
+  };
+  if (mine?.phase === 'working') {
+    return (
+      <button className="text-btn ai" data-testid="fix-with-ai" disabled>
+        Fixing…
+      </button>
+    );
+  }
+  const status = mine?.outcome?.status;
+  if (status === 'proposal' || status === 'choice') {
+    return (
+      <button className="text-btn ai" data-testid="fix-review" onClick={() => useEditor.getState().setGlobalPrompt(true, 'level')}>
+        ✦ Review the fix
+      </button>
+    );
+  }
+  if (status === 'applied' || sent) {
+    // Still listed after a fix was applied (or tried): it didn't solve it.
+    return (
+      <>
+        <span className="fix-note" data-testid="fix-missed">
+          {status === 'applied' ? 'Still there after the AI\'s fix.' : status === 'error' || status === 'message' ? 'The AI couldn\'t fix it.' : 'Not fixed yet.'}
+        </span>
+        <button className="text-btn ai" data-testid="fix-with-ai" onClick={() => fix(true)}>
+          ✦ Try again
+        </button>
+      </>
+    );
+  }
+  return (
+    <button className="text-btn ai" data-testid="fix-with-ai" onClick={() => fix(false)}>
+      ✦ Fix
+    </button>
   );
 }

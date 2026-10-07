@@ -11,6 +11,7 @@ import { diagnoseLevel, type Problem } from '../debug/diagnose';
 import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
 import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camera';
 import { describeRelationship, describeRule } from '../logic/describe';
+import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
 import { characterReach } from '../model/reach';
@@ -160,6 +161,8 @@ export interface AIPayload {
     tags: string[];
     components: string[];
     placedCount: number;
+    /** Its size in pixels, and how many 32 px level cells it takes (a 64×16 row of spikes: 2×1). */
+    size: { w: number; h: number; cells: { w: number; h: number } };
     /** Behavior scripts every copy runs (in full when it's a target's object; else id, name and description). */
     scripts: { id: Id; name: string; description: string }[];
     /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
@@ -328,6 +331,10 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       tags: d.tags,
       components: Object.keys(d.components),
       placedCount: placed(d.id),
+      size: (() => {
+        const s = getEntitySize(resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry));
+        return { w: s.x, h: s.y, cells: { w: Math.max(1, Math.round(s.x / LEVEL_CELL)), h: Math.max(1, Math.round(s.y / LEVEL_CELL)) } };
+      })(),
       scripts: (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: x.description })),
       sprites: getDefinitionSprites(d).map((r) => {
         const a = project.assets.find((x) => x.id === r.assetId);

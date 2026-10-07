@@ -288,6 +288,44 @@ function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
   return { x: near(p.x, cell.x), y: near(p.y, cell.y) };
 }
 
+/**
+ * Things the AI put partly into the ground (a door half a tile into the
+ * floor, a coin inside a platform's top) are lifted onto the surface. Only new
+ * things, only non-tiles, and only when no more than half of it is sunk in:
+ * anything placed clearly in the air or clearly inside a wall stays.
+ */
+function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRegistry): void {
+  if (!created.length) return;
+  const fresh = new Set(created);
+  for (const scene of project.scenes) {
+    const mine = scene.entities.filter((e) => fresh.has(e.id));
+    if (!mine.length) continue;
+    const box = (e: (typeof scene.entities)[number]) => {
+      const r = resolveEntity(project, e, registry);
+      const col = r.components.Collider;
+      const s = col && typeof col.size === 'object' && col.size ? (col.size as Vec2) : getEntitySize(r);
+      const w = s.x * Math.abs(e.transform.scale.x);
+      const h = (col?.shape === 'circle' ? s.x : s.y) * Math.abs(e.transform.scale.y);
+      return { r, left: e.transform.position.x - w / 2, right: e.transform.position.x + w / 2, top: e.transform.position.y - h / 2, bottom: e.transform.position.y + h / 2, h };
+    };
+    const solids = scene.entities
+      .filter((e) => !fresh.has(e.id) || project.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile')
+      .map(box)
+      .filter((b) => b.r.components.Collider && b.r.components.Collider.isTrigger !== true && b.r.components.PhysicsBody?.bodyType !== 'dynamic');
+    for (const e of mine) {
+      if (project.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile') continue;
+      const b = box(e);
+      let lift = 0;
+      for (const s of solids) {
+        if (s.r.id === e.id || Math.min(b.right, s.right) - Math.max(b.left, s.left) <= 2) continue;
+        const sunk = b.bottom - s.top;
+        if (sunk > 1 && b.top < s.top && sunk <= b.h / 2 + 1) lift = Math.max(lift, sunk);
+      }
+      if (lift) e.transform.position = { ...e.transform.position, y: e.transform.position.y - lift };
+    }
+  }
+}
+
 /** A placeholder color that says what kind of thing it is (hazards and enemies reddish, items gold, ground grey…). */
 function placeholderColor(category: string, tags: string[]): string {
   const has = (...t: string[]) => tags.some((x) => t.includes(x.toLowerCase()));
@@ -448,11 +486,17 @@ export function applyOperations(
         const cells = op.rects.reduce((n, r) => n + r.width * r.height, 0);
         if (cells > MAX_DRAW_CELLS) throw new m.ModelError(`draw_tiles: ${cells} cells is too many at once (max ${MAX_DRAW_CELLS})`);
         const taken = new Set(scene.entities.filter((e) => e.definitionId === defId).map((e) => `${Math.round(e.transform.position.x)},${Math.round(e.transform.position.y)}`));
+        // An object bigger than a cell (a 64×16 row of spikes, a 32×64 door) takes several cells: copies go side by side
+        // every `step` cells, not one per cell on top of each other. Each sits on the bottom of its block of cells.
+        const step = { x: Math.max(1, Math.round(size.x / LEVEL_CELL)), y: Math.max(1, Math.round(size.y / LEVEL_CELL)) };
         for (const r of op.rects) {
-          for (let col = r.col; col < r.col + r.width; col++) {
-            for (let row = r.row; row < r.row + r.height; row++) {
-              // Centered in the cell horizontally, resting on the cell's bottom (so a short spike sits on the ground below).
-              const pos = { x: col * LEVEL_CELL + LEVEL_CELL / 2, y: (row + 1) * LEVEL_CELL - size.y / 2 };
+          const across = Math.max(1, Math.floor(r.width / step.x));
+          const down = Math.max(1, Math.floor(r.height / step.y));
+          for (let i = 0; i < across; i++) {
+            for (let j = 0; j < down; j++) {
+              const col = r.col + i * step.x;
+              const bottomRow = r.row + r.height - 1 - j * step.y;
+              const pos = { x: col * LEVEL_CELL + (step.x * LEVEL_CELL) / 2, y: (bottomRow + 1) * LEVEL_CELL - size.y / 2 };
               const key = `${Math.round(pos.x)},${Math.round(pos.y)}`;
               if (taken.has(key)) continue;
               taken.add(key);
@@ -532,6 +576,7 @@ export function applyOperations(
       onInvalid(i, e.message);
     }
   });
+  settleOnSurfaces(project, result.createdEntityIds, registry);
   return result;
 }
 

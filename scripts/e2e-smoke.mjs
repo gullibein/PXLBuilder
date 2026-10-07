@@ -1577,6 +1577,7 @@ try {
     await panel.getByTestId('fix-with-ai').first().click();
     await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'proposal', '✦ Fix asks the AI and shows its fix to confirm');
     await check(aiRequests.at(-1).request.startsWith('Fix this problem: Door only opens'), 'the AI is told exactly which problem to fix');
+    await check(async () => (await panel.getByTestId('fix-review').count()) === 1, 'while the fix waits to be applied, the problem says so (Review the fix)');
     await lp.getByTestId('proposal-apply').click();
     await check(async () => (await dp.getByTestId('problem-count').count()) === 0, 'after applying the fix the problem is gone');
     await check(async () => (await panel.innerText()).includes('the game changed since'), 'the last play is marked as older than the game now');

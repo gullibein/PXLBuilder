@@ -266,6 +266,76 @@ export function startConflicts(project: Project, sceneId: Id, registry: Componen
   return { player: p.e.name, solid, hurts };
 }
 
+/**
+ * Layout mistakes a person wouldn't make: spikes, doors or switches floating
+ * in mid-air, an item that can only be picked up by touching something that
+ * hurts, and a stand-in (a Coin renamed "Key" when there is a Key object).
+ */
+export function layoutProblems(project: Project, sceneId: Id, registry: ComponentRegistry): { key: string; text: string; entityIds: Id[] }[] {
+  const scene = project.scenes.find((s) => s.id === sceneId);
+  if (!scene) return [];
+  const placed = scene.entities.map((e) => ({ e, r: resolveEntity(project, e, registry), b: boxOf(resolveEntity(project, e, registry)) }));
+  const player = placed.find(({ r }) => r.components.CharacterController);
+  const out: { key: string; text: string; entityIds: Id[] }[] = [];
+  const names = (list: { e: { name: string } }[]) => {
+    const counts = new Map<string, number>();
+    for (const { e } of list) counts.set(e.name, (counts.get(e.name) ?? 0) + 1);
+    return [...counts].map(([n, c]) => (c > 1 ? `${n} (${c})` : n)).join(', ');
+  };
+  const solid = (r: ResolvedEntity) => !!r.components.Collider && r.components.Collider.isTrigger !== true && r.components.PhysicsBody?.bodyType !== 'dynamic';
+  const surfaces = placed.filter(({ r }) => solid(r) && !r.components.Damage);
+  const overlapX = (a: Box, b: Box) => Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const overlapY = (a: Box, b: Box) => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  const near = (a: number, b: number) => Math.abs(a - b) <= 3;
+  const attached = (x: { e: { id: Id }; b: Box }) =>
+    surfaces.some(({ e, b }) => e.id !== x.e.id && ((overlapX(x.b, b) > 1 && (near(x.b.bottom, b.top) || near(x.b.top, b.bottom) || overlapY(x.b, b) > 1)) || (overlapY(x.b, b) > 1 && (near(x.b.right, b.left) || near(x.b.left, b.right)))));
+  const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.MovingPlatform || r.components.CharacterController || r.scripts.length > 0;
+
+  // Floating spikes, doors and switches.
+  const fixed = placed.filter(({ r }) => !moves(r) && (r.components.Damage || r.components.Openable || r.components.Switch));
+  const floating = fixed.filter((x) => !attached(x));
+  if (floating.length) {
+    out.push({
+      key: `float:${floating.map((x) => x.e.id).sort().join(',')}`,
+      text: `${names(floating)} ${floating.length === 1 ? 'floats' : 'float'} in mid-air with nothing under, over or beside ${floating.length === 1 ? 'it' : 'them'}: put spikes on the ground (or under a ceiling, or on a wall), and doors and switches on the ground.`,
+      entityIds: floating.map((x) => x.e.id),
+    });
+  }
+
+  // Items that can only be had by getting hurt.
+  if (player) {
+    const accepts = (player.r.components.DamageReceiver?.damageSources as string[] | undefined) ?? [];
+    const me = { id: player.e.id, definitionId: player.e.definitionId, tags: player.r.tags };
+    const hurts = placed.filter(
+      ({ e, r }) =>
+        (!!r.components.Damage && !!player.r.components.Health && r.tags.some((t) => accepts.includes(t))) ||
+        scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, { id: e.id, definitionId: e.definitionId, tags: r.tags }) && refMatches(rel.target, me)),
+    );
+    const trapped = placed.filter((x) => x.r.components.Collectible && hurts.some((h) => overlapX(x.b, h.b) > 0 && overlapY(x.b, h.b) > 0));
+    if (trapped.length) {
+      out.push({
+        key: `trapped:${trapped.map((x) => x.e.id).sort().join(',')}`,
+        text: `${names(trapped)} ${trapped.length === 1 ? 'is' : 'are'} inside something that hurts the player, so picking ${trapped.length === 1 ? 'it' : 'them'} up costs health: move ${trapped.length === 1 ? 'it' : 'them'} clear of hazards.`,
+        entityIds: trapped.map((x) => x.e.id),
+      });
+    }
+  }
+
+  // Stand-ins: a copy named after another library object ("Key" that is really a Coin).
+  for (const { e } of placed) {
+    const own = project.definitions.find((d) => d.id === e.definitionId);
+    const other = project.definitions.find((d) => d.id !== e.definitionId && d.name.toLowerCase() === e.name.trim().toLowerCase());
+    if (own && other && own.name.toLowerCase() !== e.name.trim().toLowerCase()) {
+      out.push({
+        key: `standin:${e.id}`,
+        text: `The "${e.name}" here is really a ${own.name} (renamed), not the ${other.name} object: it behaves and is collected as a ${own.name}. Use the ${other.name} object instead.`,
+        entityIds: [e.id],
+      });
+    }
+  }
+  return out;
+}
+
 /** The problems in words (for the Debug tab and for sending back to the AI). Empty when the level can be got through. */
 export function reachabilityProblems(project: Project, sceneId: Id, registry: ComponentRegistry): { key: string; text: string; entityIds: Id[] }[] {
   const start = startConflicts(project, sceneId, registry);
@@ -273,11 +343,11 @@ export function reachabilityProblems(project: Project, sceneId: Id, registry: Co
   if (start?.solid.length) startProblems.push({ key: `start-in-solid:${start.solid.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts inside ${[...new Set(start.solid.map((s) => s.name))].join(', ')}: move the start onto free ground (or move what's in the way).`, entityIds: start.solid.map((s) => s.id) });
   if (start?.hurts.length) startProblems.push({ key: `start-on-hazard:${start.hurts.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts touching ${[...new Set(start.hurts.map((s) => s.name))].join(', ')}, which hurts it at once: start it on safe ground, away from hazards and enemies.`, entityIds: start.hurts.map((s) => s.id) });
   const r = levelReachability(project, sceneId, registry);
-  if (r.status === 'no-ground') return [...startProblems, { key: 'reach-no-ground', text: `${r.player} starts above nothing to stand on: it falls out of the level at once.`, entityIds: [] }];
-  if (r.status !== 'ok') return startProblems;
+  if (r.status === 'no-ground') return [...startProblems, ...layoutProblems(project, sceneId, registry), { key: 'reach-no-ground', text: `${r.player} starts above nothing to stand on: it falls out of the level at once.`, entityIds: [] }];
+  if (r.status !== 'ok') return [...startProblems, ...layoutProblems(project, sceneId, registry)];
   const tiles = (px: number) => Math.round((px / 32) * 10) / 10;
   const limits = `the player jumps about ${Math.floor((r.reach.height / 32) * 10) / 10} tiles high and ${tiles(r.reach.distance)} tiles far`;
-  const out: { key: string; text: string; entityIds: Id[] }[] = [...startProblems];
+  const out: { key: string; text: string; entityIds: Id[] }[] = [...startProblems, ...layoutProblems(project, sceneId, registry)];
   if (r.unreachable.things.length) {
     const names = [...new Set(r.unreachable.things.map((t) => t.name))];
     out.push({

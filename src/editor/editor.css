@@ -256,6 +256,7 @@ button.history-row:hover { background: var(--surface-2); }
 .problem-actions { grid-column: 2; display: flex; gap: 12px; }
 .problem-actions .text-btn { padding: 0; font-size: 11.5px; white-space: nowrap; }
 .tray .problem-actions .text-btn.ai { color: var(--accent-hi); }
+.fix-note { color: var(--warn-dark); font-size: 11.5px; }
 .ask-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
 .ask-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; }
 .ask-chip:hover { border-color: var(--accent-hi); }

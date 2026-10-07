@@ -44,7 +44,7 @@ describe('the problem checker', () => {
       const door = b.place('Door', { x: 96, y: 0 });
       b.place('Key');
       logic.addRelationship(b.d, b.sceneId, { type: 'requires', source: { kind: 'entity', id: door }, target: { kind: 'object', id: b.def('Key') }, params: {}, conditions: [] });
-      b.place('Enemy'); // the player's Damage Receiver accepts "enemy"
+      b.place('Enemy', { x: -64, y: 17 }); // the player's Damage Receiver accepts "enemy"
     });
     expect(problems).toEqual([]);
   });
