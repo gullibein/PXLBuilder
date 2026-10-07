@@ -30,6 +30,22 @@ function headers(apiKey: string): Record<string, string> {
   return { 'content-type': 'application/json', 'x-goog-api-key': apiKey };
 }
 
+/**
+ * The browser stopped a request to Google before any answer came back (Google
+ * itself accepts requests from any site, so it isn't the page's address).
+ * Says what the browser reported and the usual causes.
+ */
+function unreachable(e: unknown): string {
+  const detail = e instanceof Error && e.message ? ` (the browser said: "${e.message}")` : '';
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline) return `Could not reach Gemini: this browser is offline${detail}.`;
+  return (
+    `Could not reach Gemini${detail}. The browser stopped the request before Google answered. ` +
+    'Most often an ad or privacy blocker (uBlock, AdGuard, Privacy Badger, Brave Shields…) blocks generativelanguage.googleapis.com: allow it for this site, or try a private window without extensions. ' +
+    'A company or school network can also block it. The browser console (F12) names what blocked it.'
+  );
+}
+
 /** Answers that mean "busy or out of quota right now", worth trying another model for. */
 const BUSY_STATUSES = new Set([429, 500, 503, 504]);
 /** After a busy answer, go straight to the backup for this long (instead of waiting to be turned away each time). */
@@ -84,7 +100,7 @@ export class GeminiProvider implements AIProvider {
       });
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
-      throw new AIUnavailableError("Could not reach Gemini from this page. On claude.ai published pages can't contact other services: use Claude there, or run PXLBuilder on your computer or from GitHub Pages.");
+      throw new AIUnavailableError(unreachable(e));
     }
     const reply = (await res.json().catch(() => null)) as GeminiReply | null;
     return { status: res.status, reply };
@@ -143,8 +159,8 @@ export async function listGeminiModels(apiKey: string): Promise<{ ok: true; mode
   let res: Response;
   try {
     res = await fetch(`${API}/models?pageSize=200`, { headers: headers(apiKey) });
-  } catch {
-    return { ok: false, message: "Could not reach Gemini from this page (network, or the page isn't allowed to contact other services)." };
+  } catch (e) {
+    return { ok: false, message: unreachable(e) };
   }
   const reply = (await res.json().catch(() => null)) as { models?: { name: string; supportedGenerationMethods?: string[] }[] } & GeminiReply | null;
   if (!res.ok || !reply) return { ok: false, message: res.status === 400 || res.status === 401 || res.status === 403 ? 'The key was not accepted.' : `Gemini answered ${res.status}.` };
