@@ -58,6 +58,8 @@ export type Stmt =
   | { do: 'signal'; name: string }
   | { do: 'message'; text: string; seconds: number }
   | { do: 'alpha'; value: string; on: string | null }
+  | { do: 'rotate'; by: string | null; to: string | null; seconds: string; on: string | null }
+  | { do: 'spin'; speed: string; on: string | null }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
   | { do: 'complete_level' }
@@ -118,6 +120,7 @@ export const MEMBERS: Record<string, string> = {
   height: 'height (px)',
   grounded: 'standing on something',
   facing: '1 facing right, -1 facing left',
+  angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
   max_health: 'maximum health',
   alive: 'still in play',
@@ -203,6 +206,8 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
   message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
+  rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
+  spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
   restart_level: { example: '{"do":"restart_level"}', doc: 'start the level again' },
   complete_level: { example: '{"do":"complete_level"}', doc: 'the level is won: play goes on to the next level' },
@@ -262,6 +267,8 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
     z.object({ do: z.literal('message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(2) }),
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
+    z.object({ do: z.literal('rotate'), by: nexpr, to: nexpr, seconds: expr.default('0'), on: nexpr }),
+    z.object({ do: z.literal('spin'), speed: expr, on: nexpr }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('complete_level') }),
@@ -358,6 +365,10 @@ export function exprSlots(s: Stmt): string[] {
       return messageParts(s.text);
     case 'alpha':
       return [s.value, ...(s.on ? [s.on] : [])];
+    case 'rotate':
+      return [...(s.by ? [s.by] : []), ...(s.to ? [s.to] : []), s.seconds, ...(s.on ? [s.on] : [])];
+    case 'spin':
+      return [s.speed, ...(s.on ? [s.on] : [])];
     case 'camera_shake':
       return [s.strength, s.seconds];
     case 'camera_flash':

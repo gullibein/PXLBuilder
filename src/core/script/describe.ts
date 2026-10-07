@@ -96,6 +96,10 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`show "${s.text}" for ${s.seconds} s`);
     case 'alpha':
       return one(`${who(s.on)}see-through ${x(s.value)}`);
+    case 'rotate':
+      return one(`${who(s.on)}turn ${s.to ? `to ${x(s.to)}°` : `by ${x(s.by ?? '0')}°`}${s.seconds !== '0' ? ` over ${x(s.seconds)} s` : ''}`);
+    case 'spin':
+      return one(`${who(s.on)}spin at ${x(s.speed)}°/s`);
     case 'respawn':
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
     case 'restart_level':

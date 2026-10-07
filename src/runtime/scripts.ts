@@ -373,6 +373,27 @@ export class ScriptSystem {
         if (t) t.alpha = Math.min(1, Math.max(0, n(s.value)));
         break;
       }
+      case 'rotate': {
+        const t = ent(s.on);
+        if (!t) break;
+        const to = s.to !== null ? n(s.to) : t.angle + (s.by !== null ? n(s.by) : 0);
+        const seconds = Math.max(0, n(s.seconds));
+        t.spin = 0;
+        if (!Number.isFinite(to)) break;
+        if (seconds === 0 || to === t.angle) {
+          t.angle = to;
+          t.turn = null;
+        } else t.turn = { to, speed: Math.abs(to - t.angle) / seconds };
+        break;
+      }
+      case 'spin': {
+        const t = ent(s.on);
+        if (!t) break;
+        const speed = n(s.speed);
+        t.spin = Number.isFinite(speed) ? speed : 0;
+        t.turn = null;
+        break;
+      }
       case 'respawn': {
         const t = ent(s.target);
         if (t) this.rt.respawn(t, 'script');
@@ -696,6 +717,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.grounded;
     case 'facing':
       return e.facing;
+    case 'angle':
+      return e.angle;
     case 'health':
       return e.health?.current ?? 0;
     case 'max_health':

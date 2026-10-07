@@ -89,6 +89,9 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('hearts bigger')) {
+    return { kind: 'apply', message: 'The hearts and the rest of the play display are twice as big.', changes: ['Play display: size 2'], operations: [{ op: 'set_hud', scale: 2 }] };
+  }
   if (req.includes('coin up high')) {
     // First a coin the player can't reach (no platform or ladder up there); asked again with the problem, a reachable one.
     const retry = req.includes('could not be applied');
@@ -618,7 +621,14 @@ try {
   await check(async () => (await prompts.count()) === 0, 'Escape clears the context');
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
   await check(async () => (await prompts.getByTestId('prompt-chat').count()) === 0, 'closing the card ended the chat: it opens empty');
+  await ask('Make the hearts bigger.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.game.hudScale === 1, 'asking for bigger hearts is applied (the AI was told the display size, 1)');
   await page.keyboard.press('Escape');
+  await page.getByTestId('play').click();
+  await check(async () => (await page.getByTestId('hud').evaluate((el) => getComputedStyle(el).transform)) === 'matrix(2, 0, 0, 2, 0, 0)', 'in play, the hearts display is twice as big');
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
 
   step = 'golden test 7: create with AI';
   await page.getByTestId('dock-create').click();

@@ -76,7 +76,7 @@ ${actions}
 
 /** Engine features that the product will have but this build does not. */
 export const NOT_YET_AVAILABLE = [
-  'Physics beyond moving boxes: slopes, rotation, ropes/swinging, pushing or carrying objects (a script can fake water, bouncy, slippery or windy areas with speed_factor, gravity and velocity on "other"; say so when you do).',
+  'Physics beyond moving boxes: slopes, rotated collision (a turned thing still collides as an upright box), ropes/swinging, pushing or carrying objects (a script can fake water, bouncy, slippery or windy areas with speed_factor, gravity and velocity on "other"; say so when you do).',
   'Path finding around obstacles (scripts can steer, check walls with solid_at and jump, but cannot plan a route through a maze).',
   'Saving progress between plays, a game-over or title screen (a script or rule can show a message and restart the level), a score shown permanently on screen (messages are temporary). (Winning a level and moving on to the next one IS possible: a Goal, or the complete_level action.)',
   'Relationship types marked "NOT simulated" (targets, protects, contains) only record the design; nothing happens in play.',
@@ -127,6 +127,8 @@ Writing
 Operations
 - valueJson / propsJson are JSON text: numbers "3", booleans "true", strings "\\"#ff8800\\"", vectors "{\\"x\\":0,\\"y\\":686}".
 - set_transform / set_world / set_background: use null for anything that should stay the same.
+- Turning things: a placed copy can be turned with set_transform rotation (degrees clockwise; the editor and play draw it turned). Turning while playing (a flip during a jump, a spinning saw, a wobble) is a script: rotate (by or to an angle, at once or over seconds) and spin (keep turning). Turning only changes how it is drawn: collisions stay upright boxes, so say so when that matters (a long turned platform still blocks as an upright box).
+- The play display (hearts, items, messages) has one size for the whole game: set_hud scale (1 normal, 0.5–3; current value in game.hudScale). "Make the hearts bigger" -> set_hud scale 1.5 or 2.
 - Sprites: an object is drawn with Sprite.assetId (an image or sprite sheet), stretched to Sprite.width x height. For sprite sheets Sprite.frame is the cell number (1 = top-left, counting across rows). library[].sprites lists the sprites already collected for each object; to switch, set Sprite.assetId and Sprite.frame. You can draw new simple pixel-art sprites with draw_sprite (below), not photos or detailed artwork.
 - Collider.matchSprite (default true) keeps the collider the same size as the sprite: changing either size changes both. Set it to false only if the user wants them sized separately.
 - Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level (0 fixed, 1 with the level). You cannot draw background pictures; the user uploads them.

@@ -418,12 +418,12 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .logic-add select { min-width: 0; font-size: 12px; }
 
 /* ---------------------------------------------------------------- play HUD */
-.hud { position: absolute; left: 16px; top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; z-index: 5; }
+.hud { position: absolute; left: 16px; top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; z-index: 5; transform: scale(var(--hud-scale, 1)); transform-origin: top left; max-width: calc((100% - 32px) / var(--hud-scale, 1)); }
 .hud-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.72); color: #fff; font: 600 13px var(--font-ui); }
 .hud-hearts { color: #ff6b81; letter-spacing: 1px; font-size: 15px; }
 .hud-hearts .empty { color: rgba(255, 255, 255, 0.25); }
-.hud-banner { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); padding: 16px 30px; border-radius: 18px; background: rgba(15, 12, 30, 0.86); color: #ffe08f; font: 800 30px var(--font-ui); letter-spacing: 0.02em; text-align: center; pointer-events: none; z-index: 6; animation: pop-in 180ms ease-out; max-width: calc(100% - 32px); }
-.hud-message { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 12px 22px; border-radius: 14px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 700 20px var(--font-ui); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); }
+.hud-banner { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); padding: 16px 30px; border-radius: 18px; background: rgba(15, 12, 30, 0.86); color: #ffe08f; font: 800 calc(30px * var(--hud-scale, 1)) var(--font-ui); letter-spacing: 0.02em; text-align: center; pointer-events: none; z-index: 6; animation: pop-in 180ms ease-out; max-width: calc(100% - 32px); }
+.hud-message { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 12px 22px; border-radius: 14px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 700 calc(20px * var(--hud-scale, 1)) var(--font-ui); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); }
 .hud-keys { position: absolute; right: 16px; bottom: 16px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.6); color: rgba(255, 255, 255, 0.8); font: 12px var(--font-ui); pointer-events: none; z-index: 5; }
 
 /* ---------------------------------------------------------------- editor layout (editor settings) */

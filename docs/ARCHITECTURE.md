@@ -512,6 +512,16 @@ saved and shown like any other edit.
   branching, and which way the level is won. Enemies and anything placed
   in the air drop onto the surface below.
 
+### Turning and the play display size
+- Scripts turn things with `rotate` (by or to an angle, at once or over
+  seconds) and `spin` (degrees per second); `angle` reads it back. The
+  runtime keeps it per entity (`angle`, `turn`, `spin`), adds it to the
+  placed rotation when drawing, and resets it on respawn. Only drawing is
+  turned: colliders stay axis-aligned boxes. Placed copies are turned with
+  `set_transform` rotation.
+- `settings.hudScale` (optional, 0.5–3, default 1) sizes the play display;
+  the AI sets it with `set_hud` and sees it as `game.hudScale`.
+
 ### Format v9
 The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes
 drawing; older games get it if its size was never changed, and each placed

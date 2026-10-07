@@ -777,6 +777,27 @@ describe('behavior scripts', () => {
     expect(rt.renderList().find((r) => r.name === 'Stone' && r.transform.position.x === 60)?.alpha).toBe(0.5);
   });
 
+  it('rotate and spin turn how a thing is drawn (over time, or at once); respawn puts it upright', () => {
+    const { rt, input, p } = level((b) => {
+      script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'key', key: 'down', edge: 'pressed' }, do: [{ do: 'rotate', by: '180', to: null, seconds: '0.5' }] }] });
+      const s = b.place('Stone', { x: 60, y: 16 });
+      script(b, s, { handlers: [{ when: { on: 'start' }, do: [{ do: 'spin', speed: '90' }] }] });
+    });
+    const drawnAngle = (name: string) => rt.renderList().find((r) => r.name === name)!.transform.rotation;
+    run(rt, input, 1);
+    expect(Math.abs(drawnAngle('Stone') - 90)).toBeLessThan(2); // 90°/s for a second
+    input.press('down');
+    run(rt, input, 0.25);
+    input.release('down');
+    expect(drawnAngle('Player')).toBeGreaterThan(60);
+    expect(drawnAngle('Player')).toBeLessThan(120); // half way
+    run(rt, input, 0.5);
+    expect(drawnAngle('Player')).toBeCloseTo(180, 5);
+    rt.respawn(p);
+    expect(drawnAngle('Player')).toBe(0);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
   it('"on": a trampoline script throws the player up; "speed_factor" on other slows it', () => {
     const { rt, input, p } = level((b) => {
       const s = b.place('Stone', { x: 60, y: 16 });

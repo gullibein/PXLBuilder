@@ -82,6 +82,12 @@ export interface RuntimeEntity {
   scripts: ScriptInstance[];
   /** See-through amount set by a script (null: normal). */
   alpha: number | null;
+  /** Turn set by scripts, in degrees clockwise on top of its placed rotation (only drawn: collisions stay upright boxes). */
+  angle: number;
+  /** A turn in progress (rotate over seconds): the angle to reach and how fast (degrees/s). */
+  turn: { to: number; speed: number } | null;
+  /** Keeps turning at this many degrees/s (spin; 0 = not spinning). */
+  spin: number;
   /** Play time it was last hurt / last fired a shot (for the hurt and shoot looks). */
   hurtAt: number;
   shotAt: number;
@@ -261,6 +267,9 @@ function buildEntity(project: Project, instance: EntityInstance, registry: Compo
     chasing: false,
     scripts: instantiateScripts(r.scripts),
     alpha: null,
+    angle: 0,
+    turn: null,
+    spin: 0,
     beh: readBehaviors(c, r.transform.position),
     hanging: null,
     grabCooldown: 0,
@@ -373,6 +382,18 @@ export class Runtime {
 
   step(dt: number, input: InputState): void {
     this.time += dt;
+    // Turning (scripts' rotate over time, and spin).
+    for (const e of this.entities) {
+      if (e.spin) e.angle = (e.angle + e.spin * dt) % 360;
+      else if (e.turn) {
+        const left = e.turn.to - e.angle;
+        const stepDeg = e.turn.speed * dt;
+        if (Math.abs(left) <= stepDeg) {
+          e.angle = e.turn.to;
+          e.turn = null;
+        } else e.angle += Math.sign(left) * stepDeg;
+      }
+    }
     // Things a switch is moving glide toward their target (solids move with them).
     for (const e of this.entities) {
       const t = e.moveTarget;
@@ -672,7 +693,10 @@ export class Runtime {
     e.vy = 0;
     e.climbing = false;
     e.touching = new Set();
-    // Whatever slowed it or changed its gravity (water, a power-up) does not follow it back.
+    // Whatever slowed it or changed its gravity (water, a power-up) does not follow it back; nor does a turn.
+    e.angle = 0;
+    e.turn = null;
+    e.spin = 0;
     e.speedFactor = 1;
     e.gravityScale = e.baseGravity;
     if (e.health) e.health.current = e.health.max;
@@ -701,7 +725,11 @@ export class Runtime {
       const t = e.base.transform;
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
-      let r: RenderEntity = moved || mirrored ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } } : e.base;
+      const turned = e.angle !== 0;
+      let r: RenderEntity =
+        moved || mirrored || turned
+          ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, rotation: t.rotation + e.angle, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } }
+          : e.base;
       const look = this.lookOf(e);
       if (look.assetId && r.components.Sprite) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, assetId: look.assetId, frame: 1 } } };
       const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1);

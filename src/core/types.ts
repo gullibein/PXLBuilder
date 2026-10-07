@@ -203,6 +203,8 @@ export interface AssetRecord {
 export interface ProjectSettings {
   /** Grid size used by the editor for snapping. */
   gridSize: number;
+  /** Size of the on-screen display in play (hearts, items, messages): 1 normal, 0.5–3. */
+  hudScale?: number;
 }
 
 export interface Project {

@@ -169,8 +169,11 @@ export function PlayView() {
     };
   }, []);
 
+  // The size of the play display (a game setting the AI can change: "make the hearts bigger").
+  const hudScale = useEditor((s) => s.project.settings.hudScale ?? 1);
+
   return (
-    <div className="play-view">
+    <div className="play-view" style={{ '--hud-scale': hudScale } as React.CSSProperties}>
       <canvas ref={canvasRef} tabIndex={0} data-testid="play-canvas" />
       <div className="hud" data-testid="hud">
         {hud.health && (
