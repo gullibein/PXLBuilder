@@ -104,18 +104,25 @@ const tileKey = (definitionId: string | null, x: number, y: number) => `${defini
  * Tile objects of the same kind join into one surface: a lighter top edge only
  * where nothing sits above, a darker base only where nothing sits below.
  */
-export function drawEntities(ctx: CanvasRenderingContext2D, entities: RenderEntity[], images: ImageLookup = noImages): void {
+export function drawEntities(
+  ctx: CanvasRenderingContext2D,
+  entities: RenderEntity[],
+  images: ImageLookup = noImages,
+  /** In the editor, things set to invisible are drawn faintly (so they can be found and edited); in play they aren't drawn. */
+  invisibleAlpha = 0,
+): void {
   const tiles = new Set<string>();
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
 
   for (const entity of entities) {
     const sprite = entity.components.Sprite;
-    if (!sprite || sprite.visible === false) continue;
+    const invisible = sprite?.visible === false;
+    if (!sprite || (invisible && invisibleAlpha <= 0)) continue;
     const size = getEntitySize(entity);
     const { position, rotation, scale } = entity.transform;
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
     ctx.save();
-    if (entity.alpha !== undefined) ctx.globalAlpha = entity.alpha;
+    if (entity.alpha !== undefined || invisible) ctx.globalAlpha = (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1);
     ctx.translate(position.x, position.y);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(scale.x, scale.y);

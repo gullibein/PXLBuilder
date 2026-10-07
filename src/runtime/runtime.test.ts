@@ -168,6 +168,27 @@ describe('runtime', () => {
     return { rt, input, p };
   }
 
+  it('an invisible ladder (sprite not visible) is still there and can be climbed', () => {
+    const { project, sceneId } = level((p, sid) => {
+      const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+      ladder.components.Sprite!.visible = false;
+      for (let y = 16; y >= -112; y -= 32) m.addEntity(p, sid, instantiateDefinition(ladder, { x: 80, y }));
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    const p = rt.find('Player')!;
+    run(rt, input, 1);
+    input.press('right');
+    run(rt, input, 0.4, () => {
+      if (p.x > 76) input.release('right');
+    });
+    input.release('right');
+    input.press('up');
+    run(rt, input, 0.5);
+    expect(p.climbing).toBe(true);
+    expect(p.y).toBeLessThan(0);
+  });
+
   it('a hidden ladder can not be climbed until it appears', () => {
     const { project, sceneId } = level((p, sid) => {
       const ladder = p.definitions.find((d) => d.name === 'Ladder')!;

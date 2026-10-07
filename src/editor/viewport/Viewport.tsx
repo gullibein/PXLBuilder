@@ -130,7 +130,7 @@ export function Viewport() {
       applyCamera(ctx, state.camera, view, dpr);
       if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize, wire);
       if (wire) drawWireframe(ctx, entities, state.camera.zoom);
-      else drawEntities(ctx, entities, images);
+      else drawEntities(ctx, entities, images, 0.3);
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
