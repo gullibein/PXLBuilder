@@ -11,6 +11,7 @@ import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
+import { buildPath } from './buildPath';
 import { checkPixelArt, fitPixelArt, normalizePixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
@@ -117,6 +118,27 @@ export const operationSchema = z.union([
     rects: z
       .array(z.object({ col: z.number().int(), row: z.number().int(), width: z.number().int().min(1), height: z.number().int().min(1) }))
       .describe('Rectangles of 32px level cells to fill, one copy per cell (a row of ground: height 1)'),
+  }),
+  z.object({
+    op: z.literal('build_path'),
+    sceneId: z.string(),
+    start: z
+      .object({ col: z.number().int(), row: z.number().int() })
+      .nullable()
+      .describe('The cell the player stands in where the route begins: a "_" cell of the level map. null = where the player starts'),
+    floor: z.string().describe('The solid tile the route is built of (an object id, name or create_definition ref; e.g. Platform or Stone)'),
+    ladder: z.string().nullable().describe('The ladder object for climb steps (id, name or ref); null = the library Ladder'),
+    steps: z
+      .array(
+        z.discriminatedUnion('do', [
+          z.object({ do: z.literal('run'), cells: z.number().int().describe('Floor this many cells long, going right') }),
+          z.object({ do: z.literal('jump'), gap: z.number().int().describe('Empty cells to jump over'), rise: z.number().int().describe('Rows higher the landing is (negative: lower)') }),
+          z.object({ do: z.literal('climb'), rows: z.number().int().describe('A ladder this many rows high; the route continues on a platform at its top') }),
+          z.object({ do: z.literal('hazard'), object: z.string().describe('Hazard object (id, name or ref)'), cells: z.number().int().describe('Cells of hazards on the floor, to jump over') }),
+          z.object({ do: z.literal('put'), object: z.string().describe('Object to stand on the floor here (key, coin, door, switch, enemy, goal…; id, name or ref)'), name: z.string().nullable(), ref: z.string().nullable().describe('Temporary name to use it in later relationships/rules; null if not needed') }),
+        ]),
+      )
+      .describe('The way through, in order, left to right'),
   }),
   z.object({
     op: z.literal('erase_area'),
@@ -253,7 +275,7 @@ function parseProps(text: string, what: string): Record<string, unknown> {
 
 function sceneOfEntity(project: Project, entityId: Id): Id {
   const scene = project.scenes.find((s) => s.entities.some((e) => e.id === entityId));
-  if (!scene) throw new m.ModelError(`Entity "${entityId}" not found`);
+  if (!scene) throw new m.ModelError(`There is no placed object with id "${entityId}" (use the ids in targets and otherEntities of this level; to add something, place_instance its object)`);
   return scene.id;
 }
 
@@ -321,7 +343,22 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
         const sunk = b.bottom - s.top;
         if (sunk > 1 && b.top < s.top && sunk <= b.h / 2 + 1) lift = Math.max(lift, sunk);
       }
-      if (lift) e.transform.position = { ...e.transform.position, y: e.transform.position.y - lift };
+      if (lift) {
+        e.transform.position = { ...e.transform.position, y: e.transform.position.y - lift };
+        continue;
+      }
+      // Doors, switches and spikes stand on something: one placed in the air drops onto the first surface below it.
+      const c = b.r.components;
+      const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.MovingPlatform || c.CharacterController || b.r.scripts.length > 0;
+      if (moves || !(c.Openable || c.Switch || c.Damage)) continue;
+      const near = (a: number, z: number) => Math.abs(a - z) <= 3;
+      const supported = solids.some((s) => s.r.id !== e.id && Math.min(b.right, s.right) - Math.max(b.left, s.left) > 1 && (near(b.bottom, s.top) || near(b.top, s.bottom) || (Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1)))
+        || solids.some((s) => s.r.id !== e.id && Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1 && (near(b.right, s.left) || near(b.left, s.right)));
+      if (supported) continue;
+      const below = solids
+        .filter((s) => s.r.id !== e.id && Math.min(b.right, s.right) - Math.max(b.left, s.left) > 1 && s.top >= b.bottom && s.top - b.bottom <= 12 * LEVEL_CELL)
+        .sort((x, y) => x.top - y.top)[0];
+      if (below) e.transform.position = { ...e.transform.position, y: e.transform.position.y + (below.top - b.bottom) };
     }
   }
 }
@@ -506,6 +543,20 @@ export function applyOperations(
             }
           }
         }
+        break;
+      }
+      case 'build_path': {
+        const byName = (x: string) => project.definitions.find((d) => d.name.toLowerCase() === x.trim().toLowerCase());
+        const resolveDef = (x: string) => {
+          const id = refs.get(x) ?? x;
+          const d = project.definitions.find((q) => q.id === id) ?? byName(x);
+          if (!d) throw new m.ModelError(`build_path: there is no object "${x}"`);
+          return d;
+        };
+        buildPath(project, { sceneId: op.sceneId, start: op.start, floor: op.floor, ladder: op.ladder, steps: op.steps }, registry, resolveDef, (id, ref) => {
+          result.createdEntityIds.push(id);
+          if (ref) entityRefs.set(ref, id);
+        });
         break;
       }
       case 'erase_area': {

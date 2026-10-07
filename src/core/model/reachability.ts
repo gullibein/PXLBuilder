@@ -40,7 +40,7 @@ export interface Unreachable {
 }
 
 export type ReachabilityResult =
-  | { status: 'ok'; unreachable: Unreachable; reach: Reach }
+  | { status: 'ok'; unreachable: Unreachable; reach: Reach; surfaces: { left: number; right: number; top: number; reached: boolean }[] }
   | { status: 'no-player' }
   | { status: 'no-ground'; player: string }
   | { status: 'uncertain'; why: string };
@@ -74,7 +74,7 @@ function boxOf(r: ResolvedEntity): Box {
 const gapBetween = (a: { left: number; right: number }, b: { left: number; right: number }) => Math.max(0, b.left - a.right, a.left - b.right);
 
 /** Horizontal distance a full jump covers before coming down to `rise` above where it started (rise < 0: lower). */
-function jumpDistance(reach: Reach, rise: number): number {
+export function jumpDistance(reach: Reach, rise: number): number {
   const v = reach.jumpForce;
   const g = reach.gravity;
   const disc = v * v - 2 * g * rise;
@@ -234,7 +234,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     }))
     .map(({ s }) => ({ ids: s.ids, left: Math.round(s.left), right: Math.round(s.right), top: Math.round(s.top) }));
 
-  return { status: 'ok', unreachable: { things, platforms }, reach };
+  return { status: 'ok', unreachable: { things, platforms }, reach, surfaces: spans.map((s, i) => ({ left: s.left, right: s.right, top: s.top, reached: reachedSpans.has(i) })) };
 }
 
 /** What the player overlaps where it starts: solids it is stuck in, and things that hurt it at once. */

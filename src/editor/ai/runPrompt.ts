@@ -18,6 +18,7 @@ import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '..
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
 import { produce } from 'immer';
+import { levelMap, type LevelMap } from '../../core/model/levelMap';
 import { reachabilityProblems } from '../../core/model/reachability';
 import { useEditor } from '../store';
 import type { Id, Project } from '../../core/types';
@@ -103,7 +104,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // A game change that wouldn't apply (a script with a typo, a wrong id), or a level the player can't get through,
     // goes back to the AI once, with the exact problem.
     const gameOps = (r: AIResponse) => r.operations.length > 0 && !r.operations.some(isEditorOperation);
-    const problem = gameOps(response) ? (checkOperations(useEditor.getState().project, response.operations, componentRegistry) ?? playability(ctx.sceneId, response.operations)) : null;
+    const broken = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
+    const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
+    const problem = broken ?? stuck?.text ?? null;
     if (problem) {
       state.logMessage('info', `AI answer didn't check out (${problem}); asking it to fix that.`);
       const first = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
@@ -111,7 +114,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         {
           ...body,
           history: [...body.history, { request, reply: first }],
-          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer.]`,
+          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it).${mapText(stuck?.map ?? null)}]`,
         },
         signal,
       );
@@ -125,7 +128,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
       }
       // Still not playable: show it for confirmation, with the problem.
-      const stillStuck = gameOps(response) ? playability(ctx.sceneId, response.operations) : null;
+      const stillStuck = gameOps(response) ? (playability(ctx.sceneId, response.operations)?.text ?? null) : null;
       if (stillStuck) {
         state.logMessage('warn', `AI level still has a problem: ${stillStuck}`);
         response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ ${stillStuck}`] };
@@ -303,7 +306,7 @@ export function applyAIOperations(request: string, message: string, changes: str
  * player can't get to an item, the exit, a platform…), in words; null if
  * nothing. Problems that were there before the change don't count.
  */
-function playability(sceneId: Id, operations: Operation[]): string | null {
+function playability(sceneId: Id, operations: Operation[]): { text: string; map: LevelMap | null } | null {
   const project = useEditor.getState().project;
   const before = new Set(reachabilityProblems(project, sceneId, componentRegistry).map((p) => p.key));
   let after: Project;
@@ -315,5 +318,12 @@ function playability(sceneId: Id, operations: Operation[]): string | null {
     return null;
   }
   const added = reachabilityProblems(after, sceneId, componentRegistry).filter((p) => !before.has(p.key));
-  return added.length ? added.map((p) => p.text).join(' ') : null;
+  if (!added.length) return null;
+  // The level as the answer would leave it, so the AI can see what went wrong.
+  return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry) };
+}
+
+function mapText(map: LevelMap | null): string {
+  if (!map) return '';
+  return `\n\nThe level after your previous answer would look like this (same legend as context.level.map):\n${[map.ruler, ...map.rows].join('\n')}`;
 }

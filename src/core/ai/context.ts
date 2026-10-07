@@ -13,6 +13,7 @@ import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camer
 import { describeRelationship, describeRule } from '../logic/describe';
 import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
+import { levelMap, type LevelMap } from '../model/levelMap';
 import { LEVEL_CELL } from '../model/placement';
 import { characterReach } from '../model/reach';
 import { suggestedGrid } from '../model/pixelArt';
@@ -144,6 +145,8 @@ export interface AIPayload {
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
     /** The camera in play: its settings, what it follows (the entity with a CameraTarget), and the box around everything placed. */
     camera: CameraSettings & { follows: string | null; levelBounds: CameraBounds | null };
+    /** The level as a text map, one character per cell (see the legend): what is where, and where the player can get to. */
+    map: LevelMap | null;
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
     playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
   };
@@ -309,6 +312,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       },
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
+      map: levelMap(project, scene.id, registry),
       playerReach: playerReach(project, scene, registry),
       camera: {
         ...scene.camera,

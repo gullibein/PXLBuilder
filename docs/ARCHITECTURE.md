@@ -486,6 +486,26 @@ The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes
 drawing; older games get it if its size was never changed, and each placed
 copy becomes two one-tile copies covering the same ground.
 
+### Levels built as routes (`build_path`) and the level map
+- **build_path** (`core/commands/buildPath.ts`): the AI describes a level as
+  the route the player takes, left to right from the player (or from a cell
+  the player already reaches): run, jump (gap + rise), climb (a ladder up to
+  a platform beside its top), hazard (to jump over), put (an object standing
+  on the floor). The app lays the tiles, ladders, hazards and objects. Each
+  jump is checked against the player's real jump (85% of it) before
+  anything is placed, the cells it needs must be free with two free rows
+  above the floor, and objects stand on the route's floor; a step the player
+  couldn't make is refused with the limits. So a route is reachable by
+  construction instead of placed first and checked after.
+- **Level map** (`core/model/levelMap.ts`): the level as text, one character
+  per cell (solid, ladder, hazard, player, door, key, item, enemy…), with
+  the standing spots the player reaches ("_") and those it can't ("x"), a
+  column ruler and row numbers. Sent with every AI request; when an answer
+  fails the level check, the retry also gets the map of the level as that
+  answer would have left it.
+- Doors, switches and spikes placed one by one in the air drop onto the
+  surface below them.
+
 ### Level layout checks and placement help
 - `draw_tiles` places objects bigger than a cell side by side (a 2-cell
   row of spikes every 2 cells; a 2-cell-tall door stands on the bottom of the

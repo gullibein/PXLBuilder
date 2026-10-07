@@ -68,7 +68,7 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
 
   // ---- the player
   const players = placed.filter((p) => has(p, 'CharacterController'));
-  if (placed.length && !players.length) add('no-player', 'warning', 'There is no player in this level (nothing has a Character Controller), so nothing can be controlled in play.', []);
+  if (placed.length && !players.length) add('no-player', 'warning', 'There is no player in this level (nothing has a Character Controller), so nothing can be controlled in play. Each level needs its own copy: place the Player object here, on solid ground at the start.', []);
 
   // ---- what gives which items
   const itemsGiven = new Set<string>();

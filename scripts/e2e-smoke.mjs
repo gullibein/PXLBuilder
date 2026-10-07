@@ -63,6 +63,30 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('route with a ladder')) {
+    return {
+      kind: 'preview',
+      message: 'Built a route with a ladder up to a coin.',
+      changes: ['Route: run, jump, climb a ladder, a coin at the top'],
+      operations: [
+        {
+          op: 'build_path',
+          sceneId: body.context.level.id,
+          start: null,
+          floor: 'Stone',
+          ladder: null,
+          steps: [
+            { do: 'run', cells: 2 },
+            { do: 'jump', gap: 2, rise: 1 },
+            { do: 'run', cells: 2 },
+            { do: 'climb', rows: 3 },
+            { do: 'run', cells: 2 },
+            { do: 'put', object: 'Coin', name: null, ref: null },
+          ],
+        },
+      ],
+    };
+  }
   if (req.includes('coin up high')) {
     // First a coin the player can't reach (no platform or ladder up there); asked again with the problem, a reachable one.
     const retry = req.includes('could not be applied');
@@ -1574,6 +1598,13 @@ try {
     await lAsk('Put a coin up high');
     await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'a level change the player could not finish is sent back and comes back fixed');
     await check(aiRequests.at(-1).request.includes("could not be applied: The player can't get to Coin from where it starts"), "the AI is told exactly what can't be reached, with the player's jump limits");
+    await check(aiRequests.at(-1).request.includes('The level after your previous answer would look like this') && /\nr\s*-?\d+ [.#_xPkcDHSE=o^]+/.test(aiRequests.at(-1).request), '…and shown the map of the level as its answer would have left it');
+    await check(aiRequests.at(-1).context.level.map.rows.some((r) => r.includes('P')) && aiRequests.at(-1).context.level.map.legend._ !== undefined, 'the AI always gets the level map, with the spots the player can reach');
+    const problemsBefore = await panel.getByTestId('problem').count();
+    const entitiesBefore = Number(await dp.getByTestId('viewport-canvas').getAttribute('data-entities'));
+    await lAsk('Build a route with a ladder');
+    await check(async () => (await lp.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && Number(await dp.getByTestId('viewport-canvas').getAttribute('data-entities')) > entitiesBefore + 8, 'a level described as a route (run, jump, climb, put) is built by the app');
+    await check(async () => (await panel.getByTestId('problem').count()) === problemsBefore, '…and it adds no problems: everything on it is reachable by construction');
     await lp.getByTestId('prompt-close').click();
     await dc.close();
   }

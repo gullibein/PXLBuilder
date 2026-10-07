@@ -97,7 +97,7 @@ describe('operations', () => {
     const { project, player } = level();
     expect(() => apply(project, [{ op: 'set_component_field', target: 'instance', id: player.id, component: 'Sprite', field: 'width', valueJson: 'wide' }])).toThrow(/not valid JSON/);
     expect(() => apply(project, [{ op: 'set_component_field', target: 'instance', id: player.id, component: 'Sprite', field: 'width', valueJson: '"wide"' }])).toThrow(/number/);
-    expect(() => apply(project, [{ op: 'rename', target: 'instance', id: 'ent_nope', name: 'x' }])).toThrow(/not found/);
+    expect(() => apply(project, [{ op: 'rename', target: 'instance', id: 'ent_nope', name: 'x' }])).toThrow(/no placed object with id "ent_nope"/);
   });
 
   it('schema accepts the documented shapes', () => {
@@ -304,6 +304,14 @@ describe('drawing levels', () => {
     const [door, coin] = p.scenes[0].entities.slice(-2);
     expect(door.transform.position).toEqual({ x: 680, y: -32 });
     expect(coin.transform.position).toEqual({ x: 720, y: -60 });
+    // A door or spikes placed in the air drop onto the surface below (a coin may float).
+    const dropped = apply(ground, [
+      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 690, y: -200, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Hazard').id, x: 720, y: -150, name: null, ref: null },
+    ]);
+    const [door2, spikes] = dropped.scenes[0].entities.slice(-2);
+    expect(door2.transform.position.y).toBe(-32);
+    expect(spikes.transform.position.y).toBe(-8);
   });
 
   it('erase_area removes what is in the cells (optionally one object only), with its connections', () => {
