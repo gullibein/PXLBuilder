@@ -45,6 +45,9 @@ const check = async (cond, msg) => {
 /** Stand-in for the language model: same protocol, deterministic answers. */
 const aiRequests = [];
 let diagnostics = null;
+/** Where a change to what a thing is goes: its library object (the AI is told so), or the thing itself when it has none. */
+const own = (target) => (target.object?.id ? { target: 'definition', id: target.object.id } : { target: 'instance', id: target.id });
+
 function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
@@ -134,11 +137,11 @@ function stubModel(body) {
     };
   }
   if (req.includes('five hearts')) {
-    const set = (field) => ({ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Health', field, valueJson: '5' });
+    const set = (field) => ({ op: 'set_component_field', ...own(t[0]), component: 'Health', field, valueJson: '5' });
     return { kind: 'apply', message: 'Gave the player 5 hearts.', changes: [`${t[0].name}: 5 hearts`], operations: [set('maxHealth'), set('currentHealth')] };
   }
   if (req.includes('three hearts')) {
-    return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
+    return { kind: 'apply', message: 'Gave the player 3 hearts.', changes: [`${t[0].name}: 3 hearts`], operations: [{ op: 'add_component', ...own(t[0]), component: 'Health', propsJson: '{"maxHealth":3,"currentHealth":3}' }] };
   }
   if (req.includes('hop toward the player')) {
     // First answer has a typo ("sped"); the editor sends the exact problem back and gets a fixed one.
@@ -153,7 +156,7 @@ function stubModel(body) {
         { when: { on: 'every', seconds: 1 }, state: null, if: 'self.grounded and dist(player) < 400', do: [{ do: 'jump', force: '250' }, { do: 'velocity', x: `sign(dx(player)) * ${fixed ? 'speed' : 'sped'}`, y: null }] },
       ],
     };
-    return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', target: 'instance', id: t[0].id, scriptJson: JSON.stringify(script) }] };
+    return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', ...own(t[0]), scriptJson: JSON.stringify(script) }] };
   }
   if (req.includes('zoom the camera in')) {
     return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
@@ -171,10 +174,10 @@ function stubModel(body) {
     };
   }
   if (req.includes('take your time') && req.includes('bigger')) {
-    return { kind: 'apply', message: 'Made it bigger.', changes: [`${t[0].name}: wider`], operations: [{ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Sprite', field: 'color', valueJson: '"#00ff88"' }] };
+    return { kind: 'apply', message: 'Made it bigger.', changes: [`${t[0].name}: wider`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00ff88"' }] };
   }
   if (req.includes('take your time') && req.includes('propose')) {
-    return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', target: 'instance', id: t[0].id, component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
+    return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
   }
   if (req.includes('jumping sprite')) {
     const g = t[0].spriteGrid;
@@ -185,7 +188,7 @@ function stubModel(body) {
     return { kind: 'apply', message: 'Drew a jumping sprite; it shows while the player is in the air.', changes: ['Player: jumping sprite'], operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Player jumping', palette, rows, situation: 'jump' }] };
   }
   if (req.includes('patrol')) {
-    return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', target: 'instance', id: t[0].id, component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
+    return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', ...own(t[0]), component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
   }
   if (req.includes('jetpack')) {
     return { kind: 'unsupported', message: "Enemies can't fly with a jetpack yet: jetpacks aren't in this version.", changes: [], operations: [] };
@@ -199,7 +202,7 @@ function stubModel(body) {
       kind: 'preview',
       message: 'Speeds up these enemies.',
       changes: t.map((e) => `${e.name}: faster`),
-      operations: t.map((e) => ({ op: 'set_component_field', target: 'instance', id: e.id, component: 'Sprite', field: 'color', valueJson: '"#ff2d55"' })),
+      operations: t.map((e) => ({ op: 'set_component_field', ...own(e), component: 'Sprite', field: 'color', valueJson: '"#ff2d55"' })),
     };
   }
   if (req.includes('look like spikes')) {
@@ -971,6 +974,13 @@ try {
   await check(async () => (await camPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await camPrompt.getByTestId('prompt-result').innerText()).includes('Left out one part'), 'an answer still broken after its retry applies the parts that work and shows what was left out');
   await check(aiRequests.length === askedBefore2 + 2, '(the AI was asked once more, not again and again)');
   await camPrompt.getByTestId('result-undo').click();
+  // Working on the level closes the card; dots on ✦ show the AI is still at it.
+  await camPrompt.getByTestId('prompt-input').fill('Take your time: think about the level.');
+  await camPrompt.getByTestId('prompt-input').press('Enter');
+  await page.mouse.click(emptySpot.x, emptySpot.y);
+  await check(async () => (await camPrompt.count()) === 0 && (await page.getByTestId('global-prompt-toggle').getByTestId('job-dots').count()) === 1, 'clicking the level closes the ✦ card, and dots on ✦ show the AI is still working');
+  await check(async () => (await page.getByTestId('global-prompt-toggle').getByTestId('job-dots').count()) === 0, '(the dots go when it is done)');
+  await page.getByTestId('global-prompt-toggle').click();
   await camPrompt.getByTestId('prompt-close').click();
   await page.getByTestId('play').click();
   await check(async () => ((await page.getByTestId('play-canvas').getAttribute('data-camera')) ?? '').endsWith(',2.00'), 'Play uses the level camera zoom');

@@ -37,20 +37,20 @@ function entityById(project: Project, id: Id) {
   return undefined;
 }
 
-/** The object a change is about, when it changes exactly one library object's behavior or look; else null. */
+/**
+ * The object a change is about, when it changes exactly one library object's
+ * behavior or look; else null. A change aimed at placed copies themselves
+ * ("only these two") is meant for just those copies: it is applied as it is,
+ * never widened to the object.
+ */
 export function objectChoiceFor(project: Project, ops: Operation[], selectedIds: readonly Id[]): ObjectChoice | null {
   const defs = new Set<Id>();
   for (const op of ops) {
     if (!OBJECT_OPS.has(op.op) || !('target' in op)) continue;
     const { target, id } = op as { target: 'instance' | 'definition'; id: Id };
-    if (target === 'definition') {
-      if (!project.definitions.some((d) => d.id === id)) return null; // a new object made in the same reply
-      defs.add(id);
-    } else {
-      const e = entityById(project, id);
-      if (!e || !e.definitionId) return null; // standalone things have no object to choose about
-      defs.add(e.definitionId);
-    }
+    if (target !== 'definition') return null;
+    if (!project.definitions.some((d) => d.id === id)) return null; // a new object made in the same reply
+    defs.add(id);
   }
   if (defs.size !== 1) return null;
   const definitionId = [...defs][0];

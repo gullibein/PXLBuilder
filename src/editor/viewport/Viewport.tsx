@@ -332,6 +332,8 @@ export function Viewport() {
     canvas.focus();
     const state = useEditor.getState();
     if (state.dock) state.setDock(null);
+    // Working on the level closes the whole-level/game card (its prompt carries on; dots on ✦ show it).
+    if (state.globalPrompt.open) state.setGlobalPrompt(false);
     if (ev.button === 1 || (ev.button === 0 && spaceDownRef.current)) {
       ev.preventDefault();
       dragRef.current = { kind: 'pan', startScreen: { x: ev.clientX, y: ev.clientY }, startCamera: { ...state.camera }, moved: false };

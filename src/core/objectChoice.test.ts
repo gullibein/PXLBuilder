@@ -25,10 +25,12 @@ function twoEnemies() {
 const patrol = (target: 'instance' | 'definition', id: string): Operation => ({ op: 'add_component', target, id, component: 'Patrol', propsJson: '{"speed":90}' });
 
 describe('change the object, or create a new one', () => {
-  it('a change to what an object is (behavior, look) asks; moving or renaming one copy does not', () => {
+  it('a change to what an object is (behavior, look) asks; changing only chosen copies, moving or renaming one does not', () => {
     const { project, enemy, a } = twoEnemies();
-    expect(objectChoiceFor(project, [patrol('instance', a.id)], [a.id])).toEqual({ definitionId: enemy.id, objectName: 'Enemy', copies: 2, switchIds: [a.id] });
-    expect(objectChoiceFor(project, [patrol('definition', enemy.id)], [a.id])).toMatchObject({ definitionId: enemy.id, switchIds: [a.id] });
+    expect(objectChoiceFor(project, [patrol('definition', enemy.id)], [a.id])).toEqual({ definitionId: enemy.id, objectName: 'Enemy', copies: 2, switchIds: [a.id] });
+    // Aimed at the copy itself ("only this one"): applied to that copy as it is.
+    expect(objectChoiceFor(project, [patrol('instance', a.id)], [a.id])).toBeNull();
+    expect(objectChoiceFor(project, [patrol('definition', enemy.id), patrol('instance', a.id)], [a.id])).toBeNull();
     expect(objectChoiceFor(project, [{ op: 'set_transform', entityId: a.id, x: 5, y: null, rotation: null, scaleX: null, scaleY: null }], [a.id])).toBeNull();
     expect(objectChoiceFor(project, [{ op: 'rename', target: 'instance', id: a.id, name: 'Bob' }], [a.id])).toBeNull();
   });
@@ -38,10 +40,10 @@ describe('change the object, or create a new one', () => {
     expect(objectChoiceFor(project, [patrol('instance', a.id), patrol('instance', player.id)], [a.id])).toBeNull();
   });
 
-  it('"Change Enemy": every enemy gets it, even when the AI aimed at one copy', () => {
+  it('"Change Enemy": every enemy gets it', () => {
     const { project, enemy, a, b } = twoEnemies();
-    const choice = objectChoiceFor(project, [patrol('instance', a.id)], [a.id])!;
-    const p = produce(project, (d) => void applyToObject(d, [patrol('instance', a.id)], choice, registry));
+    const choice = objectChoiceFor(project, [patrol('definition', enemy.id)], [a.id])!;
+    const p = produce(project, (d) => void applyToObject(d, [patrol('definition', enemy.id)], choice, registry));
     expect(p.definitions.find((d) => d.id === enemy.id)!.components.Patrol).toMatchObject({ speed: 90 });
     for (const e of [a, b]) expect(resolveEntity(p, p.scenes[0].entities.find((x) => x.id === e.id)!, registry).components.Patrol).toBeDefined();
     expect(p.scenes[0].entities.find((x) => x.id === a.id)!.components.Patrol).toBeUndefined(); // on the object, not the copy

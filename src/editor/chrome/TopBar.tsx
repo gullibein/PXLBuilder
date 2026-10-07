@@ -5,6 +5,7 @@ import { addScene, resetAllStarterDefinitions } from '../../core/model/mutations
 import { frameView } from '../actions';
 import { newProject, openProjectFile, PROJECT_FILE_EXTENSION, saveProjectToFile } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
+import { JobDots } from './JobDots';
 
 /** Minimal top bar: wordmark, level selector, undo/redo, Play, global prompt, menu. */
 export function TopBar() {
@@ -14,6 +15,7 @@ export function TopBar() {
   const undoLabel = useEditor((s) => s.history.past.at(-1)?.label);
   const redoLabel = useEditor((s) => s.history.future[0]?.label);
   const globalOpen = useEditor((s) => s.globalPrompt.open);
+  const activeSceneId = useEditor((s) => s.activeSceneId);
   const playOnTop = useEditor((s) => s.layout.playButton === 'top');
   const { undo, redo, setGlobalPrompt } = useEditor.getState();
 
@@ -44,13 +46,15 @@ export function TopBar() {
 
       <div className="topbar-right">
         <button
-          className={`icon-btn spark-btn${globalOpen ? ' active' : ''}`}
+          className={`icon-btn spark-btn job-anchor${globalOpen ? ' active' : ''}`}
           title="Ask about the whole level or game (Ctrl+K)"
           aria-label="Global prompt"
           data-testid="global-prompt-toggle"
           onClick={() => setGlobalPrompt(!globalOpen)}
         >
           ✦
+          {/* The whole-level, whole-game and editor prompts (the level's own card shares the level's). */}
+          <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} />
         </button>
         <MainMenu />
       </div>

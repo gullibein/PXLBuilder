@@ -1,4 +1,5 @@
 import { PlayButton } from './TopBar';
+import { JobDots } from './JobDots';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
@@ -27,11 +28,12 @@ export function Dock() {
       {dock === 'create' && <CreatePanel />}
       {dock === 'library' && <ObjectsPanel />}
       <nav className="dock" aria-label="Create and objects">
-        <button className={`dock-btn primary${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
+        <button className={`dock-btn primary job-anchor${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           </svg>
           Create
+          <JobDots keys={['create']} open={dock === 'create'} />
         </button>
         <button className={`dock-btn${dock === 'library' ? ' on' : ''}`} data-testid="dock-library" onClick={() => setDock(dock === 'library' ? null : 'library')}>
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
