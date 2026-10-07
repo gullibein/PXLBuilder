@@ -65,6 +65,8 @@ export function describeAction(project: Project, scene: Scene | null, a: RuleAct
       return `hide ${ref(a.target)}`;
     case 'show_message':
       return `show "${a.text}"`;
+    case 'play_sound':
+      return `play the sound "${a.sound}"`;
     case 'camera_shake':
       return 'shake the screen';
     case 'camera_flash':

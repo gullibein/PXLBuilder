@@ -4,6 +4,7 @@
  * from and writes to these structures; nothing here depends on React or the DOM.
  */
 
+import type { SoundRecipe } from './audio/sound';
 import type { CameraSettings } from './model/camera';
 import type { BehaviorScript } from './script/language';
 
@@ -126,6 +127,7 @@ export type RuleAction =
   /** Take something out of play until shown again. */
   | { type: 'hide'; target: EntityRef }
   | { type: 'show_message'; text: string; seconds: number }
+  | { type: 'play_sound'; sound: string; volume: number }
   | { type: 'camera_shake'; strength: number; seconds: number }
   | { type: 'camera_flash'; color: string; seconds: number }
   | { type: 'camera_zoom'; zoom: number; seconds: number }
@@ -198,6 +200,10 @@ export interface AssetRecord {
   grid?: SpriteGrid;
   /** The pixels, for images drawn as pixel art (by the AI or the starter art): so variations can start from them. */
   pixelArt?: { palette: { key: string; color: string }[]; rows: string[] };
+  /** The recipe, for sounds made by the synthesizer (by the AI): played with the browser's audio, no file needed. */
+  synth?: SoundRecipe;
+  /** What it is, in plain words ("a duck's quack"), for sounds. */
+  description?: string;
 }
 
 export interface ProjectSettings {

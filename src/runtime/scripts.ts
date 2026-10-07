@@ -13,7 +13,7 @@
  * `errors` and in the event log as "script_error"; the game keeps going.
  */
 import { parseExpr, type Expr } from '../core/script/expr';
-import { checkScript, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
+import { checkScript, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
 import type { GameEvent } from './gameplay';
 import type { InputState } from './input';
@@ -432,6 +432,19 @@ export class ScriptSystem {
         if (s.id === null) {
           for (const [k, d] of this.rt.drawings) if (d.owner === e.id) this.rt.drawings.delete(k);
         } else this.rt.drawings.delete(s.id.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))));
+        break;
+      }
+      case 'play_sound': {
+        const sound = findSound(this.project, s.sound);
+        if (!sound) {
+          this.report(e, ctx.inst, `play_sound: there is no sound "${s.sound}"`);
+          break;
+        }
+        // At most a few at once (a sound on every tick would otherwise pile up).
+        if (this.rt.soundQueue.length < 16) {
+          this.rt.soundQueue.push({ assetId: sound.id, volume: Math.min(1, Math.max(0, n(s.volume))), pitch: Math.min(4, Math.max(0.25, n(s.pitch) || 1)) });
+          this.rt.soundsPlayed++;
+        }
         break;
       }
       case 'builtin_display': {

@@ -11,6 +11,7 @@
 import { itemNameOf } from '../core/graph/graph';
 import { refMatches, type EventEntities } from '../core/logic/refs';
 import { relationshipRegistry } from '../core/logic/vocabulary';
+import { findSound } from '../core/script/language';
 import type { Condition, EntityRef, Project, Relationship, RuleAction, Scene } from '../core/types';
 import type { InputState } from './input';
 import { overlaps, type Box } from './physics';
@@ -521,6 +522,14 @@ export class Gameplay {
       case 'show_message':
         this.messages.push({ text: a.text, until: this.rt.time + a.seconds });
         break;
+      case 'play_sound': {
+        const sound = findSound(this.project, a.sound);
+        if (sound && this.rt.soundQueue.length < 16) {
+          this.rt.soundQueue.push({ assetId: sound.id, volume: a.volume, pitch: 1 });
+          this.rt.soundsPlayed++;
+        }
+        break;
+      }
       case 'camera_shake':
         this.rt.cam.startShake(a.strength, a.seconds);
         break;

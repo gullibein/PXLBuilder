@@ -355,6 +355,10 @@ export class Runtime {
   readonly drawings = new Map<string, ScreenDrawing>();
   /** Parts of the built-in play display that scripts turned off. */
   readonly builtinHidden = new Set<'hearts' | 'items'>();
+  /** Sounds to play (the play view plays and empties it every frame; the runtime itself makes no sound). */
+  readonly soundQueue: { assetId: Id; volume: number; pitch: number }[] = [];
+  /** How many sounds were played since the level started (for tests and the play log). */
+  soundsPlayed = 0;
   /** The play screen's size in px (set by the play view; scripts read screen_w / screen_h). */
   screen = { w: 960, h: 600 };
 
@@ -382,6 +386,8 @@ export class Runtime {
     }
     this.completed = null;
     this.drawings.clear();
+    this.soundQueue.length = 0;
+    this.soundsPlayed = 0;
     this.builtinHidden.clear();
     this.solidsDirty = true;
     this.rebuildLadders();

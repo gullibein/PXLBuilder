@@ -535,6 +535,16 @@ saved and shown like any other edit.
   hearts or items. Drawings live in `Runtime.drawings` by id, are cleared
   on restart, and are drawn over the game by `render/screen.ts`.
 
+### Sounds (`core/audio/sound.ts`, `editor/audio/synth.ts`)
+Sounds are assets of kind "sound" holding a recipe (`synth`): up to 8 layers
+of a wave or noise, pitch points, a fade in and out, vibrato and a filter,
+at most 4 s. The AI makes them with `make_sound` (`replaceId` remakes one);
+scripts play them with `play_sound` and rules with the `play_sound` action,
+by name or id (`findSound`). The runtime only queues them (`soundQueue`);
+the play view plays them with Web Audio (one oscillator or noise source per
+layer, built on the spot), as the card's ▶ and Objects → Sounds do. The
+asset's `data` is the recipe as a JSON data URL, so it saves like any file.
+
 ### Format v9
 The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes
 drawing; older games get it if its size was never changed, and each placed

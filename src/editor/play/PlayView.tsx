@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
+import { audio, playRecipe } from '../audio/synth';
 import { InputState, KEY_BINDINGS } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
@@ -35,6 +36,9 @@ export function PlayView() {
     const { project, activeSceneId } = useEditor.getState();
     const images = imageLookup(project);
     const looks = new LookCache(project, componentRegistry);
+    // Sounds the game plays (made by the synthesizer from their recipes). Started now: Play was just clicked.
+    const sounds = new Map(project.assets.filter((a) => a.kind === 'sound' && a.synth).map((a) => [a.id, a.synth!]));
+    if (sounds.size) audio();
     // Play starts at the level being edited; a won level goes on to the next one (in the levels' order).
     let scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
@@ -130,6 +134,11 @@ export function PlayView() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawScreenDrawings(ctx, drawings, 'screen', size, looks, images);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
+      for (const s of runtime.soundQueue.splice(0)) {
+        const recipe = sounds.get(s.assetId);
+        if (recipe) playRecipe(recipe, { volume: s.volume, pitch: s.pitch });
+      }
+      canvas.dataset.sounds = String(runtime.soundsPlayed);
       const flash = runtime.cam.flash();
       if (flash) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);

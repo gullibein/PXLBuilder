@@ -12,6 +12,8 @@ import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
 import { buildPath } from './buildPath';
+import { parseSoundRecipe, soundDataUrl } from '../audio/sound';
+import { generateId } from '../ids';
 import { checkPixelArt, fitPixelArt, normalizePixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
@@ -110,6 +112,13 @@ export const operationSchema = z.union([
       .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot'])
       .nullable()
       .describe('null: the normal look. A situation: an extra image shown only while that happens (e.g. "jump" for a jumping sprite); the normal look stays'),
+  }),
+  z.object({
+    op: z.literal('make_sound'),
+    name: z.string().describe('Short name scripts play it by, e.g. "Quack", "Boing" (unique among sounds)'),
+    description: z.string().describe('What it sounds like, in plain words'),
+    soundJson: z.string().describe('The sound recipe as JSON: {"volume":0.8,"layers":[…]} (see "Sounds")'),
+    replaceId: z.string().nullable().describe('An existing sound asset id to remake (keeps its name unless a new one is given, so scripts playing it keep working); null for a new sound'),
   }),
   z.object({
     op: z.literal('draw_tiles'),
@@ -482,6 +491,28 @@ export function applyOperations(
         m.addEntity(project, op.sceneId, entity);
         if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);
+        break;
+      }
+      case 'make_sound': {
+        const parsed = parseSoundRecipe(op.soundJson);
+        if ('error' in parsed) throw new m.ModelError(parsed.error);
+        const name = op.name.trim() || 'Sound';
+        if (op.replaceId) {
+          const old = project.assets.find((a) => a.id === op.replaceId && a.kind === 'sound');
+          if (!old) throw new m.ModelError(`There is no sound "${op.replaceId}" to remake`);
+          old.synth = parsed.recipe;
+          old.data = soundDataUrl(parsed.recipe);
+          old.name = name;
+          old.description = op.description;
+          result.createdAssetIds.push(old.id);
+        } else {
+          if (project.assets.some((a) => a.kind === 'sound' && a.name.toLowerCase() === name.toLowerCase())) {
+            throw new m.ModelError(`There is already a sound called "${name}": remake it with replaceId, or give the new one another name`);
+          }
+          const id = generateId('snd');
+          m.addAsset(project, { id, name, kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(parsed.recipe), width: 0, height: 0, synth: parsed.recipe, description: op.description });
+          result.createdAssetIds.push(id);
+        }
         break;
       }
       case 'draw_sprite': {

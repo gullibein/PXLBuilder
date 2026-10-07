@@ -92,6 +92,20 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('quacks like a duck')) {
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    const quack = { volume: 0.8, layers: [{ wave: 'sawtooth', start: 0, length: 0.16, pitch: [[0, 330], [0.16, 240]], volume: 0.6, attack: 0.005, release: 0.05, vibrato: { rate: 30, depth: 0.06 }, filter: { type: 'bandpass', freq: 1100, q: 4 } }] };
+    const script = { name: 'Quack', description: 'Quacks when the level starts.', handlers: [{ when: { on: 'start' }, do: [{ do: 'play_sound', sound: 'Quack' }] }] };
+    return {
+      kind: 'apply',
+      message: 'Made a quack and the player plays it when the level starts.',
+      changes: ['Sound: Quack', 'Player: quacks at the start'],
+      operations: [
+        { op: 'make_sound', name: 'Quack', description: 'a duck quack', soundJson: JSON.stringify(quack), replaceId: null },
+        { op: 'set_script', target: 'definition', id: player, scriptJson: JSON.stringify(script) },
+      ],
+    };
+  }
   if (req.includes('hearts bigger')) {
     // Not a setting: a script on the player that draws its own, bigger hearts and hides the built-in ones.
     const player = body.context.library.find((d) => d.name === 'Player').id;
@@ -649,6 +663,22 @@ try {
   await page.getByTestId('play').click();
   await check(async () => /heart0\|heart1\|heart2/.test((await page.getByTestId('play-canvas').getAttribute('data-drawings')) ?? '') && (await page.getByTestId('hud-health').count()) === 0, "in play, the script draws its own hearts on the screen and the built-in ones are hidden");
   await page.screenshot({ path: `${OUT}/5d-script-hearts.png` });
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
+
+  step = 'sounds';
+  await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+  await ask('The player quacks like a duck when the level starts.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await prompts.getByTestId('play-sound').innerText()).includes('Quack'), 'the AI makes a sound: the card has a ▶ button to hear it');
+  await prompts.getByTestId('play-sound').click();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('category-sounds').click();
+  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'Objects lists the sounds, to play them again');
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('play').click();
+  await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 1, 'in play, the script plays the sound');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
   await page.getByTestId('undo').click();

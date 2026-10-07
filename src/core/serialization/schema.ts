@@ -1,3 +1,4 @@
+import { soundRecipeSchema } from '../audio/sound';
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
 import { cameraSchema } from '../model/camera';
@@ -72,6 +73,8 @@ export const assetSchema = z.object({
     })
     .optional(),
   pixelArt: z.object({ palette: z.array(z.object({ key: z.string(), color: z.string() })), rows: z.array(z.string()) }).optional(),
+  synth: soundRecipeSchema.optional(),
+  description: z.string().optional(),
 });
 
 export const projectSchema = z.object({

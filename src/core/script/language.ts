@@ -84,6 +84,7 @@ export type Stmt =
     }
   | { do: 'erase'; id: string | null }
   | { do: 'builtin_display'; what: 'hearts' | 'items' | 'all'; show: boolean }
+  | { do: 'play_sound'; sound: string; volume: string; pitch: string }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
   | { do: 'complete_level' }
@@ -253,6 +254,10 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'draw on the screen, on top of the game, until erased or drawn again with the same id ("{expression}" parts in id and text are filled in, so "heart{i}" makes one per repeat). shape: text (text, size = font px, color), rect / circle (w, h, color), sprite (a library object\'s look, w × h). anchor: where x, y count from (a screen corner, side or the center; x grows right, y down; the drawing lines up with that corner, e.g. "top_right" with x "-16" sits 16 px from the right edge), or "world" for level coordinates (moves with the camera: labels over things). alpha: 0..1 (null = 1). Use it for health bars, hearts, scores, timers, labels',
   },
   erase: { example: '{"do":"erase","id":"heart{i}"}', doc: 'remove a drawing by id (null = everything this entity drew)' },
+  play_sound: {
+    example: '{"do":"play_sound","sound":"Quack","volume":"1","pitch":"1"}',
+    doc: 'play a sound from the sound list (by its name or id; make one with make_sound). volume 0..1 (an expression: "0.5"); pitch 1 = as made, 2 = an octave higher, 0.5 lower ("rand(0.9, 1.1)" varies it a little each time)',
+  },
   builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'hide or show the built-in display (hearts, items, or all of it), e.g. when scripts draw their own' },
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
@@ -339,6 +344,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     }),
     z.object({ do: z.literal('erase'), id: z.string().min(1).nullable().default(null) }),
     z.object({ do: z.literal('builtin_display'), what: z.enum(['hearts', 'items', 'all']), show: z.boolean() }),
+    z.object({ do: z.literal('play_sound'), sound: z.string().min(1), volume: expr.default('1'), pitch: expr.default('1') }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('complete_level') }),
@@ -453,6 +459,8 @@ export function exprSlots(s: Stmt): string[] {
       return s.id ? messageParts(s.id) : [];
     case 'builtin_display':
       return [];
+    case 'play_sound':
+      return [s.volume, s.pitch];
     case 'camera_shake':
       return [s.strength, s.seconds];
     case 'camera_flash':
@@ -467,6 +475,12 @@ export function exprSlots(s: Stmt): string[] {
 }
 
 /** The {expression} parts of a message text. */
+/** A sound by id, or by name (any case). */
+export function findSound(project: Project, idOrName: string): Project['assets'][number] | undefined {
+  const sounds = project.assets.filter((a) => a.kind === 'sound');
+  return sounds.find((a) => a.id === idOrName) ?? sounds.find((a) => a.name.toLowerCase() === idOrName.trim().toLowerCase());
+}
+
 export function messageParts(text: string): string[] {
   return [...text.matchAll(/\{([^{}]+)\}/g)].map((m) => m[1]);
 }
@@ -537,6 +551,10 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
         if (s.do === 'state' && !states.has(s.name)) return `${at}: unknown state "${s.name}"${suggest(s.name, [...states])}; declare it in "states"`;
         if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object)) return `${at}: there is no library object "${s.object}"`;
         if (s.do === 'draw' && s.shape === 'sprite' && s.object === null) return `${at}: a sprite drawing needs "object" (a library object id)`;
+        if (s.do === 'play_sound' && !findSound(project, s.sound)) {
+          const names = project.assets.filter((a) => a.kind === 'sound').map((a) => a.name);
+          return `${at}: there is no sound "${s.sound}"${names.length ? ` (sounds: ${names.join(', ')})` : ' (make one with make_sound first)'}`;
+        }
         if (s.do === 'set_field') {
           const target = resolveField(componentRegistry, s.component, s.field);
           if ('error' in target) return `${at}: ${target.error}`;

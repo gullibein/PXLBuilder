@@ -1,5 +1,6 @@
 import { PlayButton } from './TopBar';
 import { JobDots } from './JobDots';
+import { playRecipe } from '../audio/synth';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
@@ -198,6 +199,8 @@ function ContextMenu(props: { x: number; y: number; items: { label: string; test
 
 function ObjectsPanel() {
   const definitions = useEditor((s) => s.project.definitions);
+  const assets = useEditor((s) => s.project.assets);
+  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   const [category, setCategory] = useState<string>('All');
   const present = CATEGORIES.filter((c) => definitions.some((d) => categoryOf(d) === c));
   const shown = category === 'All' ? definitions : definitions.filter((d) => categoryOf(d) === category);
@@ -210,15 +213,45 @@ function ObjectsPanel() {
             <span className="n">{c === 'All' ? definitions.length : definitions.filter((d) => categoryOf(d) === c).length}</span>
           </button>
         ))}
+        {sounds.length > 0 && (
+          <button role="tab" aria-selected={category === 'Sounds'} className={`category${category === 'Sounds' ? ' on' : ''}`} data-testid="category-sounds" onClick={() => setCategory('Sounds')}>
+            Sounds
+            <span className="n">{sounds.length}</span>
+          </button>
+        )}
       </nav>
-      <div className="objects-main">
-        <div className="tiles" data-testid="object-library">
-          {shown.map((d) => (
-            <ObjectTile key={d.id} def={d} />
-          ))}
+      {category === 'Sounds' ? (
+        <div className="objects-main">
+          <div className="sound-list" data-testid="sound-list">
+            {sounds.map((a) => (
+              <div key={a.id} className="sound-row">
+                <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playRecipe(a.synth!)}>
+                  ▶ {a.name}
+                </button>
+                <span className="muted small">{a.description}</span>
+                <button
+                  className="icon-btn"
+                  aria-label={`Delete ${a.name}`}
+                  title="Delete this sound (scripts that play it report it missing)"
+                  onClick={() => useEditor.getState().edit(`Delete sound ${a.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== a.id)))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="panel-hint">Sounds the AI made. Ask for one on anything: "the duck quacks when the player touches it".</p>
         </div>
-        <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
-      </div>
+      ) : (
+        <div className="objects-main">
+          <div className="tiles" data-testid="object-library">
+            {shown.map((d) => (
+              <ObjectTile key={d.id} def={d} />
+            ))}
+          </div>
+          <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
+        </div>
+      )}
     </section>
   );
 }

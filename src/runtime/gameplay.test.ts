@@ -10,6 +10,7 @@ import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { PlayRecorder } from './recorder';
 import { Runtime } from './runtime';
+import { applyOperations } from '../core/commands/operations';
 import { summarizePlay } from '../core/debug/playReport';
 
 const registry = createBuiltinRegistry();
@@ -906,6 +907,25 @@ describe('behavior scripts', () => {
     expect(rt.builtinHidden.has('hearts')).toBe(true);
     rt.restart();
     expect(rt.drawings.size).toBe(0);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('play_sound (script) and the play_sound rule action queue the sound for the play view, with volume and pitch', () => {
+    const recipe = JSON.stringify({ layers: [{ wave: 'square', length: 0.1, pitch: [[0, 440]] }] });
+    const { rt, input, p } = level((b) => {
+      applyOperations(b.d, [{ op: 'make_sound', name: 'Boing', description: 'a spring', soundJson: recipe, replaceId: null }], registry);
+      script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'key', key: 'jump', edge: 'pressed' }, do: [{ do: 'play_sound', sound: 'boing', volume: '0.5', pitch: '2' }] }] });
+      logic.addRule(b.d, b.sceneId, { name: 'start sound', enabled: true, when: { event: 'level_started', subject: { kind: 'any' }, other: { kind: 'any' } }, conditions: [], actions: [{ type: 'play_sound', sound: 'Boing', volume: 1 }] });
+    });
+    const boing = rt.project.assets.find((a) => a.name === 'Boing')!;
+    run(rt, input, 0.1);
+    expect(rt.soundQueue).toEqual([{ assetId: boing.id, volume: 1, pitch: 1 }]);
+    rt.soundQueue.length = 0;
+    input.press('jump');
+    run(rt, input, 0.05);
+    expect(rt.soundQueue).toEqual([{ assetId: boing.id, volume: 0.5, pitch: 2 }]);
+    expect(rt.soundsPlayed).toBe(2);
+    expect(p).toBeTruthy();
     expect(rt.scripts.errors).toEqual([]);
   });
 

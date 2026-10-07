@@ -7,6 +7,7 @@ import { chatEntries, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
+import { playRecipe } from '../audio/synth';
 
 type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
 
@@ -284,6 +285,22 @@ export function PromptBox(props: PromptBoxProps) {
   );
 }
 
+/** Play buttons for sounds an answer made, to hear them right away. */
+function MadeSounds({ ids }: { ids: string[] }) {
+  const assets = useEditor((s) => s.project.assets);
+  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth && ids.includes(a.id));
+  if (!sounds.length) return null;
+  return (
+    <p className="made-sounds">
+      {sounds.map((a) => (
+        <button key={a.id} className="sound-btn" data-testid="play-sound" title={a.description ?? `Play ${a.name}`} onClick={() => playRecipe(a.synth!)}>
+          ▶ {a.name}
+        </button>
+      ))}
+    </p>
+  );
+}
+
 /** An earlier exchange in the card's chat: what the AI said and did, without the buttons. */
 function PastOutcome({ entry: outcome }: { entry: AILogEntry }) {
   const undoneLater = useEditor((s) => outcome.transactionId !== null && s.history.future.some((t) => t.id === outcome.transactionId));
@@ -392,6 +409,7 @@ function Outcome(props: {
               </button>
             </p>
           )}
+          <MadeSounds ids={outcome.result.createdAssetIds} />
           {props.renderApplied?.(outcome)}
         </div>
       );

@@ -68,6 +68,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`draw ${s.shape === 'text' ? `text "${s.text ?? ''}"` : s.shape} "${s.id}" at ${s.anchor === 'world' ? 'level' : s.anchor.replace('_', ' ')} ${x(s.x)}, ${x(s.y)}`);
     case 'erase':
       return one(s.id ? `erase "${s.id}"` : 'erase everything it drew');
+    case 'play_sound':
+      return one(`play sound "${s.sound}"${s.volume !== '1' ? ` at volume ${x(s.volume)}` : ''}${s.pitch !== '1' ? `, pitch ${x(s.pitch)}` : ''}`);
     case 'builtin_display':
       return one(`${s.show ? 'show' : 'hide'} the built-in ${s.what === 'all' ? 'display' : s.what}`);
     case 'velocity':

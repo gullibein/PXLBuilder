@@ -579,3 +579,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 @keyframes job-bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-3px); } }
 .job-badge { position: absolute; right: -6px; top: -8px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-hi); color: #fff; font: 800 11px var(--font-ui); border: 2px solid var(--ink, #0f1222); pointer-events: none; z-index: 2; }
 .job-badge.error { background: var(--danger); }
+.made-sounds { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.sound-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; font: 600 12px var(--font-ui); cursor: pointer; }
+.sound-btn:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.sound-list { display: grid; gap: 6px; align-content: start; }
+.sound-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.sound-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

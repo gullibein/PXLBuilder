@@ -6,6 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { soundLength } from '../audio/sound';
 import type { ComponentRegistry } from '../components/registry';
 import { diagnoseLevel, type Problem } from '../debug/diagnose';
 import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
@@ -176,6 +177,8 @@ export interface AIPayload {
     relationships: { id: Id; text: string; type: string; source: EntityRef; target: EntityRef; params: Record<string, unknown>; conditions: Condition[] }[];
     rules: { id: Id; text: string; name: string; enabled: boolean; when: Rule['when']; conditions: Condition[]; actions: RuleAction[] }[];
   };
+  /** Sounds made so far (play them by name with play_sound; remake one with make_sound replaceId). */
+  sounds: { id: Id; name: string; description: string; seconds: number }[];
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
   coordinateSystem: string;
@@ -349,6 +352,9 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       relationships: scene.relationships.slice(0, MAX_LOGIC).map((r: Relationship) => ({ id: r.id, text: describeRelationship(project, scene, r), type: r.type, source: r.source, target: r.target, params: r.params, conditions: r.conditions })),
       rules: scene.rules.slice(0, MAX_LOGIC).map((r) => ({ id: r.id, text: describeRule(project, scene, r), name: r.name, enabled: r.enabled, when: r.when, conditions: r.conditions, actions: r.actions })),
     },
+    sounds: project.assets
+      .filter((a) => a.kind === 'sound' && a.synth)
+      .map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(soundLength(a.synth!) * 100) / 100 })),
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => (ctx.kind === 'project' ? { id: s.id, name: s.name, entities: briefs(s, new Set()) } : { id: s.id, name: s.name })),
