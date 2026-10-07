@@ -88,7 +88,7 @@ export function AIConnection() {
             Here on claude.ai the AI uses <strong>your Claude account</strong>. No API key is needed. The first time you ask something, claude.ai asks you to allow this page to use Claude; requests count toward your Claude plan's usage.
           </p>
           <SpeedChoice fastHint="Uses claude.ai's quicker model: answers sooner, may get hard requests wrong more often (changes are still checked before they're applied)." />
-          <p className="bg-hint">API keys (Anthropic or Gemini) can't be used here: claude.ai doesn't let published pages contact other services. They work when you run PXLBuilder on your computer.</p>
+          <p className="bg-hint">API keys (Anthropic or Gemini) can't be used here: claude.ai doesn't let published pages contact other services. They work when you run PXLBuilder on your computer or open it from its GitHub Pages site.</p>
         </section>
       </div>
     );

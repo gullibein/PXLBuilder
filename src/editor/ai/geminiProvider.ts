@@ -1,7 +1,7 @@
 /**
  * Google Gemini, called straight from the browser with the user's own Gemini
  * API key (from Google AI Studio). Only works where the page may contact
- * Google: PXLBuilder running on your computer, not the published claude.ai
+ * Google: PXLBuilder on your computer or GitHub Pages, not the published claude.ai
  * app (published pages can't contact other services).
  *
  * The reply format is spelled out in the prompt (the same JSON Schema the
@@ -84,7 +84,7 @@ export class GeminiProvider implements AIProvider {
       });
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
-      throw new AIUnavailableError("Could not reach Gemini from this page. On claude.ai published pages can't contact other services: use Claude there, or run PXLBuilder on your computer.");
+      throw new AIUnavailableError("Could not reach Gemini from this page. On claude.ai published pages can't contact other services: use Claude there, or run PXLBuilder on your computer or from GitHub Pages.");
     }
     const reply = (await res.json().catch(() => null)) as GeminiReply | null;
     return { status: res.status, reply };
