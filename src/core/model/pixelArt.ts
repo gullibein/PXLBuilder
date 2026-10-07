@@ -29,6 +29,39 @@ export function suggestedGrid(size: { x: number; y: number }, maxSide = 32): { w
 }
 
 /** Error message, or null if the art is well formed and fits an object of `size` (same proportions, within 1 pixel). */
+/**
+ * Forgives the usual slips in a drawing from an AI, so a good drawing isn't
+ * thrown away over notation: "." given a color (it is transparent anyway),
+ * spaces for empty pixels, "transparent"/"none" as a color, colors without
+ * "#", short (#f80) or with alpha (#ff880000: fully clear = transparent).
+ * Anything else is left for checkPixelArt to report.
+ */
+export function normalizePixelArt(art: PixelArt): PixelArt {
+  const clear = new Set<string>();
+  const palette: PixelArt['palette'] = [];
+  for (const p of art.palette) {
+    if (p.key === '.') continue;
+    let color = p.color.trim();
+    if (/^(transparent|none|clear)$/i.test(color)) {
+      clear.add(p.key);
+      continue;
+    }
+    if (/^[0-9a-f]{3}([0-9a-f]{3}([0-9a-f]{2})?)?$/i.test(color)) color = `#${color}`;
+    if (/^#[0-9a-f]{3}$/i.test(color)) color = `#${[...color.slice(1)].map((c) => c + c).join('')}`;
+    if (/^#[0-9a-f]{8}$/i.test(color)) {
+      if (/00$/.test(color)) {
+        clear.add(p.key);
+        continue;
+      }
+      color = color.slice(0, 7);
+    }
+    palette.push({ key: p.key, color });
+  }
+  if (!palette.some((p) => p.key === ' ')) clear.add(' ');
+  const rows = clear.size ? art.rows.map((r) => [...r].map((ch) => (clear.has(ch) ? '.' : ch)).join('')) : [...art.rows];
+  return { palette, rows };
+}
+
 export function checkPixelArt(art: PixelArt, size?: { x: number; y: number }): string | null {
   const { rows, palette } = art;
   if (!rows.length) return 'The sprite has no rows';

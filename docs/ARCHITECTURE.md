@@ -476,6 +476,15 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Forgiving AI drawings and placeholders
+`draw_sprite` runs the drawing through `normalizePixelArt` first: a color
+given to ".", spaces for empty pixels, "transparent"/"none" colors, colors
+without "#", short (#f80) or with alpha are read the way they were meant,
+so a drawing isn't rejected over notation. `create_definition` without a
+Sprite gets a placeholder box (collider size, a color by kind), so a new
+object is never invisible because its drawing failed; the problem checker
+flags placed objects with no Sprite at all.
+
 ### Can the player get there? (`core/model/reachability.ts`)
 A static estimate of whether a level can be got through: from the surface
 under the player, it follows standable tops (solids with nothing on top,

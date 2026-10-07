@@ -11,7 +11,7 @@ import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
-import { checkPixelArt, fitPixelArt, pixelArtToSvg } from '../model/pixelArt';
+import { checkPixelArt, fitPixelArt, normalizePixelArt, pixelArtToSvg } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize } from '../model/geometry';
@@ -275,6 +275,17 @@ export function checkOperations(project: Project, ops: Operation[], registry: Co
   }
 }
 
+/** A placeholder color that says what kind of thing it is (hazards and enemies reddish, items gold, ground grey…). */
+function placeholderColor(category: string, tags: string[]): string {
+  const has = (...t: string[]) => tags.some((x) => t.includes(x.toLowerCase()));
+  if (has('hazard', 'spikes', 'spike', 'lava', 'trap')) return '#d9dde6';
+  if (has('enemy') || category === 'Enemies') return '#e5534b';
+  if (has('collectible', 'coin', 'item', 'key') || category === 'Items') return '#f2c94c';
+  if (has('platform', 'ground', 'wall') || category === 'Platforms') return '#8a8f9c';
+  if (has('water')) return '#3b82f6';
+  return '#b48cf2';
+}
+
 /**
  * Applies operations in order to a draft project. Throws ModelError on the
  * first invalid operation; callers run this inside one immer `produce`, so a
@@ -358,6 +369,12 @@ export function applyOperations(
           if (!registry.has(c.component)) throw new m.ModelError(`Unknown component type "${c.component}"`);
           components[c.component] = registry.createDefault(c.component, parseProps(c.propsJson, `${c.component} props`));
         }
+        // Nothing is invisible by accident: without a Sprite it gets a placeholder box the size of its collider
+        // (a drawing in the same answer replaces it). An invisible object is a Sprite with visible false.
+        if (!components.Sprite) {
+          const size = (components.Collider?.size as { x: number; y: number } | undefined) ?? { x: 32, y: 32 };
+          components.Sprite = registry.createDefault('Sprite', { width: size.x, height: size.y, color: placeholderColor(op.category, op.tags) });
+        }
         const def = createDefinition(op.name, components, op.tags, op.description);
         def.metadata.category = op.category;
         m.addDefinition(project, def, registry);
@@ -377,9 +394,8 @@ export function applyOperations(
       case 'draw_sprite': {
         const entity = op.target === 'instance' ? m.getEntity(project, sceneOfEntity(project, op.id), op.id) : instantiateDefinition(m.getDefinition(project, op.id), { x: 0, y: 0 });
         const size = getEntitySize(resolveEntity(project, entity, registry));
-        // Spaces are read as transparent (".") unless the palette gives them a color: models often draw empty pixels that way.
-        const spaceIsColor = op.palette.some((p) => p.key === ' ');
-        const drawn = { palette: op.palette, rows: spaceIsColor ? op.rows : op.rows.map((r) => r.replace(/ /g, '.')) };
+        // Usual notation slips (a color for ".", spaces for empty pixels, colors without "#"…) are forgiven, not rejected.
+        const drawn = normalizePixelArt({ palette: op.palette, rows: op.rows });
         const err = checkPixelArt(drawn);
         if (err) throw new m.ModelError(`Sprite: ${err}`);
         // Other proportions than the object's are fitted (repeated or padded), not rejected.

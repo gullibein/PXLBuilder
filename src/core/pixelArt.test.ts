@@ -4,7 +4,7 @@ import { applyOperations } from './commands/operations';
 import { createBuiltinRegistry } from './components/builtin';
 import { createProject, instantiateDefinition } from './model/factory';
 import * as m from './model/mutations';
-import { checkPixelArt, pixelArtToSvg, suggestedGrid } from './model/pixelArt';
+import { checkPixelArt, normalizePixelArt, pixelArtToSvg, suggestedGrid } from './model/pixelArt';
 import { resolveEntity } from './model/resolve';
 
 const registry = createBuiltinRegistry();
@@ -96,5 +96,36 @@ describe('pixel-art sprites', () => {
     });
     const asset = next.assets.find((a) => a.id === assetId)!;
     expect(asset.pixelArt!.rows[15]).toBe('....rrrrrrrr....');
+  });
+
+  it('forgives the usual notation slips in a drawing', () => {
+    const art = normalizePixelArt({
+      palette: [
+        { key: '.', color: '#000000' },
+        { key: 'g', color: 'c9ced8' },
+        { key: 'd', color: '#56f' },
+        { key: 'x', color: 'transparent' },
+        { key: 'a', color: '#11223300' },
+        { key: 'b', color: '#112233ff' },
+      ],
+      rows: ['g d.', 'xabg'],
+    });
+    expect(art.palette).toEqual([
+      { key: 'g', color: '#c9ced8' },
+      { key: 'd', color: '#5566ff' },
+      { key: 'b', color: '#112233' },
+    ]);
+    expect(art.rows).toEqual(['g.d.', '..bg']);
+    expect(checkPixelArt(art)).toBeNull();
+    // A space the palette colors stays a color.
+    expect(normalizePixelArt({ palette: [{ key: ' ', color: '#ffffff' }], rows: [' .'] }).rows).toEqual([' .']);
+  });
+
+  it('a new object always has a look: a placeholder box until it is drawn', () => {
+    const next = produce(createProject(registry), (d) => {
+      applyOperations(d, [{ op: 'create_definition', ref: 's', name: 'Spikes', description: 'Hurts', category: 'Environment', tags: ['hazard'], components: [{ component: 'Collider', propsJson: '{"size":{"x":64,"y":16},"isTrigger":true}' }, { component: 'Damage', propsJson: '{"amount":1}' }] }], registry);
+    });
+    const spikes = next.definitions.find((x) => x.name === 'Spikes')!;
+    expect(spikes.components.Sprite).toMatchObject({ width: 64, height: 16, color: '#d9dde6', visible: true });
   });
 });

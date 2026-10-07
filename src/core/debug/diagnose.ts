@@ -160,6 +160,11 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
     }
   }
 
+  // ---- things nobody can see (no Sprite at all; a Sprite with visible off is deliberate)
+  for (const [defId, group] of byObject(placed.filter((p) => !has(p, 'Sprite')))) {
+    add(`no-look:${defId}`, 'warning', `${label(group)} has no look (no Sprite), so it can't be seen while playing${has(group[0], 'Damage') ? ', though it still hurts' : ''}. Give it a sprite or a color.`, group.map((g) => g.id));
+  }
+
   // ---- can the player get to everything?
   for (const r of reachabilityProblems(project, sceneId, registry)) add(r.key, 'warning', r.text, r.entityIds);
 

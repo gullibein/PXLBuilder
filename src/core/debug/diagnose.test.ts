@@ -140,4 +140,14 @@ describe('the problem checker', () => {
     });
     expect(problems).toMatchObject([{ severity: 'note' }]);
   });
+
+  it('something with no look at all is invisible in play', () => {
+    const problems = check((b) => {
+      const id = b.place('Hazard', { x: 64, y: 24 });
+      m.removeDefinitionComponent(b.d, b.def('Hazard'), 'Sprite');
+      void id;
+    });
+    expect(problems.map((p) => p.key.split(':')[0])).toContain('no-look');
+    expect(problems.find((p) => p.key.startsWith('no-look'))!.text).toMatch(/^Hazard has no look \(no Sprite\), so it can't be seen while playing, though it still hurts/);
+  });
 });
