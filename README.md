@@ -34,6 +34,12 @@ The key is read only by the dev server (`server/`); it is never sent to the
 browser. Without a key everything works except the AI, which reports that it
 isn't connected.
 
+**GitHub Pages:** `npm run build` builds for `/PXLBuilder/` (set as `base` in
+`vite.config.ts`), so `dist/` can be served at `https://<user>.github.io/PXLBuilder/`;
+`npm run preview` serves it at http://localhost:4173/PXLBuilder/. The dev server
+stays at the root. Pages has no server, so the AI there works only with a key
+entered in ⋯ → AI connection (kept in the browser).
+
 **In the published app (claude.ai):** no key needed. The AI runs on your own
 Claude account through claude.ai; you're asked once per visit to allow the
 page to use Claude, and requests count toward your plan's usage. (Published

@@ -11,7 +11,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const PORT = 4179;
-const URL = `http://localhost:${PORT}/`;
+// Built for GitHub Pages, so the app lives under /PXLBuilder/ (vite.config.ts).
+const URL = `http://localhost:${PORT}/PXLBuilder/`;
 const OUT = 'test-results';
 mkdirSync(OUT, { recursive: true });
 
