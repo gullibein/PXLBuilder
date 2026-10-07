@@ -162,17 +162,30 @@ const ENEMY_ART: PixelArt = {
 };
 
 /** An image asset drawn from pixel art; it keeps the pixels, so they can be redrawn and varied later. */
+/** The two-tile spikes drawing of format v8 (recognized when upgrading older games). */
+export const SPIKES_ART_V8_ROWS: readonly string[] = [
+  '...gg......gg......gg......gg...',
+  '...gg......gg......gg......gg...',
+  '..ghgg....ghgg....ghgg....ghgg..',
+  '..ghgg....ghgg....ghgg....ghgg..',
+  '.ghhggg..ghhggg..ghhggg..ghhggg.',
+  '.ghhggg..ghhggg..ghhggg..ghhggg.',
+  'ghhhggggghhhggggghhhggggghhhgggg',
+  'dddddddddddddddddddddddddddddddd',
+];
+
+/** Spikes, one tile wide (two points), drawn for the starter Hazard. Rows of them line up seamlessly. */
 const SPIKES_ART: PixelArt = {
   palette: [{ key: 'h', color: '#f4f6fa' }, { key: 'g', color: '#b9bfcc' }, { key: 'd', color: '#5b6070' }],
   rows: [
-    '...gg......gg......gg......gg...',
-    '...gg......gg......gg......gg...',
-    '..ghgg....ghgg....ghgg....ghgg..',
-    '..ghgg....ghgg....ghgg....ghgg..',
-    '.ghhggg..ghhggg..ghhggg..ghhggg.',
-    '.ghhggg..ghhggg..ghhggg..ghhggg.',
-    'ghhhggggghhhggggghhhggggghhhgggg',
-    'dddddddddddddddddddddddddddddddd',
+    '...gg......gg...',
+    '...gg......gg...',
+    '..ghgg....ghgg..',
+    '..ghgg....ghgg..',
+    '.ghhggg..ghhggg.',
+    '.ghhggg..ghhggg.',
+    'ghhhggggghhhgggg',
+    'dddddddddddddddd',
   ],
 };
 
@@ -317,12 +330,12 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
     createDefinition(
       'Hazard',
       {
-        Sprite: c('Sprite', { width: 64, height: 16, color: '#ff6b2c', assetId: assets.hazard.id }),
-        Collider: c('Collider', { size: { x: 64, y: 16 }, isTrigger: true }),
+        Sprite: c('Sprite', { width: 32, height: 16, color: '#ff6b2c', assetId: assets.hazard.id }),
+        Collider: c('Collider', { size: { x: 32, y: 16 }, isTrigger: true }),
         Damage: c('Damage', { amount: 1 }),
       },
       ['hazard'],
-      'Damages anything that touches it.',
+      'Spikes, one tile wide: damages anything that touches it. Draw a row of them for longer spikes.',
     ),
   ];
   for (const def of defs) {

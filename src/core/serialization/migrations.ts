@@ -1,7 +1,7 @@
 import { componentRegistry } from '../components/builtin';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
-import { createStarterAssets, createStarterDefinitions } from '../model/factory';
+import { createStarterAssets, createStarterDefinitions, SPIKES_ART_V8_ROWS } from '../model/factory';
 import { FORMAT_VERSION } from './version';
 
 /**
@@ -227,6 +227,44 @@ function migrateV7toV8(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v8 -> v9
+ * - The starter Hazard is one tile wide (32×16, was 64×16), if its size was
+ *   never changed. Placed copies become two one-tile copies side by side,
+ *   covering the same ground, so levels don't get gaps. If it still has the
+ *   two-tile spikes drawing, it gets the one-tile drawing.
+ */
+function migrateV8toV9(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const def = (project.definitions ?? []).find((d: Raw) => (d.metadata?.starter ?? d.name) === 'Hazard');
+  const sprite = def?.components?.Sprite;
+  if (!def || !sprite || sprite.width !== 64 || sprite.height !== 16) return project;
+  sprite.width = 32;
+  if (def.components.Collider?.size?.x === 64) def.components.Collider.size = { ...def.components.Collider.size, x: 32 };
+  const current = (project.assets ?? []).find((a: Raw) => a.id === sprite.assetId);
+  if (current?.pixelArt && JSON.stringify(current.pixelArt.rows) === JSON.stringify(SPIKES_ART_V8_ROWS)) {
+    const spikes = createStarterAssets().hazard;
+    sprite.assetId = spikes.id;
+    project.assets = [...project.assets, spikes];
+  }
+  for (const scene of project.scenes ?? []) {
+    const next: Raw[] = [];
+    for (const e of scene.entities ?? []) {
+      const ownSize = e.components?.Sprite?.width !== undefined || e.components?.Collider?.size !== undefined;
+      if (e.definitionId !== def.id || ownSize) {
+        next.push(e);
+        continue;
+      }
+      const scaleX = Math.abs(e.transform?.scale?.x ?? 1);
+      const { x, y } = e.transform.position;
+      next.push({ ...e, transform: { ...e.transform, position: { x: x - 16 * scaleX, y } } });
+      next.push({ ...structuredClone(e), id: generateId('ent'), transform: { ...e.transform, position: { x: x + 16 * scaleX, y } } });
+    }
+    scene.entities = next;
+  }
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -235,6 +273,7 @@ export const MIGRATIONS: Migration[] = [
   { from: 5, to: 6, migrate: migrateV5toV6 },
   { from: 6, to: 7, migrate: migrateV6toV7 },
   { from: 7, to: 8, migrate: migrateV7toV8 },
+  { from: 8, to: 9, migrate: migrateV8toV9 },
 ];
 
 export class MigrationError extends Error {

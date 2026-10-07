@@ -272,16 +272,22 @@ describe('drawing levels', () => {
     const { project, sceneId, def } = level();
     const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: 0, width: 1, height: 1 }] }]);
     const hazard = p.scenes[0].entities.at(-1)!;
-    // Hazard is 64x16 (two cells wide): it takes cells 0-1, centered at x=32, bottom at y=32.
-    expect(hazard.transform.position).toEqual({ x: 32, y: 24 });
+    // Hazard is 32x16 (one cell): centered in cell 0 at x=16, bottom at y=32.
+    expect(hazard.transform.position).toEqual({ x: 16, y: 24 });
   });
 
   it('objects wider or taller than a cell are placed side by side, not on top of each other', () => {
     const { project, sceneId, def } = level();
     const before = project.scenes[0].entities.length;
-    // A 4-cell row of 2-cell spikes: two copies.
+    // A 4-cell row of one-cell spikes: four copies, one per cell.
     const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: -1, width: 4, height: 1 }] }]);
-    expect(p.scenes[0].entities.slice(before).map((e) => e.transform.position)).toEqual([{ x: 32, y: -8 }, { x: 96, y: -8 }]);
+    expect(p.scenes[0].entities.slice(before).map((e) => e.transform.position.x)).toEqual([16, 48, 80, 112]);
+    // A 2-cell-wide object (a 64-wide block) every 2 cells.
+    const wide = apply(project, [
+      { op: 'create_definition', ref: 'w', name: 'Wide', description: '', category: 'Platforms', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":64,"height":32}' }] },
+      { op: 'draw_tiles', sceneId, definitionRef: 'w', rects: [{ col: 0, row: -1, width: 4, height: 1 }] },
+    ]);
+    expect(wide.scenes[0].entities.slice(before).map((e) => e.transform.position)).toEqual([{ x: 32, y: -16 }, { x: 96, y: -16 }]);
     // A door (one cell wide, two tall) drawn in one row stands on that row's bottom, not sunk into the ground.
     const d = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Door').id, rects: [{ col: 3, row: -1, width: 1, height: 1 }] }]);
     expect(d.scenes[0].entities.at(-1)!.transform.position).toEqual({ x: 112, y: -32 });

@@ -44,6 +44,12 @@ describe('pixel-art sprites', () => {
   it('draw_sprite makes it the look of every copy (definition) or one copy (instance), as one undoable change', () => {
     let project = createProject(registry);
     const sceneId = project.scenes[0].id;
+    // A two-tile-wide hazard (64×16), drawn on a 32×8 grid.
+    project = produce(project, (d) => {
+      const h = d.definitions.find((x) => x.name === 'Hazard')!;
+      h.components.Sprite.width = 64;
+      h.components.Collider.size = { x: 64, y: 16 };
+    });
     const hazard = project.definitions.find((d) => d.name === 'Hazard')!;
     const placed = instantiateDefinition(hazard, { x: 0, y: 0 });
     project = produce(project, (d) => m.addEntity(d, sceneId, placed));

@@ -486,7 +486,7 @@ export function applyOperations(
         const cells = op.rects.reduce((n, r) => n + r.width * r.height, 0);
         if (cells > MAX_DRAW_CELLS) throw new m.ModelError(`draw_tiles: ${cells} cells is too many at once (max ${MAX_DRAW_CELLS})`);
         const taken = new Set(scene.entities.filter((e) => e.definitionId === defId).map((e) => `${Math.round(e.transform.position.x)},${Math.round(e.transform.position.y)}`));
-        // An object bigger than a cell (a 64×16 row of spikes, a 32×64 door) takes several cells: copies go side by side
+        // An object bigger than a cell (a 64×32 block, a 32×64 door) takes several cells: copies go side by side
         // every `step` cells, not one per cell on top of each other. Each sits on the bottom of its block of cells.
         const step = { x: Math.max(1, Math.round(size.x / LEVEL_CELL)), y: Math.max(1, Math.round(size.y / LEVEL_CELL)) };
         for (const r of op.rects) {

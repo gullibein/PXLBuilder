@@ -476,6 +476,11 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Format v9
+The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes
+drawing; older games get it if its size was never changed, and each placed
+copy becomes two one-tile copies covering the same ground.
+
 ### Level layout checks and placement help
 - `draw_tiles` places objects bigger than a cell side by side (a 2-cell
   row of spikes every 2 cells; a 2-cell-tall door stands on the bottom of the

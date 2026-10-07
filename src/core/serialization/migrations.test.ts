@@ -144,4 +144,24 @@ describe('format v2 -> v3', () => {
     expect(kept.definitions[0].components.CharacterController.jumpForce).toBe(420);
     expect(kept.definitions[1].components.Sprite.assetId).toBeNull();
   });
+
+  it('v8 -> v9: the starter Hazard becomes one tile wide; placed copies become two, covering the same ground', async () => {
+    const { migrateProject } = await import('./migrations');
+    const { SPIKES_ART_V8_ROWS } = await import('../model/factory');
+    const entity = (id: string, x: number, components = {}) => ({ id, name: 'Hazard', definitionId: 'def_h', transform: { position: { x, y: 24 }, rotation: 0, scale: { x: 1, y: 1 } }, components, removedComponents: [], tags: [] });
+    const raw = {
+      formatVersion: 8,
+      assets: [{ id: 'ast_old', name: 'Spikes', kind: 'image', data: '', width: 32, height: 8, pixelArt: { palette: [], rows: [...SPIKES_ART_V8_ROWS] } }],
+      scenes: [{ id: 'scn', name: 'Level 1', entities: [entity('ent_a', 64), entity('ent_b', 200, { Sprite: { width: 64 } })], relationships: [], rules: [] }],
+      definitions: [{ id: 'def_h', name: 'Hazard', description: '', tags: ['hazard'], metadata: { starter: 'Hazard' }, components: { Sprite: { width: 64, height: 16, frame: 1, assetId: 'ast_old', color: '#ff6b2c' }, Collider: { size: { x: 64, y: 16 }, isTrigger: true } } }],
+    };
+    type E = { id: string; transform: { position: { x: number } } };
+    const out = migrateProject(raw) as unknown as { assets: { id: string; pixelArt?: { rows: string[] } }[]; scenes: { entities: E[] }[]; definitions: { components: Record<string, Record<string, unknown>> }[] };
+    const hazard = out.definitions[0].components;
+    expect(hazard.Sprite).toMatchObject({ width: 32, height: 16 });
+    expect(hazard.Collider.size).toEqual({ x: 32, y: 16 });
+    expect(out.assets.find((a) => a.id === hazard.Sprite.assetId)!.pixelArt!.rows[0]).toHaveLength(16);
+    const xs = out.scenes[0].entities.map((e) => [e.id === 'ent_a' ? 'a' : e.id === 'ent_b' ? 'b' : 'new', e.transform.position.x]);
+    expect(xs).toEqual([['a', 48], ['new', 80], ['b', 200]]); // a copy with its own size is left alone
+  });
 });

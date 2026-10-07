@@ -161,7 +161,7 @@ export interface AIPayload {
     tags: string[];
     components: string[];
     placedCount: number;
-    /** Its size in pixels, and how many 32 px level cells it takes (a 64×16 row of spikes: 2×1). */
+    /** Its size in pixels, and how many 32 px level cells it takes (a 32×64 door: 1×2). */
     size: { w: number; h: number; cells: { w: number; h: number } };
     /** Behavior scripts every copy runs (in full when it's a target's object; else id, name and description). */
     scripts: { id: Id; name: string; description: string }[];

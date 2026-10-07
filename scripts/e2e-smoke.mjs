@@ -1276,7 +1276,7 @@ try {
   await sw_sAsk('Make this look like spikes.');
   await changeObject(sw_sPrompt);
   await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"make this look like spikes" draws a sprite');
-  await check(JSON.stringify(aiRequests.at(-1).context.targets[0].spriteGrid) === '{"width":32,"height":8}', 'the AI is told to draw 32×8 pixels for the 64×16 hazard (its proportions)');
+  await check(JSON.stringify(aiRequests.at(-1).context.targets[0].spriteGrid) === '{"width":32,"height":16}', 'the AI is told to draw 32×16 pixels for the one-tile 32×16 hazard (its proportions)');
   await sw_sPrompt.getByTestId('prompt-details').click();
   await check(async () => (await swp.getByTestId('component-Sprite').innerText()).includes('Spikes'), 'the hazard now uses the drawn "Spikes" image (its size is unchanged)');
   await swp.getByTestId('close-details').click();
