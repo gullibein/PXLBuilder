@@ -2,8 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ['main'] # Change to your branch name if it's not main (e.g. master)
-
+    branches: ['main', 'claude/trusting-carson-2kvonz']
 permissions:
   contents: read
   pages: write
