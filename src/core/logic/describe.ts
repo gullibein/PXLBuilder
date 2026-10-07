@@ -25,6 +25,9 @@ export function describeCondition(project: Project, scene: Scene | null, c: Cond
     case 'switch_on':
       text = `${who} is on`;
       break;
+    case 'none_left':
+      text = `no ${who} is left`;
+      break;
   }
   return c.not ? `not (${text})` : text;
 }
@@ -54,6 +57,12 @@ export function describeAction(project: Project, scene: Scene | null, a: RuleAct
       return `take ${itemPhrase(a.item, a.count)} from ${ref(a.target)}`;
     case 'restart_level':
       return 'restart the level';
+    case 'complete_level':
+      return 'complete the level';
+    case 'show':
+      return `show ${ref(a.target)}`;
+    case 'hide':
+      return `hide ${ref(a.target)}`;
     case 'show_message':
       return `show "${a.text}"`;
     case 'camera_shake':

@@ -265,6 +265,24 @@ function migrateV8toV9(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v9 -> v10
+ * - New starter objects: Teleporter and Goal, added to games that don't have
+ *   them yet (by starter name, or an object already called that).
+ */
+function migrateV9toV10(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const assets = createStarterAssets();
+  const defs = createStarterDefinitions(componentRegistry, assets);
+  for (const [name, asset] of [['Teleporter', assets.teleporter], ['Goal', assets.goal]] as const) {
+    const has = (project.definitions ?? []).some((d: Raw) => (d.metadata?.starter ?? d.name) === name || d.name === name);
+    if (has) continue;
+    project.definitions = [...(project.definitions ?? []), structuredClone(defs.find((d) => d.name === name))];
+    project.assets = [...(project.assets ?? []), asset];
+  }
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -274,6 +292,7 @@ export const MIGRATIONS: Migration[] = [
   { from: 6, to: 7, migrate: migrateV6toV7 },
   { from: 7, to: 8, migrate: migrateV7toV8 },
   { from: 8, to: 9, migrate: migrateV8toV9 },
+  { from: 9, to: 10, migrate: migrateV9toV10 },
 ];
 
 export class MigrationError extends Error {

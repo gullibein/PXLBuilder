@@ -951,6 +951,52 @@ function rt0(b: Builder, name: string): string {
   return b.d.scenes.find((s) => s.id === b.sceneId)!.entities.find((e) => e.name === name)!.id;
 }
 
+describe('winning a level', () => {
+  /** A trigger object with the given components (a flag, a pad…), placed at x on the ground. */
+  function thing(b: Builder, name: string, x: number, extra: Record<string, Record<string, unknown>>) {
+    const def = createDefinition(name, { Sprite: registry.createDefault('Sprite', { width: 20, height: 32 }), Collider: registry.createDefault('Collider', { size: { x: 20, y: 32 }, isTrigger: true }), ...extra });
+    m.addDefinition(b.d, def, registry);
+    return b.place(name, { x, y: 16 });
+  }
+
+  it('touching a Goal wins the level (once)', () => {
+    const { rt, input } = level((b) => thing(b, 'Flag', 96, { Goal: {} }));
+    walkRight(rt, input, 0.6);
+    expect(rt.completed).not.toBeNull();
+    walkRight(rt, input, 0.6);
+    expect(events(rt, 'level_completed')).toEqual([expect.objectContaining({ subject: 'Player' })]);
+  });
+
+  it('a rule: when no coin is left, complete the level', () => {
+    const { rt, input } = level((b) => {
+      b.place('Coin', { x: 50, y: 20 });
+      b.place('Coin', { x: 90, y: 20 });
+      logic.addRule(b.d, b.sceneId, { name: 'All coins', enabled: true, when: { event: 'collected', subject: { kind: 'any' }, other: { kind: 'any' } }, conditions: [{ type: 'none_left', entity: { kind: 'object', id: b.def('Coin') }, not: false }], actions: [{ type: 'complete_level' }] });
+    });
+    walkRight(rt, input, 0.3);
+    expect(rt.completed).toBeNull(); // one coin still there
+    walkRight(rt, input, 0.6);
+    expect(rt.completed).not.toBeNull();
+  });
+
+  it('a ladder that Starts Hidden appears when every coin is collected', () => {
+    const { rt, input } = level((b) => {
+      b.place('Coin', { x: 60, y: 20 });
+      const ladder = b.place('Ladder', { x: -100, y: 16 });
+      m.addEntityComponent(b.d, b.sceneId, ladder, 'StartsHidden', registry);
+      logic.addRule(b.d, b.sceneId, { name: 'Escape ladder', enabled: true, when: { event: 'collected', subject: { kind: 'any' }, other: { kind: 'any' } }, conditions: [{ type: 'none_left', entity: { kind: 'object', id: b.def('Coin') }, not: false }], actions: [{ type: 'show', target: { kind: 'entity', id: ladder } }] });
+    });
+    const ladder = () => rt.entities.find((e) => e.name === 'Ladder')!;
+    expect(ladder().alive).toBe(false);
+    expect(rt.renderList().some((r) => r.name === 'Ladder')).toBe(false);
+    walkRight(rt, input, 0.8);
+    expect(ladder().alive).toBe(true);
+    rt.restart();
+    expect(ladder().alive).toBe(false); // hidden again when the level starts over
+    expect(rt.completed).toBeNull();
+  });
+});
+
 describe('the play recorder (for debugging)', () => {
   it('records events, a trace of the player and the end state; falling off is logged with its reason', () => {
     const { rt, input, p } = level((b) => {

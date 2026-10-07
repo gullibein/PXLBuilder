@@ -33,6 +33,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
   { type: 'locked', description: 'A player touches something that requires an item (a "requires" door) without carrying it, so it stays shut (detail.needs is the item).', subject: 'what stayed shut', other: 'who touched it', phrase: '{other} touches {subject}, which stays locked' },
+  { type: 'level_completed', description: 'The level is won (a Goal was reached or a rule completed it).', subject: 'who reached the goal, if anyone', other: null, phrase: 'the level is completed' },
   { type: 'closed', description: 'Something closes.', subject: 'what closed', other: 'what closed it, if anything', phrase: '{subject} closes' },
   { type: 'teleported', description: 'Something is moved to another place (by a teleporter or a teleport action).', subject: 'who was moved', other: 'where it arrived', phrase: '{subject} is teleported to {other}' },
   { type: 'timer', description: 'A Timer component goes off (every `interval` seconds, or once).', subject: 'what has the Timer', other: null, phrase: "{subject}'s timer goes off" },
@@ -189,6 +190,7 @@ export const conditionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('health'), entity: entityRefSchema, compare: z.enum(['<', '<=', '==', '>=', '>']), value: z.number().finite(), not }),
   z.object({ type: z.literal('is_open'), entity: entityRefSchema, not }),
   z.object({ type: z.literal('switch_on'), entity: entityRefSchema, not }),
+  z.object({ type: z.literal('none_left'), entity: entityRefSchema, not }),
 ]);
 
 const amount = z.number().finite().min(0);
@@ -207,6 +209,9 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('respawn'), target: entityRefSchema }),
   z.object({ type: z.literal('teleport'), target: entityRefSchema, to: entityRefSchema }),
   z.object({ type: z.literal('restart_level') }),
+  z.object({ type: z.literal('complete_level') }),
+  z.object({ type: z.literal('show'), target: entityRefSchema }),
+  z.object({ type: z.literal('hide'), target: entityRefSchema }),
   z.object({ type: z.literal('show_message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(3) }),
   z.object({ type: z.literal('camera_shake'), strength: z.number().positive().max(64).default(6), seconds: z.number().positive().max(10).default(0.4) }),
   z.object({ type: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ffffff'), seconds: z.number().positive().max(10).default(0.3) }),
@@ -243,6 +248,7 @@ export const CONDITION_HELP: Record<string, string> = {
   health: 'entity health compared with `value`',
   is_open: 'entity (e.g. a door) is open',
   switch_on: 'entity (a switch) is on',
+  none_left: 'nothing matching `entity` is left in play (e.g. {"kind":"tag","tag":"coin"}: every coin collected; {"kind":"tag","tag":"enemy"}: every enemy defeated)',
 };
 
 export const ACTION_HELP: Record<string, string> = {
@@ -258,6 +264,9 @@ export const ACTION_HELP: Record<string, string> = {
   respawn: 'put target back at its start with full health',
   teleport: 'move target to where `to` is (standing on the same floor); it does not bounce straight back',
   restart_level: 'start the level again from the beginning',
+  complete_level: 'the level is won: play goes on to the next level, or the game is finished after the last one',
+  show: 'bring target into play (something that Starts Hidden, or was hidden): a ladder that appears, a bridge, a secret door',
+  hide: 'take target out of play until shown again',
   show_message: 'show `text` on screen for `seconds`',
   camera_shake: 'shake the screen (`strength` px, fading out over `seconds`)',
   camera_flash: 'flash the screen in `color` ("#rrggbb"), fading over `seconds`',

@@ -100,6 +100,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
     case 'restart_level':
       return one('restart the level');
+    case 'complete_level':
+      return one('complete the level');
     case 'camera_shake':
       return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
     case 'camera_flash':

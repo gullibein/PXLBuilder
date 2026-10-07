@@ -28,6 +28,8 @@ export type PathStep =
 export interface BuildPathInput {
   sceneId: Id;
   start: { col: number; row: number } | null;
+  /** Which way the route goes from its start. */
+  direction: 'right' | 'left';
   floor: string;
   ladder: string | null;
   steps: PathStep[];
@@ -108,6 +110,7 @@ export function buildPath(
   // Where the last floor tile went (objects are put there); the route goes right, so the first run starts at the cursor.
   let lastFloor: number | null = onFloor ? col : null;
   let started = false;
+  const dx = input.direction === 'left' ? -1 : 1;
 
   const floorDef = def(input.floor);
   const place = (d: ObjectDefinition, c: number, r: number, ref: string | null = null, name: string | null = null) => {
@@ -140,13 +143,13 @@ export function buildPath(
       case 'run': {
         if (step.cells < 1 || step.cells > 200) throw new m.ModelError(`build_path step ${i + 1}: run 1 to 200 cells`);
         // The route continues right of the last floor (or starts at the cursor).
-        const from = started || lastFloor === null ? col : col + 1;
+        const from = started || lastFloor === null ? col : col + dx;
         if (!onFloor || lastFloor === null) stretchStart = from;
-        for (let c = from; c < from + step.cells; c++) {
-          headroom(c, row, i);
-          lay(c, row + 1, i);
+        for (let k = 0; k < step.cells; k++) {
+          headroom(from + k * dx, row, i);
+          lay(from + k * dx, row + 1, i);
         }
-        col = from + step.cells - 1;
+        col = from + (step.cells - 1) * dx;
         lastFloor = col;
         onFloor = true;
         started = true;
@@ -159,10 +162,11 @@ export function buildPath(
           throw new m.ModelError(`build_path step ${i + 1}: the player can jump at most ${limits.maxRise} row${limits.maxRise === 1 ? '' : 's'} up, not ${rise}; use a climb step (a ladder) for higher`);
         }
         const most = limits.maxGap(rise);
-        if (step.gap < 1 || step.gap > most) {
+        // A gap of 0 is a step down (the landing right next to the edge, lower).
+        if (step.gap < (rise < 0 ? 0 : 1) || step.gap > most) {
           throw new m.ModelError(`build_path step ${i + 1}: a gap of ${step.gap} cells ${rise > 0 ? `${rise} row up` : rise < 0 ? `${-rise} rows down` : 'at the same height'} is too wide; the player clears at most ${most} cells there`);
         }
-        col = col + step.gap + 1;
+        col = col + (step.gap + 1) * dx;
         row = row - rise;
         onFloor = false;
         started = true;
@@ -179,7 +183,7 @@ export function buildPath(
         if (step.rows < 1 || step.rows > 30) throw new m.ModelError(`build_path step ${i + 1}: climb 1 to 30 rows`);
         const ladderDef = def(input.ladder ?? 'Ladder');
         // The ladder stands on the floor in the next column; its top cell is level with the new platform's floor.
-        const lc = col + 1;
+        const lc = col + dx;
         lay(lc, row + 1, i);
         for (let r = row; r > row - step.rows; r--) {
           free(lc, r, 'the ladder', i);
@@ -188,7 +192,7 @@ export function buildPath(
         }
         row -= step.rows;
         // The platform the ladder leads to starts right beside its top.
-        col = lc + 1;
+        col = lc + dx;
         headroom(col, row, i);
         lay(col, row + 1, i);
         lastFloor = col;
@@ -202,7 +206,8 @@ export function buildPath(
         const most = limits.maxGap(0) - 1;
         if (step.cells < 1 || step.cells > most) throw new m.ModelError(`build_path step ${i + 1}: the player can safely jump over at most ${most} cells of hazards; use ${most} or fewer (put a run between groups)`);
         const hd = def(step.object);
-        for (let c = col + 1; c <= col + step.cells; c++) {
+        for (let k = 1; k <= step.cells; k++) {
+          const c = col + k * dx;
           headroom(c, row, i);
           lay(c, row + 1, i);
           free(c, row, 'the hazard', i);
@@ -210,7 +215,7 @@ export function buildPath(
           taken.set(cellKey(c, row), hd.name);
         }
         // Safe floor right after it, to land on.
-        col += step.cells + 1;
+        col += (step.cells + 1) * dx;
         headroom(col, row, i);
         lay(col, row + 1, i);
         lastFloor = col;
@@ -225,7 +230,7 @@ export function buildPath(
         // The rightmost cell of the current stretch with room for it (not on hazards, not on something else).
         const fits = (c: number) => solid.has(cellKey(c, row + 1)) && [...Array(tall).keys()].every((k) => !taken.has(cellKey(c, row - k)));
         let at: number | null = null;
-        for (let c = lastFloor; c >= Math.min(stretchStart, lastFloor); c--) {
+        for (let c = lastFloor; dx > 0 ? c >= stretchStart : c <= stretchStart; c -= dx) {
           if (fits(c)) {
             at = c;
             break;

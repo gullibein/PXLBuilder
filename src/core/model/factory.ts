@@ -189,6 +189,50 @@ const SPIKES_ART: PixelArt = {
   ],
 };
 
+/** A glowing teleporter pad (32×12). */
+const TELEPORTER_ART: PixelArt = {
+  palette: [{ key: 'a', color: '#d9ccff' }, { key: 'b', color: '#9c7dff' }, { key: 'c', color: '#6b4be0' }, { key: 'o', color: '#2e2a5a' }, { key: 'd', color: '#16132e' }],
+  rows: [
+    '.....cccccc.....',
+    '...cbbbbbbbbc...',
+    '..cbaaaaaaaabc..',
+    '.cbaaaaaaaaaabc.',
+    'oooooooooooooooo',
+    'dddddddddddddddd',
+  ],
+};
+
+/** A goal flag (32×32). */
+const GOAL_ART: PixelArt = {
+  palette: [{ key: 'p', color: '#e8e2d0' }, { key: 'f', color: '#ffcc33' }, { key: 'g', color: '#5b6070' }],
+  rows: [
+    '....pff.........',
+    '....pffff.......',
+    '....pfffffff....',
+    '....pffffffff...',
+    '....pfffffff....',
+    '....pffff.......',
+    '....pff.........',
+    '....p...........',
+    '....p...........',
+    '....p...........',
+    '....p...........',
+    '....p...........',
+    '....p...........',
+    '....p...........',
+    '...ggg..........',
+    '..ggggg.........',
+  ],
+};
+
+export function createTeleporterAsset(): AssetRecord {
+  return createPixelArtAsset('Teleporter', TELEPORTER_ART);
+}
+
+export function createGoalAsset(): AssetRecord {
+  return createPixelArtAsset('Goal', GOAL_ART);
+}
+
 export function createSpikesAsset(): AssetRecord {
   return createPixelArtAsset('Spikes', SPIKES_ART);
 }
@@ -213,10 +257,12 @@ export interface StarterAssets {
   player: AssetRecord;
   enemy: AssetRecord;
   hazard: AssetRecord;
+  teleporter: AssetRecord;
+  goal: AssetRecord;
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset() };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset() };
 }
 
 /** Library categories of the starter objects. */
@@ -231,6 +277,8 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Door: 'Environment',
   Switch: 'Environment',
   Hazard: 'Environment',
+  Teleporter: 'Environment',
+  Goal: 'Environment',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder']);
 
@@ -337,6 +385,25 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       ['hazard'],
       'Spikes, one tile wide: damages anything that touches it. Draw a row of them for longer spikes.',
     ),
+    createDefinition(
+      'Teleporter',
+      {
+        Sprite: c('Sprite', { width: 32, height: 12, color: '#9c7dff', assetId: assets.teleporter.id }),
+        Collider: c('Collider', { size: { x: 32, y: 12 }, isTrigger: true }),
+      },
+      ['teleporter'],
+      'A teleporter pad. Connect two with "teleports to" (each way for a two-way pair): stepping on one puts the player on the other.',
+    ),
+    createDefinition(
+      'Goal',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#ffcc33', assetId: assets.goal.id }),
+        Collider: c('Collider', { size: { x: 20, y: 32 }, isTrigger: true, matchSprite: false }),
+        Goal: c('Goal'),
+      },
+      ['goal'],
+      'The level goal: reaching it wins the level (play goes on to the next level).',
+    ),
   ];
   for (const def of defs) {
     // Remembers which starter this is, so it can be reset even after being renamed.
@@ -359,6 +426,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard],
+    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal],
   };
 }

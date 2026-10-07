@@ -19,27 +19,37 @@ interface Hud {
   messages: string[];
   hasSwitches: boolean;
   canShoot: boolean;
+  /** "Level complete!" while moving on, or "You finished the game!" after the last level. */
+  banner: string | null;
 }
 
 const sameHud = (a: Hud, b: Hud) => JSON.stringify(a) === JSON.stringify(b);
 
 export function PlayView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false });
+  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, banner: null });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const { project, activeSceneId } = useEditor.getState();
     const images = imageLookup(project);
+    // Play starts at the level being edited; a won level goes on to the next one (in the levels' order).
+    let scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
-    const runtime = new Runtime(project, activeSceneId, componentRegistry);
+    let runtime = new Runtime(project, scene.id, componentRegistry);
     // What happens is recorded for the Debug tab and the AI ("why did the player die?").
-    const recorder = new PlayRecorder(runtime);
-    const hasSwitches = runtime.entities.some((e) => e.switch);
-    const canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
-    let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot };
+    let recorder = new PlayRecorder(runtime);
+    let hasSwitches = false;
+    let canShoot = false;
+    const look = () => {
+      hasSwitches = runtime.entities.some((e) => e.switch);
+      canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
+    };
+    look();
+    let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot, banner: null };
+    /** The game is finished: the last level was won (play stops, the banner stays). */
+    let finished = false;
     const input = new InputState();
-    const scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
 
     const size = { width: 1, height: 1 };
     const measure = () => {
@@ -64,6 +74,7 @@ export function PlayView() {
         input.press(action);
       } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
         runtime.restart();
+        finished = false;
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -82,8 +93,27 @@ export function PlayView() {
       frame = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      runtime.update(dt, input);
-      recorder.sample();
+      if (!finished) {
+        runtime.update(dt, input);
+        recorder.sample();
+      }
+      // A won level: a moment to see it, then the next level (or the end of the game).
+      let banner: string | null = null;
+      if (runtime.completed !== null) {
+        const nextScene = project.scenes[project.scenes.findIndex((s) => s.id === scene.id) + 1];
+        banner = nextScene ? 'Level complete!' : 'You finished the game!';
+        if (nextScene && runtime.time - runtime.completed > 1.5) {
+          recorder.stop();
+          scene = nextScene;
+          runtime = new Runtime(project, scene.id, componentRegistry);
+          recorder = new PlayRecorder(runtime);
+          look();
+          measure();
+          runtime.cam.snap();
+          banner = null;
+        } else if (!nextScene) finished = true;
+      }
+      canvas.dataset.level = scene.name;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const dpr = canvas.width / size.width;
@@ -115,6 +145,7 @@ export function PlayView() {
         messages: runtime.messages,
         hasSwitches,
         canShoot,
+        banner,
       };
       if (!sameHud(next, shown)) {
         shown = next;
@@ -158,6 +189,11 @@ export function PlayView() {
           </span>
         ))}
       </div>
+      {hud.banner && (
+        <div className="hud-banner" data-testid="hud-banner">
+          {hud.banner}
+        </div>
+      )}
       {hud.messages.length > 0 && (
         <div className="hud-message" data-testid="hud-message">
           {hud.messages.at(-1)}

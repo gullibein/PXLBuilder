@@ -28,6 +28,7 @@ describe('build_path: levels built as a route the player can follow', () => {
         op: 'build_path',
         sceneId,
         start: null,
+        direction: 'right',
         floor: 'Platform',
         ladder: null,
         steps: [
@@ -58,7 +59,7 @@ describe('build_path: levels built as a route the player can follow', () => {
 
   it('refuses steps the player could not make, with the limits', () => {
     const { project, sceneId } = emptyLevel();
-    const path = (steps: Extract<Operation, { op: 'build_path' }>['steps']) => () => build(project, [{ op: 'build_path', sceneId, start: null, floor: 'Platform', ladder: null, steps }]);
+    const path = (steps: Extract<Operation, { op: 'build_path' }>['steps']) => () => build(project, [{ op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps }]);
     expect(path([{ do: 'run', cells: 3 }, { do: 'jump', gap: 1, rise: 2 }])).toThrow(/at most 1 row up, not 2; use a climb step/);
     expect(path([{ do: 'run', cells: 3 }, { do: 'jump', gap: 6, rise: 0 }])).toThrow(/a gap of 6 cells at the same height is too wide; the player clears at most 3 cells/);
     expect(path([{ do: 'run', cells: 3 }, { do: 'hazard', object: 'Hazard', cells: 4 }])).toThrow(/at most 2 cells of hazards/);
@@ -67,11 +68,41 @@ describe('build_path: levels built as a route the player can follow', () => {
 
   it('only starts where the player can get to, and never builds into what is there', () => {
     const { project, sceneId } = emptyLevel();
-    const ground = build(project, [{ op: 'build_path', sceneId, start: null, floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 6 }] }]);
-    const from = (start: { col: number; row: number }) => () => build(ground, [{ op: 'build_path', sceneId, start, floor: 'Stone', ladder: null, steps: [{ do: 'run', cells: 2 }] }]);
+    const ground = build(project, [{ op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 6 }] }]);
+    const from = (start: { col: number; row: number }) => () => build(ground, [{ op: 'build_path', sceneId, start, direction: 'right', floor: 'Stone', ladder: null, steps: [{ do: 'run', cells: 2 }] }]);
     expect(from({ col: 4, row: -6 })).toThrow(/not a spot the player can get to/);
     expect(from({ col: 4, row: 0 })).not.toThrow(); // on the ground the player walks on
     const blocked = build(ground, [{ op: 'place_instance', sceneId, definitionRef: ground.definitions.find((d) => d.name === 'Stone')!.id, x: 240, y: 16, name: null, ref: null }]);
-    expect(() => build(blocked, [{ op: 'build_path', sceneId, start: { col: 5, row: 0 }, floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 3 }] }])).toThrow(/no room to stand|already taken/);
+    expect(() => build(blocked, [{ op: 'build_path', sceneId, start: { col: 5, row: 0 }, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 3 }] }])).toThrow(/no room to stand|already taken/);
+  });
+
+  it('a level that starts in the middle: routes both ways, a teleporter pair and a goal, all reachable', () => {
+    const base = createProject(registry);
+    const sceneId = base.scenes[0].id;
+    const project = produce(base, (d) => {
+      m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === 'Player')!, { x: 336, y: 16 })); // col 10
+    });
+    const id = (name: string) => project.definitions.find((d) => d.name === name)!.id;
+    const after = build(project, [
+      { op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Stone', ladder: null, steps: [
+        { do: 'run', cells: 4 }, { do: 'climb', rows: 4 }, { do: 'run', cells: 4 }, { do: 'put', object: 'Teleporter', name: 'Up', ref: 'up' },
+        { do: 'jump', gap: 2, rise: -1 }, { do: 'run', cells: 3 }, { do: 'put', object: 'Door', name: null, ref: 'door' }, { do: 'run', cells: 2 }, { do: 'put', object: 'Goal', name: null, ref: null },
+      ] },
+      { op: 'build_path', sceneId, start: null, direction: 'left', floor: 'Platform', ladder: null, steps: [
+        { do: 'run', cells: 3 }, { do: 'hazard', object: 'Hazard', cells: 2 }, { do: 'run', cells: 2 }, { do: 'jump', gap: 0, rise: -2 }, { do: 'run', cells: 3 },
+        { do: 'put', object: 'Key', name: null, ref: null }, { do: 'put', object: 'Teleporter', name: 'Down', ref: 'down' },
+      ] },
+      { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'teleports_to', source: { kind: 'entity', id: 'down' }, target: { kind: 'entity', id: 'up' }, params: {}, conditions: [] }) },
+      { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'requires', source: { kind: 'entity', id: 'door' }, target: { kind: 'object', id: id('Key') }, params: {}, conditions: [] }) },
+      // An enemy placed in the air lands on the floor below it.
+      { op: 'place_instance', sceneId, definitionRef: id('Enemy'), x: 400, y: -100, name: null, ref: null },
+    ]);
+    expect(reachabilityProblems(after, sceneId, registry)).toEqual([]);
+    const map = levelMap(after, sceneId, registry)!.rows.join('\n');
+    const [left, right] = [map.indexOf('k'), map.indexOf('G')];
+    expect(left).toBeGreaterThan(-1);
+    expect(right).toBeGreaterThan(-1);
+    const enemy = after.scenes[0].entities.find((e) => e.name === 'Enemy')!;
+    expect(enemy.transform.position.y).toBe(17); // standing on the floor (top at 32; the enemy is 30 tall)
   });
 });

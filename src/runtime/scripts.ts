@@ -381,6 +381,9 @@ export class ScriptSystem {
       case 'restart_level':
         this.rt.restart();
         break;
+      case 'complete_level':
+        this.rt.completeLevel(e);
+        break;
       case 'camera_shake':
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
         break;

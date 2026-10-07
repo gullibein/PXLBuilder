@@ -122,7 +122,7 @@ describe('format v2 -> v3', () => {
     expect(out.assets.find((a) => a.id === player.components.Sprite.assetId)?.name).toBe('Player');
     // A recolored enemy keeps its own look.
     expect(out.definitions.find((d) => d.name === 'Enemy')!.components.Sprite.assetId).toBeNull();
-    expect(out.assets).toHaveLength(1);
+    expect(out.assets.filter((a) => !['Teleporter', 'Goal'].includes(a.name))).toHaveLength(1); // (v10 adds the Teleporter's and Goal's)
   });
 
   it('v7 -> v8: the starter Player jumps with 350 and the starter Hazard looks like spikes, unless changed', async () => {
@@ -163,5 +163,16 @@ describe('format v2 -> v3', () => {
     expect(out.assets.find((a) => a.id === hazard.Sprite.assetId)!.pixelArt!.rows[0]).toHaveLength(16);
     const xs = out.scenes[0].entities.map((e) => [e.id === 'ent_a' ? 'a' : e.id === 'ent_b' ? 'b' : 'new', e.transform.position.x]);
     expect(xs).toEqual([['a', 48], ['new', 80], ['b', 200]]); // a copy with its own size is left alone
+  });
+
+  it('v9 -> v10: Teleporter and Goal objects are added, unless the game has them', async () => {
+    const { migrateProject } = await import('./migrations');
+    type Out = { definitions: { name: string; components: Record<string, unknown> }[]; assets: { name: string }[] };
+    const out = migrateProject({ formatVersion: 9, assets: [], scenes: [], definitions: [] }) as unknown as Out;
+    expect(out.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal']);
+    expect(out.definitions[1].components.Goal).toBeDefined();
+    expect(out.assets.map((a) => a.name)).toEqual(['Teleporter', 'Goal']);
+    const own = migrateProject({ formatVersion: 9, assets: [], scenes: [], definitions: [{ id: 'd', name: 'Teleporter', description: '', tags: [], metadata: {}, components: {} }] }) as unknown as Out;
+    expect(own.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal']); // the game's own Teleporter is kept, not doubled
   });
 });

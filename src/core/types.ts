@@ -101,7 +101,9 @@ export type Condition =
   | { type: 'has_item'; entity: EntityRef; item: string; count: number; not: boolean }
   | { type: 'health'; entity: EntityRef; compare: '<' | '<=' | '==' | '>=' | '>'; value: number; not: boolean }
   | { type: 'is_open'; entity: EntityRef; not: boolean }
-  | { type: 'switch_on'; entity: EntityRef; not: boolean };
+  | { type: 'switch_on'; entity: EntityRef; not: boolean }
+  /** No living (shown) entity matches `entity` any more: all coins collected, all enemies defeated. */
+  | { type: 'none_left'; entity: EntityRef; not: boolean };
 
 /** Something a rule does. */
 export type RuleAction =
@@ -117,6 +119,12 @@ export type RuleAction =
   | { type: 'respawn'; target: EntityRef }
   | { type: 'teleport'; target: EntityRef; to: EntityRef }
   | { type: 'restart_level' }
+  /** The level is won: Play goes on to the next level (or says the game is finished). */
+  | { type: 'complete_level' }
+  /** Bring back something hidden (Starts Hidden, or hidden by hide). */
+  | { type: 'show'; target: EntityRef }
+  /** Take something out of play until shown again. */
+  | { type: 'hide'; target: EntityRef }
   | { type: 'show_message'; text: string; seconds: number }
   | { type: 'camera_shake'; strength: number; seconds: number }
   | { type: 'camera_flash'; color: string; seconds: number }

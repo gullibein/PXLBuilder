@@ -481,6 +481,27 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Ways to win a level (format v10)
+- **Goal** component (starter *Goal*, a flag with a trigger collider): the
+  player touching it completes the level. **complete_level** is also a rule
+  action and a script statement, and the condition **none_left** (no copies
+  of an object left, e.g. all coins collected) lets a rule finish the level
+  or reveal something. **StartsHidden** objects are hidden when play starts
+  and appear with the **show** action (hide hides them), e.g. a ladder out of
+  the screen that appears after the last coin.
+- The runtime records `completed` and fires `level_completed`; Play shows
+  "Level complete!" and moves to the next level in the level list after
+  1.5 s, ending with "You finished the game!" after the last one.
+- Starter *Teleporter* (a pad, trigger collider, tag `teleporter`): wire two
+  with a `teleports_to` connection. v10 adds the Teleporter and Goal starters
+  to older games.
+- The checker notes a level with no way to win (no Goal, no complete_level)
+  only as a note; levels may still be open sandboxes.
+- The AI is told to vary its levels: where the player starts (middle, top,
+  right), routes going left or right (`build_path` takes `direction`) and
+  branching, and which way the level is won. Enemies and anything placed
+  in the air drop onto the surface below.
+
 ### Format v9
 The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes
 drawing; older games get it if its size was never changed, and each placed
@@ -488,7 +509,7 @@ copy becomes two one-tile copies covering the same ground.
 
 ### Levels built as routes (`build_path`) and the level map
 - **build_path** (`core/commands/buildPath.ts`): the AI describes a level as
-  the route the player takes, left to right from the player (or from a cell
+  the route the player takes, to the right or left (`direction`) from the player (or from a cell
   the player already reaches): run, jump (gap + rise), climb (a ladder up to
   a platform beside its top), hazard (to jump over), put (an object standing
   on the floor). The app lays the tiles, ladders, hazards and objects. Each
@@ -503,8 +524,8 @@ copy becomes two one-tile copies covering the same ground.
   column ruler and row numbers. Sent with every AI request; when an answer
   fails the level check, the retry also gets the map of the level as that
   answer would have left it.
-- Doors, switches and spikes placed one by one in the air drop onto the
-  surface below them.
+- Doors, switches, spikes and enemies placed one by one in the air drop onto
+  the surface below them.
 
 ### Level layout checks and placement help
 - `draw_tiles` places objects bigger than a cell side by side (a 2-cell

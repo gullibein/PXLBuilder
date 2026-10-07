@@ -238,6 +238,20 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   {
+    type: 'Goal',
+    label: 'Goal',
+    description: 'Reaching it wins the level: when the player touches it, play goes on to the next level (or the game is finished). An exit flag, the top of an escape ladder, a portal.',
+    category: 'Gameplay',
+    fields: {},
+  },
+  {
+    type: 'StartsHidden',
+    label: 'Starts Hidden',
+    description: 'Not in play at the start: a rule (action show) or a switch brings it in. A ladder that appears when all coins are collected, a hidden bridge.',
+    category: 'Gameplay',
+    fields: {},
+  },
+  {
     type: 'CameraTarget',
     label: 'Camera Target',
     description: 'The camera follows this entity during play.',

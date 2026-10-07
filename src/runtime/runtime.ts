@@ -284,6 +284,8 @@ export class Runtime {
   /** Behavior scripts. */
   readonly scripts: ScriptSystem;
   time = 0;
+  /** When the level was won (play time), or null. PlayView goes on to the next level. */
+  completed: number | null = null;
   /** Called for every logged event (the play recorder listens here; it survives restarts). */
   onLog: ((ev: LoggedEvent) => void) | null = null;
   private accumulator = 0;
@@ -313,6 +315,13 @@ export class Runtime {
   /** (Re)builds the level from the project: everything back at its start. */
   private load(): void {
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
+    // Starts Hidden: out of play until a rule or switch shows it.
+    for (const e of this.entities) {
+      if (!e.base.components.StartsHidden) continue;
+      e.alive = false;
+      e.hiddenBySwitch = true;
+    }
+    this.completed = null;
     this.solidsDirty = true;
     this.ladders = ladderColumns(this.entities.filter((e) => e.climbable));
     // The top of each ladder is a one-way platform you can stand on and climb down from.
@@ -339,6 +348,13 @@ export class Runtime {
   /** Starts the level again from the beginning (a rule action, or R in play). */
   restart(): void {
     this.load();
+  }
+
+  /** The level is won (a Goal reached, or a rule). Only once. */
+  completeLevel(by: RuntimeEntity | null): void {
+    if (this.completed !== null) return;
+    this.completed = this.time;
+    this.gameplay.emit('level_completed', by);
   }
 
   /** Advances by a frame's worth of real time using fixed steps. */

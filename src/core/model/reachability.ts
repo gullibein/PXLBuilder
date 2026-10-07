@@ -215,6 +215,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const important = (r: ResolvedEntity) =>
     r !== player &&
     (r.components.Collectible ||
+      r.components.Goal ||
       r.components.Switch ||
       r.components.Openable ||
       r.tags.some((t) => /^(goal|exit|finish|flag|checkpoint)$/i.test(t)) ||

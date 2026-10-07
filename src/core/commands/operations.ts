@@ -126,13 +126,14 @@ export const operationSchema = z.union([
       .object({ col: z.number().int(), row: z.number().int() })
       .nullable()
       .describe('The cell the player stands in where the route begins: a "_" cell of the level map. null = where the player starts'),
+    direction: z.enum(['right', 'left']).describe('Which way the route goes from its start (a level can branch both ways from the player)'),
     floor: z.string().describe('The solid tile the route is built of (an object id, name or create_definition ref; e.g. Platform or Stone)'),
     ladder: z.string().nullable().describe('The ladder object for climb steps (id, name or ref); null = the library Ladder'),
     steps: z
       .array(
         z.discriminatedUnion('do', [
           z.object({ do: z.literal('run'), cells: z.number().int().describe('Floor this many cells long, going right') }),
-          z.object({ do: z.literal('jump'), gap: z.number().int().describe('Empty cells to jump over'), rise: z.number().int().describe('Rows higher the landing is (negative: lower)') }),
+          z.object({ do: z.literal('jump'), gap: z.number().int().describe('Empty cells to jump over (0 with a negative rise: a step down)'), rise: z.number().int().describe('Rows higher the landing is (negative: lower)') }),
           z.object({ do: z.literal('climb'), rows: z.number().int().describe('A ladder this many rows high; the route continues on a platform at its top') }),
           z.object({ do: z.literal('hazard'), object: z.string().describe('Hazard object (id, name or ref)'), cells: z.number().int().describe('Cells of hazards on the floor, to jump over') }),
           z.object({ do: z.literal('put'), object: z.string().describe('Object to stand on the floor here (key, coin, door, switch, enemy, goal…; id, name or ref)'), name: z.string().nullable(), ref: z.string().nullable().describe('Temporary name to use it in later relationships/rules; null if not needed') }),
@@ -347,10 +348,12 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
         e.transform.position = { ...e.transform.position, y: e.transform.position.y - lift };
         continue;
       }
-      // Doors, switches and spikes stand on something: one placed in the air drops onto the first surface below it.
+      // Doors, switches and spikes stand on something, and things that fall (enemies, the player) would fall at once:
+      // one placed in the air drops onto the first surface below it.
       const c = b.r.components;
+      const falls = c.PhysicsBody?.bodyType === 'dynamic' && c.PhysicsBody.gravityScale !== 0;
       const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.MovingPlatform || c.CharacterController || b.r.scripts.length > 0;
-      if (moves || !(c.Openable || c.Switch || c.Damage)) continue;
+      if (!falls && (moves || !(c.Openable || c.Switch || c.Damage))) continue;
       const near = (a: number, z: number) => Math.abs(a - z) <= 3;
       const supported = solids.some((s) => s.r.id !== e.id && Math.min(b.right, s.right) - Math.max(b.left, s.left) > 1 && (near(b.bottom, s.top) || near(b.top, s.bottom) || (Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1)))
         || solids.some((s) => s.r.id !== e.id && Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1 && (near(b.right, s.left) || near(b.left, s.right)));
@@ -553,7 +556,7 @@ export function applyOperations(
           if (!d) throw new m.ModelError(`build_path: there is no object "${x}"`);
           return d;
         };
-        buildPath(project, { sceneId: op.sceneId, start: op.start, floor: op.floor, ladder: op.ladder, steps: op.steps }, registry, resolveDef, (id, ref) => {
+        buildPath(project, { sceneId: op.sceneId, start: op.start, direction: op.direction, floor: op.floor, ladder: op.ladder, steps: op.steps }, registry, resolveDef, (id, ref) => {
           result.createdEntityIds.push(id);
           if (ref) entityRefs.set(ref, id);
         });

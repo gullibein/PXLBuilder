@@ -32,6 +32,7 @@ function check(build: (b: B) => void) {
     // Ground under the player (a player above nothing is a problem of its own).
     for (let x = -96; x <= 96; x += 32) place('Platform', { x, y: 48 });
     place('Player', { x: 0, y: 16 });
+    place('Goal', { x: -64, y: 16 }); // a way to win (a level without one gets a note)
     build({ d, sceneId, place, def });
   });
   return diagnoseLevel(project, sceneId, registry);
@@ -150,5 +151,16 @@ describe('the problem checker', () => {
     });
     expect(problems.map((p) => p.key.split(':')[0])).toContain('no-look');
     expect(problems.find((p) => p.key.startsWith('no-look'))!.text).toMatch(/^Hazard has no look \(no Sprite\), so it can't be seen while playing, though it still hurts/);
+  });
+
+  it("a level with no way to win gets a note", () => {
+    const base = createProject(registry);
+    const sceneId = base.scenes[0].id;
+    const project = produce(base, (d) => {
+      d.scenes[0].entities = [];
+      for (let x = -96; x <= 96; x += 32) m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((q) => q.name === 'Platform')!, { x, y: 48 }));
+      m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((q) => q.name === 'Player')!, { x: 0, y: 16 }));
+    });
+    expect(diagnoseLevel(project, sceneId, registry)).toMatchObject([{ key: 'no-goal', severity: 'note' }]);
   });
 });

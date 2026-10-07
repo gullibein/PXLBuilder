@@ -73,6 +73,7 @@ function stubModel(body) {
           op: 'build_path',
           sceneId: body.context.level.id,
           start: null,
+          direction: 'right',
           floor: 'Stone',
           ladder: null,
           steps: [
@@ -1064,6 +1065,8 @@ try {
   // Ground from x=-208 to 208, then Player, Key, Switch and Door standing on it.
   await lp.getByTestId('dock-library').click();
   await lp.getByTestId('definition-Platform').click();
+  // (The Objects panel stays open; close it so it doesn't cover where the ground is drawn.)
+  if ((await lp.getByTestId('library-panel').count()) > 0) await lp.getByTestId('dock-library').click();
   const g0 = lAt(-208, 48);
   const g1 = lAt(208, 48);
   await lp.mouse.move(g0.x, g0.y);

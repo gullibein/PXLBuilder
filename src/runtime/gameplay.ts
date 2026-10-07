@@ -309,8 +309,8 @@ export class Gameplay {
     else e.inventory.delete(item);
   }
 
-  /** Taken out of play by a switch (and brought back by it); things removed any other way stay gone. */
-  private setHidden(e: RuntimeEntity, hidden: boolean): void {
+  /** Taken out of play by a switch or a rule (and brought back by them); things removed any other way stay gone. */
+  setHidden(e: RuntimeEntity, hidden: boolean): void {
     if (hidden && e.alive) {
       e.alive = false;
       e.hiddenBySwitch = true;
@@ -371,6 +371,8 @@ export class Gameplay {
     if (ev.type === 'touch_started' && ev.subject && ev.other) {
       const [toucher, touched] = [ev.subject, ev.other];
       if (touched.switch?.activation === 'touch' && toucher.controller) this.activate(touched, toucher);
+      // A Goal wins the level for the player who reaches it.
+      if (touched.base.components.Goal && toucher.controller) this.rt.completeLevel(toucher);
       // "Door requires Key": opens for whoever touches it carrying the item.
       for (const r of this.relationships('requires')) {
         if (!refMatches(r.source, touched) || touched.open) continue;
@@ -454,6 +456,10 @@ export class Gameplay {
         case 'switch_on':
           ok = who.some((e) => e.switch?.on === true);
           break;
+        case 'none_left':
+          // (resolve finds only what is in play; hidden things don't count as left.)
+          ok = who.length === 0;
+          break;
       }
       return c.not ? !ok : ok;
     });
@@ -502,6 +508,15 @@ export class Gameplay {
       }
       case 'restart_level':
         this.rt.restart();
+        break;
+      case 'complete_level':
+        this.rt.completeLevel(ev.subject);
+        break;
+      case 'show':
+        for (const t of this.resolve(a.target, ev, true)) this.setHidden(t, false);
+        break;
+      case 'hide':
+        for (const t of targets()) this.setHidden(t, true);
         break;
       case 'show_message':
         this.messages.push({ text: a.text, until: this.rt.time + a.seconds });

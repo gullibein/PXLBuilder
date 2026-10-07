@@ -60,6 +60,7 @@ export type Stmt =
   | { do: 'alpha'; value: string; on: string | null }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
+  | { do: 'complete_level' }
   | { do: 'camera_shake'; strength: string; seconds: string }
   | { do: 'camera_flash'; color: string; seconds: string }
   | { do: 'camera_zoom'; zoom: string; seconds: string }
@@ -204,6 +205,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
   restart_level: { example: '{"do":"restart_level"}', doc: 'start the level again' },
+  complete_level: { example: '{"do":"complete_level"}', doc: 'the level is won: play goes on to the next level' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
   camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
   camera_zoom: { example: '{"do":"camera_zoom","zoom":"1.5","seconds":"0.5"}', doc: 'zoom to a value (0.25–4) over seconds (0 = at once)' },
@@ -262,6 +264,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
+    z.object({ do: z.literal('complete_level') }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
     z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
     z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
@@ -317,6 +320,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'state':
     case 'signal':
     case 'restart_level':
+    case 'complete_level':
       return [];
     case 'velocity':
       return [s.x, s.y, s.on].filter((x): x is string => x !== null);

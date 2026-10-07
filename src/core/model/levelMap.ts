@@ -40,6 +40,8 @@ interface Mark {
 function markOf(r: ResolvedEntity, name: string): Mark {
   const c = r.components;
   if (c.CharacterController) return { ch: 'P', rank: 0, what: 'player start' };
+  if (c.Goal) return { ch: 'G', rank: 1, what: 'goal (touching it wins the level)' };
+  if (r.tags.includes('teleporter')) return { ch: 'T', rank: 1, what: 'teleporter' };
   if (c.Openable) return { ch: 'D', rank: 1, what: 'door' };
   if (c.Switch) return { ch: 'S', rank: 1, what: 'switch' };
   if (c.Collectible) return /key/i.test(name) || r.tags.includes('key') ? { ch: 'k', rank: 2, what: 'key' } : { ch: 'c', rank: 2, what: 'item to collect' };

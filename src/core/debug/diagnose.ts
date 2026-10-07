@@ -165,6 +165,13 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
     add(`no-look:${defId}`, 'warning', `${label(group)} has no look (no Sprite), so it can't be seen while playing${has(group[0], 'Damage') ? ', though it still hurts' : ''}. Give it a sprite or a color.`, group.map((g) => g.id));
   }
 
+  // ---- a way to finish
+  const finishes =
+    placed.some((p) => has(p, 'Goal')) ||
+    scene.rules.some((r) => r.actions.some((a) => a.type === 'complete_level')) ||
+    allScripts(project, scene).some((s) => JSON.stringify(s.handlers).includes('"complete_level"'));
+  if (players.length && !finishes) add('no-goal', 'note', "This level can't be won yet: there is no Goal and nothing completes the level (a rule or script with complete level). Place a Goal, or add a rule (e.g. when no coin is left, complete the level).", []);
+
   // ---- can the player get to everything?
   for (const r of reachabilityProblems(project, sceneId, registry)) add(r.key, 'warning', r.text, r.entityIds);
 
