@@ -168,6 +168,38 @@ describe('runtime', () => {
     return { rt, input, p };
   }
 
+  it('a hidden ladder can not be climbed until it appears', () => {
+    const { project, sceneId } = level((p, sid) => {
+      const ladder = p.definitions.find((d) => d.name === 'Ladder')!;
+      for (let y = 16; y >= -112; y -= 32) {
+        const e = instantiateDefinition(ladder, { x: 80, y });
+        m.addEntity(p, sid, e);
+        m.addEntityComponent(p, sid, e.id, 'StartsHidden', registry);
+      }
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    const p = rt.find('Player')!;
+    run(rt, input, 1);
+    input.press('right');
+    run(rt, input, 0.4, () => {
+      if (p.x > 76) input.release('right');
+    });
+    input.release('right');
+    input.press('up');
+    run(rt, input, 1);
+    expect(p.climbing).toBe(false);
+    expect(p.y).toBeCloseTo(32 - 16, 0); // still on the ground
+    input.release('up');
+    // The ladder appears (a rule's "show"): now it can be climbed.
+    for (const e of rt.entities) if (e.climbable) rt.gameplay.setHidden(e, false);
+    run(rt, input, 0.1);
+    input.press('up');
+    run(rt, input, 0.5);
+    expect(p.climbing).toBe(true);
+    expect(p.y).toBeLessThan(0);
+  });
+
   it('climbing down to the floor ends the climb, and you can walk away', () => {
     const { rt, input, p } = atLadder();
     input.press('up');

@@ -323,9 +323,7 @@ export class Runtime {
     }
     this.completed = null;
     this.solidsDirty = true;
-    this.ladders = ladderColumns(this.entities.filter((e) => e.climbable));
-    // The top of each ladder is a one-way platform you can stand on and climb down from.
-    this.ladderTops = this.ladders.map((l) => ({ x: l.x, y: l.top + 1, hw: l.hw, hh: 1 }));
+    this.rebuildLadders();
 
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
     this.fallLimit = (bottoms.length ? Math.max(...bottoms) : 0) + FALL_MARGIN;
@@ -395,6 +393,7 @@ export class Runtime {
     }
     if (this.solidsDirty) {
       this.staticSolids = this.entities.filter((e) => this.isSolid(e) && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
+      this.rebuildLadders();
       this.solidsDirty = false;
     }
     this.gameplay.steer();
@@ -453,6 +452,13 @@ export class Runtime {
   }
 
   /** Something opened, closed, appeared or went away. */
+  /** Ladders in play (a hidden ladder can't be climbed or stood on until it appears). */
+  private rebuildLadders(): void {
+    this.ladders = ladderColumns(this.entities.filter((e) => e.climbable && e.alive));
+    // The top of each ladder is a one-way platform you can stand on and climb down from.
+    this.ladderTops = this.ladders.map((l) => ({ x: l.x, y: l.top + 1, hw: l.hw, hh: 1 }));
+  }
+
   markSolidsDirty(): void {
     this.solidsDirty = true;
   }
