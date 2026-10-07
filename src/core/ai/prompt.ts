@@ -33,13 +33,51 @@ export function userMessage(body: AIRequestBody): string {
 /** The JSON object in a plain-JSON reply (tolerates a ```json fence around it). */
 export function parseJsonReply(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let first: unknown;
   try {
     return JSON.parse(trimmed);
   } catch (e) {
-    // A sentence before or after the JSON ("Here is the change: {…}"): read the object itself.
-    const start = trimmed.indexOf('{');
-    const end = trimmed.lastIndexOf('}');
-    if (start < 0 || end <= start || (start === 0 && end === trimmed.length - 1)) throw e;
-    return JSON.parse(trimmed.slice(start, end + 1));
+    first = e;
   }
+  // Words around the JSON ("Here is the change: {…}"), several objects, or a trailing comma:
+  // try each complete {…} in the text, the longest first, as it is and without trailing commas.
+  const candidates = jsonObjects(trimmed).sort((a, b) => b.length - a.length);
+  for (const c of candidates) {
+    for (const attempt of [c, c.replace(/,(\s*[}\]])/g, '$1')]) {
+      try {
+        const v = JSON.parse(attempt);
+        if (v && typeof v === 'object') return v;
+      } catch {
+        // next
+      }
+    }
+  }
+  throw first;
+}
+
+/** Every complete top-level {…} in the text (braces inside strings don't count). */
+function jsonObjects(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = depth > 0;
+    else if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}' && depth > 0) {
+      depth--;
+      if (depth === 0) out.push(text.slice(start, i + 1));
+    }
+  }
+  return out;
 }

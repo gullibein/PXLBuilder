@@ -19,7 +19,8 @@ interface SampleError {
 }
 type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean };
 /** The viewer's sample: called, it gives the answer's text (read here, forgivingly); `json` parses it strictly. */
-type SampleFn = ((input: string, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & { json?(input: string, options?: SampleOptions): Promise<unknown> };
+type SampleInput = string | { role: 'user' | 'assistant'; content: string }[];
+type SampleFn = ((input: SampleInput, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & { json?(input: string, options?: SampleOptions): Promise<unknown> };
 
 /** The viewer's `sample` function, or null outside a claude.ai artifact viewer (local dev, a saved copy). */
 export function claudeSample(): Promise<SampleFn | null> {
@@ -41,27 +42,54 @@ const MESSAGES: Record<string, string> = {
 };
 
 export class SampleAIProvider implements AIProvider {
-  constructor(private readonly sample: SampleFn) {}
+  /** `log`: hears about answers that couldn't be read (with the start of what came back), for the console. */
+  constructor(
+    private readonly sample: SampleFn,
+    private readonly log?: (note: string) => void,
+  ) {}
 
-  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
-    let answer: { text: string; truncated: boolean };
+  private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
     try {
       // Every request is new work: no replay of an earlier answer.
       // Fast: claude.ai's quicker model tier.
-      answer = await this.sample(prompt(body), { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+      return await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
     } catch (e) {
       const err = e as SampleError;
       if (err?.code === 'cancelled') throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
       throw new AIUnavailableError(MESSAGES[err?.code] ?? `The AI request failed (${err?.code ?? 'unknown'}). Try again.`);
     }
+  }
+
+  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+    const question = prompt(body);
+    let answer = await this.ask(question, body, signal);
     // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
     // and an answer that was cut off is told apart from one that is malformed.
-    if (answer.truncated) throw new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
+    const cutOff = () => new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
+    if (answer.truncated) throw cutOff();
     let raw: unknown;
     try {
       raw = parseJsonReply(answer.text);
-    } catch {
-      throw new AIUnavailableError("The AI's answer wasn't in the form the app reads (JSON), so nothing was changed. Try again; asking in a different way or for less at once usually helps.");
+    } catch (e) {
+      // Not readable: say what came back (for the console), and ask once for the same answer as valid JSON.
+      const problem = (e as Error).message;
+      this.log?.(`The AI's answer couldn't be read (${problem}); asking it to send it again. It began: ${answer.text.slice(0, 600)}`);
+      answer = await this.ask(
+        [
+          { role: 'user', content: question },
+          { role: 'assistant', content: answer.text },
+          { role: 'user', content: `That answer is not valid JSON (${problem}), so the app couldn't read it and nothing was changed. Send the same answer again as ONE valid JSON object in the reply format, with nothing before or after it. In strings, escape quotes (\\") and backslashes (\\\\); in drawings use only letters and digits as palette keys.` },
+        ],
+        body,
+        signal,
+      );
+      if (answer.truncated) throw cutOff();
+      try {
+        raw = parseJsonReply(answer.text);
+      } catch (e2) {
+        this.log?.(`Still not readable (${(e2 as Error).message}). It began: ${answer.text.slice(0, 600)}`);
+        throw new AIUnavailableError("The AI's answer wasn't in the form the app reads (JSON), twice, so nothing was changed. Try again; asking in a different way or for less at once usually helps. (The Console shows what came back.)");
+      }
     }
     const parsed = aiResponseSchema.safeParse(raw);
     if (!parsed.success) throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");

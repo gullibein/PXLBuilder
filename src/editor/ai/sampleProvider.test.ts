@@ -4,7 +4,7 @@ import { SampleAIProvider } from './sampleProvider';
 
 /** A stand-in for the viewer's sample: answers with this value as JSON text. */
 const fake = (answer: (input: string, options: unknown) => Promise<unknown> | unknown, wrap = (s: string) => s, truncated = false) =>
-  Object.assign(async (input: string, options?: unknown) => ({ text: wrap(JSON.stringify(await answer(input, options))), truncated }), {});
+  Object.assign(async (input: unknown, options?: unknown) => ({ text: wrap(JSON.stringify(await answer(input as string, options))), truncated }), {});
 
 const body: AIRequestBody = { context: { scope: 'level' } as never, request: 'Make gravity weaker', history: [] };
 
@@ -53,5 +53,33 @@ describe('Claude through claude.ai (sample)', () => {
     expect(await new SampleAIProvider(fake(() => answer, (s) => `${s}\nVona að þetta hjálpi!`)).respond(body)).toEqual(answer);
     await expect(new SampleAIProvider(fake(() => answer, (s) => s.slice(0, 20), true)).respond(body)).rejects.toThrow(/too long and got cut off/);
     await expect(new SampleAIProvider(fake(() => answer, () => 'Ég get það ekki.')).respond(body)).rejects.toThrow(/wasn't in the form the app reads/);
+  });
+  it('an unreadable answer is logged and asked for once more, with the exact problem; a fixed one is used', async () => {
+    const good = { kind: 'apply', message: 'Pilla', changes: [], operations: [] };
+    const inputs: unknown[] = [];
+    const notes: string[] = [];
+    // First a drawing with a quote as a palette key (breaks the JSON), then the corrected answer.
+    const replies = ['{"kind":"apply","message":"Pilla","palette":[{"key":""","color":"#fff"}]}', JSON.stringify(good)];
+    const provider = new SampleAIProvider(
+      async (input: unknown) => {
+        inputs.push(input);
+        return { text: replies[inputs.length - 1], truncated: false };
+      },
+      (n) => notes.push(n),
+    );
+    expect(await provider.respond(body)).toEqual(good);
+    expect(inputs).toHaveLength(2);
+    const turns = inputs[1] as { role: string; content: string }[];
+    expect(turns.map((t) => t.role)).toEqual(['user', 'assistant', 'user']);
+    expect(turns[1].content).toBe(replies[0]);
+    expect(turns[2].content).toMatch(/not valid JSON/);
+    expect(notes[0]).toMatch(/couldn't be read .*It began: \{"kind":"apply"/);
+  });
+
+  it('reads JSON with a trailing comma, or after a sentence that has braces in it', async () => {
+    const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [] };
+    const reply = (text: string) => new SampleAIProvider(async () => ({ text, truncated: false })).respond(body);
+    expect(await reply('{"kind":"answer","message":"Halló","changes":[],"operations":[],}')).toEqual(answer);
+    expect(await reply(`Ég breytti {smá}:\n${JSON.stringify(answer)}`)).toEqual(answer);
   });
 });

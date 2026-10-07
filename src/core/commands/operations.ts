@@ -104,7 +104,7 @@ export const operationSchema = z.union([
     target,
     id: z.string().describe('Entity id (instance) or object definition id (definition) whose look this becomes'),
     name: z.string().describe('Short name for the image, e.g. "Spikes"'),
-    palette: z.array(z.object({ key: z.string().describe('One character'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
+    palette: z.array(z.object({ key: z.string().describe('One letter or digit (never a quote, backslash or space)'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
     rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object)'),
     situation: z
       .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot'])

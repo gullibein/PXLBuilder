@@ -65,7 +65,7 @@ export function setAIProvider(next: AIProvider | null): void {
 async function currentProvider(): Promise<AIProvider> {
   if (override) return override;
   const sample = await claudeSample();
-  if (sample) return new SampleAIProvider(sample);
+  if (sample) return new SampleAIProvider(sample, (note) => useEditor.getState().logMessage('warn', note));
   const settings = getAISettings();
   if (settings.vendor === 'gemini') {
     const gKey = geminiKey.get();
