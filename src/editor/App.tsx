@@ -13,7 +13,9 @@ import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
 import { saveProjectToFile } from './persistence';
 import { ContextPrompt } from './prompt/ContextPrompt';
-import { useEditor } from './store';
+import { getSelectionContext, useEditor } from './store';
+import { contextKey } from '../core/ai/context';
+import { endChat } from './ai/jobs';
 import { PlayView } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
 import { applyAccent, applyStyle } from './theme';
@@ -154,6 +156,9 @@ function useGlobalShortcuts() {
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {
+          // Esc closes the object's card: its chat ends.
+          const ctx = getSelectionContext(state);
+          if (ctx) endChat(contextKey(ctx));
           state.selectEntities([]);
           state.setWorldContext(false);
           state.selectDefinition(null);

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { frameEntities } from '../actions';
-import { cardOpened, clearJob, setJobOutcome, startJob, stopJob, useJobs } from '../ai/jobs';
+import { cardOpened, endChat, setJobOutcome, startJob, stopJob, useJobs, type ChatEntry } from '../ai/jobs';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
@@ -17,6 +17,7 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
   const key = contextKey(ctx);
   const job = useJobs((s) => s.jobs[key]);
   const state: RunState = !job ? { phase: 'idle' } : job.phase === 'working' ? { phase: 'working', request: job.request } : { phase: 'done', request: job.request, outcome: job.outcome! };
+  const thread: ChatEntry[] = job?.thread ?? [];
 
   // While this card is on screen, what finishes here counts as seen.
   useEffect(() => cardOpened(key), [key]);
@@ -40,11 +41,16 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
 
   return {
     state,
+    thread,
     submit(request: string) {
       startJob(ctx, request);
     },
     stop() {
       stopJob(key);
+    },
+    /** The card is being closed: the chat ends. */
+    end() {
+      endChat(key);
     },
     /** The change went to the object (every copy): make it a new object instead (undo it, apply it as a new one). */
     asNew() {
@@ -53,8 +59,9 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
       useEditor.getState().undo();
       setJobOutcome(key, applyObjectChoice(state.request, change, 'new'));
     },
-    reset() {
-      clearJob(key);
+    /** The change was undone from the card: it stays in the chat, marked. */
+    markUndone() {
+      if (state.phase === 'done' && state.outcome.status === 'applied') setJobOutcome(key, { ...state.outcome, undone: true });
     },
   };
 }
@@ -85,8 +92,12 @@ export function PromptBox(props: PromptBoxProps) {
   const working = runner.state.phase === 'working';
   const [expanded, setExpanded] = useState(false);
   // In the header's corner; on a card without a header, at the end of the input row.
-  const closeButton = props.onClose && (
-    <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={props.onClose}>
+  const close = props.onClose && (() => {
+    runner.end();
+    props.onClose!();
+  });
+  const closeButton = close && (
+    <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={close}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
         <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
@@ -95,7 +106,7 @@ export function PromptBox(props: PromptBoxProps) {
   const lastId = useEditor((s) => s.history.past.at(-1)?.id);
   const applied = runner.state.phase === 'done' && runner.state.outcome.status === 'applied' ? runner.state.outcome : null;
   // Editor changes have their own undo; a game change only while nothing else came after it.
-  const canUndo = !!applied && (applied.editor === true || applied.transactionId === undefined || applied.transactionId === lastId);
+  const canUndo = !!applied && !applied.undone && (applied.editor === true || applied.transactionId === undefined || applied.transactionId === lastId);
 
   // Auto-grow up to four lines.
   useLayoutEffect(() => {
@@ -103,8 +114,21 @@ export function PromptBox(props: PromptBoxProps) {
     if (!el) return;
     el.style.height = '0px';
     el.style.height = `${Math.min(el.scrollHeight, 4 * 20 + 14)}px`;
-    // Re-measure when work starts/ends: while working, the request is shown as the placeholder.
   }, [text, working]);
+
+  // The newest exchange stays in view.
+  const chatRef = useRef<HTMLDivElement>(null);
+  const chatSize = runner.thread.length;
+  useLayoutEffect(() => {
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatSize, runner.state.phase, runner.state.phase === 'done' ? runner.state.outcome : null]);
+  const undoThis = () => {
+    const o = runner.state.phase === 'done' ? runner.state.outcome : null;
+    if (o?.status === 'applied' && o.editor) undoLayout();
+    else undo();
+    runner.markUndone();
+  };
 
   useEffect(() => {
     if (props.autoFocus) inputRef.current?.focus();
@@ -121,6 +145,43 @@ export function PromptBox(props: PromptBoxProps) {
     <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId}>
       {props.onClose && props.header && closeButton}
       {props.header && <div className="prompt-header">{props.header}</div>}
+      {(runner.thread.length > 0 || runner.state.phase !== 'idle') && (
+        <div className="prompt-chat" ref={chatRef} data-testid="prompt-chat">
+          {runner.thread.map((entry, i) => (
+            <div className="chat-turn past" key={i} data-testid="chat-past">
+              <p className="chat-you">{entry.request}</p>
+              <PastOutcome outcome={entry.outcome} />
+            </div>
+          ))}
+          <div className="chat-turn">
+            <p className="chat-you" data-testid="chat-request">
+              {runner.state.phase === 'idle' ? '' : runner.state.request}
+            </p>
+            {working && (
+              <>
+                <div className="prompt-progress" aria-label="Working" />
+                <div className="prompt-busy">
+                  <span className="muted small">Working on it… you can keep editing.</span>
+                  <button className="text-btn" data-testid="prompt-stop" onClick={runner.stop}>
+                    Stop
+                  </button>
+                </div>
+              </>
+            )}
+            {runner.state.phase === 'done' && (
+              <Outcome
+                outcome={runner.state.outcome}
+                onAsNew={runner.asNew}
+                onUndo={undoThis}
+                canUndo={canUndo}
+                renderApplied={props.renderApplied}
+                selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []}
+                onExpand={() => setExpanded(true)}
+              />
+            )}
+          </div>
+        </div>
+      )}
       <div className="prompt-field">
         <span className="spark" aria-hidden="true">
           ✦
@@ -129,14 +190,11 @@ export function PromptBox(props: PromptBoxProps) {
           ref={inputRef}
           rows={1}
           value={text}
-          placeholder={working ? runner.state.phase === 'working' ? runner.state.request : '' : (props.placeholder ?? 'Type a command…')}
+          placeholder={working ? 'Working on it…' : runner.state.phase === 'done' ? 'Reply or ask something else…' : (props.placeholder ?? 'Type a command…')}
           readOnly={working}
           aria-label="Describe a change"
           data-testid="prompt-input"
-          onChange={(e) => {
-            setText(e.target.value);
-            if (runner.state.phase === 'done') runner.reset();
-          }}
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -146,7 +204,10 @@ export function PromptBox(props: PromptBoxProps) {
               if (text) setText('');
               else {
                 inputRef.current?.blur();
-                props.onEscape?.();
+                if (props.onEscape) {
+                  runner.end();
+                  props.onEscape();
+                }
               }
             }
           }}
@@ -167,23 +228,6 @@ export function PromptBox(props: PromptBoxProps) {
         </button>
         {!props.header && closeButton}
       </div>
-      {working && (
-        <>
-          <div className="prompt-progress" aria-label="Working" />
-          <div className="prompt-busy">
-            <span className="muted small">Working on it… you can keep editing.</span>
-            <button className="text-btn" data-testid="prompt-stop" onClick={runner.stop}>
-              Stop
-            </button>
-          </div>
-        </>
-      )}
-      {runner.state.phase === 'done' && <Outcome outcome={runner.state.outcome} onAsNew={runner.asNew} onUndo={() => {
-            const o = runner.state.phase === 'done' ? runner.state.outcome : null;
-            if (o?.status === 'applied' && o.editor) undoLayout();
-            else undo();
-            runner.reset();
-          }} canUndo={canUndo} renderApplied={props.renderApplied} selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []} onExpand={() => setExpanded(true)} />}
       {expanded &&
         runner.state.phase === 'done' &&
         createPortal(
@@ -219,10 +263,7 @@ export function PromptBox(props: PromptBoxProps) {
                   }}
                   onUndo={() => {
                     setExpanded(false);
-                    const o = runner.state.phase === 'done' ? runner.state.outcome : null;
-                    if (o?.status === 'applied' && o.editor) undoLayout();
-                    else undo();
-                    runner.reset();
+                    undoThis();
                   }}
                   canUndo={canUndo}
                   selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []}
@@ -232,6 +273,31 @@ export function PromptBox(props: PromptBoxProps) {
           </div>,
           document.body,
         )}
+    </div>
+  );
+}
+
+/** An earlier answer in the card's chat: what the AI said and did, without the buttons. */
+function PastOutcome({ outcome }: { outcome: PromptOutcome }) {
+  if (outcome.status !== 'applied') {
+    return (
+      <div className={`chat-ai${outcome.status === 'error' || outcome.tone === 'warn' ? ' warn' : ''}`}>
+        <p className="result-message">{outcome.message}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="chat-ai">
+      <p className="chat-status">{outcome.undone ? <span className="muted">↶ Undone</span> : <span className="ok">✓ Applied</span>}</p>
+      <p className="result-message">{outcome.message}</p>
+      {outcome.changes.length > 0 && (
+        <ul className="changes">
+          {outcome.changes.slice(0, 3).map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+          {outcome.changes.length > 3 && <li className="more">+{outcome.changes.length - 3} more</li>}
+        </ul>
+      )}
     </div>
   );
 }
@@ -283,8 +349,8 @@ function Outcome(props: {
       return (
         <div className="prompt-result applied" data-testid="prompt-result" data-status="applied">
           <div className="result-head">
-            <span className="ok">✓ Applied</span>
-            {props.canUndo ? (
+            {outcome.undone ? <span className="muted" data-testid="result-undone">↶ Undone</span> : <span className="ok">✓ Applied</span>}
+            {outcome.undone ? null : props.canUndo ? (
               <button className="icon-text-btn" data-testid="result-undo" aria-label="Undo" title="Undo this change" onClick={props.onUndo}>
                 <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M5.5 3.5 2.5 6.5l3 3M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -294,15 +360,15 @@ function Outcome(props: {
               <span className="muted small" title="Other changes came after it: undo them first, or use the AI History">in history</span>
             )}
           </div>
+          {outcome.message && (
+            <p className="result-message" data-testid="result-message">
+              {outcome.message}
+            </p>
+          )}
           {elsewhere && (
-            <>
-              <p className="result-message" data-testid="result-message">
-                {outcome.message}
-              </p>
-              <p className="result-where" data-testid="result-where">
-                Changed: {outcome.touched!.map((t) => t.label).join(', ')}
-              </p>
-            </>
+            <p className="result-where" data-testid="result-where">
+              Changed: {outcome.touched!.map((t) => t.label).join(', ')}
+            </p>
           )}
           {outcome.note && (
             <p className="result-where" data-testid="result-note">

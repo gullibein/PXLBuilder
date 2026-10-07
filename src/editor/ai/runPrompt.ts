@@ -41,8 +41,9 @@ export type PromptOutcome =
    * `editor`: the change was to the editor's own settings (undone with the editor's undo, not the project's).
    * `asNew`: the change went to an object (every copy); it can be made a new object instead.
    * `note`: a line worth showing on the card (e.g. that a new object was made).
+   * `undone`: the user undid it from the card (it stays in the card's chat, marked).
    */
-  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string }
+  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string; undone?: boolean }
   | { status: 'message'; message: string; tone: 'info' | 'warn' }
   | { status: 'error'; message: string };
 
@@ -82,6 +83,11 @@ function remember(ctx: AIContext, request: string, response: AIResponse): void {
   const key = contextKey(ctx);
   const reply = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
   conversations.set(key, [...(conversations.get(key) ?? []), { request, reply }].slice(-MAX_TURNS));
+}
+
+/** The card's chat ended: follow-ups start fresh. */
+export function forgetConversation(key: string): void {
+  conversations.delete(key);
 }
 
 export function labelFor(request: string): string {

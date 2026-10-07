@@ -564,7 +564,7 @@ try {
   await prompts.getByTestId('prompt-stop').click();
   await check(async () => (await prompts.getByTestId('prompt-stop').count()) === 0 && (await jobsAttr()) === '0,0', 'Stop ends a running prompt');
   await page.waitForTimeout(2700);
-  await check(async () => (await result.count()) === 0, '(and its answer is ignored when it arrives)');
+  await check(async () => (await prompts.getByTestId('result-undone').count()) === 1 && !(await prompts.getByTestId('prompt-chat').innerText()).includes('make this enemy bigger'), '(the card goes back to the answer before it, and the stopped answer is ignored when it arrives)');
   // Put the enemy's color back (the player already had five hearts, so that prompt changed nothing).
   await page.getByTestId('undo').click();
 
@@ -592,7 +592,7 @@ try {
   await check(async () => (await result.locator('.changes li').count()) === 3, 'the result lists one line per affected object');
   await page.screenshot({ path: `${OUT}/5-preview.png` });
   await prompts.getByTestId('result-undo').click();
-  await check(async () => (await result.count()) === 0, 'Undo on the card takes the whole change back');
+  await check(async () => (await prompts.getByTestId('result-undone').count()) === 1, 'Undo on the card takes the whole change back (the card says so)');
 
   step = 'golden test 5: world';
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
@@ -604,8 +604,20 @@ try {
   await prompts.getByTestId('prompt-details').click();
   await check(async () => (await page.getByTestId('world-gravity.y').inputValue()) === '686', 'level gravity is now 686');
   await page.getByTestId('close-details').click();
+  await ask('Make gravity 30% weaker.');
+  await check(async () => (await prompts.getByTestId('chat-past').count()) === 1 && (await prompts.getByTestId('chat-past').innerText()).includes('Make gravity 30% weaker.') && (await result.getAttribute('data-status')) === 'applied', 'a second prompt adds to the card like a chat: the first request and answer stay above it');
+  {
+    const chatBox = await prompts.getByTestId('prompt-chat').boundingBox();
+    const inputBox = await prompts.getByTestId('prompt-input').boundingBox();
+    await check(chatBox && inputBox && inputBox.y >= chatBox.y + chatBox.height - 1, 'the prompt field is below the chat');
+  }
+  await page.screenshot({ path: `${OUT}/5c-chat.png` });
+  await page.getByTestId('undo').click();
   await page.keyboard.press('Escape');
   await check(async () => (await prompts.count()) === 0, 'Escape clears the context');
+  await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+  await check(async () => (await prompts.getByTestId('prompt-chat').count()) === 0, 'closing the card ended the chat: it opens empty');
+  await page.keyboard.press('Escape');
 
   step = 'golden test 7: create with AI';
   await page.getByTestId('dock-create').click();
