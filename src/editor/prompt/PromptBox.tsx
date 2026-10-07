@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { frameEntities } from '../actions';
-import { cardOpened, endChat, setJobOutcome, startJob, stopJob, useJobs, type ChatEntry } from '../ai/jobs';
+import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } from '../ai/jobs';
+import { chatEntries, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
@@ -17,7 +18,14 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
   const key = contextKey(ctx);
   const job = useJobs((s) => s.jobs[key]);
   const state: RunState = !job ? { phase: 'idle' } : job.phase === 'working' ? { phase: 'working', request: job.request } : { phase: 'done', request: job.request, outcome: job.outcome! };
-  const thread: ChatEntry[] = job?.thread ?? [];
+  // The conversation so far (from the AI History log; kept when the card closes and across reloads),
+  // without the exchange shown below it with its buttons.
+  const entries = useAILog((s) => s.entries);
+  const starts = useAILog((s) => s.starts);
+  const thread: AILogEntry[] = useMemo(() => {
+    const all = chatEntries({ entries, starts }, key);
+    return job?.phase === 'done' && job.logId !== undefined ? all.filter((e) => e.id !== job.logId) : all;
+  }, [entries, starts, key, job]);
 
   // While this card is on screen, what finishes here counts as seen.
   useEffect(() => cardOpened(key), [key]);
@@ -48,9 +56,9 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     stop() {
       stopJob(key);
     },
-    /** The card is being closed: the chat ends. */
-    end() {
-      endChat(key);
+    /** "New chat": start the conversation about this again. */
+    newChat() {
+      startNewChat(key);
     },
     /** The change went to the object (every copy): make it a new object instead (undo it, apply it as a new one). */
     asNew() {
@@ -92,10 +100,7 @@ export function PromptBox(props: PromptBoxProps) {
   const working = runner.state.phase === 'working';
   const [expanded, setExpanded] = useState(false);
   // In the header's corner; on a card without a header, at the end of the input row.
-  const close = props.onClose && (() => {
-    runner.end();
-    props.onClose!();
-  });
+  const close = props.onClose;
   const closeButton = close && (
     <button className="prompt-close" title="Close (Esc)" aria-label="Close" data-testid="prompt-close" onClick={close}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -147,10 +152,15 @@ export function PromptBox(props: PromptBoxProps) {
       {props.header && <div className="prompt-header">{props.header}</div>}
       {(runner.thread.length > 0 || runner.state.phase !== 'idle') && (
         <div className="prompt-chat" ref={chatRef} data-testid="prompt-chat">
-          {runner.thread.map((entry, i) => (
-            <div className="chat-turn past" key={i} data-testid="chat-past">
+          <div className="chat-bar">
+            <button className="link-btn" data-testid="prompt-new-chat" title="Start a new conversation about this (the AI forgets the one above; AI History keeps it)" disabled={working} onClick={runner.newChat}>
+              New chat
+            </button>
+          </div>
+          {runner.thread.map((entry) => (
+            <div className="chat-turn past" key={entry.id} data-testid="chat-past">
               <p className="chat-you">{entry.request}</p>
-              <PastOutcome outcome={entry.outcome} />
+              <PastOutcome entry={entry} />
             </div>
           ))}
           <div className="chat-turn">
@@ -204,10 +214,7 @@ export function PromptBox(props: PromptBoxProps) {
               if (text) setText('');
               else {
                 inputRef.current?.blur();
-                if (props.onEscape) {
-                  runner.end();
-                  props.onEscape();
-                }
+                props.onEscape?.();
               }
             }
           }}
@@ -277,18 +284,19 @@ export function PromptBox(props: PromptBoxProps) {
   );
 }
 
-/** An earlier answer in the card's chat: what the AI said and did, without the buttons. */
-function PastOutcome({ outcome }: { outcome: PromptOutcome }) {
+/** An earlier exchange in the card's chat: what the AI said and did, without the buttons. */
+function PastOutcome({ entry: outcome }: { entry: AILogEntry }) {
+  const undoneLater = useEditor((s) => outcome.transactionId !== null && s.history.future.some((t) => t.id === outcome.transactionId));
   if (outcome.status !== 'applied') {
     return (
-      <div className={`chat-ai${outcome.status === 'error' || outcome.tone === 'warn' ? ' warn' : ''}`}>
+      <div className={`chat-ai${outcome.warn ? ' warn' : ''}`}>
         <p className="result-message">{outcome.message}</p>
       </div>
     );
   }
   return (
     <div className="chat-ai">
-      <p className="chat-status">{outcome.undone ? <span className="muted">↶ Undone</span> : <span className="ok">✓ Applied</span>}</p>
+      <p className="chat-status">{outcome.undone || undoneLater ? <span className="muted">↶ Undone</span> : <span className="ok">✓ Applied</span>}</p>
       <p className="result-message">{outcome.message}</p>
       {outcome.changes.length > 0 && (
         <ul className="changes">

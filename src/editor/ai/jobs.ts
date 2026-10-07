@@ -9,8 +9,8 @@
 import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
-import { forgetConversation, runPrompt, type PromptOutcome } from './runPrompt';
-import { logExchange, updateExchange } from './aiLog';
+import { runPrompt, type PromptOutcome } from './runPrompt';
+import { logExchange, newChat, updateExchange } from './aiLog';
 
 export interface PromptJob {
   key: string;
@@ -20,18 +20,9 @@ export interface PromptJob {
   outcome: PromptOutcome | null;
   /** False when it finished while its card was closed and still waits to be looked at. */
   seen: boolean;
-  /** The earlier requests and answers on this card, oldest first: the card reads as a chat until it is closed. */
-  thread: ChatEntry[];
-  /** Its entry in the AI History log (once finished). */
+  /** Its entry in the AI History log (once finished); the card's earlier exchanges come from that log. */
   logId?: number;
 }
-
-export interface ChatEntry {
-  request: string;
-  outcome: PromptOutcome;
-}
-
-const MAX_THREAD = 30;
 
 interface JobState {
   jobs: Record<string, PromptJob>;
@@ -52,23 +43,19 @@ function put(key: string, job: PromptJob | null): void {
   });
 }
 
-/** Starts a prompt for a context; a finished one there moves into the card's chat. One at a time per context. */
+/** Starts a prompt for a context (the finished ones before it stay in the card's chat, from the log). One at a time per context. */
 export function startJob(ctx: AIContext, request: string): void {
   const key = contextKey(ctx);
-  const before = useJobs.getState().jobs[key];
-  if (before?.phase === 'working') return;
-  const thread = before ? (before.outcome ? [...before.thread, { request: before.request, outcome: before.outcome }] : before.thread).slice(-MAX_THREAD) : [];
+  if (useJobs.getState().jobs[key]?.phase === 'working') return;
   const controller = new AbortController();
   controllers.set(key, controller);
-  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true, thread });
+  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true });
   const done = (outcome: PromptOutcome) => {
     if (controllers.get(key) !== controller) return;
     controllers.delete(key);
-    // The card may have been closed (its chat ended) while this ran.
-    const now = useJobs.getState().jobs[key]?.thread ?? [];
+    const logId = logExchange(ctx, key, request, outcome);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
-    const logId = logExchange(ctx, request, outcome);
-    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', thread: now, logId });
+    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };
   runPrompt(ctx, request, controller.signal).then(
     (outcome) => !controller.signal.aborted && done(outcome),
@@ -82,9 +69,7 @@ export function startJob(ctx: AIContext, request: string): void {
 export function stopJob(key: string): void {
   controllers.get(key)?.abort();
   controllers.delete(key);
-  const job = useJobs.getState().jobs[key];
-  const last = job?.thread.at(-1);
-  put(key, job && last ? { ...job, request: last.request, outcome: last.outcome, phase: 'done', seen: true, thread: job.thread.slice(0, -1) } : null);
+  put(key, null);
 }
 
 /** Replaces a finished job's outcome (a proposal that was applied). */
@@ -112,20 +97,10 @@ export function cardOpened(key: string): () => void {
   };
 }
 
-/**
- * The card was closed (× or Esc; selecting something else keeps the chat
- * for when it is selected again): its chat is over. A finished answer is let go; a
- * prompt still running carries on and is shown when the card opens again,
- * without the earlier chat. The AI forgets the exchanges too.
- */
-export function endChat(key: string): void {
-  const job = useJobs.getState().jobs[key];
-  forgetConversation(key);
-  if (!job) return;
-  if (job.phase === 'working') {
-    if (job.thread.length) put(key, { ...job, thread: [] });
-  } else if (job.seen) put(key, null);
-  else if (job.thread.length) put(key, { ...job, thread: [] });
+/** "New chat": the conversation about this context starts again (a prompt still running carries on). */
+export function startNewChat(key: string): void {
+  newChat(key);
+  if (useJobs.getState().jobs[key]?.phase === 'done') put(key, null);
 }
 
 /** For the level view: objects with a running prompt, and objects with a finished one waiting to be seen. */

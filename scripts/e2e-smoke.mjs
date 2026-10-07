@@ -584,7 +584,7 @@ try {
   await prompts.getByTestId('prompt-stop').click();
   await check(async () => (await prompts.getByTestId('prompt-stop').count()) === 0 && (await jobsAttr()) === '0,0', 'Stop ends a running prompt');
   await page.waitForTimeout(2700);
-  await check(async () => (await prompts.getByTestId('result-undone').count()) === 1 && !(await prompts.getByTestId('prompt-chat').innerText()).includes('make this enemy bigger'), '(the card goes back to the answer before it, and the stopped answer is ignored when it arrives)');
+  await check(async () => (await prompts.getByTestId('chat-request').innerText()) === '' && (await prompts.getByTestId('chat-past').count()) >= 2, '(the card goes back to the conversation before it, and the stopped answer is ignored when it arrives)');
   // Put the enemy's color back (the player already had five hearts, so that prompt changed nothing).
   await page.getByTestId('undo').click();
 
@@ -636,7 +636,10 @@ try {
   await page.keyboard.press('Escape');
   await check(async () => (await prompts.count()) === 0, 'Escape clears the context');
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
-  await check(async () => (await prompts.getByTestId('prompt-chat').count()) === 0, 'closing the card ended the chat: it opens empty');
+  await check(async () => (await prompts.getByTestId('chat-past').count()) >= 1 && (await prompts.getByTestId('prompt-chat').innerText()).includes('Make gravity 30% weaker.'), 'closing the card keeps the conversation: it opens with it');
+  await check(aiRequests.length > 0, '(requests so far)');
+  await prompts.getByTestId('prompt-new-chat').click();
+  await check(async () => (await prompts.getByTestId('chat-past').count()) === 0, 'New chat starts the conversation again');
   await ask('Make the hearts bigger.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'asking for bigger hearts is applied, as a script on the player');
   await page.keyboard.press('Escape');

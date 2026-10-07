@@ -5,9 +5,10 @@
  * one undoable transaction through the same mutation layer the inspector uses.
  */
 import { buildAIPayload, contextKey, type AIContext } from '../../core/ai/context';
-import { AIUnavailableError, type AIExchange, type AIResponse } from '../../core/ai/protocol';
+import { AIUnavailableError, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
+import { chatHistory } from './aiLog';
 import { getAISettings } from './aiSettings';
 import { GeminiProvider } from './geminiProvider';
 import { BrowserClaudeProvider } from './browserProvider';
@@ -75,21 +76,6 @@ async function currentProvider(): Promise<AIProvider> {
   return key ? new BrowserClaudeProvider(key) : httpProvider;
 }
 
-/** Short per-context memory so follow-ups like "make them regenerate" resolve. Never the source of truth. */
-const conversations = new Map<string, AIExchange[]>();
-const MAX_TURNS = 6;
-
-function remember(ctx: AIContext, request: string, response: AIResponse): void {
-  const key = contextKey(ctx);
-  const reply = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
-  conversations.set(key, [...(conversations.get(key) ?? []), { request, reply }].slice(-MAX_TURNS));
-}
-
-/** The card's chat ended: follow-ups start fresh. */
-export function forgetConversation(key: string): void {
-  conversations.delete(key);
-}
-
 export function labelFor(request: string): string {
   const text = request.trim().replace(/\s+/g, ' ');
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
@@ -100,7 +86,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   const body = {
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }),
     request,
-    history: conversations.get(contextKey(ctx)) ?? [],
+    // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
+    history: chatHistory(contextKey(ctx)),
     speed: getAISettings().speed,
   };
   let response: AIResponse;
@@ -146,7 +133,6 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     state.logMessage('error', message);
     return { status: 'error', message };
   }
-  remember(ctx, request, response);
 
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };

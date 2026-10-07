@@ -339,15 +339,16 @@ old object and its other copies unchanged (`core/commands/objectChoice.ts`).
 Offered while the change is still the latest one. The AI is told to always
 target the object.
 
-### The prompt card is a chat
-The card shows its requests and answers like a chat, oldest first, with the
-prompt field below them; a new request adds to it (the job keeps a
-`thread` of earlier exchanges, `ai/jobs.ts`) and the AI gets the earlier
-exchanges as history. Undo from the card marks the answer "Undone" instead
-of removing it; Stop goes back to the answer before. Closing the card (× or
-Esc) ends the chat (`endChat`): the thread and the AI's memory of it are
-dropped. Selecting something else keeps it for when that is selected again;
-a prompt still running when its card closes carries on.
+### The prompt card is a chat (kept in the AI History log)
+Every finished prompt is logged in full (`ai/aiLog.ts`, the last 200 kept in
+the browser) with its context key. A card's conversation is the log's
+exchanges for its key since that key's last "New chat" (`starts`, also kept
+in the browser): the card shows the last 30, the AI is sent the last 6 as
+history (its answers with the app's "⚠" notes, failed requests marked as
+such, undone changes marked). So closing a card, selecting something else or
+reloading keeps the conversation, and the AI is never reminded of something
+the card doesn't show. Undo from the card marks the answer "Undone"; Stop
+drops the running request. "New chat" moves the key's start to now.
 
 ### AI prompts run in the background
 Prompt runs live in a job list (`editor/ai/jobs.ts`), one per context key
