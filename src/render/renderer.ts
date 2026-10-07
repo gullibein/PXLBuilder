@@ -94,6 +94,33 @@ export function shade(hex: string, amount: number): string {
   return `rgb(${ch((n >> 16) & 255)}, ${ch((n >> 8) & 255)}, ${ch(n & 255)})`;
 }
 
+/**
+ * Sets up the entity's own coordinates (its center at 0,0, its sprite size).
+ * An unturned thing has its edges rounded to whole screen pixels: at most
+ * zoom levels a tile edge falls between pixels, and two half-covered pixels
+ * side by side show as a thin seam between tiles that touch. Rounded, tiles
+ * that touch share the same pixel edge at every zoom.
+ */
+function placeOnScreen(ctx: CanvasRenderingContext2D, position: { x: number; y: number }, rotation: number, scale: { x: number; y: number }, size: { x: number; y: number }): void {
+  const m = ctx.getTransform();
+  if (rotation % 360 !== 0 || m.b !== 0 || m.c !== 0 || size.x <= 0 || size.y <= 0) {
+    ctx.translate(position.x, position.y);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.scale(scale.x, scale.y);
+    return;
+  }
+  const hw = (size.x * Math.abs(scale.x)) / 2;
+  const hh = (size.y * Math.abs(scale.y)) / 2;
+  const x0 = Math.round(m.a * (position.x - hw) + m.e);
+  const x1 = Math.round(m.a * (position.x + hw) + m.e);
+  const y0 = Math.round(m.d * (position.y - hh) + m.f);
+  const y1 = Math.round(m.d * (position.y + hh) + m.f);
+  // At least one pixel, so tiny things don't vanish when zoomed far out.
+  const w = Math.max(1, Math.abs(x1 - x0));
+  const h = Math.max(1, Math.abs(y1 - y0));
+  ctx.setTransform((w / size.x) * Math.sign(scale.x || 1) * Math.sign(m.a), 0, 0, (h / size.y) * Math.sign(scale.y || 1) * Math.sign(m.d), (x0 + x1) / 2, (y0 + y1) / 2);
+}
+
 /** An entity to draw; `alpha` fades it (open doors, blinking after a hit). */
 export type RenderEntity = ResolvedEntity & { alpha?: number };
 
@@ -123,9 +150,7 @@ export function drawEntities(
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
     ctx.save();
     if (entity.alpha !== undefined || invisible) ctx.globalAlpha = (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1);
-    ctx.translate(position.x, position.y);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.scale(scale.x, scale.y);
+    placeOnScreen(ctx, position, rotation, scale, size);
     ctx.fillStyle = color;
     const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
     if (img) {
