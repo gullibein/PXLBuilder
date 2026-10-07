@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
 import { forgetConversation, runPrompt, type PromptOutcome } from './runPrompt';
+import { logExchange, updateExchange } from './aiLog';
 
 export interface PromptJob {
   key: string;
@@ -21,6 +22,8 @@ export interface PromptJob {
   seen: boolean;
   /** The earlier requests and answers on this card, oldest first: the card reads as a chat until it is closed. */
   thread: ChatEntry[];
+  /** Its entry in the AI History log (once finished). */
+  logId?: number;
 }
 
 export interface ChatEntry {
@@ -64,7 +67,8 @@ export function startJob(ctx: AIContext, request: string): void {
     // The card may have been closed (its chat ended) while this ran.
     const now = useJobs.getState().jobs[key]?.thread ?? [];
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
-    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', thread: now });
+    const logId = logExchange(ctx, request, outcome);
+    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', thread: now, logId });
   };
   runPrompt(ctx, request, controller.signal).then(
     (outcome) => !controller.signal.aborted && done(outcome),
@@ -86,7 +90,9 @@ export function stopJob(key: string): void {
 /** Replaces a finished job's outcome (a proposal that was applied). */
 export function setJobOutcome(key: string, outcome: PromptOutcome): void {
   const job = useJobs.getState().jobs[key];
-  if (job) put(key, { ...job, phase: 'done', outcome, seen: true });
+  if (!job) return;
+  put(key, { ...job, phase: 'done', outcome, seen: true });
+  if (job.logId !== undefined) updateExchange(job.logId, outcome);
 }
 
 /** Forgets a finished job (the card was cleared, or a proposal cancelled). */

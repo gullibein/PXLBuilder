@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
+import { clearAILog, useAILog, type AILogEntry } from '../ai/aiLog';
 import { DebugPanel, useLevelProblems } from './DebugPanel';
 
 /** Collapsible utility area: change history (AI and manual) and the console. Closed by default. */
 export function Tray() {
   const tray = useEditor((s) => s.tray);
-  const past = useEditor((s) => s.history.past);
   const log = useEditor((s) => s.log);
   const setTray = useEditor((s) => s.setTray);
   const errors = log.filter((l) => l.level === 'error').length;
+  const exchanges = useAILog((s) => s.entries.length);
+  // Bigger, to read long conversations (remembered while the page is open).
+  const [big, setBig] = useState(false);
   const problems = useLevelProblems().filter((p) => p.severity !== 'note').length;
 
   if (!tray.open) {
@@ -17,7 +20,7 @@ export function Tray() {
         <button className="tray-chip" data-testid="tray-toggle" aria-label="AI History" title="AI History" onClick={() => setTray({ open: true, tab: 'history' })}>
           <span className="spark-mini" aria-hidden="true">✦</span>
           <span className="chip-label">AI History</span>
-          {past.length > 0 && <span className="count">{past.length}</span>}
+          {exchanges > 0 && <span className="count">{exchanges}</span>}
         </button>
         <button className="tray-chip" data-testid="console-toggle" aria-label="Console" title="Console" onClick={() => setTray({ open: true, tab: 'console' })}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -39,7 +42,7 @@ export function Tray() {
     );
   }
   return (
-    <section className="tray" data-testid="tray" aria-label="History and console">
+    <section className={`tray${big ? ' big' : ''}`} data-testid="tray" aria-label="History and console">
       <header className="tray-head">
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tray.tab === 'history'} className={tray.tab === 'history' ? 'on' : ''} onClick={() => setTray({ tab: 'history' })}>
@@ -52,6 +55,15 @@ export function Tray() {
             Debug{problems > 0 && <span className="count warn-count">{problems}</span>}
           </button>
         </div>
+        <button className="icon-btn" aria-label={big ? 'Make smaller' : 'Make bigger'} title={big ? 'Make smaller' : 'Make bigger'} data-testid="tray-size" onClick={() => setBig(!big)}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            {big ? (
+              <path d="M8.5 2.5v3h3M5.5 11.5v-3h-3M8.5 5.5 12 2M5.5 8.5 2 12" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <path d="M8.5 2h3.5v3.5M5.5 12H2V8.5M12 2 8 6M2 12l4-4" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            )}
+          </svg>
+        </button>
         <button className="icon-btn" aria-label="Close" onClick={() => setTray({ open: false })}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="m3.5 5.5 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
@@ -65,37 +77,78 @@ export function Tray() {
 
 const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/**
+ * The conversation with the AI in full (newest at the bottom, like a chat):
+ * what was asked and where, the AI's whole answer and its changes, and how it
+ * ended. "My edits too" adds your own changes from the undo history.
+ */
 function HistoryList() {
+  const entries = useAILog((s) => s.entries);
   const past = useEditor((s) => s.history.past);
   const future = useEditor((s) => s.history.future);
-  const [open, setOpen] = useState<number | null>(null);
-  if (!past.length && !future.length) return <p className="muted">Changes you make, and changes the AI makes, appear here.</p>;
+  const [mine, setMine] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const undoneIds = new Set(future.map((t) => t.id));
+  const edits = mine ? [...past, ...future].filter((t) => t.source !== 'ai').map((t) => ({ time: t.time, edit: t, undone: undoneIds.has(t.id) })) : [];
+  const items = [...entries.map((e) => ({ time: e.time, entry: e })), ...edits].sort((a, b) => a.time - b.time);
+  useEffect(() => {
+    const body = endRef.current?.closest('.tray-body');
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [items.length]);
   return (
-    <ol className="history" data-testid="history-list">
-      {[...past].reverse().map((t) => (
-        <li key={t.id} className={t.source}>
-          <button className="history-row" onClick={() => setOpen(open === t.id ? null : t.id)} aria-expanded={open === t.id}>
-            <span className="time">{time(t.time)}</span>
-            <span className="grow">{t.label}</span>
+    <div className="ai-log" data-testid="history-list">
+      <div className="ai-log-bar">
+        <label className="dialog-check">
+          <input type="checkbox" checked={mine} data-testid="history-mine" onChange={(e) => setMine(e.target.checked)} />
+          My edits too
+        </label>
+        {entries.length > 0 && (
+          <button className="text-btn" data-testid="history-clear" onClick={clearAILog}>
+            Clear
           </button>
-          {open === t.id && t.changes.length > 0 && (
-            <ul className="changes">
-              {t.changes.map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))}
-      {future.map((t) => (
-        <li key={t.id} className={`${t.source} undone`} title="Undone (redo with Ctrl+Shift+Z)">
-          <span className="history-row">
-            <span className="time">{time(t.time)}</span>
-            <span className="grow">{t.label}</span>
-          </span>
-        </li>
-      ))}
-    </ol>
+        )}
+      </div>
+      {!items.length && <p className="muted">Your requests to the AI and its answers appear here, in full.</p>}
+      {items.map((item) =>
+        'entry' in item ? (
+          <Exchange key={`ai${item.entry.id}`} entry={item.entry} undone={item.entry.undone || (item.entry.transactionId !== null && undoneIds.has(item.entry.transactionId))} />
+        ) : (
+          <div key={`me${item.edit.id}`} className={`my-edit${item.undone ? ' undone' : ''}`} data-testid="history-edit">
+            <span className="time">{time(item.time)}</span>
+            <span>
+              {item.edit.label}
+              {item.undone && ' (undone)'}
+            </span>
+          </div>
+        ),
+      )}
+      <div ref={endRef} />
+    </div>
+  );
+}
+
+function Exchange({ entry, undone }: { entry: AILogEntry; undone: boolean }) {
+  const status = entry.status === 'error' ? '⚠ Failed' : entry.status === 'message' ? 'Answer' : undone ? '↶ Undone' : '✓ Applied';
+  return (
+    <article className={`exchange ${entry.status}${undone ? ' undone' : ''}`} data-testid="history-exchange">
+      <header className="exchange-head">
+        <span className="time">{time(entry.time)}</span>
+        <span className="where">{entry.where}</span>
+      </header>
+      <p className="chat-you">{entry.request}</p>
+      <div className={`exchange-ai${entry.warn ? ' warn' : ''}`}>
+        <span className="exchange-status">{status}</span>
+        {entry.message && <p className="exchange-message">{entry.message}</p>}
+        {entry.note && <p className="exchange-message muted">{entry.note}</p>}
+        {entry.changes.length > 0 && (
+          <ul className="changes">
+            {entry.changes.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </article>
   );
 }
 

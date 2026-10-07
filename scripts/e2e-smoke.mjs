@@ -743,8 +743,19 @@ try {
 
   step = 'history';
   await page.getByTestId('tray-toggle').click();
-  await check(async () => (await page.getByTestId('history-list').innerText()).includes('✨ Give the player five hearts.'), 'AI changes appear in History');
-  await page.screenshot({ path: `${OUT}/7-history.png` });
+  {
+    const hist = page.getByTestId('history-list');
+    const hearts = hist.getByTestId('history-exchange').filter({ hasText: 'Give the player five hearts.' });
+    await check(async () => (await hearts.count()) >= 1 && (await hearts.first().innerText()).includes('Player'), 'AI History shows the whole request, and what it was about');
+    await check(async () => (await hist.getByTestId('history-exchange').count()) >= 3 && (await hist.innerText()).includes('Applied'), 'every exchange is listed with how it ended, also answers that changed nothing');
+    await check(async () => (await hist.getByTestId('history-edit').count()) === 0, 'your own edits are not mixed in…');
+    await hist.getByTestId('history-mine').check();
+    await check(async () => (await hist.getByTestId('history-edit').count()) > 0, '…until "My edits too" is ticked');
+    await page.getByTestId('tray-size').click();
+    await check(async () => ((await page.getByTestId('tray').boundingBox())?.width ?? 0) > 600, 'the panel can be made bigger to read long conversations');
+    await page.screenshot({ path: `${OUT}/7-history.png` });
+    await page.getByTestId('tray-size').click();
+  }
 
   step = 'background';
   await page.getByTestId('tray').getByRole('button', { name: 'Close' }).click();
