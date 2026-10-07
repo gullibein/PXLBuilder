@@ -1,18 +1,21 @@
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from './protocol';
+import type { TraceFn } from './trace';
 
 /**
  * The editor talks to AI through this interface, so the model vendor (and
  * whether calls go through a proxy) can change without touching the UI.
  */
 export interface AIProvider {
-  respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse>;
+  /** `trace` hears what was sent and the raw answers (for AI History's Details). */
+  respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse>;
 }
 
 /** Calls the PXLBuilder AI endpoint (served by the dev/preview server, which holds the API key). */
 export class HttpAIProvider implements AIProvider {
   constructor(private readonly endpoint = '/api/ai') {}
 
-  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+    trace?.('sent', `This computer's PXLBuilder server (${this.endpoint})`);
     let res: Response;
     try {
       res = await fetch(this.endpoint, {
@@ -29,6 +32,7 @@ export class HttpAIProvider implements AIProvider {
       throw new AIUnavailableError('AI is not connected here. Add your Anthropic API key in ⋯ → AI connection.');
     }
     const json: unknown = await res.json().catch(() => null);
+    trace?.('reply', `HTTP ${res.status}: ${JSON.stringify(json)}`);
     if (!res.ok) {
       const message = (json as { error?: string } | null)?.error ?? `AI request failed (${res.status})`;
       // No usable key on the server: point to the user's own key.

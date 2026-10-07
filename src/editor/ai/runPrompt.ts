@@ -9,6 +9,7 @@ import { AIUnavailableError, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
 import { chatHistory } from './aiLog';
+import type { TraceFn } from '../../core/ai/trace';
 import { getAISettings } from './aiSettings';
 import { GeminiProvider } from './geminiProvider';
 import { BrowserClaudeProvider } from './browserProvider';
@@ -81,7 +82,7 @@ export function labelFor(request: string): string {
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
 }
 
-export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal): Promise<PromptOutcome> {
+export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn): Promise<PromptOutcome> {
   const state = useEditor.getState();
   const body = {
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }),
@@ -91,9 +92,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     speed: getAISettings().speed,
   };
   let response: AIResponse;
+  trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
-    response = await provider.respond(body, signal);
+    response = await provider.respond(body, signal, trace);
     // A game change that wouldn't apply (a script with a typo, a wrong id), or a level the player can't get through,
     // goes back to the AI once, with the exact problem.
     const gameOps = (r: AIResponse) => r.operations.length > 0 && !r.operations.some(isEditorOperation);
@@ -101,6 +103,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
     const problem = broken ?? stuck?.text ?? null;
     if (problem) {
+      trace?.('check', `Didn't check out: ${problem}`);
+      trace?.('retry', 'Sent back once with that problem');
       state.logMessage('info', `AI answer didn't check out (${problem}); asking it to fix that.`);
       const first = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
       response = await provider.respond(
@@ -110,12 +114,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
           request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it).${mapText(stuck?.map ?? null)}]`,
         },
         signal,
+        trace,
       );
       // Still not right: keep what applies, leave out the rest, and say so.
       const again = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
       if (again) {
         const { kept, skipped } = pruneOperations(useEditor.getState().project, response.operations, componentRegistry);
         state.logMessage('warn', `AI answer still didn't check out; left out ${skipped.length} part(s): ${skipped.join('; ')}`);
+        trace?.('check', `Still didn't check out; left out ${skipped.length} part(s): ${skipped.join('; ')}`);
         if (!kept.length) return { status: 'error', message: `The AI's change couldn't be applied. ${skipped[0]}` };
         const note = skipped.length === 1 ? `Left out one part that couldn't be applied: ${skipped[0]}` : `Left out ${skipped.length} parts that couldn't be applied (first: ${skipped[0]})`;
         response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
@@ -124,12 +130,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       const stillStuck = gameOps(response) ? (playability(ctx.sceneId, response.operations)?.text ?? null) : null;
       if (stillStuck) {
         state.logMessage('warn', `AI level still has a problem: ${stillStuck}`);
+        trace?.('check', `Level still has a problem: ${stillStuck}`);
         response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ ${stillStuck}`] };
       }
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     const message = e instanceof AIUnavailableError ? e.message : `AI request failed: ${(e as Error).message}`;
+    trace?.('error', message);
     state.logMessage('error', message);
     return { status: 'error', message };
   }

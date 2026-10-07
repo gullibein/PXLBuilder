@@ -11,6 +11,7 @@ import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
 import { runPrompt, type PromptOutcome } from './runPrompt';
 import { logExchange, newChat, updateExchange } from './aiLog';
+import { createTrace } from '../../core/ai/trace';
 
 export interface PromptJob {
   key: string;
@@ -50,14 +51,17 @@ export function startJob(ctx: AIContext, request: string): void {
   const controller = new AbortController();
   controllers.set(key, controller);
   put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true });
+  // What happens under the hood (AI History → Details).
+  const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
     if (controllers.get(key) !== controller) return;
     controllers.delete(key);
-    const logId = logExchange(ctx, key, request, outcome);
+    if (outcome.status === 'applied') trace.add('note', `Applied: ${outcome.changes.length} change line(s)${outcome.note ? `; ${outcome.note}` : ''}`);
+    const logId = logExchange(ctx, key, request, outcome, trace.steps);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };
-  runPrompt(ctx, request, controller.signal).then(
+  runPrompt(ctx, request, controller.signal, trace.add).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });

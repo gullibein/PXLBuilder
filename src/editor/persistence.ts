@@ -113,7 +113,32 @@ export function newProject(): void {
   useEditor.getState().logMessage('info', 'Created a new project');
 }
 
-/** Downloads the project as a single bundle file. */
+/**
+ * Offers a text file to save: through the viewer in the published app (the
+ * user confirms), as an ordinary download elsewhere.
+ */
+export async function offerTextFile(filename: string, text: string, type = 'application/json'): Promise<'saved' | 'declined' | 'failed'> {
+  const blob = new Blob([text], { type });
+  const downloads = await claudeCapability<ViewerDownloads>('downloads');
+  if (downloads) {
+    try {
+      await downloads.save({ filename, data: blob });
+      return 'saved';
+    } catch (e) {
+      return (e as { code?: string }).code === 'declined' ? 'declined' : 'failed';
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'saved';
+}
+
 /**
  * Downloads the project as one bundle file. In the published app (claude.ai)
  * the viewer offers the file instead (pages may not download by themselves):

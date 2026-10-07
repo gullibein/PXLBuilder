@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import type { AIContext } from '../../core/ai/context';
 import { useEditor } from '../store';
 import type { PromptOutcome } from './runPrompt';
+import type { TraceStep } from '../../core/ai/trace';
 
 export interface AILogEntry {
   id: number;
@@ -34,6 +35,8 @@ export interface AILogEntry {
   undone: boolean;
   /** A note shown with it (e.g. that a new object was made). */
   note: string | null;
+  /** What happened under the hood (kept for the most recent exchanges only). */
+  trace?: TraceStep[];
 }
 
 const STORAGE_KEY = 'pxlbuilder.aiLog';
@@ -43,6 +46,8 @@ export const MEMORY_TURNS = 6;
 /** How many earlier exchanges a card shows. */
 const CARD_TURNS = 30;
 const MAX = 200;
+/** Exchanges that keep their trace (the raw answers are big; browser storage is small). */
+const TRACED = 20;
 
 function load(): AILogEntry[] {
   try {
@@ -58,7 +63,12 @@ function save(entries: AILogEntry[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   } catch {
-    // Storage full or unavailable: the log lasts for this page.
+    // Storage full: keep the conversations without the traces (the traces then last for this page).
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.map(({ trace: _trace, ...e }) => e)));
+    } catch {
+      // Unavailable: the log lasts for this page.
+    }
   }
 }
 
@@ -76,7 +86,7 @@ export const useAILog = create<{ entries: AILogEntry[]; starts: Record<string, n
 let nextId = Math.max(0, ...useAILog.getState().entries.map((e) => e.id)) + 1;
 
 function put(entries: AILogEntry[]): void {
-  const kept = entries.slice(-MAX);
+  const kept = entries.slice(-MAX).map((e, i, all) => (e.trace && i < all.length - TRACED ? { ...e, trace: undefined } : e));
   useAILog.setState({ entries: kept });
   save(kept);
 }
@@ -116,9 +126,9 @@ function fields(outcome: PromptOutcome): Pick<AILogEntry, 'status' | 'message' |
 }
 
 /** A prompt finished; returns its log id (to update it later: undone, made a new object…). */
-export function logExchange(ctx: AIContext, key: string, request: string, outcome: PromptOutcome): number {
+export function logExchange(ctx: AIContext, key: string, request: string, outcome: PromptOutcome, trace?: TraceStep[]): number {
   const id = nextId++;
-  put([...useAILog.getState().entries, { id, time: Date.now(), key, where: contextName(ctx), request, ...fields(outcome) }]);
+  put([...useAILog.getState().entries, { id, time: Date.now(), key, where: contextName(ctx), request, ...fields(outcome), ...(trace?.length ? { trace } : {}) }]);
   return id;
 }
 

@@ -12,6 +12,7 @@ import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
+import type { TraceFn } from '../../core/ai/trace';
 
 interface SampleError {
   code: string;
@@ -48,21 +49,26 @@ export class SampleAIProvider implements AIProvider {
     private readonly log?: (note: string) => void,
   ) {}
 
-  private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
+  private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<{ text: string; truncated: boolean }> {
+    const size = typeof input === 'string' ? input.length : input.reduce((n, t) => n + t.content.length, 0);
+    trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}`);
     try {
       // Every request is new work: no replay of an earlier answer.
       // Fast: claude.ai's quicker model tier.
-      return await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+      const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+      trace?.('reply', `${answer.truncated ? '[cut off by the length limit] ' : ''}${answer.text}`);
+      return answer;
     } catch (e) {
       const err = e as SampleError;
+      trace?.('error', `${err?.code ?? 'unknown'}: ${err?.message ?? ''}${(e as { text?: string }).text ? `\nPartial answer: ${(e as { text?: string }).text}` : ''}`);
       if (err?.code === 'cancelled') throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
       throw new AIUnavailableError(MESSAGES[err?.code] ?? `The AI request failed (${err?.code ?? 'unknown'}). Try again.`);
     }
   }
 
-  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
     const question = prompt(body);
-    let answer = await this.ask(question, body, signal);
+    let answer = await this.ask(question, body, signal, trace);
     // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
     // and an answer that was cut off is told apart from one that is malformed.
     const cutOff = () => new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
@@ -73,6 +79,7 @@ export class SampleAIProvider implements AIProvider {
     } catch (e) {
       // Not readable: say what came back (for the console), and ask once for the same answer as valid JSON.
       const problem = (e as Error).message;
+      trace?.('retry', `Not readable as JSON (${problem}): asking once more`);
       this.log?.(`The AI's answer couldn't be read (${problem}); asking it to send it again. It began: ${answer.text.slice(0, 600)}`);
       answer = await this.ask(
         [
@@ -82,6 +89,7 @@ export class SampleAIProvider implements AIProvider {
         ],
         body,
         signal,
+        trace,
       );
       if (answer.truncated) throw cutOff();
       try {
@@ -92,7 +100,10 @@ export class SampleAIProvider implements AIProvider {
       }
     }
     const parsed = aiResponseSchema.safeParse(raw);
-    if (!parsed.success) throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");
+    if (!parsed.success) {
+      trace?.('error', `Read, but not in the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");
+    }
     return parsed.data;
   }
 }

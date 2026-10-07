@@ -752,6 +752,14 @@ try {
     await check(async () => (await hearts.count()) >= 1 && (await hearts.first().innerText()).includes('Player'), 'AI History shows the whole request, and what it was about');
     await check(async () => (await hist.getByTestId('history-exchange').count()) >= 3 && (await hist.innerText()).includes('Applied'), 'every exchange is listed with how it ended, also answers that changed nothing');
     await check(async () => (await hist.getByTestId('history-edit').count()) === 0, 'your own edits are not mixed in…');
+    await hearts.first().getByTestId('history-details').click();
+    await check(async () => {
+      const tr = await hearts.first().getByTestId('history-trace').innerText();
+      return tr.includes('Sent') && tr.includes('Raw answer') && tr.includes('"kind":') && tr.includes('Request: Give the player five hearts.');
+    }, 'Details shows what happened under the hood: what was sent, and the raw answer');
+    const [dl] = await Promise.all([page.waitForEvent('download'), hist.getByTestId('history-download').click()]);
+    const dlText = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
+    await check(dl.suggestedFilename().startsWith('pxlbuilder-ai-trace-') && JSON.parse(dlText).exchanges.some((e) => e.trace?.some((s) => s.kind === 'reply')), 'Download saves the recent exchanges with their details as a file');
     await hist.getByTestId('history-mine').check();
     await check(async () => (await hist.getByTestId('history-edit').count()) > 0, '…until "My edits too" is ticked');
     await page.getByTestId('tray-size').click();

@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { askClaude, MODEL } from '../../core/ai/claude';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
+import type { TraceFn } from '../../core/ai/trace';
 
 function client(apiKey: string): Anthropic {
   // The key is the user's own, entered by them, and only ever sent to the Anthropic API.
@@ -15,8 +16,10 @@ function client(apiKey: string): Anthropic {
 export class BrowserClaudeProvider implements AIProvider {
   constructor(private readonly apiKey: string) {}
 
-  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+    trace?.('sent', `Claude with your Anthropic key (${MODEL}${body.speed === 'fast' ? ', fast' : ''})`);
     const result = await askClaude(client(this.apiKey), body, signal);
+    trace?.('reply', result.ok ? JSON.stringify(result.response) : `Failed (${result.kind}): ${result.error}`);
     if (result.ok) return result.response;
     throw new AIUnavailableError(result.kind === 'auth' ? 'Your Anthropic API key was not accepted. Check it in ⋯ → AI connection.' : result.error);
   }

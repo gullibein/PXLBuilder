@@ -9,6 +9,7 @@
  * checked against the schema before any operation is applied, and the usual
  * "send the exact problem back once" retry applies on top.
  */
+import type { TraceFn } from '../../core/ai/trace';
 import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
@@ -80,7 +81,10 @@ export class GeminiProvider implements AIProvider {
     private readonly onBackup?: (note: string) => void,
   ) {}
 
+  private trace: TraceFn | undefined;
+
   private async call(model: string, body: AIRequestBody, signal: AbortSignal | undefined, thinkLess: boolean): Promise<{ status: number; reply: GeminiReply | null }> {
+    this.trace?.('sent', `Gemini ${model}${thinkLess ? ' (thinking less)' : ''}`);
     let res: Response;
     try {
       res = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
@@ -100,13 +104,17 @@ export class GeminiProvider implements AIProvider {
       });
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
+      this.trace?.('error', `Not reached: ${(e as Error).message}`);
       throw new AIUnavailableError(unreachable(e));
     }
     const reply = (await res.json().catch(() => null)) as GeminiReply | null;
+    const answerText = (reply?.candidates?.[0]?.content?.parts ?? []).filter((p) => !p.thought && typeof p.text === 'string').map((p) => p.text).join('');
+    this.trace?.('reply', `HTTP ${res.status}${reply?.candidates?.[0]?.finishReason ? `, finished: ${reply.candidates[0].finishReason}` : ''}${reply?.error?.message ? `, error: ${reply.error.message}` : ''}\n${answerText}`);
     return { status: res.status, reply };
   }
 
-  async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
+  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+    this.trace = trace;
     const backup = this.backup && this.backup !== this.model ? this.backup : null;
     // The chosen model was busy a moment ago: go straight to the backup for now.
     if (backup && (busyUntil.get(this.model) ?? 0) > Date.now()) return this.ask(backup, body, signal);

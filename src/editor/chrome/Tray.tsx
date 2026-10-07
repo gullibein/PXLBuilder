@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { clearAILog, useAILog, type AILogEntry } from '../ai/aiLog';
+import { offerTextFile } from '../persistence';
 import { DebugPanel, useLevelProblems } from './DebugPanel';
 
 /** Collapsible utility area: change history (AI and manual) and the console. Closed by default. */
@@ -103,9 +104,14 @@ function HistoryList() {
           My edits too
         </label>
         {entries.length > 0 && (
-          <button className="text-btn" data-testid="history-clear" onClick={clearAILog}>
-            Clear
-          </button>
+          <span className="ai-log-actions">
+            <button className="text-btn" data-testid="history-download" title="Save the recent exchanges with what happened under the hood (to share when something goes wrong; no API keys are in it)" onClick={() => void downloadTrace(entries)}>
+              Download
+            </button>
+            <button className="text-btn" data-testid="history-clear" onClick={clearAILog}>
+              Clear
+            </button>
+          </span>
         )}
       </div>
       {!items.length && <p className="muted">Your requests to the AI and its answers appear here, in full.</p>}
@@ -127,7 +133,21 @@ function HistoryList() {
   );
 }
 
+/** The recent exchanges with their traces, as a file to share (e.g. with whoever is fixing PXLBuilder). */
+async function downloadTrace(entries: AILogEntry[]): Promise<void> {
+  const recent = entries.slice(-30);
+  const text = JSON.stringify({ app: 'PXLBuilder', version: __PXL_VERSION__, saved: new Date().toISOString(), exchanges: recent }, null, 2);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const result = await offerTextFile(`pxlbuilder-ai-trace-${stamp}.json`, text);
+  const { logMessage } = useEditor.getState();
+  if (result === 'saved') logMessage('info', `Saved the last ${recent.length} AI exchanges with their details`);
+  else if (result === 'failed') logMessage('error', 'Could not save the AI details file here.');
+}
+
+const TRACE_LABEL: Record<string, string> = { sent: 'Sent', reply: 'Raw answer', check: 'Check', retry: 'Retry', note: 'Note', error: 'Problem' };
+
 function Exchange({ entry, undone }: { entry: AILogEntry; undone: boolean }) {
+  const [details, setDetails] = useState(false);
   const status = entry.status === 'error' ? '⚠ Failed' : entry.status === 'message' ? 'Answer' : undone ? '↶ Undone' : '✓ Applied';
   return (
     <article className={`exchange ${entry.status}${undone ? ' undone' : ''}`} data-testid="history-exchange">
@@ -148,6 +168,25 @@ function Exchange({ entry, undone }: { entry: AILogEntry; undone: boolean }) {
           </ul>
         )}
       </div>
+      {entry.trace && (
+        <div className="exchange-trace">
+          <button className="link-btn" data-testid="history-details" aria-expanded={details} onClick={() => setDetails(!details)}>
+            {details ? 'Hide details' : 'Details (under the hood)'}
+          </button>
+          {details && (
+            <ol className="trace-steps" data-testid="history-trace">
+              {entry.trace.map((s, i) => (
+                <li key={i} className={`trace-${s.kind}`}>
+                  <span className="trace-head">
+                    +{(s.ms / 1000).toFixed(1)} s · {TRACE_LABEL[s.kind] ?? s.kind}
+                  </span>
+                  <pre>{s.text}</pre>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
     </article>
   );
 }
