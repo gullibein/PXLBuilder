@@ -176,8 +176,6 @@ export interface AIPayload {
     relationships: { id: Id; text: string; type: string; source: EntityRef; target: EntityRef; params: Record<string, unknown>; conditions: Condition[] }[];
     rules: { id: Id; text: string; name: string; enabled: boolean; when: Rule['when']; conditions: Condition[]; actions: RuleAction[] }[];
   };
-  /** Game-wide settings: hudScale is the size of the play display (hearts, items, messages), 1 = normal. */
-  game: { hudScale: number };
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
   coordinateSystem: string;
@@ -351,7 +349,6 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       relationships: scene.relationships.slice(0, MAX_LOGIC).map((r: Relationship) => ({ id: r.id, text: describeRelationship(project, scene, r), type: r.type, source: r.source, target: r.target, params: r.params, conditions: r.conditions })),
       rules: scene.rules.slice(0, MAX_LOGIC).map((r) => ({ id: r.id, text: describeRule(project, scene, r), name: r.name, enabled: r.enabled, when: r.when, conditions: r.conditions, actions: r.actions })),
     },
-    game: { hudScale: project.settings.hudScale ?? 1 },
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => (ctx.kind === 'project' ? { id: s.id, name: s.name, entities: briefs(s, new Set()) } : { id: s.id, name: s.name })),

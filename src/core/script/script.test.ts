@@ -73,6 +73,16 @@ describe('scripts', () => {
     expect(broken((s) => (s.vars.push({ name: 'player', value: 1 }), s))).toMatch(/built-in name/);
     expect(broken((s) => ((s.handlers[0].do[0] as unknown as { do: string }).do = 'teleport_everyone', s))).toMatch(/handlers\.0\.do\.0/);
     expect(broken((s) => (s.handlers[0].do.push({ do: 'spawn', object: 'def_nope', x: '0', y: '0' } as never), s))).toMatch(/no library object "def_nope"/);
+    const push = (stmt: unknown) => broken((s) => (s.handlers[0].do.push(stmt as never), s));
+    expect(push({ do: 'set_field', component: 'Sprit', field: 'width', value: '1' })).toMatch(/there is no component "Sprit"/);
+    expect(push({ do: 'set_field', component: 'Sprite', field: 'widht', value: '1' })).toMatch(/Sprite has no field "widht" \(it has .*width/);
+    expect(push({ do: 'set_field', component: 'Collider', field: 'size', value: '1' })).toMatch(/use "size.x" or "size.y"/);
+    expect(push({ do: 'set_field', component: 'Transform', field: 'angle', value: '1' })).toMatch(/Transform has no field "angle"/);
+    expect(push({ do: 'add_component', component: 'Ladder' })).toMatch(/there is no component "Ladder"/);
+    expect(push({ do: 'draw', id: 'a', shape: 'sprite', x: '0', y: '0' })).toMatch(/needs "object"/);
+    expect(push({ do: 'repeat', times: '3', then: [{ do: 'set', var: 'speed', value: 'i' }] })).toBeNull();
+    expect(push({ do: 'set', var: 'speed', value: 'i' })).toMatch(/unknown name "i"/);
+    expect(push({ do: 'set_field', component: 'Collider', field: 'size.x', value: 'field(self, "Collider.size.x") + 8' })).toBeNull();
     expect(broken((s) => (s.handlers[0].do.push({ do: 'message', text: 'HP {healt}' } as never), s))).toMatch(/unknown name "healt"/);
   });
 

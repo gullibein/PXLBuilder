@@ -19,6 +19,7 @@ import type { GameEvent } from './gameplay';
 import type { InputState } from './input';
 import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
+import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 
 export interface ScriptInstance {
   script: BehaviorScript;
@@ -58,6 +59,8 @@ interface Ctx {
   inst: ScriptInstance;
   other: RuntimeEntity | null;
   it: RuntimeEntity | null;
+  /** The count inside "repeat". */
+  i: number;
 }
 
 export class ScriptSystem {
@@ -175,7 +178,7 @@ export class ScriptSystem {
 
   private run(e: RuntimeEntity, inst: ScriptInstance, h: Handler, other: RuntimeEntity | null, chain = 0): void {
     if (h.state !== null && h.state !== inst.state) return;
-    const ctx: Ctx = { self: e, inst, other, it: null };
+    const ctx: Ctx = { self: e, inst, other, it: null, i: 0 };
     this.budget = RUN_BUDGET;
     try {
       if (h.if !== null && !truthy(this.eval(h.if, ctx))) return;
@@ -373,6 +376,72 @@ export class ScriptSystem {
         if (t) t.alpha = Math.min(1, Math.max(0, n(s.value)));
         break;
       }
+      case 'set_field': {
+        const t = ent(s.on);
+        if (!t) break;
+        const err = writeField(this.rt, t, s.component, s.field, this.eval(s.value, ctx));
+        if (err) this.report(e, ctx.inst, `set_field on ${t.name}: ${err}`);
+        break;
+      }
+      case 'add_component':
+      case 'remove_component': {
+        const t = ent(s.on);
+        if (!t) break;
+        const err = s.do === 'add_component' ? addComponent(this.rt, t, s.component) : removeComponent(this.rt, t, s.component);
+        if (err) this.report(e, ctx.inst, `${s.do} on ${t.name}: ${err}`);
+        break;
+      }
+      case 'tag': {
+        const t = ent(s.on);
+        if (t) setTag(t, s.tag, s.add);
+        break;
+      }
+      case 'repeat': {
+        const times = Math.min(MAX_EACH, Math.max(0, Math.floor(n(s.times))));
+        const prev = ctx.i;
+        for (let k = 0; k < times; k++) {
+          ctx.i = k;
+          this.exec(s.then, ctx, chain);
+        }
+        ctx.i = prev;
+        break;
+      }
+      case 'draw': {
+        const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        const id = fill(s.id);
+        const old = this.rt.drawings.get(id);
+        const opt = (text: string | null, d: number) => (text === null ? d : n(text));
+        this.rt.drawings.set(id, {
+          owner: e.id,
+          shape: s.shape,
+          anchor: s.anchor,
+          x: n(s.x),
+          y: n(s.y),
+          w: Math.max(0, opt(s.w, 32)),
+          h: Math.max(0, opt(s.h, 32)),
+          text: s.text === null ? '' : fill(s.text),
+          size: Math.min(200, Math.max(4, opt(s.size, 18))),
+          color: s.color,
+          object: s.object,
+          alpha: Math.min(1, Math.max(0, opt(s.alpha, 1))),
+          order: old?.order ?? this.rt.drawings.size,
+        });
+        break;
+      }
+      case 'erase': {
+        if (s.id === null) {
+          for (const [k, d] of this.rt.drawings) if (d.owner === e.id) this.rt.drawings.delete(k);
+        } else this.rt.drawings.delete(s.id.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))));
+        break;
+      }
+      case 'builtin_display': {
+        const parts: ('hearts' | 'items')[] = s.what === 'all' ? ['hearts', 'items'] : [s.what];
+        for (const part of parts) {
+          if (s.show) this.rt.builtinHidden.delete(part);
+          else this.rt.builtinHidden.add(part);
+        }
+        break;
+      }
       case 'rotate': {
         const t = ent(s.on);
         if (!t) break;
@@ -507,6 +576,12 @@ export class ScriptSystem {
         return ctx.other;
       case 'it':
         return ctx.it;
+      case 'i':
+        return ctx.i;
+      case 'screen_w':
+        return this.rt.screen.w;
+      case 'screen_h':
+        return this.rt.screen.h;
       case 'player':
         return this.nearest(ctx.self, 'player');
       case 'time':
@@ -643,6 +718,22 @@ export class ScriptSystem {
         const a = asEntity(v[0]);
         const name = show(v[1]);
         return a?.scripts.find((i) => i.vars.has(name))?.vars.get(name) ?? 0;
+      }
+      case 'field': {
+        const a = asEntity(v[0]);
+        if (!a) return null;
+        const text = show(v[1]);
+        const dot = text.indexOf('.');
+        const r = dot > 0 ? readField(this.rt, a, text.slice(0, dot), text.slice(dot + 1)) : { error: `field(): "${text}" should be "Component.field"` };
+        if (r !== null && typeof r === 'object' && 'error' in r) {
+          this.report(ctx.self, ctx.inst, `field(${a.name}, "${text}"): ${r.error}`);
+          return null;
+        }
+        return r as Value;
+      }
+      case 'has_component': {
+        const a = asEntity(v[0]);
+        return !!a && !!a.base.components[show(v[1])];
       }
     }
     return null;

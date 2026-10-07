@@ -54,6 +54,22 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return [`${indent}if ${x(s.cond)}:`, ...s.then.flatMap((t) => stmtLines(t, `${indent}  `)), ...(s.else.length ? [`${indent}else:`, ...s.else.flatMap((t) => stmtLines(t, `${indent}  `))] : [])];
     case 'each':
       return [`${indent}for each ${s.tag} (it):`, ...s.then.flatMap((t) => stmtLines(t, `${indent}  `))];
+    case 'repeat':
+      return [`${indent}repeat ${x(s.times)} times (i):`, ...s.then.flatMap((t) => stmtLines(t, `${indent}  `))];
+    case 'set_field':
+      return one(`${who(s.on)}${s.component}.${s.field} = ${x(s.value)}`);
+    case 'add_component':
+      return one(`${who(s.on)}add ${s.component}`);
+    case 'remove_component':
+      return one(`${who(s.on)}remove ${s.component}`);
+    case 'tag':
+      return one(`${who(s.on)}${s.add ? 'add' : 'remove'} tag "${s.tag}"`);
+    case 'draw':
+      return one(`draw ${s.shape === 'text' ? `text "${s.text ?? ''}"` : s.shape} "${s.id}" at ${s.anchor === 'world' ? 'level' : s.anchor.replace('_', ' ')} ${x(s.x)}, ${x(s.y)}`);
+    case 'erase':
+      return one(s.id ? `erase "${s.id}"` : 'erase everything it drew');
+    case 'builtin_display':
+      return one(`${s.show ? 'show' : 'hide'} the built-in ${s.what === 'all' ? 'display' : s.what}`);
     case 'velocity':
       return one(`${who(s.on)}speed ${[s.x !== null ? `x = ${x(s.x)}` : '', s.y !== null ? `y = ${x(s.y)}` : ''].filter(Boolean).join(', ')}`);
     case 'push':

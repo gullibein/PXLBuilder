@@ -90,7 +90,23 @@ function stubModel(body) {
     };
   }
   if (req.includes('hearts bigger')) {
-    return { kind: 'apply', message: 'The hearts and the rest of the play display are twice as big.', changes: ['Play display: size 2'], operations: [{ op: 'set_hud', scale: 2 }] };
+    // Not a setting: a script on the player that draws its own, bigger hearts and hides the built-in ones.
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    const script = {
+      name: 'Big hearts',
+      description: 'Draws the health as big hearts in the top left corner.',
+      handlers: [
+        {
+          when: { on: 'tick' },
+          do: [
+            { do: 'builtin_display', what: 'hearts', show: false },
+            { do: 'erase', id: null },
+            { do: 'repeat', times: 'self.max_health', then: [{ do: 'draw', id: 'heart{i}', shape: 'circle', anchor: 'top_left', x: '16 + i * 52', y: '16', w: '44', h: '44', color: '#ff4d6d', alpha: 'i < self.health ? 1 : 0.25' }] },
+          ],
+        },
+      ],
+    };
+    return { kind: 'apply', message: 'The player now draws its own hearts, twice as big.', changes: ['Player: draws big hearts (the built-in ones are hidden)'], operations: [{ op: 'set_script', target: 'definition', id: player, scriptJson: JSON.stringify(script) }] };
   }
   if (req.includes('coin up high')) {
     // First a coin the player can't reach (no platform or ladder up there); asked again with the problem, a reachable one.
@@ -622,10 +638,11 @@ try {
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
   await check(async () => (await prompts.getByTestId('prompt-chat').count()) === 0, 'closing the card ended the chat: it opens empty');
   await ask('Make the hearts bigger.');
-  await check(async () => (await result.getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.game.hudScale === 1, 'asking for bigger hearts is applied (the AI was told the display size, 1)');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'asking for bigger hearts is applied, as a script on the player');
   await page.keyboard.press('Escape');
   await page.getByTestId('play').click();
-  await check(async () => (await page.getByTestId('hud').evaluate((el) => getComputedStyle(el).transform)) === 'matrix(2, 0, 0, 2, 0, 0)', 'in play, the hearts display is twice as big');
+  await check(async () => /heart0\|heart1\|heart2/.test((await page.getByTestId('play-canvas').getAttribute('data-drawings')) ?? '') && (await page.getByTestId('hud-health').count()) === 0, "in play, the script draws its own hearts on the screen and the built-in ones are hidden");
+  await page.screenshot({ path: `${OUT}/5d-script-hearts.png` });
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
   await page.getByTestId('undo').click();

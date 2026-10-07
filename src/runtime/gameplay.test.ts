@@ -798,6 +798,117 @@ describe('behavior scripts', () => {
     expect(rt.scripts.errors).toEqual([]);
   });
 
+  it('set_field changes any field while playing, and field() reads it back (sizes, jump force, collisions follow)', () => {
+    const { rt, input, p } = level((b) => {
+      script(b, rt0(b, 'Player'), {
+        vars: [{ name: 'w', value: 0 }],
+        handlers: [
+          {
+            when: { on: 'start' },
+            do: [
+              { do: 'set_field', component: 'Sprite', field: 'width', value: 'field(self, "Sprite.width") * 2', on: null },
+              { do: 'set_field', component: 'Collider', field: 'size.x', value: '40', on: null },
+              { do: 'set_field', component: 'CharacterController', field: 'jumpForce', value: '600', on: null },
+              { do: 'set', var: 'w', value: 'field(self, "Sprite.width")' },
+            ],
+          },
+        ],
+      });
+    });
+    run(rt, input, 0.1);
+    expect(p.scripts[0].vars.get('w')).toBe(2 * Number(rt.project.definitions.find((d) => d.name === 'Player')!.components.Sprite!.width));
+    expect(p.collider!.hw).toBe(20);
+    expect(rt.renderList().find((r) => r.name === 'Player')!.components.Sprite!.width).toBe(p.scripts[0].vars.get('w'));
+    expect(p.controller!.jumpForce).toBe(600);
+    // The project itself is untouched.
+    expect(rt.project.definitions.find((d) => d.name === 'Player')!.components.CharacterController!.jumpForce).toBe(350);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('a wrong value is reported, not applied; numbers are kept within the field limits', () => {
+    const { rt, input, p } = level((b) => {
+      script(b, rt0(b, 'Player'), {
+        handlers: [
+          {
+            when: { on: 'start' },
+            do: [
+              { do: 'set_field', component: 'PhysicsBody', field: 'bodyType', value: '"wobbly"', on: null },
+              { do: 'set_field', component: 'Health', field: 'maxHealth', value: '-5', on: null },
+            ],
+          },
+        ],
+      });
+    });
+    run(rt, input, 0.1);
+    expect(p.body).toBe('dynamic');
+    expect(rt.scripts.errors[0].message).toMatch(/bodyType must be one of/);
+    expect(p.health!.max).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Transform: scale and rotation change how big and how turned a thing is, and how it collides', () => {
+    const { rt, input, p } = level((b) => {
+      const s = b.place('Stone', { x: 96, y: 0 }, 'Wall');
+      script(b, s, { handlers: [{ when: { on: 'start' }, do: [{ do: 'set_field', component: 'Transform', field: 'scale.y', value: '3', on: null }, { do: 'set_field', component: 'Transform', field: 'rotation', value: '90', on: null }] }] });
+      script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'start' }, do: [{ do: 'set_field', component: 'Transform', field: 'rotation', value: '90', on: null }] }] });
+    });
+    run(rt, input, 0.1);
+    const wall = rt.find('Wall')!;
+    // 32 wide x 96 tall, turned a quarter: 96 wide x 32 tall.
+    expect(wall.collider!.hw).toBeCloseTo(48, 5);
+    expect(wall.collider!.hh).toBeCloseTo(16, 5);
+    expect(rt.renderList().find((r) => r.name === 'Wall')!.transform.rotation).toBe(90);
+    // The player is drawn turned but keeps an upright box.
+    const before = p.collider!;
+    expect(rt.renderList().find((r) => r.name === 'Player')!.transform.rotation).toBe(90);
+    expect(p.collider).toEqual(before);
+  });
+
+  it('add_component / remove_component / tag: a stone starts hurting the player, then stops', () => {
+    const { rt, input, p } = level((b) => {
+      const s = b.place('Stone', { x: 60, y: 16 }, 'Thorn');
+      script(b, s, {
+        handlers: [
+          { when: { on: 'start' }, do: [{ do: 'add_component', component: 'Damage', on: null }, { do: 'tag', tag: 'hazard', add: true, on: null }] },
+          { when: { on: 'event', event: 'damaged', with: null }, do: [{ do: 'remove_component', component: 'Damage', on: null }] },
+        ],
+      });
+    });
+    run(rt, input, 0.1);
+    const thorn = rt.find('Thorn')!;
+    expect(thorn.damage).not.toBeNull();
+    expect(thorn.tags).toContain('hazard');
+    walkRight(rt, input, 0.6);
+    expect(p.health!.current).toBe(2);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('repeat + draw: scripts draw their own hearts on the screen, and can hide the built-in ones', () => {
+    const { rt, input } = level((b) => {
+      script(b, rt0(b, 'Player'), {
+        handlers: [
+          {
+            when: { on: 'tick' },
+            do: [
+              { do: 'builtin_display', what: 'hearts', show: false },
+              { do: 'erase', id: null },
+              { do: 'repeat', times: 'self.health', then: [{ do: 'draw', id: 'heart{i}', shape: 'circle', anchor: 'top_right', x: '-16 - i * 40', y: '16', w: '32', h: '32', color: '#ff4d6d' }] },
+              { do: 'draw', id: 'label', shape: 'text', text: 'HP {self.health}/{self.max_health} on {screen_w}', x: '0', y: '0' },
+            ],
+          },
+        ],
+      });
+    });
+    rt.screen = { w: 800, h: 500 };
+    run(rt, input, 0.1);
+    expect([...rt.drawings.keys()].sort()).toEqual(['heart0', 'heart1', 'heart2', 'label']);
+    expect(rt.drawings.get('heart2')!.x).toBe(-96);
+    expect(rt.drawings.get('label')!.text).toBe('HP 3/3 on 800');
+    expect(rt.builtinHidden.has('hearts')).toBe(true);
+    rt.restart();
+    expect(rt.drawings.size).toBe(0);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
   it('"on": a trampoline script throws the player up; "speed_factor" on other slows it', () => {
     const { rt, input, p } = level((b) => {
       const s = b.place('Stone', { x: 60, y: 16 });

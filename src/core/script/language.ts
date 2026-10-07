@@ -16,6 +16,8 @@
 import { z } from 'zod';
 import { eventRegistry } from '../logic/vocabulary';
 import type { Project } from '../types';
+import { componentRegistry } from '../components/builtin';
+import { checkComponent, resolveField } from './fields';
 import { checkExpr, ExprError, parseExpr, suggest, type Scope } from './expr';
 
 // ---------------------------------------------------------------- data
@@ -60,6 +62,28 @@ export type Stmt =
   | { do: 'alpha'; value: string; on: string | null }
   | { do: 'rotate'; by: string | null; to: string | null; seconds: string; on: string | null }
   | { do: 'spin'; speed: string; on: string | null }
+  | { do: 'set_field'; component: string; field: string; value: string; on: string | null }
+  | { do: 'add_component'; component: string; on: string | null }
+  | { do: 'remove_component'; component: string; on: string | null }
+  | { do: 'tag'; tag: string; add: boolean; on: string | null }
+  | { do: 'repeat'; times: string; then: Stmt[] }
+  | {
+      do: 'draw';
+      id: string;
+      shape: DrawShape;
+      anchor: DrawAnchor;
+      x: string;
+      y: string;
+      w: string | null;
+      h: string | null;
+      text: string | null;
+      size: string | null;
+      color: string;
+      object: string | null;
+      alpha: string | null;
+    }
+  | { do: 'erase'; id: string | null }
+  | { do: 'builtin_display'; what: 'hearts' | 'items' | 'all'; show: boolean }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
   | { do: 'complete_level' }
@@ -68,6 +92,11 @@ export type Stmt =
   | { do: 'camera_zoom'; zoom: string; seconds: string }
   | { do: 'camera_focus'; target: string; seconds: string }
   | { do: 'camera_follow'; target: string | null };
+
+export const DRAW_SHAPES = ['text', 'rect', 'circle', 'sprite'] as const;
+export type DrawShape = (typeof DRAW_SHAPES)[number];
+export const DRAW_ANCHORS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right', 'world'] as const;
+export type DrawAnchor = (typeof DRAW_ANCHORS)[number];
 
 export interface Handler {
   when: Trigger;
@@ -102,12 +131,15 @@ export const BUILTIN_NAMES: Record<string, string> = {
   dt: 'seconds since the last step (1/60)',
   state: 'the current state name ("" without states)',
   state_time: 'seconds since the current state started',
+  screen_w: 'width of the play screen (px), for drawing',
+  screen_h: 'height of the play screen (px), for drawing',
   pi: '3.14159…',
 };
 /** Names that exist only in some handlers. */
 export const CONTEXT_NAMES: Record<string, string> = {
   other: 'in "event" handlers: the other entity of the event (who touched it, what hurt it…); in "signal" handlers: who sent the signal',
   it: 'inside "each": the entity being visited',
+  i: 'inside "repeat": 0, 1, 2… (which time it is)',
 };
 
 /** Properties of an entity: e.x, player.health… (null entity: 0/false/""). */
@@ -173,6 +205,8 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   touching: { args: 'tag, e?', min: 1, max: 2, doc: 'self (or e) overlaps a living entity with the tag right now: touching("water"), touching("water", other)' },
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
+  field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
+  has_component: { args: 'e, "Component"', min: 2, max: 2, doc: 'e has that component now' },
 };
 
 export interface StatementInfo {
@@ -206,6 +240,20 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
   message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
+  set_field: {
+    example: '{"do":"set_field","component":"Sprite","field":"width","value":"field(self, \\"Sprite.width\\") * 1.5","on":null}',
+    doc: 'change any field of any component while playing (the component list says what exists): Sprite width/height/color/assetId, Collider size.x/size.y (two-number fields are set one half at a time), CharacterController jumpForce/speed, Health maxHealth, PhysicsBody gravityScale/bodyType, Patrol speed… and "Transform" x/y/rotation/scale.x/scale.y. Numbers are kept within the field\'s limits; a thing without the component gets it first. Read fields back with field(e, "Component.field")',
+  },
+  add_component: { example: '{"do":"add_component","component":"Climbable","on":null}', doc: 'give it a component (default values; then set_field to tune it): becomes climbable, stompable, collectible, a patroller…' },
+  remove_component: { example: '{"do":"remove_component","component":"Damage","on":"other"}', doc: 'take a component away (it stops hurting, stops being solid without Collider, …)' },
+  tag: { example: '{"do":"tag","tag":"enemy","add":true,"on":null}', doc: 'add (add true) or remove (add false) a tag (tags decide what hurts what, what a stomp or a door needs, who is "player"…)' },
+  repeat: { example: '{"do":"repeat","times":"self.max_health","then":[…]}', doc: 'run "then" N times (at most 200); inside, "i" counts 0, 1, 2…' },
+  draw: {
+    example: '{"do":"draw","id":"heart{i}","shape":"sprite","anchor":"top_left","x":"16 + i * 40","y":"16","w":"32","h":"32","text":null,"size":null,"color":"#ff4d6d","object":"<library object id>","alpha":null}',
+    doc: 'draw on the screen, on top of the game, until erased or drawn again with the same id ("{expression}" parts in id and text are filled in, so "heart{i}" makes one per repeat). shape: text (text, size = font px, color), rect / circle (w, h, color), sprite (a library object\'s look, w × h). anchor: where x, y count from (a screen corner, side or the center; x grows right, y down; the drawing lines up with that corner, e.g. "top_right" with x "-16" sits 16 px from the right edge), or "world" for level coordinates (moves with the camera: labels over things). alpha: 0..1 (null = 1). Use it for health bars, hearts, scores, timers, labels',
+  },
+  erase: { example: '{"do":"erase","id":"heart{i}"}', doc: 'remove a drawing by id (null = everything this entity drew)' },
+  builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'hide or show the built-in display (hearts, items, or all of it), e.g. when scripts draw their own' },
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
@@ -269,6 +317,28 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
     z.object({ do: z.literal('rotate'), by: nexpr, to: nexpr, seconds: expr.default('0'), on: nexpr }),
     z.object({ do: z.literal('spin'), speed: expr, on: nexpr }),
+    z.object({ do: z.literal('set_field'), component: z.string().min(1), field: z.string().min(1), value: expr, on: nexpr }),
+    z.object({ do: z.literal('add_component'), component: z.string().min(1), on: nexpr }),
+    z.object({ do: z.literal('remove_component'), component: z.string().min(1), on: nexpr }),
+    z.object({ do: z.literal('tag'), tag: z.string().min(1), add: z.boolean().default(true), on: nexpr }),
+    z.object({ do: z.literal('repeat'), times: expr, then: z.array(stmt).default([]) }),
+    z.object({
+      do: z.literal('draw'),
+      id: z.string().min(1),
+      shape: z.enum(DRAW_SHAPES),
+      anchor: z.enum(DRAW_ANCHORS).default('top_left'),
+      x: expr.default('0'),
+      y: expr.default('0'),
+      w: nexpr,
+      h: nexpr,
+      text: z.string().nullable().default(null),
+      size: nexpr,
+      color: z.string().default('#ffffff'),
+      object: z.string().nullable().default(null),
+      alpha: nexpr,
+    }),
+    z.object({ do: z.literal('erase'), id: z.string().min(1).nullable().default(null) }),
+    z.object({ do: z.literal('builtin_display'), what: z.enum(['hearts', 'items', 'all']), show: z.boolean() }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('complete_level') }),
@@ -369,6 +439,20 @@ export function exprSlots(s: Stmt): string[] {
       return [...(s.by ? [s.by] : []), ...(s.to ? [s.to] : []), s.seconds, ...(s.on ? [s.on] : [])];
     case 'spin':
       return [s.speed, ...(s.on ? [s.on] : [])];
+    case 'set_field':
+      return [s.value, ...(s.on ? [s.on] : [])];
+    case 'add_component':
+    case 'remove_component':
+    case 'tag':
+      return s.on ? [s.on] : [];
+    case 'repeat':
+      return [s.times];
+    case 'draw':
+      return [...messageParts(s.id), s.x, s.y, ...[s.w, s.h, s.size, s.alpha].filter((v): v is string => v !== null), ...(s.text ? messageParts(s.text) : [])];
+    case 'erase':
+      return s.id ? messageParts(s.id) : [];
+    case 'builtin_display':
+      return [];
     case 'camera_shake':
       return [s.strength, s.seconds];
     case 'camera_flash':
@@ -451,7 +535,20 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
         }
         if (s.do === 'set' && !s.on && !varNames.has(s.var)) return `${at}: unknown variable "${s.var}"${suggest(s.var, [...varNames])}; declare it in "vars"`;
         if (s.do === 'state' && !states.has(s.name)) return `${at}: unknown state "${s.name}"${suggest(s.name, [...states])}; declare it in "states"`;
-        if ((s.do === 'spawn' || s.do === 'shoot') && s.object !== null && !objects.has(s.object)) return `${at}: there is no library object "${s.object}"`;
+        if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object)) return `${at}: there is no library object "${s.object}"`;
+        if (s.do === 'draw' && s.shape === 'sprite' && s.object === null) return `${at}: a sprite drawing needs "object" (a library object id)`;
+        if (s.do === 'set_field') {
+          const target = resolveField(componentRegistry, s.component, s.field);
+          if ('error' in target) return `${at}: ${target.error}`;
+        }
+        if (s.do === 'add_component' || s.do === 'remove_component') {
+          const err = checkComponent(componentRegistry, s.component);
+          if (err) return `${at}: ${err}`;
+        }
+        if (s.do === 'repeat') {
+          const err = walk(s.then, new Set([...names, 'i']), depth + 1, at);
+          if (err) return err;
+        }
         if (s.do === 'if') {
           const err = walk(s.then, names, depth + 1, `${at} then`) ?? walk(s.else, names, depth + 1, `${at} else`);
           if (err) return err;

@@ -12,6 +12,7 @@ import { createStandaloneEntity, instantiateDefinition } from '../core/model/fac
 import { getEntitySize } from '../core/model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
+import type { DrawAnchor, DrawShape } from '../core/script/language';
 import type { Camera, RenderEntity } from '../render/renderer';
 import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
@@ -156,6 +157,26 @@ function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
   return ladders;
 }
 
+/** Something a script drew on the screen (values already worked out). */
+export interface ScreenDrawing {
+  /** Id of the entity that drew it (erase with id null removes its drawings). */
+  owner: Id;
+  shape: DrawShape;
+  anchor: DrawAnchor;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text: string;
+  size: number;
+  color: string;
+  /** Library object whose look is drawn (shape "sprite"). */
+  object: Id | null;
+  alpha: number;
+  /** Drawing order: later on top. */
+  order: number;
+}
+
 export type Situation = 'idle' | 'run' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot';
 /** How long the hurt and shoot looks last (seconds). */
 const HURT_LOOK = 0.4;
@@ -173,7 +194,7 @@ export interface Behaviors {
 
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
-function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Behaviors {
+export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Behaviors {
   const p = c.Patrol;
   const j = c.Jumper;
   const s = c.Shooter;
@@ -203,20 +224,43 @@ function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Be
   };
 }
 
+/**
+ * The collision box for its Collider, scale and rotation. A turned box
+ * collides as the upright box around it (exact for quarter turns), except
+ * for things that move by physics (characters): they keep an upright box, so
+ * a flip or a spin can't push them into walls or floors.
+ */
+export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedEntity['transform'], extraTurn = 0): RuntimeEntity['collider'] {
+  const col = c.Collider;
+  if (!col) return null;
+  const scale = transform.scale;
+  const size = col.size as Vec2;
+  const off = col.offset as Vec2;
+  let w = size.x * Math.abs(scale.x);
+  let h = (col.shape === 'circle' ? size.x : size.y) * Math.abs(scale.y);
+  let ox = off.x * scale.x;
+  let oy = off.y * scale.y;
+  const dynamic = c.PhysicsBody?.bodyType === 'dynamic';
+  const turn = (((transform.rotation + extraTurn) % 360) + 360) % 360;
+  if (turn !== 0 && !dynamic && col.shape !== 'circle') {
+    const a = (turn * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(a)) < 1e-9 ? 0 : Math.cos(a);
+    const sin = Math.abs(Math.sin(a)) < 1e-9 ? 0 : Math.sin(a);
+    [w, h] = [Math.abs(w * cos) + Math.abs(h * sin), Math.abs(w * sin) + Math.abs(h * cos)];
+    [ox, oy] = [ox * cos - oy * sin, ox * sin + oy * cos];
+  }
+  return { ox, oy, hw: w / 2, hh: h / 2, trigger: col.isTrigger === true };
+}
+
 function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
-  const r = resolveEntity(project, instance, registry);
+  return entityFrom(project, resolveEntity(project, instance, registry));
+}
+
+/** The runtime entity for a resolved entity (also used to re-read one component's values during play). */
+export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
   const c = r.components;
   const pb = c.PhysicsBody;
-  const col = c.Collider;
-  const scale = r.transform.scale;
-  let collider: RuntimeEntity['collider'] = null;
-  if (col) {
-    const size = col.size as Vec2;
-    const off = col.offset as Vec2;
-    const w = (col.shape === 'circle' ? size.x : size.x) * Math.abs(scale.x);
-    const h = (col.shape === 'circle' ? size.x : size.y) * Math.abs(scale.y);
-    collider = { ox: off.x * scale.x, oy: off.y * scale.y, hw: w / 2, hh: h / 2, trigger: col.isTrigger === true };
-  }
+  const collider = colliderOf(c, r.transform);
   const cc = c.CharacterController;
   const vel = (pb?.velocity as Vec2 | undefined) ?? { x: 0, y: 0 };
   const objectName = project.definitions.find((d) => d.id === r.definitionId)?.name ?? r.name;
@@ -307,11 +351,17 @@ export class Runtime {
   private ladders: Ladder[] = [];
   private fallLimit = 0;
   readonly scene: Scene;
+  /** What scripts drew on the screen, by id (kept until erased or the level restarts). */
+  readonly drawings = new Map<string, ScreenDrawing>();
+  /** Parts of the built-in play display that scripts turned off. */
+  readonly builtinHidden = new Set<'hearts' | 'items'>();
+  /** The play screen's size in px (set by the play view; scripts read screen_w / screen_h). */
+  screen = { w: 960, h: 600 };
 
   constructor(
-    private readonly project: Project,
+    readonly project: Project,
     sceneId: Id,
-    private readonly registry: ComponentRegistry,
+    readonly registry: ComponentRegistry,
   ) {
     this.scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.gravity = { ...this.scene.world.gravity };
@@ -331,6 +381,8 @@ export class Runtime {
       e.hiddenBySwitch = true;
     }
     this.completed = null;
+    this.drawings.clear();
+    this.builtinHidden.clear();
     this.solidsDirty = true;
     this.rebuildLadders();
 
@@ -384,6 +436,7 @@ export class Runtime {
     this.time += dt;
     // Turning (scripts' rotate over time, and spin).
     for (const e of this.entities) {
+      const before = e.angle;
       if (e.spin) e.angle = (e.angle + e.spin * dt) % 360;
       else if (e.turn) {
         const left = e.turn.to - e.angle;
@@ -393,6 +446,7 @@ export class Runtime {
           e.turn = null;
         } else e.angle += Math.sign(left) * stepDeg;
       }
+      if (e.angle !== before) this.refreshCollider(e);
     }
     // Things a switch is moving glide toward their target (solids move with them).
     for (const e of this.entities) {
@@ -466,6 +520,12 @@ export class Runtime {
     }
     this.behaviors.after(dt);
     this.gameplay.update(dt, input);
+  }
+
+  /** Its collision box after its size, scale or rotation changed. */
+  refreshCollider(e: RuntimeEntity): void {
+    e.collider = colliderOf(e.base.components, e.base.transform, e.angle);
+    if (e.body !== 'dynamic') this.solidsDirty = true;
   }
 
   private isSolid(e: RuntimeEntity): boolean {
@@ -694,7 +754,10 @@ export class Runtime {
     e.climbing = false;
     e.touching = new Set();
     // Whatever slowed it or changed its gravity (water, a power-up) does not follow it back; nor does a turn.
-    e.angle = 0;
+    if (e.angle !== 0) {
+      e.angle = 0;
+      this.refreshCollider(e);
+    }
     e.turn = null;
     e.spin = 0;
     e.speedFactor = 1;

@@ -512,15 +512,27 @@ saved and shown like any other edit.
   branching, and which way the level is won. Enemies and anything placed
   in the air drop onto the surface below.
 
-### Turning and the play display size
-- Scripts turn things with `rotate` (by or to an angle, at once or over
-  seconds) and `spin` (degrees per second); `angle` reads it back. The
-  runtime keeps it per entity (`angle`, `turn`, `spin`), adds it to the
-  placed rotation when drawing, and resets it on respawn. Only drawing is
-  turned: colliders stay axis-aligned boxes. Placed copies are turned with
-  `set_transform` rotation.
-- `settings.hudScale` (optional, 0.5–3, default 1) sizes the play display;
-  the AI sets it with `set_hud` and sees it as `game.hudScale`.
+### Everything is programmable in play (`runtime/fields.ts`, `render/screen.ts`)
+- Scripts read any component field with `field(e, "Component.field")` and
+  change it with `set_field`, `add_component`, `remove_component` and `tag`;
+  "Transform" (x, y, rotation, scale.x, scale.y) is a pseudo-component. Names
+  are checked when the script is checked (`core/script/fields.ts`, against
+  the component registry); values are converted to the field's kind and kept
+  within its limits, and a wrong one is a script error.
+- The entity's resolved data (`base`) is replaced copy-on-write (the project
+  is never changed), then whatever the engine works out from that component
+  is read again (`entityFrom`), keeping what is going on: current health, a
+  patrol's direction, timers. Sprite, SpriteStates and the like are read from
+  `base` as they are used.
+- Collisions follow size and scale. A turned wall, platform or hazard
+  collides as the upright box around the turned shape (exact for quarter
+  turns); things moved by physics keep an upright box while drawn turned.
+  `rotate` / `spin` turn things over time (`angle`, reset on respawn).
+- Scripts draw on the screen with `draw` (text, rect, circle, or a library
+  object's look; at a screen anchor, or "world" for level coordinates),
+  `erase`, and `repeat` (with `i`); `builtin_display` hides the built-in
+  hearts or items. Drawings live in `Runtime.drawings` by id, are cleared
+  on restart, and are drawn over the game by `render/screen.ts`.
 
 ### Format v9
 The starter Hazard (spikes) is one tile wide (32×16) with a one-tile spikes

@@ -78,7 +78,7 @@ export const projectSchema = z.object({
   formatVersion: z.number().int(),
   id,
   name: z.string(),
-  settings: z.object({ gridSize: z.number().int().positive(), hudScale: z.number().min(0.5).max(3).optional() }),
+  settings: z.object({ gridSize: z.number().int().positive() }),
   startSceneId: id,
   scenes: z.array(sceneSchema).min(1),
   definitions: z.array(definitionSchema),

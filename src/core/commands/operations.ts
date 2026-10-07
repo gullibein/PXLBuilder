@@ -74,10 +74,6 @@ export const operationSchema = z.union([
     backgroundColor: z.string().nullable(),
   }),
   z.object({
-    op: z.literal('set_hud'),
-    scale: z.number().min(0.5).max(3).describe('Size of the play display (hearts, items, messages) for the whole game: 1 normal, 2 twice as big, 0.5 half'),
-  }),
-  z.object({
     op: z.literal('set_background'),
     sceneId: z.string(),
     color: z.string().nullable().describe('Background color "#rrggbb", or null to keep'),
@@ -451,9 +447,6 @@ export function applyOperations(
         });
         break;
       }
-      case 'set_hud':
-        project.settings.hudScale = op.scale;
-        break;
       case 'set_background': {
         if (op.color !== null) m.setWorldSettings(project, op.sceneId, { backgroundColor: op.color });
         m.setBackground(project, op.sceneId, {

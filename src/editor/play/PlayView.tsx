@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
+import { drawScreenDrawings, LookCache } from '../../render/screen';
 import { InputState, KEY_BINDINGS } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
@@ -33,6 +34,7 @@ export function PlayView() {
     const canvas = canvasRef.current!;
     const { project, activeSceneId } = useEditor.getState();
     const images = imageLookup(project);
+    const looks = new LookCache(project, componentRegistry);
     // Play starts at the level being edited; a won level goes on to the next one (in the levels' order).
     let scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
@@ -60,6 +62,7 @@ export function PlayView() {
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
       runtime.cam.setView(rect.width, rect.height);
+      runtime.screen = { w: rect.width, h: rect.height };
     };
     // Measured now, so the camera starts inside its limits for this screen; then on every resize.
     measure();
@@ -121,6 +124,12 @@ export function PlayView() {
       drawBackground(ctx, size, dpr, scene.world, view, images);
       applyCamera(ctx, view, size, dpr);
       drawEntities(ctx, runtime.renderList(), images);
+      // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top.
+      const drawings = [...runtime.drawings.values()];
+      drawScreenDrawings(ctx, drawings, 'world', size, looks, images);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images);
+      canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       const flash = runtime.cam.flash();
       if (flash) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -140,8 +149,8 @@ export function PlayView() {
         .join('|');
       // The HUD only re-renders when what it shows changes.
       const next: Hud = {
-        health: player?.health ? { ...player.health } : null,
-        items: player?.inventory ? [...player.inventory.entries()] : [],
+        health: player?.health && !runtime.builtinHidden.has('hearts') ? { ...player.health } : null,
+        items: player?.inventory && !runtime.builtinHidden.has('items') ? [...player.inventory.entries()] : [],
         messages: runtime.messages,
         hasSwitches,
         canShoot,
@@ -169,11 +178,8 @@ export function PlayView() {
     };
   }, []);
 
-  // The size of the play display (a game setting the AI can change: "make the hearts bigger").
-  const hudScale = useEditor((s) => s.project.settings.hudScale ?? 1);
-
   return (
-    <div className="play-view" style={{ '--hud-scale': hudScale } as React.CSSProperties}>
+    <div className="play-view">
       <canvas ref={canvasRef} tabIndex={0} data-testid="play-canvas" />
       <div className="hud" data-testid="hud">
         {hud.health && (
