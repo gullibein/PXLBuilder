@@ -127,6 +127,12 @@ describe('pixel-art sprites', () => {
     expect(normalizePixelArt({ palette: [{ key: ' ', color: '#ffffff' }], rows: [' .'] }).rows).toEqual([' .']);
   });
 
+  it('rows of slightly different lengths are evened out to what most rows are (AIs miscount), so the drawing is kept', () => {
+    const art = normalizePixelArt({ palette: [{ key: 'g', color: '#4fbf4f' }], rows: ['gggg', 'ggg', 'ggggg', 'gggg', '.gg.'] });
+    expect(art.rows).toEqual(['gggg', 'ggg.', 'gggg', 'gggg', '.gg.']);
+    expect(checkPixelArt(art)).toBeNull();
+  });
+
   it('a new object always has a look: a placeholder box until it is drawn', () => {
     const next = produce(createProject(registry), (d) => {
       applyOperations(d, [{ op: 'create_definition', ref: 's', name: 'Spikes', description: 'Hurts', category: 'Environment', tags: ['hazard'], components: [{ component: 'Collider', propsJson: '{"size":{"x":64,"y":16},"isTrigger":true}' }, { component: 'Damage', propsJson: '{"amount":1}' }] }], registry);

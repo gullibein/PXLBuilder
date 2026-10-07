@@ -1223,7 +1223,7 @@ try {
   });
   // Stand-in for the claude.ai artifact viewer: window.claude.use("sample" | "downloads") like the real runtime.
   await cp2.addInitScript(() => {
-    const sample = Object.freeze({ json: (input, options) => window.__stubSample(input, options?.cache) });
+    const sample = Object.freeze(Object.assign(async (input, options) => ({ text: JSON.stringify(await window.__stubSample(input, options?.cache)), truncated: false }), { json: (input, options) => window.__stubSample(input, options?.cache) }));
     const downloads = Object.freeze({
       save: async ({ filename, data }) => {
         await window.__stubSave(filename, typeof data === 'string' ? data : await data.text());

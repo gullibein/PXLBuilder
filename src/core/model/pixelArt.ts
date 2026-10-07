@@ -33,8 +33,11 @@ export function suggestedGrid(size: { x: number; y: number }, maxSide = 32): { w
  * Forgives the usual slips in a drawing from an AI, so a good drawing isn't
  * thrown away over notation: "." given a color (it is transparent anyway),
  * spaces for empty pixels, "transparent"/"none" as a color, colors without
- * "#", short (#f80) or with alpha (#ff880000: fully clear = transparent).
- * Anything else is left for checkPixelArt to report.
+ * "#", short (#f80) or with alpha (#ff880000: fully clear = transparent),
+ * and rows of slightly different lengths (AIs miscount characters): every
+ * row is made as long as most rows are, short ones filled with transparent
+ * pixels on the right, long ones cut. Anything else is left for
+ * checkPixelArt to report.
  */
 export function normalizePixelArt(art: PixelArt): PixelArt {
   const clear = new Set<string>();
@@ -58,7 +61,18 @@ export function normalizePixelArt(art: PixelArt): PixelArt {
     palette.push({ key: p.key, color });
   }
   if (!palette.some((p) => p.key === ' ')) clear.add(' ');
-  const rows = clear.size ? art.rows.map((r) => [...r].map((ch) => (clear.has(ch) ? '.' : ch)).join('')) : [...art.rows];
+  let rows = clear.size ? art.rows.map((r) => [...r].map((ch) => (clear.has(ch) ? '.' : ch)).join('')) : [...art.rows];
+  const lengths = rows.map((r) => [...r].length);
+  if (lengths.some((l) => l !== lengths[0])) {
+    // The length most rows have (the longer one on a tie).
+    const counts = new Map<number, number>();
+    for (const l of lengths) counts.set(l, (counts.get(l) ?? 0) + 1);
+    const width = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    rows = rows.map((r) => {
+      const chars = [...r];
+      return chars.length >= width ? chars.slice(0, width).join('') : chars.join('') + '.'.repeat(width - chars.length);
+    });
+  }
   return { palette, rows };
 }
 

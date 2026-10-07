@@ -33,5 +33,13 @@ export function userMessage(body: AIRequestBody): string {
 /** The JSON object in a plain-JSON reply (tolerates a ```json fence around it). */
 export function parseJsonReply(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  return JSON.parse(trimmed);
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {
+    // A sentence before or after the JSON ("Here is the change: {…}"): read the object itself.
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start < 0 || end <= start || (start === 0 && end === trimmed.length - 1)) throw e;
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
 }

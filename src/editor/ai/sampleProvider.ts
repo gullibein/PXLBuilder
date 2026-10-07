@@ -8,7 +8,7 @@
  * (from the same schema the server uses) and checked against it before any
  * operation is applied.
  */
-import { systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
@@ -17,7 +17,9 @@ interface SampleError {
   code: string;
   message: string;
 }
-type SampleFn = { json(input: string, options?: { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean }): Promise<unknown> };
+type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean };
+/** The viewer's sample: called, it gives the answer's text (read here, forgivingly); `json` parses it strictly. */
+type SampleFn = ((input: string, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & { json?(input: string, options?: SampleOptions): Promise<unknown> };
 
 /** The viewer's `sample` function, or null outside a claude.ai artifact viewer (local dev, a saved copy). */
 export function claudeSample(): Promise<SampleFn | null> {
@@ -42,15 +44,24 @@ export class SampleAIProvider implements AIProvider {
   constructor(private readonly sample: SampleFn) {}
 
   async respond(body: AIRequestBody, signal?: AbortSignal): Promise<AIResponse> {
-    let raw: unknown;
+    let answer: { text: string; truncated: boolean };
     try {
       // Every request is new work: no replay of an earlier answer.
       // Fast: claude.ai's quicker model tier.
-      raw = await this.sample.json(prompt(body), { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+      answer = await this.sample(prompt(body), { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
     } catch (e) {
       const err = e as SampleError;
       if (err?.code === 'cancelled') throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
       throw new AIUnavailableError(MESSAGES[err?.code] ?? `The AI request failed (${err?.code ?? 'unknown'}). Try again.`);
+    }
+    // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
+    // and an answer that was cut off is told apart from one that is malformed.
+    if (answer.truncated) throw new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
+    let raw: unknown;
+    try {
+      raw = parseJsonReply(answer.text);
+    } catch {
+      throw new AIUnavailableError("The AI's answer wasn't in the form the app reads (JSON), so nothing was changed. Try again; asking in a different way or for less at once usually helps.");
     }
     const parsed = aiResponseSchema.safeParse(raw);
     if (!parsed.success) throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");

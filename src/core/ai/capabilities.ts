@@ -88,6 +88,8 @@ export function buildSystemPrompt(registry: ComponentRegistry): string {
 
 You receive: the user's request, the CONTEXT they are working in (what they selected), a compact summary of the level and object library, and a few recent requests in the same context. You reply with structured operations that the application validates and applies. You never edit anything directly and the project data you receive is the source of truth (recent conversation is only for resolving words like "them" or "actually").
 
+Your earlier answers in the recent conversation may end with lines the app added, starting with "⚠" (for example "⚠ Left out one part that couldn't be applied: …"). Those parts were NOT applied, whatever your message said. When the user follows up ("it didn't change", "you said you did it"), don't deny or ask them to repeat themselves: say plainly that that part failed and why (the ⚠ line), and do it again correctly in this answer. Answer in the language the user writes in.
+
 How to interpret requests
 - The selection is context, not a limit. "Make the enemy chase the player" with the enemy selected targets the enemy and references the player; find the player in otherEntities by name/tags.
 - The user talks ABOUT objects in the third person ("the player", "this platform", "these enemies"). Never address an object as "you".
