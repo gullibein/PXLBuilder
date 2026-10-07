@@ -19,8 +19,12 @@ export interface AISettings {
 /** Google's Flash model at the time of writing; the dialog lists what the key can actually use. */
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 export const DEFAULT_GEMINI_BACKUP = 'gemini-3.5-flash';
-/** Always offered in AI connection, newest first. */
-export const GEMINI_FLASH_MODELS = [DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKUP];
+/**
+ * Always offered in AI connection (as main model or backup), newest first, so
+ * there is somewhere to go when the newest ones are busy. A model the key
+ * can't use answers 404, which says so and asks to pick another.
+ */
+export const GEMINI_FLASH_MODELS = [DEFAULT_GEMINI_MODEL, 'gemini-3.7-flash', 'gemini-3.6-flash', DEFAULT_GEMINI_BACKUP, 'gemini-3.5-flash-lite'];
 
 const STORAGE_KEY = 'pxlbuilder.aiSettings';
 const DEFAULTS: AISettings = { vendor: 'claude', speed: 'best', geminiModel: DEFAULT_GEMINI_MODEL, geminiBackup: DEFAULT_GEMINI_BACKUP };

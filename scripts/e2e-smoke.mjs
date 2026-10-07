@@ -1464,7 +1464,7 @@ try {
   await dialog.getByTestId('gemini-key-input').fill(GKEY);
   await dialog.getByTestId('gemini-key-save').click();
   await check(async () => (await dialog.getByTestId('gemini-key-result').innerText()).includes('Connected'), 'a valid Gemini key connects');
-  await check(async () => (await dialog.getByTestId('gemini-model').locator('option').allInnerTexts()).join() === 'gemini-3.8-flash,gemini-3.5-flash,gemini-3.8-flash-lite,gemini-3.5-pro', 'the models the key can use are listed, Flash first (no embedding models)');
+  await check(async () => (await dialog.getByTestId('gemini-model').locator('option').allInnerTexts()).join() === 'gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.8-flash-lite,gemini-3.5-pro', 'the Flash models are always offered (3.8 to 3.5, and 3.5 Lite), then the others the key can use (no embedding models)');
   await check(async () => (await dialog.getByTestId('gemini-model').inputValue()) === 'gemini-3.8-flash', 'Gemini Flash is chosen');
   await check(async () => (await dialog.getByTestId('gemini-backup').inputValue()) === 'gemini-3.5-flash', 'with Gemini 3.5 Flash as the backup when it is busy');
   await check(async () => (await dialog.getByTestId('gemini-status').innerText()).includes('AIza-te…5678'), 'the Gemini key is shown masked');
