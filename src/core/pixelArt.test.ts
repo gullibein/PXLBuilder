@@ -48,7 +48,7 @@ describe('pixel-art sprites', () => {
     const placed = instantiateDefinition(hazard, { x: 0, y: 0 });
     project = produce(project, (d) => m.addEntity(d, sceneId, placed));
     const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
-    const asset = p.assets.find((a) => a.name === 'Spikes')!;
+    const asset = p.assets.filter((a) => a.name === 'Spikes').at(-1)!; // (the starter Hazard's own spikes come first)
     expect(asset).toMatchObject({ kind: 'image', width: 32, height: 8 });
     expect(asset.data.startsWith('data:image/svg+xml')).toBe(true);
     const def = p.definitions.find((d) => d.id === hazard.id)!;
@@ -57,7 +57,7 @@ describe('pixel-art sprites', () => {
 
     const one = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'instance', id: placed.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
     expect(resolveEntity(one, one.scenes[0].entities.at(-1)!, registry).components.Sprite.assetId).toBe(one.assets.at(-1)!.id);
-    expect(one.definitions.find((d) => d.id === hazard.id)!.components.Sprite.assetId).toBeNull();
+    expect(one.definitions.find((d) => d.id === hazard.id)!.components.Sprite.assetId).toBe(hazard.components.Sprite.assetId); // the object keeps its look
 
     // Other proportions are fitted, not rejected: a square drawn for the 4:1 hazard is resampled to 32×8.
     const square = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry));
@@ -127,5 +127,23 @@ describe('pixel-art sprites', () => {
     });
     const spikes = next.definitions.find((x) => x.name === 'Spikes')!;
     expect(spikes.components.Sprite).toMatchObject({ width: 64, height: 16, color: '#d9dde6', visible: true });
+  });
+
+  it('tile objects placed or moved by the AI land on whole cells (so they can be dragged on the grid)', () => {
+    const project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    const stone = project.definitions.find((d) => d.name === 'Stone')!.id;
+    const coin = project.definitions.find((d) => d.name === 'Coin')!.id;
+    const next = produce(project, (d) => {
+      applyOperations(d, [
+        { op: 'place_instance', sceneId, definitionRef: stone, x: 100, y: -50, name: null, ref: 's' },
+        { op: 'place_instance', sceneId, definitionRef: coin, x: 100, y: -50, name: null, ref: null },
+      ], registry);
+    });
+    const [s, c] = next.scenes[0].entities;
+    expect(s.transform.position).toEqual({ x: 112, y: -48 });
+    expect(c.transform.position).toEqual({ x: 100, y: -50 }); // not a tile: where it was put
+    const moved = produce(next, (d) => void applyOperations(d, [{ op: 'set_transform', entityId: s.id, x: 30, y: 70, rotation: null, scaleX: null, scaleY: null }], registry));
+    expect(moved.scenes[0].entities[0].transform.position).toEqual({ x: 16, y: 80 });
   });
 });

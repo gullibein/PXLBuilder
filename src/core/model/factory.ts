@@ -162,6 +162,24 @@ const ENEMY_ART: PixelArt = {
 };
 
 /** An image asset drawn from pixel art; it keeps the pixels, so they can be redrawn and varied later. */
+const SPIKES_ART: PixelArt = {
+  palette: [{ key: 'h', color: '#f4f6fa' }, { key: 'g', color: '#b9bfcc' }, { key: 'd', color: '#5b6070' }],
+  rows: [
+    '...gg......gg......gg......gg...',
+    '...gg......gg......gg......gg...',
+    '..ghgg....ghgg....ghgg....ghgg..',
+    '..ghgg....ghgg....ghgg....ghgg..',
+    '.ghhggg..ghhggg..ghhggg..ghhggg.',
+    '.ghhggg..ghhggg..ghhggg..ghhggg.',
+    'ghhhggggghhhggggghhhggggghhhgggg',
+    'dddddddddddddddddddddddddddddddd',
+  ],
+};
+
+export function createSpikesAsset(): AssetRecord {
+  return createPixelArtAsset('Spikes', SPIKES_ART);
+}
+
 export function createPixelArtAsset(name: string, art: PixelArt): AssetRecord {
   const asset = createImageAsset(name, svgDataUrl(pixelArtToSvg(art)), art.rows[0].length, art.rows.length, 'svg');
   return { ...asset, pixelArt: { palette: art.palette.map((p) => ({ ...p })), rows: [...art.rows] } };
@@ -181,10 +199,11 @@ export interface StarterAssets {
   lever: AssetRecord;
   player: AssetRecord;
   enemy: AssetRecord;
+  hazard: AssetRecord;
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset() };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset() };
 }
 
 /** Library categories of the starter objects. */
@@ -298,7 +317,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
     createDefinition(
       'Hazard',
       {
-        Sprite: c('Sprite', { width: 64, height: 16, color: '#ff6b2c' }),
+        Sprite: c('Sprite', { width: 64, height: 16, color: '#ff6b2c', assetId: assets.hazard.id }),
         Collider: c('Collider', { size: { x: 64, y: 16 }, isTrigger: true }),
         Damage: c('Damage', { amount: 1 }),
       },
@@ -327,6 +346,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever, assets.player, assets.enemy],
+    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard],
   };
 }

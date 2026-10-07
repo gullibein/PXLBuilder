@@ -476,6 +476,12 @@ saved and shown like any other edit.
   play's notable events (all events on request; a row selects what it is
   about), with suggested questions that start a level prompt.
 
+### Format v8
+The starter Player jumps with 350 (about 1.9 tiles) instead of 295, and the
+starter Hazard has pixel-art spikes; older games get both if those starters
+were never changed. AI placements of tile objects (placement "tile") snap to
+whole level cells.
+
 ### Forgiving AI drawings and placeholders
 `draw_sprite` runs the drawing through `normalizePixelArt` first: a color
 given to ".", spaces for empty pixels, "transparent"/"none" colors, colors
@@ -492,7 +498,10 @@ merged into spans) by jumping (the real arc from jumpForce, speed and
 gravity, with a safety margin; double jump and ledge grab widen it),
 falling, ladders (stacked climbable pieces) and teleporters, and lists
 needed things it never gets near (collectibles, switches, doors, exits,
-teleporters) and open platforms 2+ tiles wide it never stands on. Walls and
+teleporters) and open platforms 2+ tiles wide it never stands on. It also
+checks the start: a player inside a solid, or touching something that hurts
+it. Jump heights are reported rounded down (62.5 px = 1.9 tiles), so "two
+rows up" is never suggested when it is just out of reach. Walls and
 headroom aren't modelled, so it errs towards "reachable"; levels with moving
 or scripted solids, switch-moved platforms or player scripts are
 "uncertain" and not judged. Used by the problem checker (Debug tab) and by

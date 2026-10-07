@@ -204,6 +204,29 @@ function migrateV6toV7(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v7 -> v8
+ * - The starter Player jumps higher (jumpForce 350, was 295), if that value
+ *   was never changed.
+ * - The starter Hazard looks like spikes, while it still looks like the
+ *   starter (no image of its own, the original orange).
+ */
+function migrateV7toV8(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const defs: Raw[] = project.definitions ?? [];
+  const starter = (name: string) => defs.find((d) => (d.metadata?.starter ?? d.name) === name);
+  const cc = starter('Player')?.components?.CharacterController;
+  if (cc?.jumpForce === 295) cc.jumpForce = 350;
+  const sprite = starter('Hazard')?.components?.Sprite;
+  if (sprite && !sprite.assetId && String(sprite.color).toLowerCase() === '#ff6b2c') {
+    const spikes = createStarterAssets().hazard;
+    sprite.assetId = spikes.id;
+    sprite.frame = 1;
+    project.assets = [...(project.assets ?? []), spikes];
+  }
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -211,6 +234,7 @@ export const MIGRATIONS: Migration[] = [
   { from: 4, to: 5, migrate: migrateV4toV5 },
   { from: 5, to: 6, migrate: migrateV5toV6 },
   { from: 6, to: 7, migrate: migrateV6toV7 },
+  { from: 7, to: 8, migrate: migrateV7toV8 },
 ];
 
 export class MigrationError extends Error {

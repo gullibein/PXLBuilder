@@ -42,7 +42,7 @@ describe('resetting objects to defaults', () => {
     // Same components; its picture is the project's own copy (reused, so its id differs from a new project's).
     expect({ ...player.components, Sprite: { ...player.components.Sprite, assetId: null } }).toEqual({ ...freshPlayer, Sprite: { ...freshPlayer.Sprite, assetId: null } });
     expect(p.assets.find((a) => a.id === player.components.Sprite.assetId)?.name).toBe('Player');
-    expect(player.components.CharacterController.jumpForce).toBe(295);
+    expect(player.components.CharacterController.jumpForce).toBe(350);
     // The placed copy stays (same place, same name) but loses its own tweaks.
     const hero = m.getEntity(p, sceneId, placedId);
     expect(hero.transform.position).toEqual({ x: 10, y: 20 });

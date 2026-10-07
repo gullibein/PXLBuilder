@@ -29,14 +29,14 @@ function level(build: (place: (name: string, x: number, y: number) => Id, d: Pro
 const unreachable = (r: ReturnType<typeof levelReachability>) => (r.status === 'ok' ? r.unreachable : null);
 
 describe('can the player get there?', () => {
-  it('a coin on a platform three tiles up is out of reach (the player jumps about 1.4 tiles)', () => {
+  it('a coin on a platform three tiles up is out of reach (the player jumps about 1.9 tiles)', () => {
     const l = level((place) => {
       for (const x of [96, 128]) place('Platform', x, -48);
       place('Coin', 112, -80);
     });
     expect(unreachable(l.check())!.things.map((t) => t.name)).toEqual(['Coin']);
     expect(unreachable(l.check())!.platforms).toHaveLength(1);
-    expect(l.problems()[0].text).toMatch(/can't get to Coin from where it starts \(the player jumps about 1\.4 tiles high/);
+    expect(l.problems()[0].text).toMatch(/can't get to Coin from where it starts \(the player jumps about 1\.9 tiles high/);
     expect(l.problems()[1].text).toMatch(/1 platform is out of the player's reach.*add a ladder/);
   });
 
@@ -102,5 +102,14 @@ describe('can the player get there?', () => {
       player.components.DoubleJump = { extraJumps: 1 };
     });
     expect(l.problems()).toEqual([]);
+  });
+
+  it('a player that starts inside a platform or on spikes', () => {
+    const stuck = level((place) => place('Stone', 0, 16));
+    expect(stuck.problems()[0].text).toMatch(/^Player starts inside Stone: move the start onto free ground/);
+    const spikes = level((place) => place('Hazard', 0, 24));
+    expect(spikes.problems()[0].text).toMatch(/^Player starts touching Hazard, which hurts it at once/);
+    const beside = level((place) => place('Hazard', 96, 24));
+    expect(beside.problems()).toEqual([]);
   });
 });

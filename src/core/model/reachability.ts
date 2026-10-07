@@ -12,6 +12,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
+import { refMatches } from '../logic/refs';
 import { getEntitySize } from './geometry';
 import { characterReach, type Reach } from './reach';
 import { resolveEntity, type ResolvedEntity } from './resolve';
@@ -236,14 +237,47 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   return { status: 'ok', unreachable: { things, platforms }, reach };
 }
 
+/** What the player overlaps where it starts: solids it is stuck in, and things that hurt it at once. */
+export function startConflicts(project: Project, sceneId: Id, registry: ComponentRegistry): { player: string; solid: { id: Id; name: string }[]; hurts: { id: Id; name: string }[] } | null {
+  const scene = project.scenes.find((s) => s.id === sceneId);
+  if (!scene) return null;
+  const placed = scene.entities.map((e) => ({ e, r: resolveEntity(project, e, registry) }));
+  const p = placed.find(({ r }) => r.components.CharacterController);
+  if (!p) return null;
+  const pb = boxOf(p.r);
+  const overlapping = (b: Box) => Math.min(pb.right, b.right) - Math.max(pb.left, b.left) > EDGE && Math.min(pb.bottom, b.bottom) - Math.max(pb.top, b.top) > EDGE;
+  const accepts = (p.r.components.DamageReceiver?.damageSources as string[] | undefined) ?? [];
+  const solid: { id: Id; name: string }[] = [];
+  const hurts: { id: Id; name: string }[] = [];
+  for (const { e, r } of placed) {
+    if (e === p.e || !r.components.Collider) continue;
+    const b = boxOf(r);
+    // Touching counts for damage (standing right on spikes), overlapping for being stuck.
+    const touching = Math.min(pb.right, b.right) - Math.max(pb.left, b.left) > 0 && Math.min(pb.bottom, b.bottom) - Math.max(pb.top, b.top) >= -1;
+    const isSolidHere = r.components.Collider.isTrigger !== true && r.components.PhysicsBody?.bodyType !== 'dynamic' && r.components.Openable?.startsOpen !== true;
+    if (isSolidHere && overlapping(b)) solid.push({ id: e.id, name: e.name });
+    const target = { id: e.id, definitionId: e.definitionId, tags: r.tags };
+    const me = { id: p.e.id, definitionId: p.e.definitionId, tags: p.r.tags };
+    const harmful =
+      (!!r.components.Damage && !!p.r.components.Health && r.tags.some((t) => accepts.includes(t))) ||
+      scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, target) && refMatches(rel.target, me));
+    if (harmful && touching) hurts.push({ id: e.id, name: e.name });
+  }
+  return { player: p.e.name, solid, hurts };
+}
+
 /** The problems in words (for the Debug tab and for sending back to the AI). Empty when the level can be got through. */
 export function reachabilityProblems(project: Project, sceneId: Id, registry: ComponentRegistry): { key: string; text: string; entityIds: Id[] }[] {
+  const start = startConflicts(project, sceneId, registry);
+  const startProblems: { key: string; text: string; entityIds: Id[] }[] = [];
+  if (start?.solid.length) startProblems.push({ key: `start-in-solid:${start.solid.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts inside ${[...new Set(start.solid.map((s) => s.name))].join(', ')}: move the start onto free ground (or move what's in the way).`, entityIds: start.solid.map((s) => s.id) });
+  if (start?.hurts.length) startProblems.push({ key: `start-on-hazard:${start.hurts.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts touching ${[...new Set(start.hurts.map((s) => s.name))].join(', ')}, which hurts it at once: start it on safe ground, away from hazards and enemies.`, entityIds: start.hurts.map((s) => s.id) });
   const r = levelReachability(project, sceneId, registry);
-  if (r.status === 'no-ground') return [{ key: 'reach-no-ground', text: `${r.player} starts above nothing to stand on: it falls out of the level at once.`, entityIds: [] }];
-  if (r.status !== 'ok') return [];
+  if (r.status === 'no-ground') return [...startProblems, { key: 'reach-no-ground', text: `${r.player} starts above nothing to stand on: it falls out of the level at once.`, entityIds: [] }];
+  if (r.status !== 'ok') return startProblems;
   const tiles = (px: number) => Math.round((px / 32) * 10) / 10;
-  const limits = `the player jumps about ${tiles(r.reach.height)} tiles high and ${tiles(r.reach.distance)} tiles far`;
-  const out: { key: string; text: string; entityIds: Id[] }[] = [];
+  const limits = `the player jumps about ${Math.floor((r.reach.height / 32) * 10) / 10} tiles high and ${tiles(r.reach.distance)} tiles far`;
+  const out: { key: string; text: string; entityIds: Id[] }[] = [...startProblems];
   if (r.unreachable.things.length) {
     const names = [...new Set(r.unreachable.things.map((t) => t.name))];
     out.push({

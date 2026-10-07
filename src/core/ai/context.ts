@@ -221,7 +221,9 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
   const r = characterReach(components, scene.world.gravity.y);
   if (!r) return null;
   const t = (px: number) => Math.round((px / LEVEL_CELL) * 10) / 10;
-  return { character: placed?.name ?? def!.name, jumpHeightPx: Math.round(r.height), jumpHeightTiles: t(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
+  // Heights round down: 62.5 px is "1.9 tiles", never "2" (two rows up is out of reach).
+  const down = (px: number) => Math.floor((px / LEVEL_CELL) * 10) / 10;
+  return { character: placed?.name ?? def!.name, jumpHeightPx: Math.floor(r.height), jumpHeightTiles: down(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
 }
 
 export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null): AIPayload {

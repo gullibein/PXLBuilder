@@ -959,7 +959,7 @@ try {
   await page.getByTestId('project-menu').click();
   await check(async () => (await page.getByTestId('project-menu-pop').innerText()).includes('Reset objects to defaults'), 'the project menu (on the project name) offers New, Open, Save and Reset objects');
   await page.getByTestId('menu-reset-objects').click();
-  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '295', 'Reset objects to defaults puts the Player back (jumpForce 295)');
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '350', 'Reset objects to defaults puts the Player back (jumpForce 350)');
   await check(async () => (await canvas.getAttribute('data-entities')) === levelSize, 'and keeps the level as it is');
   await check(async () => (await page.getByTestId('definition-name').count()) === 1, 'the inspector stays on the reset object');
   await page.getByTestId('undo').click();
@@ -969,7 +969,7 @@ try {
   await page.getByTestId('definition-Player').click({ button: 'right' });
   await page.getByTestId('menu-reset').click();
   await openPlayerDetails();
-  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '295', 'right-click → Reset to default resets one object');
+  await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '350', 'right-click → Reset to default resets one object');
   await page.getByTestId('close-details').click();
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();

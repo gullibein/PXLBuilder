@@ -12,8 +12,8 @@ const everyPlayer = { kind: 'object' as const, id: playerDef.id };
 
 describe('editor overlays', () => {
   it('read values: jump height and distance from the controller and gravity, any Component.field', () => {
-    expect(readMetric('jumpHeight', { e: player, scene })).toEqual({ label: 'Jump height', value: '44 px · 1.4 tiles' });
-    expect(readMetric('jumpDistance', { e: player, scene })?.value).toBe('120 px · 3.8 tiles');
+    expect(readMetric('jumpHeight', { e: player, scene })).toEqual({ label: 'Jump height', value: '62 px · 1.9 tiles' });
+    expect(readMetric('jumpDistance', { e: player, scene })?.value).toBe('143 px · 4.5 tiles');
     expect(readMetric('health', { e: player, scene })?.value).toBe('3 / 3');
     expect(readMetric('CharacterController.speed', { e: player, scene })).toEqual({ label: 'Character Controller speed', value: '200' });
     expect(readMetric('damage', { e: player, scene })).toBeNull(); // the player has no Damage

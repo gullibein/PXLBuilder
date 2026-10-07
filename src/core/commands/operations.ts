@@ -16,9 +16,9 @@ import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
-import { LEVEL_CELL } from '../model/placement';
+import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
-import type { Id, Project } from '../types';
+import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
 
@@ -275,6 +275,19 @@ export function checkOperations(project: Project, ops: Operation[], registry: Co
   }
 }
 
+/**
+ * Tile objects (placement "tile": Platform, Stone, Ladder…) sit on whole level
+ * cells, as the pen and dragging put them; an AI position in between is moved
+ * to the nearest cell, so every piece can be dragged on the grid afterwards.
+ */
+function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
+  if (def.metadata.placement !== 'tile') return p;
+  const size = (def.components.Sprite as { width?: number; height?: number } | undefined) ?? {};
+  const cell = cellSize({ x: Number(size.width) || LEVEL_CELL, y: Number(size.height) || LEVEL_CELL }, LEVEL_CELL);
+  const near = (v: number, c: number) => Math.round((v - c / 2) / c) * c + c / 2;
+  return { x: near(p.x, cell.x), y: near(p.y, cell.y) };
+}
+
 /** A placeholder color that says what kind of thing it is (hazards and enemies reddish, items gold, ground grey…). */
 function placeholderColor(category: string, tags: string[]): string {
   const has = (...t: string[]) => tags.some((x) => t.includes(x.toLowerCase()));
@@ -331,8 +344,10 @@ export function applyOperations(
       case 'set_transform': {
         const entity = m.getEntity(project, sceneOfEntity(project, op.entityId), op.entityId);
         const t = entity.transform;
+        const def = entity.definitionId ? project.definitions.find((d) => d.id === entity.definitionId) : undefined;
+        const position = { x: op.x ?? t.position.x, y: op.y ?? t.position.y };
         m.setEntityTransform(project, sceneOfEntity(project, op.entityId), op.entityId, {
-          position: { x: op.x ?? t.position.x, y: op.y ?? t.position.y },
+          position: def ? onGrid(def, position) : position,
           rotation: op.rotation ?? t.rotation,
           scale: { x: op.scaleX ?? t.scale.x, y: op.scaleY ?? t.scale.y },
         });
@@ -385,7 +400,7 @@ export function applyOperations(
       case 'place_instance': {
         const defId = refs.get(op.definitionRef) ?? op.definitionRef;
         const def = m.getDefinition(project, defId);
-        const entity = instantiateDefinition(def, { x: op.x, y: op.y }, op.name ?? def.name);
+        const entity = instantiateDefinition(def, onGrid(def, { x: op.x, y: op.y }), op.name ?? def.name);
         m.addEntity(project, op.sceneId, entity);
         if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);

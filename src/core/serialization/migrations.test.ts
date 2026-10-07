@@ -99,7 +99,7 @@ describe('format v2 -> v3', () => {
     const player = project.definitions.find((d) => d.name === 'Player')!;
     expect(player.components.Sprite).toMatchObject({ width: 28, height: 32 });
     expect(player.components.Collider.size).toEqual({ x: 28, y: 32 });
-    expect(player.components.CharacterController.jumpForce).toBe(295);
+    expect(player.components.CharacterController.jumpForce).toBe(350); // 295 from v3, raised to 350 in v8
     expect(project.definitions.find((d) => d.name === 'Ladder')!.components.Climbable).toEqual({});
   });
 
@@ -123,5 +123,25 @@ describe('format v2 -> v3', () => {
     // A recolored enemy keeps its own look.
     expect(out.definitions.find((d) => d.name === 'Enemy')!.components.Sprite.assetId).toBeNull();
     expect(out.assets).toHaveLength(1);
+  });
+
+  it('v7 -> v8: the starter Player jumps with 350 and the starter Hazard looks like spikes, unless changed', async () => {
+    const { migrateProject } = await import('./migrations');
+    const raw = (jumpForce: number, color: string) => ({
+      formatVersion: 7,
+      assets: [],
+      scenes: [],
+      definitions: [
+        { id: 'def_p', name: 'Player', description: '', tags: [], metadata: { starter: 'Player' }, components: { CharacterController: { speed: 200, acceleration: 1600, jumpForce, airControl: 0.8 } } },
+        { id: 'def_h', name: 'Hazard', description: '', tags: [], metadata: { starter: 'Hazard' }, components: { Sprite: { width: 64, height: 16, frame: 1, assetId: null, color } } },
+      ],
+    });
+    type Out = { assets: { id: string; name: string }[]; definitions: { name: string; components: Record<string, Record<string, unknown>> }[] };
+    const out = migrateProject(raw(295, '#ff6b2c')) as Out;
+    expect(out.definitions[0].components.CharacterController.jumpForce).toBe(350);
+    expect(out.assets.find((a) => a.id === out.definitions[1].components.Sprite.assetId)?.name).toBe('Spikes');
+    const kept = migrateProject(raw(420, '#00ff00')) as Out;
+    expect(kept.definitions[0].components.CharacterController.jumpForce).toBe(420);
+    expect(kept.definitions[1].components.Sprite.assetId).toBeNull();
   });
 });

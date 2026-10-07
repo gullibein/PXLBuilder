@@ -60,6 +60,8 @@ export function jumpReach({ e, scene }: MetricContext): Reach | null {
 }
 
 const inTiles = (px: number) => `${Math.round(px)} px · ${round(px / TILE)} tiles`;
+/** Heights round down (62.5 px is 1.9 tiles: two rows up is just out of reach). */
+const heightInTiles = (px: number) => `${Math.floor(px)} px · ${Math.floor((px / TILE) * 10) / 10} tiles`;
 
 export const METRICS: Record<string, Metric> = {
   jumpHeight: {
@@ -67,7 +69,7 @@ export const METRICS: Record<string, Metric> = {
     description: 'How high a full jump goes (from Character Controller jumpForce and gravity), in pixels and tiles.',
     value: (c) => {
       const r = jumpReach(c);
-      return r ? inTiles(r.height) : null;
+      return r ? heightInTiles(r.height) : null;
     },
   },
   jumpDistance: {

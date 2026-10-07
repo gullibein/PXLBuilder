@@ -643,14 +643,16 @@ describe('behaviors', () => {
   it('DoubleJump: a second jump in the air goes higher; without it, pressing jump in the air does nothing', () => {
     const single = apex(false);
     const double = apex(true);
-    expect(16 - single).toBeGreaterThan(35);
-    expect(16 - single).toBeLessThan(55);
-    expect(16 - double).toBeGreaterThan(70);
+    expect(16 - single).toBeGreaterThan(50); // jumpForce 350: about 62 px
+    expect(16 - single).toBeLessThan(70);
+    expect(16 - double).toBeGreaterThan(16 - single + 40);
   });
 
   function ledge(grab: boolean) {
     const { rt, input, p } = level((b) => {
       if (grab) add(b, rt0(b, 'Player'), 'LedgeGrab');
+      // A wall a bit too high for this jump (two tiles; the old, lower jump).
+      m.setDefinitionComponentField(b.d, b.def('Player'), 'CharacterController', 'jumpForce', 295, registry);
       b.place('Stone', { x: 64, y: 16 });
       b.place('Stone', { x: 64, y: -16 });
     });

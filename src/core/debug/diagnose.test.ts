@@ -23,7 +23,8 @@ function check(build: (b: B) => void) {
   const project = produce(base, (d) => {
     d.scenes[0].entities = [];
     const def = (name: string) => d.definitions.find((x) => x.name === name)!.id;
-    const place = (name: string, at: Vec2 = { x: 0, y: 0 }) => {
+    // Beside the player, not on it.
+    const place = (name: string, at: Vec2 = { x: 64, y: 16 }) => {
       const e = instantiateDefinition(d.definitions.find((x) => x.name === name)!, at);
       m.addEntity(d, sceneId, e);
       return e.id;

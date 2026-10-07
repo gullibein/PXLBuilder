@@ -295,7 +295,7 @@ describe('drawing levels', () => {
     const payload = buildAIPayload(project, { kind: 'level', sceneId, point: null }, registry);
     expect(payload.level.grid.cell).toBe(32);
     expect(payload.level.grid.occupied).toEqual({ minCol: 0, maxCol: 15, minRow: 0, maxRow: 0 });
-    expect(payload.level.playerReach).toMatchObject({ character: 'Player', jumpHeightPx: 44, jumpHeightTiles: 1.4 });
-    expect(payload.level.playerReach!.runningJumpDistanceTiles).toBeCloseTo(3.8, 1);
+    expect(payload.level.playerReach).toMatchObject({ character: 'Player', jumpHeightPx: 62, jumpHeightTiles: 1.9 });
+    expect(payload.level.playerReach!.runningJumpDistanceTiles).toBeCloseTo(4.5, 1);
   });
 });
