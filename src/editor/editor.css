@@ -536,3 +536,5 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .prompt-field .prompt-close:hover { background: var(--card-line); color: var(--card-text); }
 
 .menu-version { padding: 4px 10px 6px 30px; font-size: 11px; color: var(--muted); user-select: text; }
+.box-color-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.box-color-row input[type='color'] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }

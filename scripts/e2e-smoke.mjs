@@ -649,6 +649,7 @@ try {
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
+  await check(async () => (await sp.locator('.sprite-choice.on .sprite-use').count()) === 1, "the object's own drawing is listed (and marked as in use), not only the plain box");
   // A 4x2 sheet of 16px cells: transparent background, sprites of two sizes centered in their cells.
   const sheetPng = await page.evaluate(() => {
     const c = document.createElement('canvas');
@@ -677,7 +678,14 @@ try {
   await check(async () => (await cells.count()) === 8, 'Detect grid restores the detected layout');
   await sp.getByTestId('sprite-image-file').setInputFiles({ name: 'robot-single.png', mimeType: 'image/png', buffer: Buffer.from(sheetPng, 'base64') });
   await check(async () => (await sp.getByTestId('sprite-list').innerText()).includes('robot-single'), 'a single image can be imported as a sprite');
+  await check(async () => (await sp.getByTestId('sprite-plain-box').innerText()).includes('Plain box'), 'the plain-color choice says what it is: a plain box');
+  await sp.getByTestId('sprite-box-color').fill('#3366ff');
+  await check(async () => (await sp.getByTestId('sprite-plain-box').locator('.color-chip').evaluate((el) => getComputedStyle(el).backgroundColor)) === 'rgb(51, 102, 255)' && !(await sp.getByTestId('sprite-plain-box').getAttribute('class')).includes(' on'), 'Box color picks the box color without switching away from the image');
+  await sp.getByTestId('sprite-plain-box').click();
+  await check(async () => (await sp.getByTestId('sprite-plain-box').getAttribute('class')).includes(' on'), 'choosing Plain box draws the object as that box');
+  await check(async () => (await sp.getByTestId('sprite-list').innerText()).includes('robots #6'), 'the picture it had stays in the list, to choose again');
   await sp.locator('.sprite-use', { hasText: 'robots #6' }).click();
+  await check(async () => !(await sp.getByTestId('sprite-plain-box').getAttribute('class')).includes(' on'), 'and choosing an image switches back');
   await page.keyboard.press('Escape');
   await check(async () => (await sp.count()) === 0, 'Esc closes the Sprites panel');
 

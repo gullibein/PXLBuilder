@@ -30,10 +30,14 @@ export function SpritesPanel() {
   if (!def) return null;
 
   const { edit, openSprites } = useEditor.getState();
-  const refs = m.getDefinitionSprites(def);
   const active = def.components.Sprite;
+  const listed = m.getDefinitionSprites(def);
+  // The picture in use is always shown, also when it was never added to the list (built-in objects' drawings).
+  const current = typeof active?.assetId === 'string' ? { assetId: active.assetId, frame: typeof active.frame === 'number' ? active.frame : 1 } : null;
+  const refs = current && !listed.some((r) => r.assetId === current.assetId && r.frame === current.frame) ? [current, ...listed] : listed;
   const isActive = (assetId: string, frame: number) => active?.assetId === assetId && (assets.find((a) => a.id === assetId)?.kind !== 'spritesheet' || active?.frame === frame);
   const sheet = assets.find((a) => a.id === sheetId && a.kind === 'spritesheet');
+  const boxColor = typeof active?.color === 'string' && /^#[0-9a-f]{6}$/i.test(active.color) ? active.color : '#888888';
 
   const importImage = async (file: File) => {
     setError(null);
@@ -81,12 +85,19 @@ export function SpritesPanel() {
       <div className="sprite-list" data-testid="sprite-list">
         <button
           className={`sprite-choice${!active?.assetId ? ' on' : ''}`}
-          title="Draw with the plain color"
-          onClick={() => edit(`Use plain color for ${def.name}`, (p) => m.setDefinitionComponentField(p, def.id, 'Sprite', 'assetId', null, componentRegistry))}
+          title="Show this object as a plain colored box instead of a picture (choose the color below)"
+          data-testid="sprite-plain-box"
+          onClick={() =>
+            edit(`Use a plain box for ${def.name}`, (p) => {
+              // Keep the picture in the list, so it can be chosen again.
+              if (current && p.assets.some((a) => a.id === current.assetId)) m.addDefinitionSprite(p, def.id, current);
+              m.setDefinitionComponentField(p, def.id, 'Sprite', 'assetId', null, componentRegistry);
+            })
+          }
           disabled={!active}
         >
-          <span className="color-chip" style={{ background: typeof active?.color === 'string' ? active.color : '#888' }} />
-          <span className="sprite-cap">Color</span>
+          <span className="color-chip" style={{ background: boxColor }} />
+          <span className="sprite-cap">Plain box</span>
         </button>
         {refs.map((r) => {
           const asset = assets.find((a) => a.id === r.assetId);
@@ -119,6 +130,21 @@ export function SpritesPanel() {
           );
         })}
       </div>
+
+      {active && (
+        <label className="box-color-row">
+          <input
+            type="color"
+            aria-label="Box color"
+            data-testid="sprite-box-color"
+            value={boxColor}
+            onChange={(e) => edit(`Set ${def.name} box color`, (p) => m.setDefinitionComponentField(p, def.id, 'Sprite', 'color', e.target.value, componentRegistry), { coalesceKey: `${def.id}.boxColor` })}
+          />
+          <span>
+            Box color <span className="muted">{active.assetId ? '(used when Plain box is chosen)' : ''}</span>
+          </span>
+        </label>
+      )}
 
       <div className="sprite-actions">
         <button className="upload" data-testid="import-image" onClick={() => imageInput.current?.click()}>
