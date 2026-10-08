@@ -908,6 +908,30 @@ try {
   await check(jumped, 'Space jumps higher than one tile');
   await check(async () => (await ps())[2] === 1, 'and lands again');
   await page.screenshot({ path: `${OUT}/12-play.png` });
+  // Play draws about 400 pixels tall (an even scale-up), the ⋯ menu switches to full sharpness and back.
+  const pixels = async () => {
+    const [w, h] = ((await play.getAttribute('data-pixels')) ?? '0x0').split('x').map(Number);
+    const full = await play.evaluate((c) => [Math.round(c.getBoundingClientRect().width * devicePixelRatio), Math.round(c.getBoundingClientRect().height * devicePixelRatio)]);
+    return { w, h, full };
+  };
+  await check(async () => {
+    const { w, h, full } = await pixels();
+    return h >= 260 && h <= 560 && h < full[1] && Math.abs(w / h - full[0] / full[1]) < 0.02;
+  }, 'Play draws the game at a low resolution (about 400 pixels tall, same shape as the screen)');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-low-res').click();
+  await page.getByTestId('play').click();
+  await check(async () => {
+    const { w, h, full } = await pixels();
+    return w === full[0] && h === full[1];
+  }, 'with low-resolution play turned off (⋯ menu), Play draws at full sharpness');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-low-res').click();
+  await page.getByTestId('play').click();
+  await check(async () => (await pixels()).h < (await pixels()).full[1], 'and turned back on, low resolution again');
+  await check(async () => (await ps())[2] === 1, 'the game runs');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').isVisible()) && (await play.count()) === 0, 'Esc stops the game and returns to the editor');
   await clickWorld(-256, 0);

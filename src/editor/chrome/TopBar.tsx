@@ -146,6 +146,7 @@ function MainMenu() {
   const snap = useEditor((s) => s.layout.snapToGrid);
   const frameOn = useEditor((s) => s.layout.showCameraOutlines);
   const wireOn = useEditor((s) => s.layout.wireframe);
+  const lowRes = useEditor((s) => s.layout.playPixels > 0);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const overlayCount = useEditor((s) => s.layout.overlays.length);
   const s = useEditor.getState();
@@ -157,6 +158,7 @@ function MainMenu() {
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
     { label: 'Wireframe view', hint: 'W', checked: wireOn, run: () => s.setLayout({ wireframe: !wireOn }), testId: 'menu-wireframe' },
     { label: 'Camera outlines', checked: frameOn, run: () => s.setLayout({ showCameraOutlines: !frameOn }), testId: 'menu-camera-frame' },
+    { label: 'Low-resolution play (faster)', checked: lowRes, run: () => s.setLayout({ playPixels: lowRes ? 0 : 400 }), testId: 'menu-low-res' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
     { label: 'Editor style…', run: () => s.setStylePickerOpen(true), testId: 'menu-style' },
     { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt' },

@@ -31,6 +31,8 @@ export interface EditorLayout {
   snapToGrid: boolean;
   /** Outline what the camera shows when play starts, and its limits (on unless turned off). */
   showCameraOutlines: boolean;
+  /** How many pixels tall Play draws the game before scaling it up to fill the screen (0: full sharpness). */
+  playPixels: number;
   /** Extra information drawn over the level while editing (see overlays.ts). */
   overlays: EditorOverlay[];
 }
@@ -105,6 +107,13 @@ export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout
     label: 'Camera outlines',
     description: 'Outlines on the level: what Play shows when the level starts (at this window size, white) and where the camera may not look past (red). Hover one to highlight it; click it to select it and ask about the camera.',
     field: { kind: 'boolean', default: true },
+  },
+  {
+    key: 'playPixels',
+    label: 'Play resolution',
+    description:
+      'How many pixels tall Play draws the game (about; it picks an even scale-up so every game pixel is the same size), then scales it up with hard edges to fill the screen (applies the next time Play starts). Lower is faster on weak graphics chips and looks more retro; 0 draws at the full sharpness of the screen. Only Play; the editor is always sharp.',
+    field: { kind: 'number', default: 400, min: 0, max: 2160, step: 10 },
   },
 ];
 

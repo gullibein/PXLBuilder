@@ -58,13 +58,22 @@ export function PlayView() {
     const input = new InputState();
 
     const size = { width: 1, height: 1 };
+    /**
+     * The canvas has as many pixels as the screen area, or, at a lower play
+     * resolution, a whole number of times fewer (so every game pixel is the
+     * same size on screen), scaled up with hard edges by CSS. Drawing fewer
+     * pixels is what makes play fast on weak graphics chips.
+     */
     const measure = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
+      const target = useEditor.getState().layout.playPixels;
+      const shrink = target > 0 ? Math.max(1, Math.round((rect.height * dpr) / target)) : 1;
       size.width = rect.width;
       size.height = rect.height;
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.width = Math.max(1, Math.round((rect.width * dpr) / shrink));
+      canvas.height = Math.max(1, Math.round((rect.height * dpr) / shrink));
+      canvas.dataset.pixels = `${canvas.width}x${canvas.height}`;
       runtime.cam.setView(rect.width, rect.height);
       runtime.screen = { w: rect.width, h: rect.height };
     };

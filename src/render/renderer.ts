@@ -121,6 +121,17 @@ function placeOnScreen(ctx: CanvasRenderingContext2D, position: { x: number; y: 
   ctx.setTransform((w / size.x) * Math.sign(scale.x || 1) * Math.sign(m.a), 0, 0, (h / size.y) * Math.sign(scale.y || 1) * Math.sign(m.d), (x0 + x1) / 2, (y0 + y1) / 2);
 }
 
+/** The part of the level the canvas shows (in the coordinates of the current transform), or null when it is turned or skewed. */
+function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: number; top: number; bottom: number } | null {
+  const m = ctx.getTransform();
+  if (m.b !== 0 || m.c !== 0 || m.a === 0 || m.d === 0) return null;
+  const x0 = -m.e / m.a;
+  const x1 = (ctx.canvas.width - m.e) / m.a;
+  const y0 = -m.f / m.d;
+  const y1 = (ctx.canvas.height - m.f) / m.d;
+  return { left: Math.min(x0, x1), right: Math.max(x0, x1), top: Math.min(y0, y1), bottom: Math.max(y0, y1) };
+}
+
 /** An entity to draw; `alpha` fades it (open doors, blinking after a hit). */
 export type RenderEntity = ResolvedEntity & { alpha?: number };
 
@@ -140,6 +151,7 @@ export function drawEntities(
 ): void {
   const tiles = new Set<string>();
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
+  const shown = visibleArea(ctx);
 
   for (const entity of entities) {
     const sprite = entity.components.Sprite;
@@ -147,6 +159,15 @@ export function drawEntities(
     if (!sprite || (invisible && invisibleAlpha <= 0)) continue;
     const size = getEntitySize(entity);
     const { position, rotation, scale } = entity.transform;
+    // Off the canvas: not drawn (big levels would otherwise cost the same as if all of it were on screen).
+    if (shown) {
+      const w = Math.abs(size.x * scale.x);
+      const h = Math.abs(size.y * scale.y);
+      // A turned thing reaches at most half its diagonal from its center.
+      const hx = (rotation % 360 !== 0 ? Math.hypot(w, h) : w) / 2 + 1;
+      const hy = (rotation % 360 !== 0 ? Math.hypot(w, h) : h) / 2 + 1;
+      if (position.x + hx < shown.left || position.x - hx > shown.right || position.y + hy < shown.top || position.y - hy > shown.bottom) continue;
+    }
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
     ctx.save();
     if (entity.alpha !== undefined || invisible) ctx.globalAlpha = (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1);
