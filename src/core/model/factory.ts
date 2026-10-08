@@ -261,6 +261,41 @@ export function createSpikesAsset(): AssetRecord {
   return createPixelArtAsset('Spikes', SPIKES_ART);
 }
 
+/** Most frames one animation may have. */
+export const MAX_FRAMES = 16;
+
+/**
+ * The image fields for pixel art of one or more frames (all the same size):
+ * one picture is an image; several are a sprite sheet with the frames side
+ * by side that plays as an animation at `fps`.
+ */
+export function pixelArtFields(palette: PixelArt['palette'], frames: string[][], fps = 8): Pick<AssetRecord, 'kind' | 'data' | 'width' | 'height' | 'grid' | 'pixelArt' | 'animation'> {
+  const w = frames[0][0].length;
+  const h = frames[0].length;
+  const pal = palette.map((p) => ({ ...p }));
+  if (frames.length === 1) return { kind: 'image', data: svgDataUrl(pixelArtToSvg({ palette: pal, rows: frames[0] })), width: w, height: h, grid: undefined, pixelArt: { palette: pal, rows: [...frames[0]] }, animation: undefined };
+  const strip = frames[0].map((_, y) => frames.map((f) => f[y]).join(''));
+  return {
+    kind: 'spritesheet',
+    data: svgDataUrl(pixelArtToSvg({ palette: pal, rows: strip })),
+    width: w * frames.length,
+    height: h,
+    grid: { columns: frames.length, rows: 1, cellWidth: w, cellHeight: h, offsetX: 0, offsetY: 0, spacingX: 0, spacingY: 0 },
+    pixelArt: { palette: pal, rows: [...frames[0]], frames: frames.map((f) => [...f]) },
+    animation: { frames: frames.map((_, i) => i + 1), fps },
+  };
+}
+
+/** A new pixel-art asset: a picture, or an animation when there are several frames. */
+export function createAnimatedPixelArtAsset(name: string, palette: PixelArt['palette'], frames: string[][], fps = 8): AssetRecord {
+  const fields = pixelArtFields(palette, frames, fps);
+  const asset = createImageAsset(name, fields.data, fields.width, fields.height, 'svg');
+  const out: AssetRecord = { ...asset, ...fields };
+  if (!out.grid) delete out.grid;
+  if (!out.animation) delete out.animation;
+  return out;
+}
+
 export function createPixelArtAsset(name: string, art: PixelArt): AssetRecord {
   const asset = createImageAsset(name, svgDataUrl(pixelArtToSvg(art)), art.rows[0].length, art.rows.length, 'svg');
   return { ...asset, pixelArt: { palette: art.palette.map((p) => ({ ...p })), rows: [...art.rows] } };

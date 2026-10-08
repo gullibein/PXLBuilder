@@ -18,6 +18,15 @@ export function cellCount(grid: SpriteGrid): number {
 }
 
 /** Source rectangle of cell `n` (1-based). Out-of-range numbers clamp to the nearest cell. */
+/** Which cell an animation shows `t` seconds in (looping). */
+export function animationFrame(animation: { frames: number[]; fps: number }, t: number): number {
+  const n = animation.frames.length;
+  if (!n) return 1;
+  if (!(animation.fps > 0) || !Number.isFinite(t)) return animation.frames[0];
+  const i = Math.floor(Math.max(0, t) * animation.fps) % n;
+  return animation.frames[i];
+}
+
 export function cellRect(grid: SpriteGrid, n: number): { x: number; y: number; w: number; h: number } {
   const i = Math.min(Math.max(1, Math.round(n)), cellCount(grid)) - 1;
   const col = i % grid.columns;

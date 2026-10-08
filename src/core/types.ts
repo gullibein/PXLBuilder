@@ -174,6 +174,11 @@ export interface Scene {
 export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music';
 
 /** How a sprite sheet is cut into numbered cells (numbered from 1, left to right, then top to bottom). */
+export interface SpriteAnimation {
+  frames: number[];
+  fps: number;
+}
+
 export interface SpriteGrid {
   columns: number;
   rows: number;
@@ -198,8 +203,15 @@ export interface AssetRecord {
   height: number;
   /** Cell layout, for sprite sheets. */
   grid?: SpriteGrid;
-  /** The pixels, for images drawn as pixel art (by the AI or the starter art): so variations can start from them. */
-  pixelArt?: { palette: { key: string; color: string }[]; rows: string[] };
+  /**
+   * The pixels, for images drawn as pixel art (by the AI, the sprite editor
+   * or the starter art): so they can be edited and varied. `rows` is the
+   * (first) picture; an animation also has all its `frames` (side by side in
+   * the image, one cell each).
+   */
+  pixelArt?: { palette: { key: string; color: string }[]; rows: string[]; frames?: string[][] };
+  /** Plays as an animation: these cells of the sheet (numbered from 1), at `fps` frames per second, over and over. */
+  animation?: SpriteAnimation;
   /** The recipe, for sounds made by the synthesizer (by the AI): played with the browser's audio, no file needed. */
   synth?: SoundRecipe;
   /** What it is, in plain words ("a duck's quack"), for sounds. */

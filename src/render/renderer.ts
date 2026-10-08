@@ -4,13 +4,15 @@
  */
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
-import { cellRect } from '../core/model/spriteGrid';
-import type { SpriteGrid, Vec2, WorldSettings } from '../core/types';
+import { animationFrame, cellRect } from '../core/model/spriteGrid';
+import type { SpriteAnimation, SpriteGrid, Vec2, WorldSettings } from '../core/types';
 
 /** A decoded image, plus its cell grid when it is a sprite sheet. */
 export interface LoadedImage {
   source: CanvasImageSource;
   grid?: SpriteGrid;
+  /** Plays these cells over time (then Sprite.frame is ignored). */
+  animation?: SpriteAnimation;
 }
 
 /** Resolves an asset id to a drawable image, or null while it isn't loaded (callers fall back to color). */
@@ -162,6 +164,8 @@ export function drawEntities(
   images: ImageLookup = noImages,
   /** In the editor, things set to invisible are drawn faintly (so they can be found and edited); in play they aren't drawn. */
   invisibleAlpha = 0,
+  /** Seconds, for animated sprites (play time in the game; a running clock in the editor). */
+  clock = 0,
 ): void {
   const tiles = new Set<string>();
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
@@ -192,7 +196,7 @@ export function drawEntities(
       // Pixel art stays crisp. The image (or sheet cell) stretches to the sprite size.
       ctx.imageSmoothingEnabled = false;
       if (img.grid) {
-        const r = cellRect(img.grid, typeof sprite.frame === 'number' ? sprite.frame : 1);
+        const r = cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1);
         ctx.drawImage(img.source, r.x, r.y, r.w, r.h, -size.x / 2, -size.y / 2, size.x, size.y);
       } else {
         ctx.drawImage(img.source, -size.x / 2, -size.y / 2, size.x, size.y);

@@ -45,7 +45,7 @@ export class LookCache {
  * transform on ctx (level coordinates); the others expect screen pixels
  * (CSS px) and the view size.
  */
-export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], layer: 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup): void {
+export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], layer: 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup, clock = 0): void {
   const list = drawings.filter((d) => (d.anchor === 'world') === (layer === 'world')).sort((a, b) => a.order - b.order);
   for (const d of list) {
     const [ax, ay] = d.anchor === 'world' ? [0.5, 0.5] : ANCHOR[d.anchor];
@@ -76,7 +76,7 @@ export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: Scre
         const look = d.object ? looks.get(d.object) : null;
         const sprite = look?.components.Sprite;
         if (look && sprite) {
-          drawEntities(ctx, [{ ...look, transform: { position: { x: left + d.w / 2, y: top + d.h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...sprite, width: d.w, height: d.h, visible: true } } }], images);
+          drawEntities(ctx, [{ ...look, transform: { position: { x: left + d.w / 2, y: top + d.h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...sprite, width: d.w, height: d.h, visible: true } } }], images, 0, clock);
         }
       }
     }

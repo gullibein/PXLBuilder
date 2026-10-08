@@ -9,7 +9,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import type { AssetRecord, ObjectDefinition } from '../types';
-import { createDefinition, createLeverAsset, createPixelArtAsset } from './factory';
+import { createAnimatedPixelArtAsset, createDefinition, createLeverAsset, createPixelArtAsset } from './factory';
 import type { PixelArt } from './pixelArt';
 
 const PLAYER_DOWN: PixelArt = {
@@ -256,9 +256,129 @@ const BARREL: PixelArt = {
 };
 
 
+/** Walk cycles: two frames each (one foot up, then the other; sideways, legs apart and together). */
+const WALK_DOWN: string[][] = [
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohssssssho...',
+    '...osossssoso...',
+    '...osssssssso...',
+    '....osssssso....',
+    '...oottttttoo...',
+    '..ottTttttTtto..',
+    '..osttttttttso..',
+    '..osTbbbbbbTso..',
+    '...otttttttto...',
+    '...oTTo..oTTo...',
+    '...offo..oTTo...',
+    '....oo....oo....',
+  ],
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohssssssho...',
+    '...osossssoso...',
+    '...osssssssso...',
+    '....osssssso....',
+    '...oottttttoo...',
+    '..ottTttttTtto..',
+    '..osttttttttso..',
+    '..osTbbbbbbTso..',
+    '...otttttttto...',
+    '...oTTo..oTTo...',
+    '...oTTo..offo...',
+    '....oo....oo....',
+  ],
+];
+
+const WALK_UP: string[][] = [
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '....ohhhhhho....',
+    '...oottttttoo...',
+    '..ottTttttTtto..',
+    '..osttttttttso..',
+    '..osTbbbbbbTso..',
+    '...otttttttto...',
+    '...oTTo..oTTo...',
+    '...offo..oTTo...',
+    '....oo....oo....',
+  ],
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '...ohhhhhhhho...',
+    '....ohhhhhho....',
+    '...oottttttoo...',
+    '..ottTttttTtto..',
+    '..osttttttttso..',
+    '..osTbbbbbbTso..',
+    '...otttttttto...',
+    '...oTTo..oTTo...',
+    '...oTTo..offo...',
+    '....oo....oo....',
+  ],
+];
+
+const WALK_SIDE: string[][] = [
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohhhssssso...',
+    '...ohhhsssoso...',
+    '...ohhhsssssso..',
+    '....ohssssso....',
+    '....otttttto....',
+    '...ottTtttTto...',
+    '...otsttttsto...',
+    '...otTbbbbTto...',
+    '....otttttto....',
+    '...oTTo.oTTo....',
+    '..offo...offo...',
+    '...oo.....oo....',
+  ],
+  [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...oHhhhhhhHo...',
+    '...ohhhhhhhho...',
+    '...ohhhssssso...',
+    '...ohhhsssoso...',
+    '...ohhhsssssso..',
+    '....ohssssso....',
+    '....otttttto....',
+    '...ottTtttTto...',
+    '...otsttttsto...',
+    '...otTbbbbTto...',
+    '....otttttto....',
+    '.....oTTTo......',
+    '.....offfo......',
+    '......ooo.......',
+  ],
+];
+
 /** Images the top-down starter objects use. */
 export interface TopDownStarterAssets {
   player: AssetRecord;
+  /** Walking down, up and sideways: animations. */
+  playerDown: AssetRecord;
   playerUp: AssetRecord;
   playerSide: AssetRecord;
   wall: AssetRecord;
@@ -275,8 +395,9 @@ export interface TopDownStarterAssets {
 export function createTopDownStarterAssets(): TopDownStarterAssets {
   return {
     player: createPixelArtAsset('Hero', PLAYER_DOWN),
-    playerUp: createPixelArtAsset('Hero (from behind)', PLAYER_UP),
-    playerSide: createPixelArtAsset('Hero (walking)', PLAYER_SIDE),
+    playerDown: createAnimatedPixelArtAsset('Hero walking down', PLAYER_DOWN.palette, WALK_DOWN, 6),
+    playerUp: createAnimatedPixelArtAsset('Hero walking up', PLAYER_UP.palette, WALK_UP, 6),
+    playerSide: createAnimatedPixelArtAsset('Hero walking sideways', PLAYER_SIDE.palette, WALK_SIDE, 6),
     wall: createPixelArtAsset('Stone wall', WALL),
     floor: createPixelArtAsset('Floor', FLOOR),
     enemy: createPixelArtAsset('Slime', SLIME),
@@ -316,14 +437,14 @@ export function createTopDownStarterDefinitions(registry: ComponentRegistry, ass
         Collider: c('Collider', { size: { x: 22, y: 24 }, matchSprite: false }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic', gravityScale: 0 }),
         CharacterController: c('CharacterController', { movement: 'topdown', speed: 150, acceleration: 1600 }),
-        SpriteStates: c('SpriteStates', { up: assets.playerUp.id, down: assets.player.id, run: assets.playerSide.id }),
+        SpriteStates: c('SpriteStates', { up: assets.playerUp.id, down: assets.playerDown.id, run: assets.playerSide.id }),
         CameraTarget: c('CameraTarget'),
         Health: c('Health', { maxHealth: 3, currentHealth: 3 }),
         DamageReceiver: c('DamageReceiver'),
         Inventory: c('Inventory'),
       },
       ['player'],
-      'The hero, seen from above: walks in every direction with the arrow keys or WASD (no jumping).',
+      'The hero, seen from above: walks in every direction with the arrow keys or WASD (no jumping), with a walk cycle for each way.',
     ),
     createDefinition(
       'Wall',

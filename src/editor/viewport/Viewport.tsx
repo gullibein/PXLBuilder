@@ -135,7 +135,8 @@ export function Viewport() {
       if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize, wire);
       if (wire) drawWireframe(ctx, entities, state.camera.zoom);
       // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter still.
-      else drawEntities(ctx, entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e)), images, 0.3);
+      // Animated sprites play in the editor too.
+      else drawEntities(ctx, entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e)), images, 0.3, time / 1000);
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';

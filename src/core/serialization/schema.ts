@@ -72,7 +72,8 @@ export const assetSchema = z.object({
       spacingY: z.number().nonnegative(),
     })
     .optional(),
-  pixelArt: z.object({ palette: z.array(z.object({ key: z.string(), color: z.string() })), rows: z.array(z.string()) }).optional(),
+  pixelArt: z.object({ palette: z.array(z.object({ key: z.string(), color: z.string() })), rows: z.array(z.string()), frames: z.array(z.array(z.string())).optional() }).optional(),
+  animation: z.object({ frames: z.array(z.number().int().positive()).min(1), fps: z.number().positive() }).optional(),
   synth: soundRecipeSchema.optional(),
   description: z.string().optional(),
 });

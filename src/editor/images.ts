@@ -71,6 +71,7 @@ export function imageLookup(project: Project): ImageLookup {
     if (!asset || (asset.kind !== 'image' && asset.kind !== 'spritesheet')) return null;
     const entry = entryFor(assetId, asset.data);
     if (!loaded(entry.img)) return null;
-    return { source: sourceOf(entry), grid: asset.kind === 'spritesheet' ? asset.grid : undefined };
+    const sheet = asset.kind === 'spritesheet';
+    return { source: sourceOf(entry), grid: sheet ? asset.grid : undefined, animation: sheet && asset.animation?.frames.length ? asset.animation : undefined };
   };
 }

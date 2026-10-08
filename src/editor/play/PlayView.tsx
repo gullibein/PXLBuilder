@@ -140,12 +140,12 @@ export function PlayView() {
       const view = runtime.cam.frame();
       drawBackground(ctx, size, dpr, scene.world, view, images);
       applyCamera(ctx, view, size, dpr);
-      drawEntities(ctx, runtime.renderList(), images);
+      drawEntities(ctx, runtime.renderList(), images, 0, runtime.time);
       // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top.
       const drawings = [...runtime.drawings.values()];
-      drawScreenDrawings(ctx, drawings, 'world', size, looks, images);
+      drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images);
+      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       for (const s of runtime.soundQueue.splice(0)) {
         const recipe = sounds.get(s.assetId);
