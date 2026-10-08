@@ -36,6 +36,34 @@ export const aiResponseSchema = z.object({
 
 export type AIResponse = z.infer<typeof aiResponseSchema>;
 
+/** Each operation's fields, by its "op" name. */
+const OPERATION_SHAPES = new Map<string, Record<string, z.ZodType>>(
+  (operationSchema.options as unknown as { shape: Record<string, z.ZodType> & { op: { value: string } } }[]).map((o) => [o.shape.op.value, o.shape]),
+);
+
+/**
+ * A reply written as text (not with a strict format) may leave out fields
+ * that can be null: a model that skips the ones it doesn't use, or a field
+ * newer than its habits (an animation's frames). Those count as null, so the
+ * reply isn't thrown away over them. Anything else missing is still an error.
+ */
+export function fillMissingNulls(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const ops = (raw as { operations?: unknown }).operations;
+  if (!Array.isArray(ops)) return raw;
+  return {
+    ...raw,
+    operations: ops.map((op) => {
+      if (!op || typeof op !== 'object') return op;
+      const shape = OPERATION_SHAPES.get(String((op as { op?: unknown }).op));
+      if (!shape) return op;
+      const out: Record<string, unknown> = { ...op };
+      for (const [k, s] of Object.entries(shape)) if (!(k in out) && s.safeParse(null).success) out[k] = null;
+      return out;
+    }),
+  };
+}
+
 export class AIUnavailableError extends Error {
   constructor(message: string) {
     super(message);

@@ -10,11 +10,11 @@
 import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
-import { createDefinition, createImageAsset, instantiateDefinition, svgDataUrl } from '../model/factory';
+import { createAnimatedPixelArtAsset, createDefinition, instantiateDefinition, MAX_FRAMES } from '../model/factory';
 import { buildPath } from './buildPath';
 import { parseSoundRecipe, soundDataUrl } from '../audio/sound';
 import { generateId } from '../ids';
-import { checkPixelArt, fitPixelArt, normalizePixelArt, pixelArtToSvg } from '../model/pixelArt';
+import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize } from '../model/geometry';
@@ -108,7 +108,12 @@ export const operationSchema = z.union([
     id: z.string().describe('Entity id (instance) or object definition id (definition) whose look this becomes'),
     name: z.string().describe('Short name for the image, e.g. "Spikes"'),
     palette: z.array(z.object({ key: z.string().describe('One letter or digit (never a quote, backslash or space)'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
-    rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object)'),
+    rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object). For an animation: the first frame'),
+    frames: z
+      .array(z.array(z.string()))
+      .nullable()
+      .describe('For an animation (a walk cycle, a flickering torch, a spinning coin): the frames AFTER the first, each a list of rows of the same size as rows, with the same palette; it plays rows, then these, over and over. null for a still picture'),
+    fps: z.number().nullable().describe('Animation speed in frames per second (walk cycle 6-10, idle breathing 2-4); null = 8'),
     situation: z
       .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot', 'up', 'down'])
       .nullable()
@@ -526,7 +531,19 @@ export function applyOperations(
         if (err) throw new m.ModelError(`Sprite: ${err}`);
         // Other proportions than the object's are fitted (repeated or padded), not rejected.
         const art = fitPixelArt(drawn, size);
-        const asset = { ...createImageAsset(op.name.trim() || 'Sprite', svgDataUrl(pixelArtToSvg(art)), art.rows[0].length, art.rows.length, 'svg'), pixelArt: { palette: art.palette.map((p) => ({ ...p })), rows: [...art.rows] } };
+        const frames = [art.rows];
+        for (const [i, rows] of (op.frames ?? []).entries()) {
+          const f = normalizePixelArt({ palette: op.palette, rows });
+          const ferr = checkPixelArt(f);
+          if (ferr) throw new m.ModelError(`Sprite frame ${i + 2}: ${ferr}`);
+          const fitted = fitPixelArt(f, size);
+          if (fitted.rows.length !== art.rows.length || fitted.rows[0].length !== art.rows[0].length) {
+            throw new m.ModelError(`Sprite frame ${i + 2} is ${f.rows[0].length}×${f.rows.length}; every frame must be the size of the first (${drawn.rows[0].length}×${drawn.rows.length})`);
+          }
+          frames.push(fitted.rows);
+        }
+        if (frames.length > MAX_FRAMES) throw new m.ModelError(`An animation can have at most ${MAX_FRAMES} frames`);
+        const asset = createAnimatedPixelArtAsset(op.name.trim() || 'Sprite', art.palette, frames, op.fps && op.fps > 0 ? Math.min(60, op.fps) : 8);
         m.addAsset(project, asset);
         const situation = op.situation ?? null;
         if (situation) {

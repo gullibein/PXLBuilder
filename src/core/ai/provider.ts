@@ -1,4 +1,4 @@
-import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from './protocol';
+import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from './protocol';
 import type { TraceFn } from './trace';
 
 /**
@@ -39,7 +39,7 @@ export class HttpAIProvider implements AIProvider {
       const hint = res.status === 401 && !message.includes('AI connection') ? ' You can add your own Anthropic API key in ⋯ → AI connection.' : '';
       throw new AIUnavailableError(message + hint);
     }
-    const parsed = aiResponseSchema.safeParse(json);
+    const parsed = aiResponseSchema.safeParse(fillMissingNulls(json));
     if (!parsed.success) throw new AIUnavailableError('The AI returned a response PXLBuilder could not read. Try again.');
     return parsed.data;
   }

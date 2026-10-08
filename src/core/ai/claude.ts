@@ -8,7 +8,7 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from './prompt';
-import { aiResponseSchema, type AIRequestBody, type AIResponse } from './protocol';
+import { aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from './protocol';
 
 export const MODEL = 'claude-opus-5-5';
 
@@ -101,7 +101,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, signal?: Abort
   } catch {
     return { ok: false, status: 502, error: "The AI's answer could not be read. Try again, or ask for less at once.", kind: 'other' };
   }
-  const parsed = aiResponseSchema.safeParse(raw);
+  const parsed = aiResponseSchema.safeParse(fillMissingNulls(raw));
   if (!parsed.success) return { ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' };
   return { ok: true, response: parsed.data };
 }

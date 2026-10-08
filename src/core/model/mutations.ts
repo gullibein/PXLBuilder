@@ -478,6 +478,50 @@ export function useDefinitionSprite(project: Project, definitionId: Id, ref: Spr
   def.components.Sprite.frame = ref.frame;
 }
 
+/**
+ * An animation made from cells of a sprite sheet: a new sprite (sharing the
+ * sheet's picture) that plays `frames` (cell numbers from 1) at `fps`. A sheet
+ * can hold several (a walk row, a jump row). Returns the new sprite's id.
+ */
+export function addSheetAnimation(project: Project, sheetId: Id, frames: number[], fps: number, name?: string): Id {
+  const sheet = project.assets.find((a) => a.id === sheetId);
+  if (!sheet || sheet.kind !== 'spritesheet' || !sheet.grid) throw new ModelError('Animations are made from the cells of a sprite sheet');
+  const cells = sheet.grid.columns * sheet.grid.rows;
+  if (!frames.length) throw new ModelError('An animation needs at least one cell');
+  const bad = frames.find((f) => !Number.isInteger(f) || f < 1 || f > cells);
+  if (bad !== undefined) throw new ModelError(`The sheet has cells 1-${cells}; there is no cell ${bad}`);
+  if (!(fps > 0 && fps <= 60)) throw new ModelError('Speed must be between 1 and 60 frames per second');
+  const id = generateId('ast');
+  const span = frames.length > 1 ? `${frames[0]}-${frames.at(-1)}` : `${frames[0]}`;
+  project.assets.push({ ...cloneValue(sheet), id, name: name ?? `${sheet.name} ${span}`, path: sheet.path.replace(/[^/]*(\.[a-z0-9]+)$/i, `${id}$1`), animation: { frames: [...frames], fps }, pixelArt: undefined });
+  return id;
+}
+
+/** Changes how fast an animation plays. */
+export function setAnimationSpeed(project: Project, assetId: Id, fps: number): void {
+  const asset = project.assets.find((a) => a.id === assetId);
+  if (!asset?.animation) throw new ModelError('That sprite is not an animation');
+  if (!(fps > 0 && fps <= 60)) throw new ModelError('Speed must be between 1 and 60 frames per second');
+  asset.animation.fps = fps;
+}
+
+/** "1-4, 6" → [1, 2, 3, 4, 6] (as typed for an animation's cells); null if it can't be read. */
+export function parseCellList(text: string): number[] | null {
+  const out: number[] = [];
+  for (const part of text.replace(/\s*-\s*/g, '-').split(/[,;\s]+/).filter(Boolean)) {
+    const m = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part);
+    if (!m) return null;
+    const a = Number(m[1]);
+    const b = m[2] ? Number(m[2]) : a;
+    const step = a <= b ? 1 : -1;
+    for (let i = a; step > 0 ? i <= b : i >= b; i += step) {
+      out.push(i);
+      if (out.length > 64) return null;
+    }
+  }
+  return out.length ? out : null;
+}
+
 export function setAssetGrid(project: Project, assetId: Id, grid: SpriteGrid): void {
   const asset = project.assets.find((a) => a.id === assetId);
   if (!asset) throw new ModelError(`Image "${assetId}" not found`);

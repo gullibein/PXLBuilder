@@ -44,7 +44,7 @@ describe('sprites by situation', () => {
 
   it('draw_sprite with a situation adds an image for that situation and keeps the normal look', () => {
     const { project, playerDef, sceneId, playerId } = level();
-    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: playerDef.id, name: 'Player jumping', ...pose('j'), situation: 'jump' }], registry));
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: playerDef.id, name: 'Player jumping', ...pose('j'), situation: 'jump' }], registry));
     const def = p.definitions.find((d) => d.id === playerDef.id)!;
     const jump = p.assets.find((a) => a.name === 'Player jumping')!;
     expect(def.components.Sprite.assetId).toBe(playerDef.components.Sprite.assetId);
@@ -61,8 +61,8 @@ describe('sprites by situation', () => {
       void applyOperations(
         d,
         [
-          { op: 'draw_sprite', target: 'definition', id: playerDef.id, name: 'Jump', ...pose('j'), situation: 'jump' },
-          { op: 'draw_sprite', target: 'definition', id: playerDef.id, name: 'Run', ...pose('r'), situation: 'run' },
+          { op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: playerDef.id, name: 'Jump', ...pose('j'), situation: 'jump' },
+          { op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: playerDef.id, name: 'Run', ...pose('r'), situation: 'run' },
         ],
         registry,
       ),

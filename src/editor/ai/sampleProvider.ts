@@ -9,7 +9,7 @@
  * operation is applied.
  */
 import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
-import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
+import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
@@ -99,7 +99,7 @@ export class SampleAIProvider implements AIProvider {
         throw new AIUnavailableError("The AI's answer wasn't in the form the app reads (JSON), twice, so nothing was changed. Try again; asking in a different way or for less at once usually helps. (The Console shows what came back.)");
       }
     }
-    const parsed = aiResponseSchema.safeParse(raw);
+    const parsed = aiResponseSchema.safeParse(fillMissingNulls(raw));
     if (!parsed.success) {
       trace?.('error', `Read, but not in the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
       throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");

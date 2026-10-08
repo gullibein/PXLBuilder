@@ -107,7 +107,7 @@ export function SpritesPanel() {
             <div key={`${r.assetId}#${r.frame}`} className={`sprite-choice${on ? ' on' : ''}`}>
               <button className="sprite-use" title={on ? 'In use' : 'Use this sprite'} onClick={() => edit(`Use sprite for ${def.name}`, (p) => m.useDefinitionSprite(p, def.id, r, componentRegistry))}>
                 <SpriteImage asset={asset} frame={r.frame} size={44} />
-                <span className="sprite-cap">{asset.kind === 'spritesheet' ? `${asset.name} #${r.frame}` : asset.name}</span>
+                <span className="sprite-cap">{asset.animation ? `▶ ${asset.name}` : asset.kind === 'spritesheet' ? `${asset.name} #${r.frame}` : asset.name}</span>
               </button>
               <button
                 className="sprite-remove"
@@ -121,7 +121,7 @@ export function SpritesPanel() {
               >
                 ×
               </button>
-              {asset.kind === 'spritesheet' && (
+              {asset.kind === 'spritesheet' && !asset.animation && (
                 <button className="sprite-sheet-link" onClick={() => setSheetId(asset.id)}>
                   Sheet
                 </button>
@@ -252,6 +252,65 @@ function SheetEditor({ sheet, def, isActive }: { sheet: AssetRecord; def: Object
         ))}
       </div>
       {problems.length > 0 && <p className="form-error">The grid doesn't fit: {problems[0]}.</p>}
+      <MakeAnimation sheet={sheet} def={def} cells={cellCount(grid)} />
+    </div>
+  );
+}
+
+/** What an animation can be used for: the normal look, or one of the situations (Sprites by situation). */
+function situations(): { key: string; label: string }[] {
+  const fields = componentRegistry.get('SpriteStates')?.fields ?? {};
+  return [{ key: '', label: 'Normal look' }, ...Object.keys(fields).map((k) => ({ key: k, label: `While: ${k}` }))];
+}
+
+/** Turns cells of a sheet into an animation (a walk cycle from row 2…), used as the look or for a situation. */
+function MakeAnimation({ sheet, def, cells }: { sheet: AssetRecord; def: ObjectDefinition; cells: number }) {
+  const [text, setText] = useState(cells > 1 ? `1-${Math.min(cells, 4)}` : '1');
+  const [fps, setFps] = useState('8');
+  const [use, setUse] = useState('');
+  const frames = m.parseCellList(text);
+  const outOfRange = frames?.find((f) => f > cells);
+  const fpsN = Number(fps);
+  const problem = !frames ? 'Type cell numbers, like 1-4 or 5, 6, 7' : outOfRange ? `The sheet has cells 1-${cells}` : !(fpsN > 0 && fpsN <= 60) ? 'Speed: 1 to 60 frames per second' : null;
+  const make = () => {
+    if (problem || !frames) return;
+    const { edit } = useEditor.getState();
+    edit(`Make animation for ${def.name}`, (p) => {
+      const id = m.addSheetAnimation(p, sheet.id, frames, fpsN);
+      if (!use) m.useDefinitionSprite(p, def.id, { assetId: id, frame: 1 }, componentRegistry);
+      else {
+        const d = p.definitions.find((x) => x.id === def.id)!;
+        if (!d.components.SpriteStates) m.addDefinitionComponent(p, def.id, 'SpriteStates', componentRegistry);
+        m.setDefinitionComponentField(p, def.id, 'SpriteStates', use, id, componentRegistry);
+        m.addDefinitionSprite(p, def.id, { assetId: id, frame: 1 });
+      }
+    });
+  };
+  return (
+    <div className="make-anim" data-testid="make-animation">
+      <strong>Animation</strong>
+      <label>
+        <span>Cells</span>
+        <input value={text} data-testid="anim-cells" onChange={(e) => setText(e.target.value)} placeholder="1-4" />
+      </label>
+      <label>
+        <span>Frames per second</span>
+        <input type="number" min={1} max={60} value={fps} data-testid="anim-fps" onChange={(e) => setFps(e.target.value)} />
+      </label>
+      <label>
+        <span>Use as</span>
+        <select value={use} data-testid="anim-use" onChange={(e) => setUse(e.target.value)}>
+          {situations().map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="chip-btn" data-testid="anim-make" disabled={!!problem} onClick={make}>
+        Make animation
+      </button>
+      {problem && text && <p className="muted small">{problem}</p>}
     </div>
   );
 }

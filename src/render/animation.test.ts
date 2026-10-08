@@ -58,3 +58,36 @@ describe('animated sprites', () => {
     expect(drawn).toEqual([0, 20, 10]);
   });
 });
+
+describe('animations from a sprite sheet', () => {
+  it('reads cell lists as typed', async () => {
+    const { parseCellList } = await import('../core/model/mutations');
+    expect(parseCellList('1-4')).toEqual([1, 2, 3, 4]);
+    expect(parseCellList('5, 6, 8')).toEqual([5, 6, 8]);
+    expect(parseCellList('1 - 3, 2')).toEqual([1, 2, 3, 2]);
+    expect(parseCellList('4-2')).toEqual([4, 3, 2]);
+    expect(parseCellList('walk')).toBeNull();
+    expect(parseCellList('')).toBeNull();
+  });
+
+  it('a new sprite shares the sheet picture and plays the chosen cells; the sheet itself is unchanged', async () => {
+    const { produce } = await import('immer');
+    const { createBuiltinRegistry } = await import('../core/components/builtin');
+    const { createProject, createImageAsset } = await import('../core/model/factory');
+    const m = await import('../core/model/mutations');
+    const sheet = createImageAsset('Hero sheet', 'data:image/png;base64,AAAA', 64, 32, 'png');
+    let project = produce(createProject(createBuiltinRegistry()), (d) => {
+      m.addAsset(d, sheet);
+      m.setAssetGrid(d, sheet.id, { columns: 4, rows: 2, cellWidth: 16, cellHeight: 16, offsetX: 0, offsetY: 0, spacingX: 0, spacingY: 0 });
+    });
+    let id = '';
+    project = produce(project, (d) => void (id = m.addSheetAnimation(d, sheet.id, [5, 6, 7, 8], 10)));
+    const anim = project.assets.find((a) => a.id === id)!;
+    expect(anim).toMatchObject({ kind: 'spritesheet', data: sheet.data, name: 'Hero sheet 5-8', animation: { frames: [5, 6, 7, 8], fps: 10 } });
+    expect(anim.path).not.toBe(sheet.path);
+    expect(project.assets.find((a) => a.id === sheet.id)!.animation).toBeUndefined();
+    expect(() => produce(project, (d) => void m.addSheetAnimation(d, sheet.id, [9], 8))).toThrow(/cells 1-8; there is no cell 9/);
+    project = produce(project, (d) => m.setAnimationSpeed(d, id, 4));
+    expect(project.assets.find((a) => a.id === id)!.animation!.fps).toBe(4);
+  });
+});

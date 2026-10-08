@@ -102,7 +102,10 @@ export interface EntityDetail {
 
 export interface LookImage {
   image: string;
-  pixelArt: { palette: { key: string; color: string }[]; rows: string[] } | null;
+  /** Its pixels; an animation also has all its frames (rows is the first). */
+  pixelArt: { palette: { key: string; color: string }[]; rows: string[]; frames?: string[][] } | null;
+  /** For an animation: how many frames and how fast. */
+  animation?: { frames: number; fps: number };
 }
 
 export interface EntityBrief {
@@ -272,7 +275,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
 
   const image = (assetId: unknown): LookImage | null => {
     const a = typeof assetId === 'string' ? project.assets.find((x) => x.id === assetId) : undefined;
-    return a ? { image: a.name, pixelArt: a.pixelArt ?? null } : null;
+    return a ? { image: a.name, pixelArt: a.pixelArt ?? null, ...(a.animation ? { animation: { frames: a.animation.frames.length, fps: a.animation.fps } } : {}) } : null;
   };
   const lookOf = (c: Record<string, Record<string, unknown>>): EntityDetail['look'] => {
     const situations: Record<string, LookImage> = {};

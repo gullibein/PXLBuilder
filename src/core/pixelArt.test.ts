@@ -53,7 +53,7 @@ describe('pixel-art sprites', () => {
     const hazard = project.definitions.find((d) => d.name === 'Hazard')!;
     const placed = instantiateDefinition(hazard, { x: 0, y: 0 });
     project = produce(project, (d) => m.addEntity(d, sceneId, placed));
-    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: hazard.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
     const asset = p.assets.filter((a) => a.name === 'Spikes').at(-1)!; // (the starter Hazard's own spikes come first)
     expect(asset).toMatchObject({ kind: 'image', width: 32, height: 8 });
     expect(asset.data.startsWith('data:image/svg+xml')).toBe(true);
@@ -61,12 +61,12 @@ describe('pixel-art sprites', () => {
     expect(def.components.Sprite).toMatchObject({ assetId: asset.id, frame: 1, width: 64, height: 16 }); // size unchanged
     expect(m.getDefinitionSprites(def)).toContainEqual({ assetId: asset.id, frame: 1 });
 
-    const one = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'instance', id: placed.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
+    const one = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'instance', id: placed.id, name: 'Spikes', palette, rows: spikes, situation: null }], registry));
     expect(resolveEntity(one, one.scenes[0].entities.at(-1)!, registry).components.Sprite.assetId).toBe(one.assets.at(-1)!.id);
     expect(one.definitions.find((d) => d.id === hazard.id)!.components.Sprite.assetId).toBe(hazard.components.Sprite.assetId); // the object keeps its look
 
     // Other proportions are fitted, not rejected: a square drawn for the 4:1 hazard is resampled to 32×8.
-    const square = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry));
+    const square = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: hazard.id, name: 'Square', palette, rows: Array(32).fill('g'.repeat(32)), situation: null }], registry));
     expect(square.assets.find((a) => a.name === 'Square')).toMatchObject({ width: 32, height: 8 });
   });
 
@@ -93,7 +93,7 @@ describe('pixel-art sprites', () => {
         d,
         [
           { op: 'create_definition', ref: 'mush', name: 'Mushroom', description: 'A mushroom enemy', category: 'Enemies', tags: ['enemy'], components: [{ component: 'Sprite', propsJson: '{"width":16,"height":16}' }] },
-          { op: 'draw_sprite', target: 'definition', id: 'mush', name: 'Mushroom', palette: [{ key: 'r', color: '#d33b3b' }], rows: Array.from({ length: 16 }, (_, y) => (y < 8 ? 'r'.repeat(16) : '    rrrrrrrr    ')), situation: null },
+          { op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: 'mush', name: 'Mushroom', palette: [{ key: 'r', color: '#d33b3b' }], rows: Array.from({ length: 16 }, (_, y) => (y < 8 ? 'r'.repeat(16) : '    rrrrrrrr    ')), situation: null },
         ],
         registry,
       );
@@ -157,5 +157,45 @@ describe('pixel-art sprites', () => {
     expect(c.transform.position).toEqual({ x: 100, y: -50 }); // not a tile: where it was put
     const moved = produce(next, (d) => void applyOperations(d, [{ op: 'set_transform', entityId: s.id, x: 30, y: 70, rotation: null, scaleX: null, scaleY: null }], registry));
     expect(moved.scenes[0].entities[0].transform.position).toEqual({ x: 16, y: 80 });
+  });
+});
+
+describe('animated sprites drawn by the AI', () => {
+  const coin = (shift: number) => Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => (Math.abs(x - 7.5) <= 7 - Math.abs(shift) && Math.abs(y - 7.5) <= 7 ? 'g' : '.')).join(''));
+  const project = createProject(registry);
+  const coinDef = project.definitions.find((d) => d.name === 'Coin')!;
+
+  it('frames after rows make an animation (a sheet of frames that plays at fps), used as the look', () => {
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: coinDef.id, name: 'Spinning coin', palette, rows: coin(0), frames: [coin(3), coin(6), coin(3)], fps: 10, situation: null }], registry));
+    const asset = p.assets.find((a) => a.name === 'Spinning coin')!;
+    expect(asset.kind).toBe('spritesheet');
+    expect(asset.animation).toEqual({ frames: [1, 2, 3, 4], fps: 10 });
+    expect(asset.grid).toMatchObject({ columns: 4, cellWidth: 16, cellHeight: 16 });
+    expect(asset.pixelArt!.frames).toHaveLength(4);
+    expect(p.definitions.find((d) => d.id === coinDef.id)!.components.Sprite.assetId).toBe(asset.id);
+  });
+
+  it('as a situation (a walk cycle while running)', () => {
+    const player = project.definitions.find((d) => d.name === 'Player')!;
+    const rows = Array.from({ length: 32 }, () => 'g'.repeat(28));
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: player.id, name: 'Run cycle', palette, rows, frames: [rows.map((r) => r.replace('g', 'd'))], fps: null, situation: 'run' }], registry));
+    const asset = p.assets.find((a) => a.name === 'Run cycle')!;
+    expect(asset.animation).toEqual({ frames: [1, 2], fps: 8 });
+    expect(p.definitions.find((d) => d.id === player.id)!.components.SpriteStates.run).toBe(asset.id);
+  });
+
+  it('every frame must be the size of the first', () => {
+    expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', target: 'definition', id: coinDef.id, name: 'Bad', palette, rows: coin(0), frames: [['gg', 'gg']], fps: 8, situation: null }], registry))).toThrow(/frame 2 is 2×2; every frame must be the size of the first \(16×16\)/);
+  });
+
+  it('a reply that leaves out fields that may be null (frames, fps) is still read', async () => {
+    const { aiResponseSchema, fillMissingNulls } = await import('./ai/protocol');
+    const reply = { kind: 'apply', message: 'ok', changes: [], operations: [{ op: 'draw_sprite', target: 'definition', id: coinDef.id, name: 'C', palette, rows: coin(0), situation: null }] };
+    expect(aiResponseSchema.safeParse(reply).success).toBe(false);
+    const filled = aiResponseSchema.safeParse(fillMissingNulls(reply));
+    expect(filled.success).toBe(true);
+    // A required field that is missing is still an error.
+    const broken = { ...reply, operations: [{ op: 'draw_sprite', target: 'definition', id: coinDef.id, palette, rows: coin(0) }] };
+    expect(aiResponseSchema.safeParse(fillMissingNulls(broken)).success).toBe(false);
   });
 });
