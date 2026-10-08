@@ -16,6 +16,7 @@ import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
 import { levelMap, type LevelMap } from '../model/levelMap';
 import { LEVEL_CELL } from '../model/placement';
+import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
 import { suggestedGrid } from '../model/pixelArt';
 import { getDefinitionSprites } from '../model/mutations';
@@ -148,6 +149,11 @@ export interface AIPayload {
     camera: CameraSettings & { follows: string | null; levelBounds: CameraBounds | null };
     /** The level as a text map, one character per cell (see the legend): what is where, and where the player can get to. */
     map: LevelMap | null;
+    /**
+     * side: seen from the side, with gravity (platformer). topdown: seen from above (Zelda, Rogue): the player walks in
+     * every direction, nothing falls, walls block; playerReach is then null (no jumping).
+     */
+    view: 'side' | 'topdown';
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
     playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
   };
@@ -316,7 +322,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
       map: levelMap(project, scene.id, registry),
-      playerReach: playerReach(project, scene, registry),
+      view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
+      playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {
         ...scene.camera,
         follows: scene.entities.find((e) => resolveEntity(project, e, registry).components.CameraTarget)?.name ?? null,

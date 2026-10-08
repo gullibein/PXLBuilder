@@ -115,7 +115,17 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
   // Standing spots: the free cell right above each surface. '_' the player reaches, 'x' it doesn't.
   const reach = levelReachability(project, sceneId, registry);
   let reachKnown = false;
-  if (reach.status === 'ok') {
+  let topDown = false;
+  if (reach.status === 'topdown') {
+    // Seen from above: every free cell is floor; '_' the player can walk to, 'x' walled off from it.
+    reachKnown = true;
+    topDown = true;
+    for (const c of reach.cells) {
+      const cell = grid[c.row - minR]?.[c.col - minC];
+      if (!cell || cell.ch !== '.') continue;
+      grid[c.row - minR][c.col - minC] = { ch: c.reached ? '_' : 'x', rank: 98, what: '' };
+    }
+  } else if (reach.status === 'ok') {
     reachKnown = true;
     for (const s of reach.surfaces) {
       const row = Math.round(s.top / LEVEL_CELL) - 1 - minR;
@@ -131,7 +141,10 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
   const pad = Math.max(String(minR).length, String(maxR).length) + 1;
   const rows = grid.map((line, i) => `r${String(minR + i).padStart(pad - 1)} ${line.map((m) => m.ch).join('')}`);
   const legend: Record<string, string> = { '.': 'empty' };
-  if (reachKnown) {
+  if (reachKnown && topDown) {
+    legend._ = 'empty floor the player can walk to (the level is seen from above: no gravity, walls block)';
+    legend.x = 'empty floor walled off from the player (it can NOT walk there)';
+  } else if (reachKnown) {
     legend._ = 'empty, and the player can stand here and get here (on top of the cell below)';
     legend.x = 'empty standing spot on a surface the player can NOT get to';
   }

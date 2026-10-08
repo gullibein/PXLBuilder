@@ -9,8 +9,8 @@ The LLM will *propose* operations; the application validates and applies them.
 Status: **Phase 1 (foundation)**, **Phase 2 (runtime / Play)**, **Phase 3
 (graph: relationships, events, rules, graph queries, entity references)**, the
 **command/transaction system** (Phase 4 core), the **AI foundation** (Phase 5),
-and the **contextual-AI interaction redesign** are implemented. Behaviors
-(enemies moving on their own, timers) are not built yet. See "Roadmap" at the end.
+and the **contextual-AI interaction redesign** are implemented, as are behaviors,
+behavior scripts, AI debugging, and top-down games. See "Roadmap" at the end.
 
 ## Stack
 
@@ -454,6 +454,25 @@ saved and shown like any other edit.
   entity's own) with their description, a readable step-by-step view
   (`script/describe.ts`), on/off, remove, and "Edit as code" (JSON, checked
   the same way before saving).
+
+### Top-down games
+
+A level is seen from above when its player's Character Controller has
+`movement: "topdown"` or its gravity is zero (`core/model/topDown.ts`,
+`isTopDownScene`). In the runtime, anything that **floats** (`Runtime.floats`:
+a top-down character, `gravityScale` 0, or a level with no gravity) moves in
+two dimensions: top-down characters walk in eight directions with no gravity
+or jumping and keep a `heading` (where they shoot); "follows" chasers and
+`move_toward` steer in 2D; Patrol with start direction up/down patrols
+vertically; there is no stomping (no landing on top), knock back is straight
+away from the attacker, nothing counts as falling out of the level, and the
+`up`/`down` sprite situations replace jump/fall. In the editor, top-down levels
+are checked by a walking flood fill over 32 px cells (walls block, doors count
+as open, teleporters join cells) instead of jump arcs; the level map marks
+walkable floor `_` and walled-off floor `x`; nothing is reported as floating;
+AI-placed objects don't drop onto surfaces; `build_path` (a platforming tool)
+refuses with what to use instead; and the AI context says `level.view`
+(`side`/`topdown`) with `playerReach` null.
 
 ### Debugging (Phase 9): play recording, problem checker, AI diagnosis
 - **Event log** (`runtime/gameplay.ts`): every game event, with names and
@@ -922,4 +941,5 @@ one version at a time, and refuses files from a newer editor.
 6–7. Contextual AI, world AI, multi-selection, AI object creation: **done** at the interaction level; limited by what the engine can express.
 - Behaviors: **done** (ready-made components, plus behavior scripts the AI programs).
 9. AI debugging: **done** (event log with reasons, play recording, problem checker, AI diagnosis with fixes to confirm, Debug tab).
-8, 10. Design planning, asset generation (simple pixel-art sprites are done).
+- Game types: platformers, and **top-down** games (Character Controller `movement: topdown`, levels without gravity; see "Top-down games").
+8, 10. Design planning, asset generation (simple pixel-art sprites and synthesized sounds are done).

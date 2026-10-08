@@ -16,6 +16,8 @@ import { refMatches } from '../logic/refs';
 import { getEntitySize } from './geometry';
 import { characterReach, type Reach } from './reach';
 import { resolveEntity, type ResolvedEntity } from './resolve';
+import { LEVEL_CELL } from './placement';
+import { isTopDownScene } from './topDown';
 
 interface Box {
   left: number;
@@ -40,6 +42,8 @@ export interface Unreachable {
 }
 
 export type ReachabilityResult =
+  /** Seen from above: which free cells (32 px) the player can walk to, and the free cells walled off from it. */
+  | { status: 'topdown'; unreachable: Unreachable; cells: { col: number; row: number; reached: boolean }[] }
   | { status: 'ok'; unreachable: Unreachable; reach: Reach; surfaces: { left: number; right: number; top: number; reached: boolean }[] }
   | { status: 'no-player' }
   | { status: 'no-ground'; player: string }
@@ -88,6 +92,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const all = scene.entities.map((e) => resolveEntity(project, e, registry));
   const player = all.find((r) => r.components.CharacterController);
   if (!player) return { status: 'no-player' };
+  if (isTopDownScene(project, scene, registry)) return topDownReachability(scene, all, player);
 
   const isSolid = (r: ResolvedEntity) => {
     const col = r.components.Collider;
@@ -238,6 +243,98 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   return { status: 'ok', unreachable: { things, platforms }, reach, surfaces: spans.map((s, i) => ({ left: s.left, right: s.right, top: s.top, reached: reachedSpans.has(i) })) };
 }
 
+/**
+ * Seen from above: the player walks from its start through free cells (no
+ * wall in them), in four directions, and through teleporters. Doors count as
+ * open (getting their key is checked separately, by the key being reachable),
+ * and things that move or fly don't block. A cell is free when nothing solid
+ * covers more than a sliver of it, so it errs on the side of "reachable".
+ */
+function topDownReachability(scene: Project['scenes'][number], all: ResolvedEntity[], player: ResolvedEntity): ReachabilityResult {
+  if (all.some((r) => r.components.MovingPlatform || (r.scripts.length && r !== player && r.components.Collider && r.components.PhysicsBody?.bodyType !== 'dynamic'))) return { status: 'uncertain', why: 'moving or scripted walls' };
+  if (player.scripts.length) return { status: 'uncertain', why: 'the player runs scripts' };
+  const C = LEVEL_CELL;
+  const walls = all
+    .filter((r) => r !== player && r.components.Collider && r.components.Collider.isTrigger !== true && r.components.PhysicsBody?.bodyType !== 'dynamic' && !r.components.Openable)
+    .map(boxOf);
+  const key = (c: number, r: number) => `${c},${r}`;
+  const blocked = new Set<string>();
+  for (const b of walls) {
+    for (let c = Math.floor((b.left + EDGE) / C); c <= Math.floor((b.right - EDGE) / C); c++) {
+      for (let r = Math.floor((b.top + EDGE) / C); r <= Math.floor((b.bottom - EDGE) / C); r++) blocked.add(key(c, r));
+    }
+  }
+  // The level's extent, one cell beyond everything: walking past it leads nowhere.
+  const boxes = all.map(boxOf);
+  const minC = Math.floor(Math.min(...boxes.map((b) => b.left)) / C) - 1;
+  const maxC = Math.floor(Math.max(...boxes.map((b) => b.right)) / C) + 1;
+  const minR = Math.floor(Math.min(...boxes.map((b) => b.top)) / C) - 1;
+  const maxR = Math.floor(Math.max(...boxes.map((b) => b.bottom)) / C) + 1;
+  const inside = (c: number, r: number) => c >= minC && c <= maxC && r >= minR && r <= maxR;
+  const cellOf = (p: Vec2) => [Math.floor(p.x / C), Math.floor(p.y / C)] as const;
+
+  const byId = new Map(all.map((r) => [r.id, r]));
+  const jumps = new Map<string, string[]>();
+  for (const rel of scene.relationships) {
+    if (rel.type !== 'teleports_to' || rel.source.kind !== 'entity' || rel.target.kind !== 'entity') continue;
+    const from = byId.get(rel.source.id);
+    const to = byId.get(rel.target.id);
+    if (!from || !to) continue;
+    const a = key(...cellOf(from.transform.position));
+    jumps.set(a, [...(jumps.get(a) ?? []), key(...cellOf(to.transform.position))]);
+  }
+
+  const flood = (from: string[], within: (c: number, r: number) => boolean) => {
+    const seen = new Set(from);
+    const queue = [...from];
+    while (queue.length) {
+      const k = queue.pop()!;
+      const [c, r] = k.split(',').map(Number);
+      const next = [key(c + 1, r), key(c - 1, r), key(c, r + 1), key(c, r - 1), ...(jumps.get(k) ?? [])];
+      for (const n of next) {
+        const [nc, nr] = n.split(',').map(Number);
+        if (seen.has(n) || blocked.has(n) || !within(nc, nr)) continue;
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+    return seen;
+  };
+  const reached = flood([key(...cellOf(player.transform.position))], inside);
+  // Free cells walled off from the player that aren't just the open space around the level: closed-off rooms.
+  const outside = flood(
+    Array.from({ length: maxC - minC + 1 }, (_, i) => [key(minC + i, minR), key(minC + i, maxR)]).flat().concat(Array.from({ length: maxR - minR + 1 }, (_, i) => [key(minC, minR + i), key(maxC, minR + i)]).flat()).filter((k) => !blocked.has(k)),
+    inside,
+  );
+  const cells: { col: number; row: number; reached: boolean }[] = [];
+  for (let c = minC + 1; c < maxC; c++) {
+    for (let r = minR + 1; r < maxR; r++) {
+      const k = key(c, r);
+      if (blocked.has(k)) continue;
+      if (reached.has(k)) cells.push({ col: c, row: r, reached: true });
+      else if (!outside.has(k)) cells.push({ col: c, row: r, reached: false });
+    }
+  }
+
+  const important = (r: ResolvedEntity) =>
+    r !== player &&
+    (r.components.Collectible ||
+      r.components.Goal ||
+      r.components.Switch ||
+      r.components.Openable ||
+      r.tags.some((t) => /^(goal|exit|finish|flag|checkpoint)$/i.test(t)) ||
+      scene.relationships.some((rel) => rel.type === 'teleports_to' && rel.source.kind === 'entity' && rel.source.id === r.id));
+  // Got to when it is in, or right next to, a cell the player reaches.
+  const near = (b: Box) => {
+    for (let c = Math.floor((b.left - 4) / C); c <= Math.floor((b.right + 4) / C); c++) {
+      for (let r = Math.floor((b.top - 4) / C); r <= Math.floor((b.bottom + 4) / C); r++) if (reached.has(key(c, r))) return true;
+    }
+    return false;
+  };
+  const things = all.filter((r) => important(r) && !near(boxOf(r))).map((r) => ({ id: r.id, name: r.name }));
+  return { status: 'topdown', unreachable: { things, platforms: [] }, cells };
+}
+
 /** What the player overlaps where it starts: solids it is stuck in, and things that hurt it at once. */
 export function startConflicts(project: Project, sceneId: Id, registry: ComponentRegistry): { player: string; solid: { id: Id; name: string }[]; hurts: { id: Id; name: string }[] } | null {
   const scene = project.scenes.find((s) => s.id === sceneId);
@@ -293,7 +390,8 @@ export function layoutProblems(project: Project, sceneId: Id, registry: Componen
   const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.MovingPlatform || r.components.CharacterController || r.scripts.length > 0;
 
   // Floating spikes, doors and switches.
-  const fixed = placed.filter(({ r }) => !moves(r) && (r.components.Damage || r.components.Openable || r.components.Switch));
+  // (Seen from above nothing needs something under it.)
+  const fixed = isTopDownScene(project, scene, registry) ? [] : placed.filter(({ r }) => !moves(r) && (r.components.Damage || r.components.Openable || r.components.Switch));
   const floating = fixed.filter((x) => !attached(x));
   if (floating.length) {
     out.push({
@@ -344,6 +442,18 @@ export function reachabilityProblems(project: Project, sceneId: Id, registry: Co
   if (start?.solid.length) startProblems.push({ key: `start-in-solid:${start.solid.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts inside ${[...new Set(start.solid.map((s) => s.name))].join(', ')}: move the start onto free ground (or move what's in the way).`, entityIds: start.solid.map((s) => s.id) });
   if (start?.hurts.length) startProblems.push({ key: `start-on-hazard:${start.hurts.map((s) => s.id).sort().join(',')}`, text: `${start.player} starts touching ${[...new Set(start.hurts.map((s) => s.name))].join(', ')}, which hurts it at once: start it on safe ground, away from hazards and enemies.`, entityIds: start.hurts.map((s) => s.id) });
   const r = levelReachability(project, sceneId, registry);
+  if (r.status === 'topdown') {
+    const out = [...startProblems, ...layoutProblems(project, sceneId, registry)];
+    if (r.unreachable.things.length) {
+      const names = [...new Set(r.unreachable.things.map((t) => t.name))];
+      out.push({
+        key: `reach-things:${r.unreachable.things.map((t) => t.id).sort().join(',')}`,
+        text: `The player can't walk to ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` and ${names.length - 6} more` : ''} from where it starts: walls are in the way (seen from above; doors count as open, teleporters counted). Leave a gap in the wall, add a door, or move it.`,
+        entityIds: r.unreachable.things.map((t) => t.id),
+      });
+    }
+    return out;
+  }
   if (r.status === 'no-ground') return [...startProblems, ...layoutProblems(project, sceneId, registry), { key: 'reach-no-ground', text: `${r.player} starts above nothing to stand on: it falls out of the level at once.`, entityIds: [] }];
   if (r.status !== 'ok') return [...startProblems, ...layoutProblems(project, sceneId, registry)];
   const tiles = (px: number) => Math.round((px / 32) * 10) / 10;

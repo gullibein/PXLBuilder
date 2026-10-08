@@ -176,6 +176,18 @@ function stubModel(body) {
     };
     return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', ...own(t[0]), scriptJson: JSON.stringify(script) }] };
   }
+  if (req.includes('top-down game')) {
+    const player = body.context.library.find((d) => d.name === 'Player');
+    return {
+      kind: 'apply',
+      message: 'The game is now seen from above: the player walks in every direction and nothing falls.',
+      changes: ['Player: walks top-down', 'Gravity: 980 → 0'],
+      operations: [
+        { op: 'set_component_field', target: 'definition', id: player.id, component: 'CharacterController', field: 'movement', valueJson: '"topdown"' },
+        { op: 'set_world', sceneId: body.context.level.id, gravityX: 0, gravityY: 0, backgroundColor: null },
+      ],
+    };
+  }
   if (req.includes('zoom the camera in')) {
     return { kind: 'apply', message: 'The camera is zoomed in 2× in play.', changes: ['Camera: zoom 1 → 2'], operations: [{ op: 'set_camera', sceneId: body.context.level.id, cameraJson: '{"zoom":2}' }] };
   }
@@ -944,6 +956,53 @@ try {
   await check(async () => await play.isVisible(), 'Ctrl+Enter starts playing too');
   await page.getByTestId('play').click();
   await check(async () => await page.getByTestId('viewport-canvas').isVisible(), 'the Stop button stops');
+  await page.keyboard.press('Escape');
+
+  step = 'top-down';
+  await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+  await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'the level is the context');
+  await ask('Make it a top-down game, like Zelda.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'making the game top-down is applied');
+  await check(aiRequests.at(-1).context.level.view === 'side' && aiRequests.at(-1).context.level.playerReach !== null, 'the AI was told the level was seen from the side (with the jump limits)');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('play').click();
+  await check(async () => (await play.isVisible()) && !(await page.getByTestId('play-canvas').locator('..').getByText('Space jumps').count()), 'Play starts, and the key hint no longer says Space jumps');
+  {
+    const [, y0] = await ps();
+    await page.waitForTimeout(400);
+    await check(async () => Math.abs((await ps())[1] - y0) < 0.5, 'standing still, the player does not fall (no gravity)');
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(400);
+    await page.keyboard.up('ArrowUp');
+    const [, yUp] = await ps();
+    await check(yUp < y0 - 40, 'holding ↑ walks up the screen');
+    // It slows to a stop (by its acceleration), then stays: nothing pulls it back down.
+    await page.waitForTimeout(300);
+    const [, yStop] = await ps();
+    await check(yStop < y0 - 40, '(still up there once stopped)');
+    await page.waitForTimeout(400);
+    await check(async () => Math.abs((await ps())[1] - yStop) < 0.5, 'and it stays there when the key is let go');
+    const [x1] = await ps();
+    await page.keyboard.down('ArrowRight');
+    await page.keyboard.down('ArrowDown');
+    await page.waitForTimeout(150);
+    await page.keyboard.up('ArrowRight');
+    await page.keyboard.up('ArrowDown');
+    const [x2, y2] = await ps();
+    await check(x2 > x1 + 5 && y2 > yStop + 5, '→ and ↓ together walk diagonally');
+  }
+  await page.screenshot({ path: `${OUT}/12b-top-down.png` });
+  await page.keyboard.press('Escape');
+  await page.getByTestId('undo').click();
+  await page.getByTestId('play').click();
+  {
+    await check(async () => (await ps())[2] === 1, 'after Undo, the player stands on the platform again (gravity is back)');
+    const [, y0] = await ps();
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(300);
+    await page.keyboard.up('ArrowUp');
+    await check(async () => Math.abs((await ps())[1] - y0) < 0.5, 'and ↑ no longer walks up (a platformer again)');
+  }
   await page.keyboard.press('Escape');
 
   step = 'navigation';

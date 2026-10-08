@@ -14,6 +14,7 @@ import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
 import { LEVEL_CELL } from '../model/placement';
 import { characterReach, type Reach } from '../model/reach';
+import { isTopDownScene } from '../model/topDown';
 import { jumpDistance, levelReachability } from '../model/reachability';
 import { resolveEntity } from '../model/resolve';
 import type { Id, ObjectDefinition, Project, Scene } from '../types';
@@ -68,6 +69,9 @@ export function buildPath(
   const resolved = scene.entities.map((e) => ({ e, r: resolveEntity(project, e, registry) }));
   const player = resolved.find(({ r }) => r.components.CharacterController);
   if (!player) throw new m.ModelError('build_path: this level has no player yet: place_instance the Player object first (earlier in the same answer), then build the route from it');
+  if (isTopDownScene(project, scene, registry)) {
+    throw new m.ModelError('build_path builds platforming routes (floors, jumps, ladders) and this level is seen from above (top-down): draw walls and rooms with draw_tiles and put things with place_instance instead; the level map shows the floor the player can walk to as "_"');
+  }
   const base = characterReach(player.r.components, scene.world.gravity.y);
   if (!base) throw new m.ModelError("build_path: the player can't jump (no Character Controller jump)");
   const limits = pathLimits(base);

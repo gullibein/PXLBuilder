@@ -21,6 +21,7 @@ import { getEntitySize } from '../model/geometry';
 import * as m from '../model/mutations';
 import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
+import { isTopDownScene } from '../model/topDown';
 import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -109,7 +110,7 @@ export const operationSchema = z.union([
     palette: z.array(z.object({ key: z.string().describe('One letter or digit (never a quote, backslash or space)'), color: z.string().describe('"#rrggbb"') })).describe('"." is transparent and is not listed'),
     rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length; use the grid size given for the object (same proportions as the object)'),
     situation: z
-      .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot'])
+      .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot', 'up', 'down'])
       .nullable()
       .describe('null: the normal look. A situation: an extra image shown only while that happens (e.g. "jump" for a jumping sprite); the normal look stays'),
   }),
@@ -331,7 +332,8 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
   const fresh = new Set(created);
   for (const scene of project.scenes) {
     const mine = scene.entities.filter((e) => fresh.has(e.id));
-    if (!mine.length) continue;
+    // Seen from above nothing stands on anything: things stay where they are put.
+    if (!mine.length || isTopDownScene(project, scene, registry)) continue;
     const box = (e: (typeof scene.entities)[number]) => {
       const r = resolveEntity(project, e, registry);
       const col = r.components.Collider;
