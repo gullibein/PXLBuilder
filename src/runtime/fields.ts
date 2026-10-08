@@ -165,6 +165,7 @@ function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: strin
         e.vx = fresh.vx;
         e.vy = fresh.vy;
       }
+      if (field === null || field === 'friction') e.friction = fresh.friction;
       // Whether it moves by physics decides how a turn collides.
       rt.refreshCollider(e);
       rt.markSolidsDirty();

@@ -48,6 +48,8 @@ export interface RuntimeEntity {
   vy: number;
   body: BodyKind;
   gravityScale: number;
+  /** PhysicsBody.friction: slowing down while sliding on the ground (0..1). */
+  friction: number;
   /** The gravity it starts with (respawning restores it). */
   baseGravity: number;
   /** Scales how fast it walks, climbs and patrols (1: normal; scripts set it, e.g. water). */
@@ -126,6 +128,8 @@ export interface RuntimeEntity {
 export const STEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 12;
 const MAX_FALL_SPEED = 1400;
+/** Friction 1 takes this much speed away per second (px/s²); 0.2 takes a fifth of it. */
+const FRICTION_DECEL = 1000;
 const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
 /** How much of a character must be inside a ladder (horizontally) to climb it. */
@@ -296,6 +300,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     vy: vel.y,
     body: pb ? (pb.bodyType as BodyKind) : 'none',
     gravityScale: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
+    friction: typeof pb?.friction === 'number' ? Math.min(1, Math.max(0, pb.friction)) : 0.2,
     baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     speedFactor: 1,
     collider,
@@ -496,6 +501,8 @@ export class Runtime {
       this.rebuildLadders();
       this.solidsDirty = false;
     }
+    // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
+    for (const e of this.entities) if (e.body === 'dynamic' && e.alive && !e.moveTarget) this.applyFriction(e, dt);
     this.gameplay.steer();
     this.behaviors.before(dt, input);
     this.scripts.before(dt, input);
@@ -606,6 +613,29 @@ export class Runtime {
     this.entities.push(e);
     this.solidsDirty = true;
     return e;
+  }
+
+  /**
+   * Friction: something sliding slows down by friction × FRICTION_DECEL px/s
+   * each second, on the ground (horizontally), or, in a level seen from above,
+   * on the floor (in every direction). Applied at the start of the step, so
+   * whatever sets its speed every step (patrols, wanderers, chasers, scripts
+   * on tick) moves exactly as fast as it says; only speed nothing renews (a
+   * shove, a speed set once) runs down. "On the ground" is as of the last step. Characters' own controls, shots,
+   * knock backs and things in the air are left alone.
+   */
+  private applyFriction(e: RuntimeEntity, dt: number): void {
+    if (e.friction <= 0 || e.controller || e.projectile || e.knock || e.climbing) return;
+    const loss = e.friction * FRICTION_DECEL * dt;
+    if (this.gravity.x === 0 && this.gravity.y === 0) {
+      const v = Math.hypot(e.vx, e.vy);
+      if (v === 0) return;
+      const k = Math.max(0, v - loss) / v;
+      e.vx *= k;
+      e.vy *= k;
+    } else if (e.grounded && e.vx !== 0) {
+      e.vx = Math.sign(e.vx) * Math.max(0, Math.abs(e.vx) - loss);
+    }
   }
 
   /**

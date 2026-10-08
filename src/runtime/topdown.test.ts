@@ -8,6 +8,7 @@ import { setScript } from '../core/script/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { Runtime } from './runtime';
+import { writeField } from './fields';
 
 const registry = createBuiltinRegistry();
 
@@ -420,5 +421,111 @@ describe('thing_at', () => {
     });
     run(rt, new InputState(), 0.1);
     expect(rt.messages).toContain('coin to the right');
+  });
+});
+
+describe('friction', () => {
+  /** A block sliding at 200 px/s: on a long floor (with gravity), or on a top-down floor. */
+  const slider = (friction: number, gravity: number, extra: Record<string, unknown> = {}) =>
+    room((d, _s, place) => {
+      const block = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_block', name: 'Block', tags: ['block'] };
+      block.components = {
+        ...block.components,
+        Collider: { ...registry.createDefault('Collider'), size: { x: 30, y: 30 }, matchSprite: false },
+        PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'dynamic', friction, velocity: { x: 200, y: 0 }, ...extra },
+      };
+      d.definitions.push(JSON.parse(JSON.stringify(block)));
+      if (gravity) for (let x = -64; x <= 640; x += 32) place('Stone', { x, y: 112 });
+      place('Block', { x: 0, y: gravity ? 81 : 64 });
+    }, gravity);
+
+  it('on the ground, a sliding block slows down and stops (about v² / 2·friction·1000 px later)', () => {
+    const rt = slider(0.2, 980);
+    const block = rt.find('Block')!;
+    run(rt, new InputState(), 2);
+    expect(block.vx).toBe(0);
+    // 200² / (2 × 200) = 100 px.
+    expect(block.x).toBeGreaterThan(90);
+    expect(block.x).toBeLessThan(110);
+  });
+
+  it('friction 0 is ice: it keeps sliding', () => {
+    const rt = slider(0, 980);
+    const block = rt.find('Block')!;
+    run(rt, new InputState(), 2);
+    expect(block.vx).toBeCloseTo(200, 5);
+    expect(block.x).toBeGreaterThan(350);
+  });
+
+  it('higher friction stops it sooner', () => {
+    const far = (f: number) => {
+      const rt = slider(f, 980);
+      run(rt, new InputState(), 2);
+      return rt.find('Block')!.x;
+    };
+    expect(far(1)).toBeLessThan(far(0.5));
+    expect(far(0.5)).toBeLessThan(far(0.1));
+  });
+
+  it('in the air there is no friction: it keeps its sideways speed until it lands', () => {
+    const rt = room((d, _s, place) => {
+      const block = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_block', name: 'Block' };
+      block.components = { ...block.components, PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'dynamic', friction: 1, velocity: { x: 200, y: 0 } } };
+      d.definitions.push(JSON.parse(JSON.stringify(block)));
+      place('Block', { x: 0, y: 64 });
+    }, 980);
+    const block = rt.find('Block')!;
+    run(rt, new InputState(), 0.5);
+    expect(block.grounded).toBe(false);
+    expect(block.vx).toBeCloseTo(200, 5);
+  });
+
+  it('seen from above, it slows down on the floor in every direction', () => {
+    const rt = slider(0.2, 0, { velocity: { x: 120, y: 160 } });
+    const block = rt.find('Block')!;
+    run(rt, new InputState(), 2);
+    expect(block.vx).toBe(0);
+    expect(block.vy).toBe(0);
+    // Straight along its path: 200² / 400 = 100 px.
+    expect(Math.hypot(block.x, block.y - 64)).toBeCloseTo(100, -1);
+  });
+
+  it('a patrol walks at exactly its speed, even with friction 1', () => {
+    const rt = room((d, sceneId, place) => {
+      const def = d.definitions.find((x) => x.name === 'Enemy')!;
+      def.components.PhysicsBody = { ...def.components.PhysicsBody, friction: 1 };
+      def.components.Patrol = { ...registry.createDefault('Patrol'), speed: 60, startDirection: 'down' };
+      place('Enemy', { x: 64, y: 0 });
+      void sceneId;
+    });
+    const enemy = rt.find('Enemy')!;
+    for (let i = 0; i < 30; i++) rt.update(1 / 60, new InputState());
+    expect(enemy.vy).toBe(60);
+    // 30 steps of 1/60 s at 60 px/s: exactly 30 px, as if there were no friction.
+    expect(enemy.y).toBeCloseTo(30, 5);
+  });
+
+  it('a speed a script sets once runs down; set on every tick it stays', () => {
+    const scripted = (on: string) =>
+      room((d, _s, place) => {
+        const id = place('Enemy', { x: 0, y: 64 });
+        setScript(d, { target: 'instance', id }, { name: 'Go', handlers: [{ when: { on }, do: [{ do: 'velocity', x: '100', y: null }] }] });
+      });
+    const once = scripted('start');
+    run(once, new InputState(), 1);
+    expect(once.find('Enemy')!.vx).toBe(0);
+    const always = scripted('tick');
+    run(always, new InputState(), 1);
+    expect(always.find('Enemy')!.vx).toBe(100);
+  });
+
+  it('a script can change friction during play (ice appears)', () => {
+    const rt = slider(1, 980);
+    const block = rt.find('Block')!;
+    run(rt, new InputState(), 0.05);
+    expect(writeField(rt, block, 'PhysicsBody', 'friction', 0)).toBeNull();
+    block.vx = 200;
+    run(rt, new InputState(), 1);
+    expect(block.vx).toBeCloseTo(200, 5);
   });
 });

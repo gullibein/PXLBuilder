@@ -62,7 +62,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       mass: { kind: 'number', default: 1, min: 0, step: 0.1 },
       velocity: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Initial velocity in pixels/second' },
       gravityScale: { kind: 'number', default: 1, step: 0.1, description: 'Multiplier on world gravity' },
-      friction: { kind: 'number', default: 0.2, min: 0, max: 1, step: 0.05 },
+      friction: { kind: 'number', default: 0.2, min: 0, max: 1, step: 0.05, description: 'How fast it slows down while sliding on the ground (seen from above: on the floor, every way), once nothing keeps it moving: 0 = like ice, never slows; 0.2 = a crate shoved at running speed slides about 3 tiles; 1 = stops almost at once. Not in the air. Things that set their own speed (the player, patrols, wanderers, chasers) are not slowed' },
     },
   },
   {
