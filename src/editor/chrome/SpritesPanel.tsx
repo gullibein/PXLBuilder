@@ -37,6 +37,14 @@ export function SpritesPanel() {
   const refs = current && !listed.some((r) => r.assetId === current.assetId && r.frame === current.frame) ? [current, ...listed] : listed;
   const isActive = (assetId: string, frame: number) => active?.assetId === assetId && (assets.find((a) => a.id === assetId)?.kind !== 'spritesheet' || active?.frame === frame);
   const sheet = assets.find((a) => a.id === sheetId && a.kind === 'spritesheet');
+  // Pixel art, and small single pictures, can be opened in the sprite editor.
+  const editable = (a: AssetRecord) => !!a.pixelArt || (a.kind === 'image' && a.width <= 64 && a.height <= 64);
+  const editSprite = (assetId: string | null) => useEditor.getState().openSpriteEditor({ definitionId: def.id, assetId });
+  // Its looks for situations (walking, jumping…) that aren't in the list above, so they can be edited too.
+  const situationLooks = Object.entries((def.components.SpriteStates ?? {}) as Record<string, unknown>)
+    .filter(([, v]) => typeof v === 'string' && v && !refs.some((r) => r.assetId === v))
+    .map(([k, v]) => ({ situation: k, asset: assets.find((a) => a.id === v) }))
+    .filter((x): x is { situation: string; asset: AssetRecord } => !!x.asset);
   const boxColor = typeof active?.color === 'string' && /^#[0-9a-f]{6}$/i.test(active.color) ? active.color : '#888888';
 
   const importImage = async (file: File) => {
@@ -121,6 +129,11 @@ export function SpritesPanel() {
               >
                 ×
               </button>
+              {editable(asset) && (
+                <button className="sprite-edit" aria-label={`Edit ${asset.name} in the sprite editor`} title="Edit in the sprite editor" data-testid="sprite-edit" onClick={() => editSprite(asset.id)}>
+                  ✎
+                </button>
+              )}
               {asset.kind === 'spritesheet' && !asset.animation && (
                 <button className="sprite-sheet-link" onClick={() => setSheetId(asset.id)}>
                   Sheet
@@ -130,6 +143,24 @@ export function SpritesPanel() {
           );
         })}
       </div>
+
+      {situationLooks.length > 0 && (
+        <div className="sprite-list" data-testid="situation-looks">
+          {situationLooks.map(({ situation, asset }) => (
+            <div key={situation} className="sprite-choice">
+              <span className="sprite-use">
+                <SpriteImage asset={asset} frame={asset.animation?.frames[0] ?? 1} size={44} />
+                <span className="sprite-cap">While {situation}</span>
+              </span>
+              {editable(asset) && (
+                <button className="sprite-edit" aria-label={`Edit the ${situation} look`} title="Edit in the sprite editor" data-testid={`situation-edit-${situation}`} onClick={() => editSprite(asset.id)}>
+                  ✎
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {active && (
         <label className="box-color-row">
@@ -147,6 +178,9 @@ export function SpritesPanel() {
       )}
 
       <div className="sprite-actions">
+        <button className="upload" data-testid="draw-sprite" onClick={() => editSprite(null)}>
+          Draw new sprite
+        </button>
         <button className="upload" data-testid="import-image" onClick={() => imageInput.current?.click()}>
           Import image
         </button>

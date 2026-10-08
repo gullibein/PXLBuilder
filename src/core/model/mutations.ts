@@ -9,7 +9,8 @@ import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDo
 import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import { createStarterAssets, createStarterDefinitions, type StarterAssets } from './factory';
+import { createStarterAssets, createStarterDefinitions, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
+import { checkPixelArt, type PixelArt } from './pixelArt';
 import { validateGrid } from './spriteGrid';
 import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
@@ -471,8 +472,13 @@ export function removeDefinitionSprite(project: Project, definitionId: Id, ref: 
 
 /** Makes a sprite the one the object is drawn with (adding a Sprite component if needed). Its size is kept: the image stretches to it. */
 export function useDefinitionSprite(project: Project, definitionId: Id, ref: SpriteRef, registry: ComponentRegistry): void {
-  addDefinitionSprite(project, definitionId, ref);
   const def = getDefinition(project, definitionId);
+  // The picture it had stays among its sprites (a built-in drawing was never listed), to go back to or edit.
+  const before = def.components.Sprite?.assetId;
+  if (typeof before === 'string' && project.assets.some((a) => a.id === before)) {
+    addDefinitionSprite(project, definitionId, { assetId: before, frame: typeof def.components.Sprite.frame === 'number' ? def.components.Sprite.frame : 1 });
+  }
+  addDefinitionSprite(project, definitionId, ref);
   if (!def.components.Sprite) def.components.Sprite = registry.createDefault('Sprite');
   def.components.Sprite.assetId = ref.assetId;
   def.components.Sprite.frame = ref.frame;
@@ -495,6 +501,31 @@ export function addSheetAnimation(project: Project, sheetId: Id, frames: number[
   const span = frames.length > 1 ? `${frames[0]}-${frames.at(-1)}` : `${frames[0]}`;
   project.assets.push({ ...cloneValue(sheet), id, name: name ?? `${sheet.name} ${span}`, path: sheet.path.replace(/[^/]*(\.[a-z0-9]+)$/i, `${id}$1`), animation: { frames: [...frames], fps }, pixelArt: undefined });
   return id;
+}
+
+/**
+ * Replaces a sprite's pixels (from the sprite editor): one frame makes it a
+ * picture, several an animation at `fps`. Its id stays, so every object and
+ * situation using it shows the new drawing.
+ */
+export function updatePixelArtAsset(project: Project, assetId: Id, palette: PixelArt['palette'], frames: string[][], fps: number): void {
+  const asset = project.assets.find((a) => a.id === assetId);
+  if (!asset) throw new ModelError(`Image "${assetId}" not found`);
+  if (!frames.length || frames.length > MAX_FRAMES) throw new ModelError(`A sprite has 1 to ${MAX_FRAMES} frames`);
+  const err = checkPixelArt({ palette, rows: frames[0] });
+  if (err) throw new ModelError(`Sprite: ${err}`);
+  const fields = pixelArtFields(palette, frames, fps);
+  asset.kind = fields.kind;
+  asset.data = fields.data;
+  asset.width = fields.width;
+  asset.height = fields.height;
+  asset.pixelArt = fields.pixelArt;
+  if (fields.grid) asset.grid = fields.grid;
+  else delete asset.grid;
+  if (fields.animation) asset.animation = fields.animation;
+  else delete asset.animation;
+  // Saved as an SVG file now, whatever it was imported as.
+  asset.path = asset.path.replace(/\.[a-z0-9]+$/i, '.svg');
 }
 
 /** Changes how fast an animation plays. */

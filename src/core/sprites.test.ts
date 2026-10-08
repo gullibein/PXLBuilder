@@ -59,12 +59,14 @@ describe('object sprites', () => {
     const def = () => p.definitions.find((d) => d.id === enemy.id)!;
     expect(p.assets.find((a) => a.id === sheet.id)!.kind).toBe('spritesheet');
     expect(def().components.Sprite).toMatchObject({ assetId: sheet.id, frame: 6, width: 30, height: 30 });
+    // Its built-in drawing stays listed (to go back to), then the cells in the order they were added, no duplicates.
     expect(m.getDefinitionSprites(def())).toEqual([
+      { assetId: enemy.components.Sprite.assetId, frame: 1 },
       { assetId: sheet.id, frame: 6 },
       { assetId: sheet.id, frame: 2 },
     ]);
     p = produce(p, (d) => m.removeDefinitionSprite(d, enemy.id, { assetId: sheet.id, frame: 2 }));
-    expect(m.getDefinitionSprites(def())).toHaveLength(1);
+    expect(m.getDefinitionSprites(def())).toHaveLength(2);
   });
 
   it('rejects a grid that does not fit the image', () => {

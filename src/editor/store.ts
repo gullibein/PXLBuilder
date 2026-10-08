@@ -84,6 +84,8 @@ export interface EditorState {
   stylePickerOpen: boolean;
   /** "What kind of game?": on the first visit, or for a new game (⋯ → New project); null when closed. */
   gameChooser: 'first' | 'new' | null;
+  /** The sprite editor: which object's sprite (an existing picture, or a new one), or null when closed. */
+  spriteEditor: { definitionId: Id; assetId: Id | null } | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -126,6 +128,7 @@ export interface EditorState {
   setAIConnectionOpen(open: boolean): void;
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
+  openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
   flashEntities(ids: Id[]): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
@@ -181,6 +184,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     aiConnectionOpen: false,
     stylePickerOpen: false,
     gameChooser: null,
+    spriteEditor: null,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -393,6 +397,9 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setGameChooser(gameChooser) {
       set({ gameChooser });
+    },
+    openSpriteEditor(spriteEditor) {
+      set({ spriteEditor });
     },
     setStylePickerOpen(stylePickerOpen) {
       set({ stylePickerOpen });

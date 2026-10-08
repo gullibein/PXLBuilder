@@ -777,6 +777,54 @@ try {
   await check(async () => (await sp.getByTestId('sprite-list').innerText()).includes('robots #6'), 'the picture it had stays in the list, to choose again');
   await sp.locator('.sprite-use', { hasText: 'robots #6' }).click();
   await check(async () => !(await sp.getByTestId('sprite-plain-box').getAttribute('class')).includes(' on'), 'and choosing an image switches back');
+  // Cells of the sheet as an animation.
+  await sp.locator('.sprite-choice', { hasText: 'robots #6' }).locator('.sprite-sheet-link').click();
+  await sp.getByTestId('anim-cells').fill('1-4');
+  await sp.getByTestId('anim-fps').fill('6');
+  await sp.getByTestId('anim-make').click();
+  await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('▶ robots 1-4'), 'cells 1-4 of the sheet become an animation, used as the look');
+
+  // The sprite editor: draw a new two-frame sprite.
+  await sp.getByTestId('draw-sprite').click();
+  const se = page.getByTestId('sprite-editor');
+  await check(async () => await se.isVisible(), 'Draw new sprite opens the sprite editor');
+  const seCanvas = se.getByTestId('se-canvas');
+  const px = async () => (await seCanvas.getAttribute('data-pixels')) ?? '';
+  const clickPixel = async (x, y, button = 'left') => {
+    const b = await seCanvas.boundingBox();
+    const [w, h] = [await se.getByTestId('se-width').inputValue(), await se.getByTestId('se-height').inputValue()].map(Number);
+    await page.mouse.click(b.x + ((x + 0.5) * b.width) / w, b.y + ((y + 0.5) * b.height) / h, { button });
+  };
+  await check(async () => !(await px()).replace(/[./]/g, ''), 'a new sprite starts empty, at the object\'s proportions');
+  await clickPixel(2, 3);
+  await check(async () => (await px()).split('/')[3][2] === 'a', 'clicking draws a pixel in the chosen color');
+  await clickPixel(5, 3);
+  await page.keyboard.press('Control+z');
+  await check(async () => (await px()).split('/')[3][5] === '.' && (await px()).split('/')[3][2] === 'a', "Ctrl+Z in the editor undoes the last stroke (not the game's undo)");
+  await se.getByTestId('se-duplicate-frame').click();
+  await check(async () => (await se.locator('.se-frame').count()) === 2 && (await se.getByTestId('se-frame-2').getAttribute('class')).includes('on'), 'Duplicate frame adds a copy after it and selects it');
+  await clickPixel(2, 3, 'right');
+  await clickPixel(3, 3);
+  await check(async () => (await px()).split('/')[3].slice(2, 4) === '.a', 'in frame 2 the right button erases and the left draws');
+  await se.getByTestId('se-fps').fill('4');
+  await check(async () => await se.getByTestId('se-preview').isVisible(), 'with two frames there is a playing preview');
+  await page.screenshot({ path: `${OUT}/10b-sprite-editor.png` });
+  await se.getByTestId('se-name').fill('Blinky');
+  await se.getByTestId('se-save').click();
+  await check(async () => (await se.count()) === 0 && (await sp.locator('.sprite-choice.on').innerText()).includes('▶ Blinky'), 'Save and use: the animation is the look now');
+  // Edit it again: back to one frame.
+  await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
+  await check(async () => (await se.locator('.se-frame').count()) === 2, 'editing it opens its two frames');
+  await se.getByTestId('se-frame-2').click();
+  await se.getByTestId('se-delete-frame').click();
+  await se.getByTestId('se-save').click();
+  await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('Blinky') && !(await sp.locator('.sprite-choice.on').innerText()).includes('▶'), 'saving one frame makes it a still picture again');
+  await page.getByTestId('undo').click();
+  await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('▶ Blinky'), 'Undo brings the animation back');
+  await check(async () => (await sp.locator('.sprite-choice', { hasText: 'Enemy' }).getByTestId('sprite-edit').count()) === 1, "the object's own pixel-art drawing can be edited too");
+  // Back to cell 6 for the steps after this.
+  await sp.locator('.sprite-use', { hasText: 'robots #6' }).click();
+  await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('robots #6'), '(cell 6 in use again)');
   await page.keyboard.press('Escape');
   await check(async () => (await sp.count()) === 0, 'Esc closes the Sprites panel');
 

@@ -3,6 +3,7 @@ import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectA
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
+import { SpriteEditor } from './chrome/SpriteEditor';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
@@ -76,6 +77,7 @@ export function App() {
         <AIConnection />
         <StylePicker />
         <GameChooser />
+        <SpriteEditor />
         <GlobalPrompt />
         <Dock />
         <Tray />

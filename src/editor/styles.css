@@ -208,3 +208,30 @@
 .make-anim { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .make-anim label { display: grid; gap: 2px; font-size: 11.5px; }
 .make-anim input { width: 90px; }
+
+/* Sprite editor */
+.sprite-editor { width: min(860px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; outline: none; }
+.se-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.se-side { display: grid; gap: 10px; width: 200px; }
+.se-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-btn.on { background: var(--accent); color: #fff; }
+.chip-btn:disabled { opacity: 0.45; cursor: default; }
+.se-palette { display: flex; flex-wrap: wrap; gap: 4px; }
+.se-swatch { width: 22px; height: 22px; border-radius: 5px; border: 2px solid var(--line); padding: 0; }
+.se-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.se-add { position: relative; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; border: 1px dashed var(--line); cursor: pointer; font-weight: 700; color: var(--muted); }
+.se-add input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.se-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.se-row input[type='number'] { width: 52px; }
+.se-canvas-wrap { flex: 1; min-width: 0; display: grid; place-items: center; padding: 8px; border-radius: 10px; background: #1b1828; overflow: auto; }
+.se-canvas { image-rendering: pixelated; touch-action: none; display: block; }
+.se-frames { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.se-strip { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; }
+.se-frame { display: grid; justify-items: center; gap: 2px; padding: 4px; border-radius: 8px; border: 2px solid var(--line); background: #1b1828; font-size: 10.5px; color: var(--muted); }
+.se-frame.on { border-color: var(--accent); }
+.se-thumb, .se-preview { image-rendering: pixelated; display: block; }
+.se-frame-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.se-preview { padding: 4px; border-radius: 8px; background: #1b1828; }
+.se-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.primary-btn { border: none; padding: 6px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; }
+.sprite-edit { position: absolute; left: 2px; top: 2px; border: none; border-radius: 6px; padding: 0 5px; font-size: 11px; background: var(--surface-3); color: var(--text); opacity: 0.85; }
