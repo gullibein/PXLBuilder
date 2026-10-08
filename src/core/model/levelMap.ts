@@ -45,7 +45,7 @@ function markOf(r: ResolvedEntity, name: string): Mark {
   if (c.Openable) return { ch: 'D', rank: 1, what: 'door' };
   if (c.Switch) return { ch: 'S', rank: 1, what: 'switch' };
   if (c.Collectible) return /key/i.test(name) || r.tags.includes('key') ? { ch: 'k', rank: 2, what: 'key' } : { ch: 'c', rank: 2, what: 'item to collect' };
-  const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.MovingPlatform || r.scripts.length > 0;
+  const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.Wander || c.MovingPlatform || r.scripts.length > 0;
   if (c.Damage && moves) return { ch: 'E', rank: 3, what: 'enemy' };
   if (c.Damage) return { ch: '^', rank: 3, what: 'hazard (hurts)' };
   if (c.Climbable) return { ch: 'H', rank: 4, what: 'ladder (climb with Up/Down; not solid)' };

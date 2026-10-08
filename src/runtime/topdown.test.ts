@@ -213,3 +213,62 @@ describe('things in a level without gravity', () => {
     expect(p2.vy).toBeCloseTo(0, 5);
   });
 });
+
+describe('Wander', () => {
+  const wanderer = (gravity = 0, random: () => number = Math.random) => {
+    const rt = room((d, _s, place) => {
+      const def = d.definitions.find((x) => x.name === 'Enemy')!;
+      def.components.Wander = { ...registry.createDefault('Wander'), speed: 60, interval: 0.5 };
+      place('Enemy', { x: 0, y: 64 });
+    }, gravity);
+    rt.random = random;
+    return { rt, enemy: rt.find('Enemy')! };
+  };
+
+  it('wanders in all four directions without gravity, never through the walls', () => {
+    let seed = 7;
+    const { rt, enemy } = wanderer(0, () => ((seed = (seed * 16807) % 2147483647) / 2147483647));
+    const ways = new Set<string>();
+    for (let i = 0; i < 60 * 30; i++) {
+      rt.update(1 / 60, new InputState());
+      ways.add(`${Math.sign(Math.round(enemy.vx))},${Math.sign(Math.round(enemy.vy))}`);
+      // The room's walls: left at x -80, top at y -80 (the enemy is 30 wide).
+      expect(enemy.x).toBeGreaterThanOrEqual(-80 + 15 - 0.01);
+      expect(enemy.y).toBeGreaterThanOrEqual(-80 + 15 - 0.01);
+    }
+    for (const w of ['1,0', '-1,0', '0,1', '0,-1']) expect(ways).toContain(w);
+  });
+
+  it('with gravity it only wanders left and right', () => {
+    let seed = 3;
+    const { rt, enemy } = wanderer(980, () => ((seed = (seed * 16807) % 2147483647) / 2147483647));
+    let moved = false;
+    for (let i = 0; i < 60 * 10; i++) {
+      rt.update(1 / 60, new InputState());
+      if (Math.abs(enemy.vx) > 1) moved = true;
+      // It never picks up or down: falling is gravity's business.
+      expect(enemy.beh.wander!.dy).toBe(0);
+    }
+    expect(moved).toBe(true);
+  });
+
+  it('turns away when it meets a wall instead of pushing into it', () => {
+    // Always "go left first": the left wall is 2 cells away.
+    const { rt, enemy } = wanderer(0, () => 0.3);
+    let stuck = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      rt.update(1 / 60, new InputState());
+      if (enemy.bumped !== 0) stuck++;
+    }
+    expect(stuck).toBeLessThan(5);
+  });
+});
+
+describe('sprite layers', () => {
+  it('draws lower layers first, keeping the placed order within a layer', async () => {
+    const { byLayer } = await import('../render/renderer');
+    const mk = (name: string, layer?: number) => ({ name, components: { Sprite: layer === undefined ? {} : { layer } } }) as never;
+    const list = [mk('player'), mk('floor', -1), mk('roof', 1), mk('coin'), mk('floor2', -1)];
+    expect(byLayer(list).map((e: { name: string }) => e.name)).toEqual(['floor', 'floor2', 'player', 'coin', 'roof']);
+  });
+});

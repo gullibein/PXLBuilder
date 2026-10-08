@@ -387,7 +387,7 @@ export function layoutProblems(project: Project, sceneId: Id, registry: Componen
   const near = (a: number, b: number) => Math.abs(a - b) <= 3;
   const attached = (x: { e: { id: Id }; b: Box }) =>
     surfaces.some(({ e, b }) => e.id !== x.e.id && ((overlapX(x.b, b) > 1 && (near(x.b.bottom, b.top) || near(x.b.top, b.bottom) || overlapY(x.b, b) > 1)) || (overlapY(x.b, b) > 1 && (near(x.b.right, b.left) || near(x.b.left, b.right)))));
-  const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.MovingPlatform || r.components.CharacterController || r.scripts.length > 0;
+  const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.Wander || r.components.MovingPlatform || r.components.CharacterController || r.scripts.length > 0;
 
   // Floating spikes, doors and switches.
   // (Seen from above nothing needs something under it.)

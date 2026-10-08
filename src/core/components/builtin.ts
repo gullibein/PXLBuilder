@@ -18,6 +18,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       height: { kind: 'number', default: 32, min: 0, step: 1, description: 'Height in pixels' },
       color: { kind: 'color', default: '#cccccc', description: 'Fill color used when no asset is set' },
       visible: { kind: 'boolean', default: true },
+      layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
     },
   },
   {
@@ -165,6 +166,18 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   // ------------------------------------------------------------ behaviors: what things do on their own
+  {
+    type: 'Wander',
+    label: 'Wander',
+    description:
+      'Wanders around on its own (needs a dynamic Physics Body): walks one way, and every few seconds (or on bumping into a wall) picks another at random, sometimes stopping for a moment. Without gravity (top-down games, fliers) it wanders in all four directions; with gravity only left and right.',
+    category: 'Behavior',
+    fields: {
+      speed: { kind: 'number', default: 50, min: 0, step: 10, description: 'Pixels per second (the player walks at 200)' },
+      interval: { kind: 'number', default: 2, min: 0.2, step: 0.1, description: 'About how many seconds between changes of direction (it varies a little each time)' },
+      pauses: { kind: 'boolean', default: true, description: 'Sometimes stands still for a moment instead of walking' },
+    },
+  },
   {
     type: 'Patrol',
     label: 'Patrol',

@@ -24,6 +24,7 @@ export class BehaviorSystem {
       const b = e.beh;
       if (b.mover) this.moveOnPath(e, dt);
       if (b.patrol && !e.chasing && e.invincible <= 0) this.patrol(e);
+      if (b.wander && !b.patrol && !e.chasing && e.invincible <= 0) this.wander(e, dt);
       if (b.jumper && e.body === 'dynamic' && !this.rt.floats(e)) {
         b.jumper.t += dt;
         if (e.grounded && b.jumper.t >= b.jumper.interval) {
@@ -103,6 +104,41 @@ export class BehaviorSystem {
     if (floats) e.vy = 0;
     e.facing = p.dir;
     e.heading = { x: p.dir, y: 0 };
+  }
+
+  /**
+   * Wander: keeps going one way; every interval (give or take half of it) or
+   * on meeting a wall it picks another way at random (not straight into the
+   * wall), sometimes standing still for a moment. Four ways without gravity,
+   * left and right with it.
+   */
+  private wander(e: RuntimeEntity, dt: number): void {
+    const w = e.beh.wander!;
+    if (e.body === 'static' || e.body === 'none') {
+      e.body = 'kinematic';
+      this.rt.markSolidsDirty();
+    }
+    const floats = this.rt.floats(e) || e.body !== 'dynamic';
+    const box = this.rt.boxOf(e);
+    const blocked = (dx: number, dy: number) => {
+      if (!box || (dx === 0 && dy === 0)) return false;
+      const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
+      return this.rt.solids.some((s) => overlaps(front, s));
+    };
+    w.t -= dt;
+    if (w.t <= 0 || blocked(w.dx, w.dy) || (e.bumped !== 0 && e.bumped === w.dx)) {
+      const ways = (floats ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 0], [-1, 0]]).filter(([dx, dy]) => !(dx === w.dx && dy === w.dy) && !blocked(dx, dy));
+      const stop = w.pauses && (w.dx !== 0 || w.dy !== 0) && this.rt.random() < 0.25;
+      const pick = stop || !ways.length ? [0, 0] : ways[Math.floor(this.rt.random() * ways.length) % ways.length];
+      w.dx = pick[0];
+      w.dy = pick[1];
+      // Stops are short; walks last about the interval.
+      w.t = (stop ? 0.4 : 0.5 + this.rt.random()) * w.interval;
+    }
+    e.vx = w.dx * w.speed * e.speedFactor;
+    if (floats) e.vy = w.dy * w.speed * e.speedFactor;
+    if (w.dx !== 0) e.facing = w.dx as 1 | -1;
+    if (w.dx !== 0 || w.dy !== 0) e.heading = { x: w.dx, y: w.dy };
   }
 
   /** Up and down (no gravity): turns at walls above and below and after `distance`. */

@@ -10,7 +10,7 @@ import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
 import { connectSwitch } from '../actions';
-import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
+import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
@@ -609,7 +609,9 @@ function localPoint(canvas: HTMLCanvasElement, ev: { clientX: number; clientY: n
 
 /** Topmost entity under a world point. */
 function pick(entities: ResolvedEntity[], p: Vec2): ResolvedEntity | null {
-  for (let i = entities.length - 1; i >= 0; i--) if (containsPoint(entities[i], p)) return entities[i];
+  // What is drawn on top is picked first (a floor on a lower layer never hides what stands on it).
+  const ordered = byLayer(entities);
+  for (let i = ordered.length - 1; i >= 0; i--) if (containsPoint(ordered[i], p)) return ordered[i];
   return null;
 }
 

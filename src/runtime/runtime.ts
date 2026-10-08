@@ -195,6 +195,8 @@ export interface Behaviors {
   timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
   doubleJump: { extra: number; left: number } | null;
   ledgeGrab: boolean;
+  /** Wander: its way now (dx, dy each -1, 0 or 1; 0,0 = standing) and when it next picks another. */
+  wander: { speed: number; interval: number; pauses: boolean; dx: number; dy: number; t: number } | null;
 }
 
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -226,6 +228,8 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
     timer: t ? { interval: num(t.interval, 2), repeat: t.repeat !== false, t: 0, done: false } : null,
     doubleJump: c.DoubleJump ? { extra: num(c.DoubleJump.extraJumps, 1), left: num(c.DoubleJump.extraJumps, 1) } : null,
     ledgeGrab: !!c.LedgeGrab,
+    // Starts by standing still; the first pick comes at once.
+    wander: c.Wander ? { speed: num(c.Wander.speed, 50), interval: Math.max(0.2, num(c.Wander.interval, 2)), pauses: c.Wander.pauses !== false, dx: 0, dy: 0, t: 0 } : null,
   };
 }
 
@@ -334,6 +338,8 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
 export class Runtime {
   entities: RuntimeEntity[] = [];
   readonly gravity: Vec2;
+  /** Chance for Wander and the like (replaceable, so tests can be repeated exactly). */
+  random: () => number = Math.random;
   /** The camera: following, limits and effects (shake, flash, zoom…). */
   readonly cam = new CameraController();
   /** Events, rules and gameplay systems. */

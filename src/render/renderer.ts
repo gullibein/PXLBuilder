@@ -135,6 +135,20 @@ function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: numb
 /** An entity to draw; `alpha` fades it (open doors, blinking after a hit). */
 export type RenderEntity = ResolvedEntity & { alpha?: number };
 
+const layerOf = (e: ResolvedEntity) => {
+  const l = e.components.Sprite?.layer;
+  return typeof l === 'number' ? l : 0;
+};
+
+/** In drawing order: by Sprite layer (lower first), keeping the given order within a layer. */
+export function byLayer<T extends ResolvedEntity>(entities: T[]): T[] {
+  if (!entities.some((e) => layerOf(e) !== 0)) return entities;
+  return entities
+    .map((e, i) => ({ e, i, l: layerOf(e) }))
+    .sort((a, b) => a.l - b.l || a.i - b.i)
+    .map((x) => x.e);
+}
+
 const tileKey = (definitionId: string | null, x: number, y: number) => `${definitionId}|${Math.round(x)}|${Math.round(y)}`;
 
 /**
@@ -153,7 +167,7 @@ export function drawEntities(
   for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
   const shown = visibleArea(ctx);
 
-  for (const entity of entities) {
+  for (const entity of byLayer(entities)) {
     const sprite = entity.components.Sprite;
     const invisible = sprite?.visible === false;
     if (!sprite || (invisible && invisibleAlpha <= 0)) continue;
