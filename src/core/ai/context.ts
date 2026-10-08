@@ -16,6 +16,7 @@ import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
 import { levelMap, type LevelMap } from '../model/levelMap';
 import { LEVEL_CELL } from '../model/placement';
+import { levelDesignIdea, type LevelDesignIdea } from './levelIdeas';
 import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
 import { suggestedGrid } from '../model/pixelArt';
@@ -157,6 +158,12 @@ export interface AIPayload {
      * every direction, nothing falls, walls block; playerReach is then null (no jumping).
      */
     view: 'side' | 'topdown';
+    /**
+     * For building or rebuilding a level: the layout to use this time (chosen at random by the app, so levels
+     * differ), where the start and goal go, and the shapes of the game's other levels. Follow it unless the user
+     * asked for a particular layout.
+     */
+    design?: LevelDesignIdea;
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
     playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
   };
@@ -244,7 +251,7 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
   return { character: placed?.name ?? def!.name, jumpHeightPx: Math.floor(r.height), jumpHeightTiles: down(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
 }
 
-export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null): AIPayload {
+export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null, random?: () => number): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const connection = ctx.kind === 'connection' ? scene.relationships.find((r) => r.id === ctx.relationshipId) : undefined;
   const endIds = (ref: EntityRef) => (ref.kind === 'entity' ? [ref.id] : []);
@@ -326,6 +333,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
       map: levelMap(project, scene.id, registry),
       view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
+      ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
       playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {
         ...scene.camera,

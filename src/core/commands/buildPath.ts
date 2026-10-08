@@ -22,7 +22,8 @@ import type { Id, ObjectDefinition, Project, Scene } from '../types';
 export type PathStep =
   | { do: 'run'; cells: number }
   | { do: 'jump'; gap: number; rise: number }
-  | { do: 'climb'; rows: number }
+  | { do: 'climb'; rows: number; back?: boolean | null }
+  | { do: 'turn' }
   | { do: 'hazard'; object: string; cells: number }
   | { do: 'put'; object: string; name: string | null; ref: string | null };
 
@@ -114,7 +115,7 @@ export function buildPath(
   // Where the last floor tile went (objects are put there); the route goes right, so the first run starts at the cursor.
   let lastFloor: number | null = onFloor ? col : null;
   let started = false;
-  const dx = input.direction === 'left' ? -1 : 1;
+  let dx = input.direction === 'left' ? -1 : 1;
 
   const floorDef = def(input.floor);
   const place = (d: ObjectDefinition, c: number, r: number, ref: string | null = null, name: string | null = null) => {
@@ -133,6 +134,10 @@ export function buildPath(
   const lay = (c: number, r: number, step: number) => {
     if (solid.has(cellKey(c, r))) return; // already floor there
     free(c, r, 'the floor', step);
+    // Right on other floor is just a step up; with one empty row between, the lower floor is squeezed (no room to jump).
+    if (!solid.has(cellKey(c, r + 1)) && solid.has(cellKey(c, r + 2))) {
+      throw new m.ModelError(`build_path step ${step + 1}: floor at cell (${c},${r}) would be one row above the floor at row ${r + 2}, leaving no room to jump there; build at least 3 rows higher (a climb of 3+), or beside it`);
+    }
     place(floorDef, c, r);
     solid.add(cellKey(c, r));
     taken.set(cellKey(c, r), floorDef.name);
@@ -182,9 +187,15 @@ export function buildPath(
         onFloor = true;
         break;
       }
+      case 'turn': {
+        // The route goes back the other way from here (zig-zags, switchbacks, layers).
+        dx = -dx;
+        break;
+      }
       case 'climb': {
         if (!onFloor) throw new m.ModelError(`build_path step ${i + 1}: a ladder needs floor under it: put a run before it`);
         if (step.rows < 1 || step.rows > 30) throw new m.ModelError(`build_path step ${i + 1}: climb 1 to 30 rows`);
+        if (step.back && step.rows < 3) throw new m.ModelError(`build_path step ${i + 1}: a climb that turns back needs at least 3 rows, so the floor below keeps room to stand under the new one`);
         const ladderDef = def(input.ladder ?? 'Ladder');
         // The ladder stands on the floor in the next column; its top cell is level with the new platform's floor.
         const lc = col + dx;
@@ -195,6 +206,8 @@ export function buildPath(
           taken.set(cellKey(lc, r), ladderDef.name);
         }
         row -= step.rows;
+        // Turning back: the new platform runs back over the floor the route came along (a layer above it).
+        if (step.back) dx = -dx;
         // The platform the ladder leads to starts right beside its top.
         col = lc + dx;
         headroom(col, row, i);

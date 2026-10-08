@@ -106,3 +106,63 @@ describe('build_path: levels built as a route the player can follow', () => {
     expect(enemy.transform.position.y).toBe(17); // standing on the floor (top at 32; the enemy is 30 tall)
   });
 });
+
+describe('build_path: turning and building in layers', () => {
+  it('a tower: climbs that turn back stack each floor above the one below, and it is all reachable', () => {
+    const { project, sceneId } = emptyLevel();
+    const after = build(project, [
+      {
+        op: 'build_path',
+        sceneId,
+        start: null,
+        direction: 'right',
+        floor: 'Platform',
+        ladder: null,
+        steps: [
+          { do: 'run', cells: 7 },
+          { do: 'climb', rows: 3, back: true },
+          { do: 'run', cells: 6 },
+          { do: 'climb', rows: 3, back: true },
+          { do: 'run', cells: 6 },
+          { do: 'put', object: 'Goal', name: null, ref: null },
+        ],
+      },
+    ]);
+    expect(reachabilityProblems(after, sceneId, registry)).toEqual([]);
+    // Three floors, each right above the one below (same columns), 3 rows apart.
+    const floors = after.scenes[0].entities.filter((e) => e.name === 'Platform');
+    const rows = [...new Set(floors.map((e) => Math.round(e.transform.position.y)))].sort((a, b) => b - a);
+    expect(rows).toHaveLength(3);
+    expect(rows[0] - rows[1]).toBe(96);
+    expect(rows[1] - rows[2]).toBe(96);
+    const cols = (y: number) => floors.filter((e) => Math.round(e.transform.position.y) === y).map((e) => e.transform.position.x);
+    expect(Math.min(...cols(rows[1]))).toBeLessThan(Math.max(...cols(rows[0])));
+    // The top layer goes right again, above the bottom one.
+    const goal = after.scenes[0].entities.find((e) => e.name === 'Goal')!;
+    expect(goal.transform.position.x).toBeGreaterThan(Math.min(...cols(rows[2])));
+  });
+
+  it('turn reverses the route; floor squeezed one row above other floor is refused', () => {
+    const { project, sceneId } = emptyLevel();
+    // Ground under the start, then a 2-row climb ahead: its platform would be one row above the ground.
+    const withGround = produce(project, (d) => {
+      for (let c = -2; c <= 10; c++) m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === 'Platform')!, { x: c * 32 + 16, y: 48 }));
+    });
+    expect(() => build(withGround, [{ op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 2 }, { do: 'climb', rows: 2 }] }])).toThrow(/one row above the floor .* no room to jump/);
+    // A jump up onto a block standing on the floor is just a step: fine.
+    const step = build(withGround, [{ op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 3 }, { do: 'turn' }, { do: 'jump', gap: 1, rise: 1 }] }]);
+    expect(reachabilityProblems(step, sceneId, registry)).toEqual([]);
+    // Turning and dropping down beyond the start is fine.
+    const ok = build(project, [
+      { op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 3 }, { do: 'turn' }, { do: 'run', cells: 5 }, { do: 'jump', gap: 1, rise: -2 }, { do: 'run', cells: 2 }] },
+    ]);
+    expect(reachabilityProblems(ok, sceneId, registry)).toEqual([]);
+    const xs = ok.scenes[0].entities.filter((e) => e.name === 'Platform').map((e) => e.transform.position.x);
+    expect(Math.min(...xs)).toBeLessThan(48);
+  });
+
+  it('a climb back needs room for the floor below', () => {
+    const { project, sceneId } = emptyLevel();
+    expect(() => build(project, [{ op: 'build_path', sceneId, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 4 }, { do: 'climb', rows: 2, back: true }] }])).toThrow(/at least 3 rows/);
+  });
+});

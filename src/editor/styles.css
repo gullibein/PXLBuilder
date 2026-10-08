@@ -210,7 +210,8 @@
 .make-anim input { width: 90px; }
 
 /* Sprite editor */
-.sprite-editor { width: min(860px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; outline: none; }
+/* Anchored near the top (not centered), so the canvas never moves while frames and the preview come and go. */
+.sprite-editor { align-self: start; margin-top: 16px; width: min(860px, calc(100% - 24px)); max-height: calc(100% - 32px); overflow: auto; outline: none; }
 .se-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .se-side { display: grid; gap: 10px; width: 200px; }
 .se-tools { display: flex; flex-wrap: wrap; gap: 4px; }

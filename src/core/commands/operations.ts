@@ -149,12 +149,17 @@ export const operationSchema = z.union([
         z.discriminatedUnion('do', [
           z.object({ do: z.literal('run'), cells: z.number().int().describe('Floor this many cells long, going right') }),
           z.object({ do: z.literal('jump'), gap: z.number().int().describe('Empty cells to jump over (0 with a negative rise: a step down)'), rise: z.number().int().describe('Rows higher the landing is (negative: lower)') }),
-          z.object({ do: z.literal('climb'), rows: z.number().int().describe('A ladder this many rows high; the route continues on a platform at its top') }),
+          z.object({
+            do: z.literal('climb'),
+            rows: z.number().int().describe('A ladder this many rows high; the route continues on a platform at its top'),
+            back: z.boolean().nullish().describe('true: the platform at the top runs BACK over the floor below (a layer above it, the route turns around; needs rows >= 3); false/null: it continues ahead'),
+          }),
+          z.object({ do: z.literal('turn') }).describe('The route turns around and continues the other way from where it is (zig-zags, switchbacks; then e.g. jump up onto a ledge above the way you came)'),
           z.object({ do: z.literal('hazard'), object: z.string().describe('Hazard object (id, name or ref)'), cells: z.number().int().describe('Cells of hazards on the floor, to jump over') }),
           z.object({ do: z.literal('put'), object: z.string().describe('Object to stand on the floor here (key, coin, door, switch, enemy, goal…; id, name or ref)'), name: z.string().nullable(), ref: z.string().nullable().describe('Temporary name to use it in later relationships/rules; null if not needed') }),
         ]),
       )
-      .describe('The way through, in order, left to right'),
+      .describe('The way through, in order, starting in "direction" (turn and climb back reverse it)'),
   }),
   z.object({
     op: z.literal('erase_area'),

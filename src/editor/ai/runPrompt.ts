@@ -85,7 +85,7 @@ export function labelFor(request: string): string {
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn): Promise<PromptOutcome> {
   const state = useEditor.getState();
   const body = {
-    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }),
+    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random),
     request,
     // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
     history: chatHistory(contextKey(ctx)),

@@ -1022,6 +1022,7 @@ try {
   await ask('Make it a top-down game, like Zelda.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'making the game top-down is applied');
   await check(aiRequests.at(-1).context.level.view === 'side' && aiRequests.at(-1).context.level.playerReach !== null, 'the AI was told the level was seen from the side (with the jump limits)');
+  await check(!!aiRequests.at(-1).context.level.design?.layout?.how && Array.isArray(aiRequests.at(-1).context.level.design.otherLevels), 'a level request comes with a randomly chosen layout to build (for variety)');
   await page.keyboard.press('Escape');
   await page.getByTestId('play').click();
   await check(async () => (await play.isVisible()) && !(await page.getByTestId('play-canvas').locator('..').getByText('Space jumps').count()), 'Play starts, and the key hint no longer says Space jumps');

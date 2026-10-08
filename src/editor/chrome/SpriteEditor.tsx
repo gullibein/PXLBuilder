@@ -77,7 +77,8 @@ function Preview({ draft }: { draft: SpriteDraft }) {
         c.width = d.width * scale;
         c.height = d.height * scale;
       }
-      const i = Math.floor(((now - start) / 1000) * d.fps) % d.frames.length;
+      // (The first frame's timestamp can be a moment before `start`.)
+      const i = Math.floor((Math.max(0, now - start) / 1000) * d.fps) % d.frames.length;
       const g = c.getContext('2d')!;
       g.clearRect(0, 0, c.width, c.height);
       paint(g, d, d.frames[i], scale);
@@ -86,7 +87,9 @@ function Preview({ draft }: { draft: SpriteDraft }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
-  return <canvas ref={ref} className="se-preview" data-testid="se-preview" aria-label="Preview" />;
+  // Its size from the start (a canvas is 300×150 until told otherwise).
+  const scale = Math.max(1, Math.floor(72 / Math.max(draft.width, draft.height)));
+  return <canvas ref={ref} width={draft.width * scale} height={draft.height * scale} className="se-preview" data-testid="se-preview" aria-label="Preview" />;
 }
 
 /**
@@ -116,7 +119,13 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   const [error, setError] = useState<string | null>(null);
   const [past, setPast] = useState<SpriteDraft[]>([]);
   const [future, setFuture] = useState<SpriteDraft[]>([]);
-  const [frame, setFrame] = useState(0);
+  const [frame, setFrameState] = useState(0);
+  // The frame being drawn, also between renders (a click right after "Duplicate frame" draws on the new one).
+  const frameRef = useRef(0);
+  const setFrame = (i: number) => {
+    frameRef.current = i;
+    setFrameState(i);
+  };
   const [tool, setTool] = useState<Tool>('pencil');
   const [color, setColor] = useState('a');
   const [onion, setOnion] = useState(true);
@@ -221,6 +230,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   };
   const down = (e: React.PointerEvent) => {
     const draft = latest.current;
+    const frame = frameRef.current;
     if (!draft) return;
     e.preventDefault();
     const { x, y } = pixelAt(e);
@@ -242,6 +252,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   const move = (e: React.PointerEvent) => {
     const s = stroke.current;
     const cur = latest.current;
+    const frame = frameRef.current;
     if (!s || !cur) return;
     const { x, y } = pixelAt(e);
     if (x === s.x && y === s.y) return;
@@ -389,19 +400,19 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 ))}
               </div>
               <div className="se-frame-actions">
-                <button className="chip-btn" data-testid="se-duplicate-frame" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change(addFrame(draft, frame, true)), setFrame(frame + 1))} title="A copy of this frame after it, to change a little">
+                <button className="chip-btn" data-testid="se-duplicate-frame" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, true)), setFrame(frameRef.current + 1))} title="A copy of this frame after it, to change a little">
                   Duplicate frame
                 </button>
-                <button className="chip-btn" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change(addFrame(draft, frame, false)), setFrame(frame + 1))}>
+                <button className="chip-btn" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, false)), setFrame(frameRef.current + 1))}>
                   Empty frame
                 </button>
-                <button className="chip-btn" disabled={frame === 0} onClick={() => (change(moveFrame(draft, frame, -1)), setFrame(frame - 1))} aria-label="Move frame earlier">
+                <button className="chip-btn" disabled={frame === 0} onClick={() => (change((d) => moveFrame(d, frameRef.current, -1)), setFrame(Math.max(0, frameRef.current - 1)))} aria-label="Move frame earlier">
                   ◀
                 </button>
-                <button className="chip-btn" disabled={frame === draft.frames.length - 1} onClick={() => (change(moveFrame(draft, frame, 1)), setFrame(frame + 1))} aria-label="Move frame later">
+                <button className="chip-btn" disabled={frame === draft.frames.length - 1} onClick={() => (change((d) => moveFrame(d, frameRef.current, 1)), setFrame(Math.min(latest.current!.frames.length - 1, frameRef.current + 1)))} aria-label="Move frame later">
                   ▶
                 </button>
-                <button className="chip-btn" data-testid="se-delete-frame" disabled={draft.frames.length <= 1} onClick={() => (change(removeFrame(draft, frame)), setFrame(Math.max(0, frame - 1)))}>
+                <button className="chip-btn" data-testid="se-delete-frame" disabled={draft.frames.length <= 1} onClick={() => (change((d) => removeFrame(d, frameRef.current)), setFrame(Math.max(0, frameRef.current - 1)))}>
                   Delete frame
                 </button>
                 {draft.frames.length > 1 && (
