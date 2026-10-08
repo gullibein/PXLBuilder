@@ -3,7 +3,8 @@ import { pixelArtToSvg, type PixelArt } from './pixelArt';
 import { defaultCamera } from './camera';
 import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
-import type { AssetRecord, ComponentMap, EntityInstance, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
+import type { AssetRecord, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
+import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
 
 export function createTransform(position: Vec2 = { x: 0, y: 0 }): Transform {
   return { position: { ...position }, rotation: 0, scale: { x: 1, y: 1 } };
@@ -415,14 +416,30 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
 }
 
 /** A new, empty project with starter definitions and one empty scene. */
-export function createProject(registry: ComponentRegistry, name = 'Untitled Game'): Project {
+export function createProject(registry: ComponentRegistry, name = 'Untitled Game', gameType: GameType = 'platformer'): Project {
   const scene = createScene('Level 1');
+  if (gameType === 'topdown') {
+    // Seen from above: nothing falls, and the space between rooms is dark.
+    scene.world.gravity = { x: 0, y: 0 };
+    scene.world.backgroundColor = '#16131f';
+    const assets = createTopDownStarterAssets();
+    return {
+      formatVersion: FORMAT_VERSION,
+      id: generateId('prj'),
+      name,
+      settings: { gridSize: 16, gameType },
+      startSceneId: scene.id,
+      scenes: [scene],
+      definitions: createTopDownStarterDefinitions(registry, assets),
+      assets: Object.values(assets),
+    };
+  }
   const assets = createStarterAssets();
   return {
     formatVersion: FORMAT_VERSION,
     id: generateId('prj'),
     name,
-    settings: { gridSize: 16 },
+    settings: { gridSize: 16, gameType },
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),

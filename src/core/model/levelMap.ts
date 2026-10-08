@@ -59,7 +59,12 @@ function markOf(r: ResolvedEntity, name: string): Mark {
 export function levelMap(project: Project, sceneId: Id, registry: ComponentRegistry): LevelMap | null {
   const scene = project.scenes.find((s) => s.id === sceneId);
   if (!scene || !scene.entities.length) return null;
-  const things = scene.entities.map((e) => {
+  // Looks under everything (floor tiles, background decoration on a negative layer, nothing to touch) aren't
+  // things in the way: their cells show as free (and, seen from above, as floor the player walks on).
+  const underfoot = (r: ResolvedEntity) => !r.components.Collider && typeof r.components.Sprite?.layer === 'number' && r.components.Sprite.layer < 0 && Object.keys(r.components).every((k) => k === 'Sprite' || k === 'SpriteStates');
+  const placed = scene.entities.filter((e) => !underfoot(resolveEntity(project, e, registry)));
+  if (!placed.length) return null;
+  const things = placed.map((e) => {
     const r = resolveEntity(project, e, registry);
     const s = getEntitySize(r);
     const w = s.x * Math.abs(e.transform.scale.x);

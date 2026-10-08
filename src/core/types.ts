@@ -209,7 +209,15 @@ export interface AssetRecord {
 export interface ProjectSettings {
   /** Grid size used by the editor for snapping. */
   gridSize: number;
+  /**
+   * What kind of game it was started as: its starter objects (and what
+   * "reset objects" brings back). Missing in games from before there was a
+   * choice: those are platformers. A game can still mix anything.
+   */
+  gameType?: GameType;
 }
+
+export type GameType = 'platformer' | 'topdown';
 
 export interface Project {
   formatVersion: number;

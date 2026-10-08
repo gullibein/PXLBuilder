@@ -5,6 +5,7 @@
  * command/transaction system and AI operations later.
  */
 import type { ComponentRegistry } from '../components/registry';
+import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDownStarterAssets } from './topDownStarters';
 import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
@@ -374,15 +375,29 @@ export function starterKeyOf(def: ObjectDefinition, starters: ObjectDefinition[]
 
 /** Fresh starter definitions whose image assets reuse identical ones already in the project. */
 function freshStarters(project: Project, registry: ComponentRegistry): { defs: ObjectDefinition[]; newAssets: AssetRecord[] } {
-  const fresh = createStarterAssets();
   const newAssets: AssetRecord[] = [];
   const reuse = (a: AssetRecord) => {
     const existing = project.assets.find((x) => x.data === a.data);
     if (!existing) newAssets.push(a);
     return existing ?? a;
   };
+  // A top-down game's starters are the top-down ones.
+  if (project.settings.gameType === 'topdown') {
+    const td = createTopDownStarterAssets();
+    const assets = Object.fromEntries(Object.entries(td).map(([k, a]) => [k, reuse(a)])) as unknown as TopDownStarterAssets;
+    // Pictures several objects share (the hero's looks) must be added once.
+    const unique = newAssets.filter((a, i) => newAssets.indexOf(a) === i);
+    return { defs: createTopDownStarterDefinitions(registry, assets), newAssets: unique };
+  }
+  const fresh = createStarterAssets();
   const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever), player: reuse(fresh.player), enemy: reuse(fresh.enemy), hazard: reuse(fresh.hazard), teleporter: reuse(fresh.teleporter), goal: reuse(fresh.goal) };
   return { defs: createStarterDefinitions(registry, assets), newAssets };
+}
+
+/** Adds the new pictures a starter uses: its sprite and its looks for situations (walking up, running…). */
+function addUsedAssets(project: Project, starter: ObjectDefinition, newAssets: AssetRecord[]): void {
+  const used = new Set<unknown>([starter.components.Sprite?.assetId, ...Object.values(starter.components.SpriteStates ?? {})]);
+  for (const a of newAssets) if (used.has(a.id) && !project.assets.some((x) => x.id === a.id)) project.assets.push(cloneValue(a));
 }
 
 function applyStarter(project: Project, def: ObjectDefinition, starter: ObjectDefinition, newAssets: AssetRecord[]): void {
@@ -390,8 +405,7 @@ function applyStarter(project: Project, def: ObjectDefinition, starter: ObjectDe
   def.tags = [...starter.tags];
   def.description = starter.description;
   def.metadata = cloneValue(starter.metadata);
-  const assetId = def.components.Sprite?.assetId;
-  for (const a of newAssets) if (a.id === assetId && !project.assets.some((x) => x.id === a.id)) project.assets.push(cloneValue(a));
+  addUsedAssets(project, starter, newAssets);
   // Placed copies keep their place and name but lose their own tweaks.
   forEachInstance(project, def.id, (e) => {
     e.components = {};
@@ -421,8 +435,7 @@ export function resetAllStarterDefinitions(project: Project, registry: Component
       def.name = starter.name;
       reset++;
     } else {
-      const assetId = starter.components.Sprite?.assetId;
-      for (const a of newAssets) if (a.id === assetId && !project.assets.some((x) => x.id === a.id)) project.assets.push(cloneValue(a));
+      addUsedAssets(project, starter, newAssets);
       project.definitions.push(cloneValue(starter));
       added++;
     }
