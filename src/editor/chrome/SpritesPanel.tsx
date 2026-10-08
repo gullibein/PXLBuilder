@@ -4,7 +4,7 @@ import { createImageAsset } from '../../core/model/factory';
 import * as m from '../../core/model/mutations';
 import { cellCount, cellRect, detectGrid, validateGrid } from '../../core/model/spriteGrid';
 import type { AssetRecord, ObjectDefinition, SpriteGrid } from '../../core/types';
-import { decodedImage } from '../images';
+import { whenImageReady } from '../images';
 import { baseName, readImageFile } from '../imageFiles';
 import { SpriteImage } from '../SpriteImage';
 import { useEditor } from '../store';
@@ -188,13 +188,14 @@ function SheetEditor({ sheet, def, isActive }: { sheet: AssetRecord; def: Object
     if (!validateGrid(next, sheet.width, sheet.height).length) edit(`Adjust sprite grid of ${sheet.name}`, (p) => m.setAssetGrid(p, sheet.id, next), { coalesceKey: `grid:${sheet.id}` });
   };
   const detect = () => {
-    const img = decodedImage(sheet.id, sheet.data);
-    const c = document.createElement('canvas');
-    c.width = sheet.width;
-    c.height = sheet.height;
-    const g = c.getContext('2d', { willReadFrequently: true })!;
-    g.drawImage(img, 0, 0);
-    commit(detectGrid(g.getImageData(0, 0, sheet.width, sheet.height)));
+    whenImageReady(sheet.id, sheet.data, (source) => {
+      const c = document.createElement('canvas');
+      c.width = sheet.width;
+      c.height = sheet.height;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(source, 0, 0);
+      commit(detectGrid(g.getImageData(0, 0, sheet.width, sheet.height)));
+    });
   };
 
   // Display scale: fit ~500px wide, whole-number zoom for small pixel art.
