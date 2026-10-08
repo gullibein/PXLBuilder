@@ -12,14 +12,14 @@ import { relationshipLabel } from '../../core/logic/describe';
 import { connectSwitch } from '../actions';
 import { applyCamera, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
-import { setViewportSize } from '../actions';
+import { ensureLevelInView, setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
 import { resolveSceneEntities } from '../selectors';
 import { getActiveScene, getSelectionContext, useEditor } from '../store';
 import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
 import { jobMarks, useJobs } from '../ai/jobs';
-import { cameraFrame, drawCameraFrame } from '../overlays/cameraFrame';
+import { cameraFrame, drawCameraFrame, outlineAt, type CameraOutline } from '../overlays/cameraFrame';
 import { drawInfoPanels, drawJumpArcs } from '../overlays/drawOverlays';
 import { createWheelInterpreter } from './wheel';
 
@@ -65,6 +65,8 @@ export function Viewport() {
   const hoverRef = useRef<Id | null>(null);
   /** The connection (arrow) under the pointer, if any. */
   const hoverLinkRef = useRef<Id | null>(null);
+  /** The camera outline under the mouse (it glows a little). */
+  const hoverOutlineRef = useRef<CameraOutline | null>(null);
   /** Pointer position in world space (for the brush ghost). */
   const pointerWorldRef = useRef<Vec2 | null>(null);
   const spaceDownRef = useRef(false);
@@ -84,6 +86,8 @@ export function Viewport() {
     // Measure right away: the observer reports a frame later, and a click in between
     // (e.g. just after stopping Play) would otherwise be mapped with a 1x1 view and miss.
     measure();
+    // Opening the editor (or coming back from Play) never shows an empty spot far from the level.
+    ensureLevelInView();
     const ro = new ResizeObserver(measure);
     ro.observe(container);
     return () => ro.disconnect();
@@ -135,12 +139,14 @@ export function Viewport() {
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
-      if (state.layout.showCameraFrame) {
+      if (state.layout.showCameraOutlines) {
         const f = cameraFrame(scene, entities, view);
-        drawCameraFrame(ctx, f, state.camera.zoom);
+        drawCameraFrame(ctx, f, state.camera.zoom, { hover: hoverOutlineRef.current, selected: state.cameraOutline });
         frameAttr = [f.frame.minX, f.frame.minY, f.frame.maxX, f.frame.maxY].map((v) => v.toFixed(0)).join(',');
       }
       if ((canvas.dataset.cameraFrame ?? '') !== frameAttr) canvas.dataset.cameraFrame = frameAttr;
+      const outlineAttr = `${hoverOutlineRef.current ?? ''}|${state.cameraOutline ?? ''}`;
+      if (canvas.dataset.cameraOutline !== outlineAttr) canvas.dataset.cameraOutline = outlineAttr;
       if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
@@ -361,6 +367,12 @@ export function Viewport() {
         state.selectConnection(line);
         return;
       }
+      // A camera outline: select it (it glows) and ask about the camera in the level's card.
+      const outline = hit || additive || !state.layout.showCameraOutlines ? null : outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom);
+      if (outline) {
+        state.selectCameraOutline(outline, world);
+        return;
+      }
       if (hit) {
         let selection = state.selectedEntityIds;
         if (additive) selection = selection.includes(hit.id) ? selection.filter((id) => id !== hit.id) : [...selection, hit.id];
@@ -396,7 +408,8 @@ export function Viewport() {
       const line = hit || onConnector ? null : connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       hoverLinkRef.current = line;
       const onLine = !!line;
-      canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine ? 'pointer' : 'default';
+      hoverOutlineRef.current = hit || onConnector || onLine || !state.layout.showCameraOutlines ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current), world, state.camera.zoom);
+      canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine || hoverOutlineRef.current ? 'pointer' : 'default';
       return;
     }
     if (drag.kind === 'connect') {

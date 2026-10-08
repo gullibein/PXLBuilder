@@ -92,6 +92,10 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('far away')) {
+    const stone = body.context.library.find((d) => d.name === 'Stone').id;
+    return { kind: 'apply', message: 'Built a stone far to the right.', changes: ['Stone at x 3000'], operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: stone, x: 3008, y: 16, name: null, ref: null }] };
+  }
   if (req.includes('quacks like a duck')) {
     const player = body.context.library.find((d) => d.name === 'Player').id;
     const quack = { volume: 0.8, layers: [{ wave: 'sawtooth', start: 0, length: 0.16, pitch: [[0, 330], [0.16, 240]], volume: 0.6, attack: 0.005, release: 0.05, vibrato: { rate: 30, depth: 0.06 }, filter: { type: 'bandpass', freq: 1100, q: 4 } }] };
@@ -380,7 +384,9 @@ try {
     await where.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
   };
   const clickWorld = async (wx, wy, opts = {}) => {
-    const p = toScreen(wx, wy);
+    // Where that level point is with the view as it is now (the editor frames a level when it opens it).
+    const [cx, cy, zoom] = ((await page.getByTestId('viewport-canvas').getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+    const p = { x: box.x + center.x + (wx - cx) * zoom, y: box.y + center.y + (wy - cy) * zoom };
     // page.mouse.click ignores `modifiers`, so hold them on the keyboard.
     for (const k of opts.modifiers ?? []) await page.keyboard.down(k);
     await page.mouse.click(p.x, p.y);
@@ -968,12 +974,37 @@ try {
   step = 'camera';
   await page.keyboard.press('Escape');
   const frameOf = async () => ((await canvas.getAttribute('data-camera-frame')) ?? '').split(',').filter(Boolean).map(Number);
-  await check(async () => (await frameOf()).length === 0, 'no camera frame on the level by default');
-  await page.getByTestId('main-menu').click();
-  await page.getByTestId('menu-camera-frame').click();
-  await page.keyboard.press('Escape');
   const f1 = await frameOf();
-  await check(async () => f1.length === 4 && f1[2] - f1[0] > 200, 'the menu shows the camera frame: what Play shows at the start');
+  await check(async () => f1.length === 4 && f1[2] - f1[0] > 200, 'the camera outline (what Play shows at the start) is on the level by default');
+  {
+    // Hover its left edge: it glows a little; click it: selected (glows), and the level card asks about the camera.
+    const box = await canvas.boundingBox();
+    // Zoom out so the whole outline is on screen.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.down('Control');
+      await page.mouse.wheel(0, 12);
+      await page.keyboard.up('Control');
+    }
+    await page.waitForTimeout(200);
+    const [cx, cy, zoom] = await cam();
+    const edge = { x: box.x + box.width / 2 + (f1[0] - cx) * zoom, y: box.y + box.height / 2 + ((f1[1] + f1[3]) / 2 - cy) * zoom };
+    await page.mouse.move(edge.x, edge.y);
+    await check(async () => (await canvas.getAttribute('data-camera-outline')) === 'start|', 'hovering the camera outline highlights it');
+    await page.mouse.click(edge.x, edge.y);
+    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.getAttribute('data-context')) === 'level' && (await prompts.innerText()).includes('Camera at start'), 'clicking it selects it and opens the card to ask about the camera');
+    await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
+    await page.keyboard.press('Escape');
+    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'Esc lets go of it');
+    // Zoom back in where it zoomed out (the later steps click at fixed places).
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.down('Control');
+      await page.mouse.wheel(0, -12);
+      await page.keyboard.up('Control');
+    }
+    await page.waitForTimeout(200);
+  }
   await page.getByTestId('global-prompt-toggle').click();
   const camPrompt = page.getByTestId('global-prompt');
   {
@@ -1024,7 +1055,10 @@ try {
   await page.getByTestId('main-menu').click();
   await page.getByTestId('menu-camera-frame').click();
   await page.keyboard.press('Escape');
-  await check(async () => (await frameOf()).length === 0, 'the camera frame can be hidden again');
+  await check(async () => (await frameOf()).length === 0, 'the camera outlines can be hidden (⋯ menu)');
+  await page.getByTestId('main-menu').click();
+  await page.getByTestId('menu-camera-frame').click();
+  await page.keyboard.press('Escape');
 
   step = 'wireframe view';
   await page.keyboard.press('Escape');
@@ -1058,6 +1092,25 @@ try {
   await page.reload();
   await page.getByTestId('dock-library').click();
   await check(async () => (await page.locator('[data-testid="definition-Flying Robot"]').count()) === 1, 'AI-created objects survive a reload (autosave)');
+
+  step = 'levels are never off view';
+  {
+    const camNow = async () => ((await canvas.getAttribute('data-camera')) ?? '').split(',').map(Number);
+    await page.getByTestId('scene-selector').click();
+    await page.getByTestId('new-scene').click();
+    await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+    await ask('Build something far away.');
+    await check(async () => Math.abs((await camNow())[0] - 3008) < 40, 'what the AI built far off screen is brought into view');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('scene-selector').click();
+    await page.getByRole('menuitem', { name: 'Level 1' }).click();
+    await check(async () => Math.abs((await camNow())[0] - 3008) > 500, 'switching back to Level 1 shows Level 1');
+    await page.getByTestId('scene-selector').click();
+    await page.getByRole('menuitem', { name: 'Level 2' }).click();
+    await check(async () => Math.abs((await camNow())[0] - 3008) < 40, 'and coming back to Level 2 shows it as it was left, not an empty spot');
+    await page.getByTestId('scene-selector').click();
+    await page.getByRole('menuitem', { name: 'Level 1' }).click();
+  }
 
   step = 'no AI connection';
   await page.unroute('**/api/ai');

@@ -55,6 +55,8 @@ export interface EditorState {
   selectedDefinitionId: Id | null;
   /** When set, the level itself is the active context, anchored at this world point (or the view center). */
   worldContext: { point: Vec2 | null } | null;
+  /** A camera outline clicked on the level (it glows; the level card asks about the camera). */
+  cameraOutline: 'start' | 'limits' | null;
   /** The global (not object-bound) prompt. */
   globalPrompt: { open: boolean; scope: 'level' | 'project' | 'editor' };
   camera: Camera;
@@ -101,6 +103,8 @@ export interface EditorState {
   selectConnection(id: Id | null): void;
   selectDefinition(id: Id | null): void;
   setWorldContext(point: Vec2 | null | false): void;
+  /** Selects a camera outline (opens the level card there). */
+  selectCameraOutline(part: 'start' | 'limits', point: Vec2): void;
   setGlobalPrompt(open: boolean, scope?: 'level' | 'project' | 'editor'): void;
   setCamera(camera: Partial<Camera>): void;
   setShowGrid(show: boolean): void;
@@ -155,6 +159,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedConnectionId: null,
     selectedDefinitionId: null,
     worldContext: null,
+    cameraOutline: null,
     globalPrompt: { open: false, scope: 'level' },
     camera: { x: 0, y: 0, zoom: 1 },
     layout: loadLayout(),
@@ -258,11 +263,16 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setActiveScene(sceneId) {
       if (!get().project.scenes.some((s) => s.id === sceneId)) return;
-      set({ activeSceneId: sceneId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+      set({ activeSceneId: sceneId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, cameraOutline: null, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+    },
+
+    selectCameraOutline(part, point) {
+      get().setWorldContext(point);
+      set({ cameraOutline: part });
     },
 
     selectConnection(id) {
-      set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
+      set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, cameraOutline: null, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
     },
 
     selectEntities(ids) {
@@ -271,6 +281,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         selectedEntityIds: unique,
         selectedConnectionId: unique.length ? null : get().selectedConnectionId,
         worldContext: unique.length ? null : get().worldContext,
+        cameraOutline: unique.length ? null : get().cameraOutline,
         selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
         backgroundOpen: unique.length ? false : get().backgroundOpen,
         spritesFor: unique.length ? null : get().spritesFor,
@@ -283,8 +294,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setWorldContext(point) {
-      if (point === false) set({ worldContext: null });
-      else set({ worldContext: { point }, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
+      if (point === false) set({ worldContext: null, cameraOutline: null });
+      else set({ worldContext: { point }, cameraOutline: null, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
     setGlobalPrompt(open, scope) {

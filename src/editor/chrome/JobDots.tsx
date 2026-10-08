@@ -5,13 +5,13 @@ import { useJobs } from '../ai/jobs';
  * prompt runs, or a badge when one finished and hasn't been looked at (like
  * the dots and badges above objects on the level).
  */
-export function JobDots({ keys, open }: { keys: string[]; open: boolean }) {
+export function JobDots({ keys, open, below = false }: { keys: string[]; open: boolean; below?: boolean }) {
   const jobs = useJobs((s) => s.jobs);
   if (open) return null;
   const mine = keys.map((k) => jobs[k]).filter((j) => !!j);
   if (mine.some((j) => j.phase === 'working')) {
     return (
-      <span className="job-dots" data-testid="job-dots" aria-label="The AI is working on it" title="The AI is working on it">
+      <span className={`job-dots${below ? ' below' : ''}`} data-testid="job-dots" aria-label="The AI is working on it" title="The AI is working on it">
         <i />
         <i />
         <i />

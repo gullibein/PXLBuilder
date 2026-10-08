@@ -54,7 +54,7 @@ export function TopBar() {
         >
           ✦
           {/* The whole-level, whole-game and editor prompts (the level's own card shares the level's). */}
-          <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} />
+          <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} below />
         </button>
         <MainMenu />
       </div>
@@ -144,7 +144,7 @@ function MainMenu() {
   const { open, setOpen, ref } = usePopover();
   const showGrid = useEditor((s) => s.layout.showGrid);
   const snap = useEditor((s) => s.layout.snapToGrid);
-  const frameOn = useEditor((s) => s.layout.showCameraFrame);
+  const frameOn = useEditor((s) => s.layout.showCameraOutlines);
   const wireOn = useEditor((s) => s.layout.wireframe);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const overlayCount = useEditor((s) => s.layout.overlays.length);
@@ -156,7 +156,7 @@ function MainMenu() {
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
     { label: 'Wireframe view', hint: 'W', checked: wireOn, run: () => s.setLayout({ wireframe: !wireOn }), testId: 'menu-wireframe' },
-    { label: 'Camera frame', checked: frameOn, run: () => s.setLayout({ showCameraFrame: !frameOn }), testId: 'menu-camera-frame' },
+    { label: 'Camera outlines', checked: frameOn, run: () => s.setLayout({ showCameraOutlines: !frameOn }), testId: 'menu-camera-frame' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },
     { label: 'Editor style…', run: () => s.setStylePickerOpen(true), testId: 'menu-style' },
     { label: 'Change the editor…', run: () => s.setGlobalPrompt(true, 'editor'), testId: 'menu-editor-prompt' },

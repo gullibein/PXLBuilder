@@ -20,6 +20,7 @@ export function ContextPrompt() {
   const selectedEntityIds = useEditor((s) => s.selectedEntityIds);
   const worldContext = useEditor((s) => s.worldContext);
   const selectedConnectionId = useEditor((s) => s.selectedConnectionId);
+  const cameraOutline = useEditor((s) => s.cameraOutline);
   const ctx = useMemo(
     () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId }),
     [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId],
@@ -87,7 +88,7 @@ export function ContextPrompt() {
           <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
           <path d="M1.8 8h12.4M8 1.8c-3.2 3.4-3.2 9 0 12.4M8 1.8c3.2 3.4 3.2 9 0 12.4" fill="none" stroke="currentColor" strokeWidth="1.1" />
         </svg>
-        World
+        {cameraOutline === 'start' ? 'Camera at start' : cameraOutline === 'limits' ? 'Camera limits' : 'World'}
       </>
     ) : ctx.kind === 'connection' ? (
       <ConnectionHeader sceneId={ctx.sceneId} relationshipId={ctx.relationshipId} />
@@ -116,6 +117,13 @@ export function ContextPrompt() {
           key={key}
           ctx={ctx}
           header={header}
+          placeholder={
+            cameraOutline === 'start'
+              ? 'Ask about the camera: "zoom out a bit", "start further left", "follow the player more loosely"…'
+              : cameraOutline === 'limits'
+                ? 'Where may the camera go? "let it show a bit below the level", "no limits"…'
+                : undefined
+          }
           onDetails={() => setInspectorOpen(true)}
           onEscape={close}
           onClose={close}

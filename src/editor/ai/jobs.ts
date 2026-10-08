@@ -12,6 +12,8 @@ import type { Id } from '../../core/types';
 import { runPrompt, type PromptOutcome } from './runPrompt';
 import { logExchange, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
+import { revealCreated } from '../actions';
+import { useEditor } from '../store';
 
 export interface PromptJob {
   key: string;
@@ -58,6 +60,8 @@ export function startJob(ctx: AIContext, request: string): void {
     controllers.delete(key);
     if (outcome.status === 'applied') trace.add('note', `Applied: ${outcome.changes.length} change line(s)${outcome.note ? `; ${outcome.note}` : ''}`);
     const logId = logExchange(ctx, key, request, outcome, trace.steps);
+    // What it built is shown (also when its card was closed meanwhile): a level is framed, something off screen too.
+    if (outcome.status === 'applied' && ctx.sceneId === useEditor.getState().activeSceneId) revealCreated(outcome.result.createdEntityIds);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };

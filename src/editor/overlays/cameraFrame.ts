@@ -32,8 +32,27 @@ export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: View
   return { frame: { minX: c.x - hw, minY: c.y - hh, maxX: c.x + hw, maxY: c.y + hh }, limits: cameraLimits(scene.camera, level), follows: target?.name ?? null };
 }
 
-/** Draws it in level coordinates (the editor camera is already applied). */
-export function drawCameraFrame(ctx: CanvasRenderingContext2D, f: CameraFrame, zoom: number): void {
+export type CameraOutline = 'start' | 'limits';
+
+/** The outline whose edge is at this point (within a few screen pixels), if any: the start frame first. */
+export function outlineAt(f: CameraFrame, p: { x: number; y: number }, zoom: number): CameraOutline | null {
+  const near = 6 / zoom;
+  const onEdge = (b: CameraBounds) => {
+    const inside = p.x > b.minX - near && p.x < b.maxX + near && p.y > b.minY - near && p.y < b.maxY + near;
+    const deep = p.x > b.minX + near && p.x < b.maxX - near && p.y > b.minY + near && p.y < b.maxY - near;
+    return inside && !deep;
+  };
+  if (onEdge(f.frame)) return 'start';
+  if (f.limits && onEdge(f.limits)) return 'limits';
+  return null;
+}
+
+/**
+ * Draws it in level coordinates (the editor camera is already applied): the
+ * start frame in white, the limits in red. The one under the mouse glows a
+ * little, the selected one fully.
+ */
+export function drawCameraFrame(ctx: CanvasRenderingContext2D, f: CameraFrame, zoom: number, highlight: { hover: CameraOutline | null; selected: CameraOutline | null } = { hover: null, selected: null }): void {
   const px = 1 / zoom;
   ctx.save();
   const label = (text: string, x: number, y: number, color: string) => {
@@ -42,19 +61,27 @@ export function drawCameraFrame(ctx: CanvasRenderingContext2D, f: CameraFrame, z
     ctx.textBaseline = 'bottom';
     ctx.fillText(text, x + 2 * px, y - 3 * px);
   };
+  const outline = (b: CameraBounds, part: CameraOutline, color: string, glow: string, width: number, dash: number[]) => {
+    const level = highlight.selected === part ? 2 : highlight.hover === part ? 1 : 0;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (width + level) * px;
+    ctx.setLineDash(dash.map((d) => d * px));
+    if (level) {
+      // Glow: a soft blur around the line (in screen pixels, whatever the zoom).
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = level === 2 ? 16 : 7;
+    }
+    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+    ctx.restore();
+  };
   if (f.limits) {
     const b = f.limits;
-    ctx.strokeStyle = 'rgba(255, 170, 70, 0.7)';
-    ctx.lineWidth = 1.5 * px;
-    ctx.setLineDash([2 * px, 5 * px]);
-    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
-    label('Camera limits', b.minX, b.maxY + 16 * px, 'rgba(255, 190, 110, 0.95)');
+    outline(b, 'limits', 'rgba(255, 82, 82, 0.85)', 'rgba(255, 60, 60, 0.95)', 1.5, [6, 5]);
+    label('Camera limits', b.minX, b.maxY + 16 * px, 'rgba(255, 120, 120, 0.95)');
   }
   const r = f.frame;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-  ctx.lineWidth = 2 * px;
-  ctx.setLineDash([10 * px, 6 * px]);
-  ctx.strokeRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
+  outline(r, 'start', 'rgba(255, 255, 255, 0.75)', 'rgba(255, 255, 255, 0.95)', 2, [10, 6]);
   label(f.follows ? `Camera at start (follows ${f.follows})` : 'Camera (stays still)', r.minX, r.minY, 'rgba(255, 255, 255, 0.9)');
   ctx.restore();
 }

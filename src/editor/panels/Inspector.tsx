@@ -438,7 +438,7 @@ function SceneInspector({ scene }: { scene: Scene }) {
 /** The level's camera settings, and the camera frame outline on the level. */
 function CameraSection({ scene }: { scene: Scene }) {
   const edit = useEditor((s) => s.edit);
-  const frameOn = useEditor((s) => s.layout.showCameraFrame);
+  const frameOn = useEditor((s) => s.layout.showCameraOutlines);
   const setLayout = useEditor((s) => s.setLayout);
   const follows = useEditor((s) => s.project.scenes.find((x) => x.id === scene.id)?.entities.find((e) => resolveEntity(s.project, e, componentRegistry).components.CameraTarget)?.name ?? null);
   const c = scene.camera;
@@ -499,7 +499,7 @@ function CameraSection({ scene }: { scene: Scene }) {
         </Row>
       )}
       <Row label="show frame" hint="Outline on the level: what Play shows when the level starts, and the limits.">
-        <input type="checkbox" checked={frameOn} data-testid="camera-show-frame" onChange={(e) => setLayout({ showCameraFrame: e.target.checked })} />
+        <input type="checkbox" checked={frameOn} data-testid="camera-show-frame" onChange={(e) => setLayout({ showCameraOutlines: e.target.checked })} />
       </Row>
     </Section>
   );

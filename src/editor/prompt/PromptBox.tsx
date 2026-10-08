@@ -1,11 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
-import { frameEntities } from '../actions';
 import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } from '../ai/jobs';
 import { chatEntries, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
-import { resolveSceneEntities } from '../selectors';
 import { useEditor } from '../store';
 import { playRecipe } from '../audio/synth';
 
@@ -37,13 +35,7 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     if (state.phase === 'done' && state.outcome.status === 'applied' && told.current !== state.outcome) {
       told.current = state.outcome;
       onApplied?.(state.outcome);
-      // A big change (a generated level) is framed so it can be seen whole.
-      const created = state.outcome.result.createdEntityIds;
-      if (created.length >= 10) {
-        const { project, activeSceneId } = useEditor.getState();
-        const ids = new Set(created);
-        frameEntities(resolveSceneEntities(project, activeSceneId).filter((e) => ids.has(e.id)));
-      }
+      // (What it built is brought into view by the job itself: ai/jobs.ts.)
     }
   }, [state.phase === 'done' ? state.outcome : null]);
 

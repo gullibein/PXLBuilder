@@ -585,3 +585,4 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .sound-list { display: grid; gap: 6px; align-content: start; }
 .sound-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .sound-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-dots.below { top: auto; bottom: -16px; }

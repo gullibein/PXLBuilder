@@ -45,6 +45,51 @@ export function setViewportSize(width: number, height: number): void {
   viewSize = { width, height };
 }
 
+/** Whether any of these entities is at least partly on screen (with the camera given, or the current one). */
+export function anyInView(subset: ResolvedEntity[], camera = useEditor.getState().camera): boolean {
+  const hw = viewSize.width / 2 / camera.zoom;
+  const hh = viewSize.height / 2 / camera.zoom;
+  return subset.some((e) => {
+    const b = getWorldBounds(e);
+    return b.maxX > camera.x - hw && b.minX < camera.x + hw && b.maxY > camera.y - hh && b.minY < camera.y + hh;
+  });
+}
+
+/**
+ * Makes sure what an AI change built can be seen: a big change (a level) is
+ * framed whole; a smaller one only when none of it is on screen.
+ */
+export function revealCreated(createdIds: readonly string[]): void {
+  const { project, activeSceneId } = useEditor.getState();
+  const ids = new Set(createdIds);
+  const created = resolveSceneEntities(project, activeSceneId).filter((e) => ids.has(e.id));
+  if (!created.length) return;
+  if (created.length >= 10 || !anyInView(created)) frameEntities(created);
+}
+
+/**
+ * Each level keeps the view it was left with (this session). Coming back to a
+ * level shows that view again, unless nothing of the level is in it; a level
+ * not seen yet (or seen from somewhere empty) is framed whole, so a level is
+ * never opened looking at an empty spot far from it.
+ */
+const levelViews = new Map<string, { x: number; y: number; zoom: number }>();
+useEditor.subscribe((s, prev) => {
+  if (s.activeSceneId === prev.activeSceneId) return;
+  levelViews.set(prev.activeSceneId, prev.camera);
+  const all = resolveSceneEntities(s.project, s.activeSceneId);
+  const saved = levelViews.get(s.activeSceneId);
+  if (saved && (!all.length || anyInView(all, saved))) s.setCamera(saved);
+  else if (all.length) frameEntities(all);
+});
+
+/** The view shows the level at all (on opening the editor, or a project): if not, frame it. */
+export function ensureLevelInView(): void {
+  const { project, activeSceneId } = useEditor.getState();
+  const all = resolveSceneEntities(project, activeSceneId);
+  if (all.length && !anyInView(all)) frameEntities(all);
+}
+
 /** Centers and zooms the view on the selection, or on all entities if nothing is selected. */
 export function frameView(): void {
   const { project, activeSceneId, selectedEntityIds } = useEditor.getState();
