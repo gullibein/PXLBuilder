@@ -182,6 +182,9 @@ function stubModel(body) {
     };
     return { kind: 'apply', message: 'The enemy now hops toward the player.', changes: [`${t[0].name}: hops toward the player when close`], operations: [{ op: 'set_script', ...own(t[0]), scriptJson: JSON.stringify(script) }] };
   }
+  if (req.includes('open the sprite editor')) {
+    return { kind: 'apply', message: 'The sprite editor is open: draw away.', changes: [], operations: [{ op: 'open_sprite_editor', id: t[0].id, situation: null }] };
+  }
   if (req.includes('top-down game')) {
     const player = body.context.library.find((d) => d.name === 'Player');
     return {
@@ -734,6 +737,14 @@ try {
 
   step = 'sprites';
   await page.keyboard.press('Escape');
+  // Asking the AI on an object to open the sprite editor opens it for that object's sprite.
+  await clickWorld(-256, 0);
+  await check(async () => (await prompts.count()) === 1, '(the Player is selected)');
+  await ask('I want to edit the sprite: open the sprite editor');
+  await check(async () => (await page.getByTestId('sprite-editor').isVisible()) && (await page.getByTestId('sprite-editor').locator('.bg-head').innerText()).includes('Edit sprite') && (await page.getByTestId('sprite-editor').locator('.bg-head').innerText()).includes('Player'), 'asking the AI to open the sprite editor opens it on the selected object\'s sprite');
+  await check(async () => (await page.getByTestId('se-canvas').getAttribute('data-pixels')).replace(/[./]/g, '').length > 50, "with the Player's drawing in it");
+  await page.getByTestId('se-close').click();
+  await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
   await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Sprites Reset to default', 'right-clicking a built-in object offers Inspector, Sprites and Reset to default');
@@ -822,6 +833,53 @@ try {
   await page.getByTestId('undo').click();
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('▶ Blinky'), 'Undo brings the animation back');
   await check(async () => (await sp.locator('.sprite-choice', { hasText: 'Enemy' }).getByTestId('sprite-edit').count()) === 1, "the object's own pixel-art drawing can be edited too");
+  // The tool panel, Alt to pick a color, and the selection tool.
+  await sp.getByTestId('draw-sprite').click();
+  await check(async () => (await se.getByTestId('se-tool-pencil').getAttribute('aria-pressed')) === 'true' && (await se.locator('.se-tool').count()) === 5, 'the tools are icons on a tool panel (pencil, eraser, fill, pick, select), pencil first');
+  await clickPixel(1, 1);
+  await se.getByTestId('se-color-d').click();
+  await clickPixel(4, 1);
+  await check(async () => (await px()).split('/')[1].slice(0, 6) === '.a..d.', '(two pixels in two colors)');
+  await page.keyboard.down('Alt');
+  await check(async () => (await seCanvas.getAttribute('data-tool')) === 'pick' && (await se.getByTestId('se-tool-pick').getAttribute('aria-pressed')) === 'true', 'holding Alt switches to the color picker');
+  await clickPixel(1, 1);
+  await page.keyboard.up('Alt');
+  await check(async () => (await seCanvas.getAttribute('data-tool')) === 'pencil' && (await se.getByTestId('se-color-a').getAttribute('class')).includes('on'), 'Alt-clicking a pixel picks its color, and letting go of Alt brings the pencil back');
+  await clickPixel(2, 2);
+  await check(async () => (await px()).split('/')[2][2] === 'a', 'the pencil now draws in the picked color');
+  await page.keyboard.press('s');
+  const sel = async () => (await seCanvas.getAttribute('data-selection')) ?? '';
+  const dragPixels = async (a, b) => {
+    const bb = await seCanvas.boundingBox();
+    const [w, h] = [await se.getByTestId('se-width').inputValue(), await se.getByTestId('se-height').inputValue()].map(Number);
+    const at = (p) => [bb.x + ((p[0] + 0.5) * bb.width) / w, bb.y + ((p[1] + 0.5) * bb.height) / h];
+    await page.mouse.move(...at(a));
+    await page.mouse.down();
+    await page.mouse.move(...at([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]));
+    await page.mouse.move(...at(b));
+    await page.mouse.up();
+  };
+  await dragPixels([1, 1], [4, 2]);
+  await check(async () => (await sel()) === '1,1,4,2', 'S picks the select tool; dragging selects a rectangle');
+  await dragPixels([2, 2], [2, 6]);
+  await check(async () => (await px()).split('/')[5].slice(0, 6) === '.a..d.' && (await px()).split('/')[1].slice(0, 6) === '......' && (await sel()) === '1,5,4,2', 'dragging inside the selection moves its pixels (and the selection)');
+  await page.keyboard.press('Control+z');
+  await check(async () => (await px()).split('/')[1].slice(0, 6) === '.a..d.', 'the move is one undo step');
+  await page.keyboard.press('Control+y');
+  await page.keyboard.press('ArrowRight');
+  await check(async () => (await px()).split('/')[5].slice(0, 6) === '..a..d' && (await sel()) === '2,5,4,2', 'arrow keys nudge the selection a pixel');
+  await se.getByTestId('se-flip-x').click();
+  await check(async () => (await px()).split('/')[5].slice(0, 6) === '..d..a', 'Flip ↔ mirrors the selected pixels');
+  await page.keyboard.press('Control+c');
+  await se.getByTestId('se-duplicate-frame').click();
+  await se.getByTestId('se-empty-frame').click();
+  await page.keyboard.press('Control+v');
+  await check(async () => (await px()).split('/')[5].slice(0, 6) === '..d..a' && (await se.locator('.se-frame').count()) === 3, 'copy in one frame, paste into another (an empty one here)');
+  await page.keyboard.press('Delete');
+  await check(async () => !(await px()).replace(/[./]/g, ''), 'Delete clears the selection');
+  await page.keyboard.press('Escape');
+  await check(async () => (await sel()) === '' && (await se.isVisible()), 'Esc deselects (and keeps the editor open)');
+  await se.getByTestId('se-close').click();
   // Back to cell 6 for the steps after this.
   await sp.locator('.sprite-use', { hasText: 'robots #6' }).click();
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('robots #6'), '(cell 6 in use again)');
@@ -1252,6 +1310,8 @@ try {
     await check(async () => Math.abs((await camNow())[0] - 3008) < 40, 'and coming back to Level 2 shows it as it was left, not an empty spot');
     await page.getByTestId('scene-selector').click();
     await page.getByRole('menuitem', { name: 'Level 1' }).click();
+    // The view shows Level 1 again (drawn on the next frame) before clicking things in it.
+    await check(async () => Math.abs((await camNow())[0] - 3008) > 500, '(back on Level 1)');
   }
 
   step = 'no AI connection';

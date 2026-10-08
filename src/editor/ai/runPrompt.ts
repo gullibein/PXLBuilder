@@ -201,8 +201,20 @@ function applyEditorOperations(message: string, changes: string[], operations: O
     logMessage('error', `Editor change rejected: ${err}`);
     return { status: 'error', message: `The AI's editor change couldn't be applied. ${err}.` };
   };
+  let openEditor: { definitionId: string; assetId: string | null } | null = null;
   for (const op of operations) {
     if (!isEditorOperation(op)) return { status: 'error', message: "The AI mixed editor and game changes, so nothing was changed." };
+    if (op.op === 'open_sprite_editor') {
+      // A placed copy opens its object's sprite; the situation's look, or its normal one.
+      const { project } = useEditor.getState();
+      const entity = project.scenes.flatMap((s) => s.entities).find((e) => e.id === op.id);
+      const def = project.definitions.find((d) => d.id === (entity ? entity.definitionId : op.id));
+      if (!def) return reject(entity ? `${entity.name} has no object to edit the sprite of` : `There is no object "${op.id}"`);
+      const ref = op.situation ? def.components.SpriteStates?.[op.situation] : def.components.Sprite?.assetId;
+      const assetId = typeof ref === 'string' && project.assets.some((a) => a.id === ref) ? ref : null;
+      openEditor = { definitionId: def.id, assetId };
+      continue;
+    }
     if (op.op === 'remove_editor_overlay') {
       if (!overlays.some((o) => o.id === op.id)) return reject(`There is no overlay "${op.id}"`);
       overlays = overlays.filter((o) => o.id !== op.id);
@@ -230,7 +242,8 @@ function applyEditorOperations(message: string, changes: string[], operations: O
     if (err) return reject(err);
     patch[op.key] = value;
   }
-  setLayout({ ...(patch as Partial<EditorLayout>), overlays });
+  if (Object.keys(patch).length || overlays !== layout.overlays) setLayout({ ...(patch as Partial<EditorLayout>), overlays });
+  if (openEditor) useEditor.getState().openSpriteEditor(openEditor);
   logMessage('info', `Editor: ${message}`);
   return { status: 'applied', message, changes, result: EMPTY_RESULT, editor: true };
 }

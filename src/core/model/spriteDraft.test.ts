@@ -78,3 +78,28 @@ describe('sprite editor drafts', () => {
     expect(still.grid).toBeUndefined();
   });
 });
+
+describe('selections', () => {
+  const d0 = { ...blankDraft(4, 3), frames: [['ab..', 'c...', '....']] };
+
+  it('a rectangle between two corners, clipped to the picture', async () => {
+    const { rectBetween } = await import('./spriteDraft');
+    expect(rectBetween(d0, { x: 2, y: 2 }, { x: 0, y: 1 })).toEqual({ x: 0, y: 1, w: 3, h: 2 });
+    expect(rectBetween(d0, { x: -3, y: 0 }, { x: 9, y: 0 })).toEqual({ x: 0, y: 0, w: 4, h: 1 });
+  });
+
+  it('copy, clear, move (transparent pixels keep what is under them) and flip', async () => {
+    const { copyRect, clearRect, moveRect, flipRect, stamp } = await import('./spriteDraft');
+    const r = { x: 0, y: 0, w: 2, h: 2 };
+    expect(copyRect(d0, 0, r)).toEqual(['ab', 'c.']);
+    expect(clearRect(d0, 0, r).frames[0]).toEqual(['....', '....', '....']);
+    expect(moveRect(d0, 0, r, 2, 1).frames[0]).toEqual(['....', '..ab', '..c.']);
+    // Moved over other pixels: its transparent pixel doesn't erase what is there.
+    const busy = { ...d0, frames: [['ab..', 'c...', '...d']] };
+    expect(moveRect(busy, 0, r, 2, 1).frames[0]).toEqual(['....', '..ab', '..cd']);
+    expect(flipRect(d0, 0, r, 'x').frames[0]).toEqual(['ba..', '.c..', '....']);
+    expect(flipRect(d0, 0, r, 'y').frames[0]).toEqual(['c...', 'ab..', '....']);
+    // Pasting past the edge is clipped.
+    expect(stamp(d0, 0, ['xy'], 3, 2).frames[0]).toEqual(['ab..', 'c...', '...x']);
+  });
+});

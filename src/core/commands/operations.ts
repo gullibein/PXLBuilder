@@ -197,6 +197,11 @@ export const operationSchema = z.union([
     id: z.string(),
   }),
   z.object({
+    op: z.literal('open_sprite_editor'),
+    id: z.string().describe('The entity id or object definition id whose sprite to open (a placed copy opens its object)'),
+    situation: z.string().nullable().describe('null: its normal look. A situation (run, jump, up, down…): that look (a new drawing for it if it has none)'),
+  }).describe('Opens the sprite editor so the USER can draw or edit the sprite by hand ("open the sprite editor", "I want to edit the sprite myself"); changes nothing by itself'),
+  z.object({
     op: z.literal('set_editor_setting'),
     key: z.string().describe('An editor setting key from editor.settings (editor scope only)'),
     valueJson: z.string().describe('The new value as JSON, e.g. "\\"bottom\\"", "true", "1.5"'),
@@ -244,10 +249,10 @@ export const operationSchema = z.union([
 export type Operation = z.infer<typeof operationSchema>;
 
 /** Operations that change the editor rather than the project. */
-export type EditorOperation = Extract<Operation, { op: 'set_editor_setting' | 'add_editor_overlay' | 'remove_editor_overlay' }>;
+export type EditorOperation = Extract<Operation, { op: 'set_editor_setting' | 'add_editor_overlay' | 'remove_editor_overlay' | 'open_sprite_editor' }>;
 
 export function isEditorOperation(op: Operation): op is EditorOperation {
-  return op.op === 'set_editor_setting' || op.op === 'add_editor_overlay' || op.op === 'remove_editor_overlay';
+  return op.op === 'set_editor_setting' || op.op === 'add_editor_overlay' || op.op === 'remove_editor_overlay' || op.op === 'open_sprite_editor';
 }
 
 export interface ApplyResult {
@@ -669,6 +674,7 @@ export function applyOperations(
         logic.setRuleEnabled(project, op.sceneId, op.id, op.enabled);
         break;
       case 'set_editor_setting':
+      case 'open_sprite_editor':
       case 'add_editor_overlay':
       case 'remove_editor_overlay':
         // Editor settings are not part of the game; the editor applies them (see isEditorOperation).

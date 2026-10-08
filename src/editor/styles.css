@@ -213,8 +213,14 @@
 /* Anchored near the top (not centered), so the canvas never moves while frames and the preview come and go. */
 .sprite-editor { align-self: start; margin-top: 16px; width: min(860px, calc(100% - 24px)); max-height: calc(100% - 32px); overflow: auto; outline: none; }
 .se-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
-.se-side { display: grid; gap: 10px; width: 200px; }
-.se-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.se-side { display: grid; gap: 10px; width: 190px; }
+.se-toolbar { display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); align-self: flex-start; }
+.se-tool { display: grid; place-items: center; width: 34px; height: 34px; border: none; border-radius: 8px; background: transparent; color: var(--muted); }
+.se-tool:hover { background: var(--surface-3); color: var(--text); }
+.se-tool.on { background: var(--accent); color: #fff; }
+.se-tool.held { box-shadow: 0 0 0 2px #fff inset; }
+.se-canvas-col { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.se-sel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .chip-btn.on { background: var(--accent); color: #fff; }
 .chip-btn:disabled { opacity: 0.45; cursor: default; }
 .se-palette { display: flex; flex-wrap: wrap; gap: 4px; }

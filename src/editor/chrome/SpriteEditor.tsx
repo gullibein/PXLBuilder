@@ -7,6 +7,14 @@ import {
   addColor,
   addFrame,
   blankDraft,
+  clearRect,
+  copyRect,
+  flipRect,
+  inRect,
+  moveRect,
+  rectBetween,
+  stamp,
+  type PixelRect,
   draftFromAsset,
   draftFromPixels,
   drawLine,
@@ -22,12 +30,21 @@ import {
 import { whenImageReady } from '../images';
 import { useEditor } from '../store';
 
-type Tool = 'pencil' | 'eraser' | 'fill' | 'pick';
-const TOOLS: { tool: Tool; label: string; key: string }[] = [
-  { tool: 'pencil', label: 'Pencil', key: 'P' },
-  { tool: 'eraser', label: 'Eraser', key: 'E' },
-  { tool: 'fill', label: 'Fill', key: 'F' },
-  { tool: 'pick', label: 'Pick color', key: 'I' },
+type Tool = 'pencil' | 'eraser' | 'fill' | 'pick' | 'select';
+
+const icon = (d: string, extra?: React.ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+    {extra}
+  </svg>
+);
+
+const TOOLS: { tool: Tool; label: string; key: string; icon: React.ReactNode }[] = [
+  { tool: 'pencil', label: 'Pencil', key: 'P', icon: icon('M3 15l1-4 8.5-8.5a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L7 14l-4 1zM11 5l2 2') },
+  { tool: 'eraser', label: 'Eraser', key: 'E', icon: icon('M7 15h8M3.5 11.5l7-7a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L9 14.5H6l-2.5-2.5a.7.7 0 0 1 0-.5zM7 8l3.5 3.5') },
+  { tool: 'fill', label: 'Fill', key: 'F', icon: icon('M3 9l6-6 6 6-6 6-6-6zM3 9h12', <path d="M15.5 12.5c.8 1.2 1 2 .6 2.6a.9.9 0 0 1-1.4 0c-.4-.6-.2-1.4.8-2.6z" fill="currentColor" stroke="none" />) },
+  { tool: 'pick', label: 'Pick color (or hold Alt)', key: 'I', icon: icon('M10.5 4.5l3 3M4 14l6.5-6.5M12 3l1.6-1.6a1.4 1.4 0 0 1 2 2L14 5l-.5.5-3-3L12 3zM4 14l-1 1') },
+  { tool: 'select', label: 'Select (drag to select, drag inside to move)', key: 'S', icon: icon('M3 3h2M7 3h2M11 3h2M15 3v2M15 7v2M15 11v2M15 15h-2M11 15H9M7 15H5M3 15v-2M3 11V9M3 7V5') },
 ];
 
 /** Draws one frame of a draft: each pixel a `scale`-sized square. */
@@ -126,7 +143,23 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     frameRef.current = i;
     setFrameState(i);
   };
-  const [tool, setTool] = useState<Tool>('pencil');
+  const [tool, setToolState] = useState<Tool>('pencil');
+  // The selected rectangle (Select tool); it stays when switching frames, to copy from one and paste into another.
+  const [sel, setSelState] = useState<PixelRect | null>(null);
+  const selRef = useRef<PixelRect | null>(null);
+  const setSel = (r: PixelRect | null) => {
+    selRef.current = r;
+    setSelState(r);
+  };
+  const setTool = (next: Tool) => {
+    setToolState(next);
+    if (next !== 'select') setSel(null);
+  };
+  // Held Alt: the color picker, just until it is let go.
+  const [alt, setAlt] = useState(false);
+  const clipboard = useRef<string[] | null>(null);
+  // A selection being dragged out, or moved (from the drawing as it was when the drag began).
+  const drag = useRef<{ mode: 'new'; from: { x: number; y: number } } | { mode: 'move'; from: { x: number; y: number }; base: SpriteDraft; rect: PixelRect; at: { x: number; y: number } } | null>(null);
   const [color, setColor] = useState('a');
   const [onion, setOnion] = useState(true);
   const [name, setName] = useState(asset?.name ?? `${def?.name ?? 'Sprite'} sprite`);
@@ -158,6 +191,30 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   }, [draft, asset]);
 
   useEffect(() => dialogRef.current?.focus(), []);
+  useEffect(() => {
+    // Alt alone would also move the browser's focus to its menu: kept in the editor.
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        setAlt(true);
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        setAlt(false);
+      }
+    };
+    const blur = () => setAlt(false);
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', up, true);
+      window.removeEventListener('blur', blur);
+    };
+  }, []);
   useEffect(() => {
     if (draft && !draft.palette.some((p) => p.key === color)) setColor(draft.palette[0]?.key ?? '.');
   }, [draft, color]);
@@ -193,8 +250,22 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
       }
       g.stroke();
     }
+    if (sel) {
+      // The selection: a dashed outline, dark and light so it shows on any color.
+      const box = [sel.x * zoom + 0.5, sel.y * zoom + 0.5, sel.w * zoom - 1, sel.h * zoom - 1] as const;
+      g.lineWidth = 1;
+      g.setLineDash([4, 4]);
+      g.strokeStyle = '#000';
+      g.strokeRect(...box);
+      g.lineDashOffset = 4;
+      g.strokeStyle = '#fff';
+      g.strokeRect(...box);
+      g.setLineDash([]);
+      g.lineDashOffset = 0;
+    }
     c.dataset.pixels = draft.frames[frame].join('/');
-  }, [draft, frame, zoom, onion]);
+    c.dataset.selection = sel ? `${sel.x},${sel.y},${sel.w},${sel.h}` : '';
+  }, [draft, frame, zoom, onion, sel]);
 
   const situations = useMemo(() => Object.keys(componentRegistry.get('SpriteStates')?.fields ?? {}), []);
 
@@ -212,16 +283,57 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     setDraft(next);
   };
   const undo = () => {
-    if (!past.length || !draft) return;
-    setFuture((f) => [draft, ...f]);
-    setDraft(past[past.length - 1]);
+    const cur = latest.current;
+    if (!past.length || !cur) return;
+    const prev = past[past.length - 1];
+    setFuture((f) => [cur, ...f]);
+    latest.current = prev;
+    setDraft(prev);
     setPast((p) => p.slice(0, -1));
   };
   const redo = () => {
-    if (!future.length || !draft) return;
-    setPast((p) => [...p, draft]);
-    setDraft(future[0]);
+    const cur = latest.current;
+    if (!future.length || !cur) return;
+    const next = future[0];
+    setPast((p) => [...p, cur]);
+    latest.current = next;
+    setDraft(next);
     setFuture((f) => f.slice(1));
+  };
+  /** Shows a drawing without an undo step (while dragging; the step is made when the drag began). */
+  const preview = (d: SpriteDraft) => {
+    latest.current = d;
+    setDraft(d);
+  };
+
+  // Selection commands (also on the keyboard).
+  const copySel = () => {
+    const r = selRef.current;
+    if (r && latest.current) clipboard.current = copyRect(latest.current, frameRef.current, r);
+  };
+  const deleteSel = () => {
+    const r = selRef.current;
+    if (r) change((d) => clearRect(d, frameRef.current, r));
+  };
+  const paste = () => {
+    const rows = clipboard.current;
+    const d = latest.current;
+    if (!rows || !d) return;
+    // Where the selection is (or the top left), as a new selection that can be dragged into place.
+    const at = selRef.current ?? { x: 0, y: 0 };
+    change((cur) => stamp(cur, frameRef.current, rows, at.x, at.y));
+    setToolState('select');
+    setSel(rectBetween(d, { x: at.x, y: at.y }, { x: at.x + rows[0].length - 1, y: at.y + rows.length - 1 }));
+  };
+  const nudge = (dx: number, dy: number) => {
+    const r = selRef.current;
+    if (!r) return;
+    change((d) => moveRect(d, frameRef.current, r, dx, dy));
+    setSel({ ...r, x: r.x + dx, y: r.y + dy });
+  };
+  const flipSel = (axis: 'x' | 'y') => {
+    const r = selRef.current;
+    if (r) change((d) => flipRect(d, frameRef.current, r, axis));
   };
 
   const pixelAt = (e: React.PointerEvent) => {
@@ -234,14 +346,30 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     if (!draft) return;
     e.preventDefault();
     const { x, y } = pixelAt(e);
+    // Holding Alt picks colors, whatever the tool.
+    const using: Tool = e.altKey || alt ? 'pick' : tool;
+    if (using === 'select' && e.button === 0) {
+      (e.target as Element).setPointerCapture(e.pointerId);
+      const r = selRef.current;
+      if (r && inRect(r, x, y)) {
+        // Moving the selected pixels: one undo step for the whole drag.
+        setPast((p) => [...p.slice(-99), draft]);
+        setFuture([]);
+        drag.current = { mode: 'move', from: { x, y }, base: draft, rect: r, at: { x: r.x, y: r.y } };
+      } else {
+        drag.current = { mode: 'new', from: { x, y } };
+        setSel(rectBetween(draft, { x, y }, { x, y }));
+      }
+      return;
+    }
     // Right button erases, whatever the tool.
-    const key = e.button === 2 || tool === 'eraser' ? '.' : color;
-    if (tool === 'pick' && e.button !== 2) {
+    const key = e.button === 2 || using === 'eraser' ? '.' : color;
+    if (using === 'pick' && e.button !== 2) {
       const k = draft.frames[frame][y]?.[x];
       if (k && k !== '.') setColor(k);
       return;
     }
-    if (tool === 'fill' && e.button !== 2) {
+    if (using === 'fill' && e.button !== 2) {
       change((d) => fill(d, frame, x, y, key));
       return;
     }
@@ -250,6 +378,18 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     change((d) => setPixel(d, frame, x, y, key));
   };
   const move = (e: React.PointerEvent) => {
+    const g = drag.current;
+    if (g && latest.current) {
+      const { x, y } = pixelAt(e);
+      if (g.mode === 'new') setSel(rectBetween(latest.current, g.from, { x, y }));
+      else {
+        const dx = x - g.from.x;
+        const dy = y - g.from.y;
+        preview(moveRect(g.base, frameRef.current, g.rect, dx, dy));
+        setSel({ ...g.rect, x: g.rect.x + dx, y: g.rect.y + dy });
+      }
+      return;
+    }
     const s = stroke.current;
     const cur = latest.current;
     const frame = frameRef.current;
@@ -264,6 +404,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   };
   const up = () => {
     stroke.current = null;
+    drag.current = null;
   };
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -284,13 +425,21 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
       redo();
       return;
     }
-    const t = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
-    if (t && !mod) {
-      e.stopPropagation();
-      setTool(t.tool);
-    } else if (e.key === 'Escape') {
-      e.stopPropagation();
+    // The selection: copy, cut, paste, select all, delete, nudge, deselect.
+    if (mod && e.key.toLowerCase() === 'c') return (e.preventDefault(), copySel());
+    if (mod && e.key.toLowerCase() === 'x') return (e.preventDefault(), copySel(), deleteSel());
+    if (mod && e.key.toLowerCase() === 'v') return (e.preventDefault(), paste());
+    if (mod && e.key.toLowerCase() === 'a' && latest.current) {
+      e.preventDefault();
+      setToolState('select');
+      return setSel({ x: 0, y: 0, w: latest.current.width, h: latest.current.height });
     }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selRef.current) return (e.preventDefault(), deleteSel());
+    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (arrows[e.key] && selRef.current) return (e.preventDefault(), nudge(...arrows[e.key]));
+    if (e.key === 'Escape') return setSel(null);
+    const t = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
+    if (t && !mod && !e.altKey) setTool(t.tool);
   };
 
   const save = () => {
@@ -334,14 +483,61 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
         {draft && (
           <>
             <div className="se-body">
-              <div className="se-side">
-                <div className="se-tools" role="toolbar" aria-label="Tools">
-                  {TOOLS.map((t) => (
-                    <button key={t.tool} className={`chip-btn${tool === t.tool ? ' on' : ''}`} data-testid={`se-tool-${t.tool}`} title={`${t.label} (${t.key})`} onClick={() => setTool(t.tool)}>
-                      {t.label}
+              <div className="se-toolbar" role="toolbar" aria-label="Tools" aria-orientation="vertical">
+                {TOOLS.map((t) => {
+                  // While Alt is held the picker is the tool in use (the chosen one comes back on release).
+                  const on = alt ? t.tool === 'pick' : tool === t.tool;
+                  return (
+                    <button key={t.tool} className={`se-tool${on ? ' on' : ''}${alt && t.tool === 'pick' ? ' held' : ''}`} data-testid={`se-tool-${t.tool}`} aria-pressed={on} aria-label={t.label} title={`${t.label} (${t.key})`} onClick={() => setTool(t.tool)}>
+                      {t.icon}
                     </button>
-                  ))}
+                  );
+                })}
+              </div>
+              <div className="se-canvas-col">
+                <div className="se-canvas-wrap">
+                  <canvas
+                    ref={canvasRef}
+                    className="se-canvas"
+                    data-testid="se-canvas"
+                    data-tool={alt ? 'pick' : tool}
+                    onPointerDown={down}
+                    onPointerMove={move}
+                    onPointerUp={up}
+                    onPointerCancel={up}
+                    style={{ cursor: alt || tool === 'pick' ? 'copy' : tool === 'select' ? (sel ? 'move' : 'cell') : 'crosshair' }}
+                  />
                 </div>
+                {tool === 'select' && (
+                  <div className="se-sel-bar" data-testid="se-selection-bar">
+                    {sel ? (
+                      <>
+                        <span className="muted small">
+                          {sel.w}×{sel.h} selected · drag inside to move, arrows nudge
+                        </span>
+                        <button className="chip-btn" onClick={() => flipSel('x')} data-testid="se-flip-x" title="Mirror left to right">
+                          Flip ↔
+                        </button>
+                        <button className="chip-btn" onClick={() => flipSel('y')} data-testid="se-flip-y" title="Mirror top to bottom">
+                          Flip ↕
+                        </button>
+                        <button className="chip-btn" onClick={copySel} data-testid="se-copy" title="Copy (Ctrl+C)">
+                          Copy
+                        </button>
+                        <button className="chip-btn" onClick={deleteSel} data-testid="se-delete-sel" title="Delete (Del)">
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <span className="muted small">Drag over the picture to select part of it (Ctrl+A: all).</span>
+                    )}
+                    <button className="chip-btn" onClick={paste} disabled={!clipboard.current} data-testid="se-paste" title="Paste (Ctrl+V), also into another frame">
+                      Paste
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="se-side">
                 <div className="se-palette" data-testid="se-palette">
                   {draft.palette.map((p) => (
                     <button key={p.key} className={`se-swatch${p.key === color ? ' on' : ''}`} style={{ background: p.color }} title={p.color} data-testid={`se-color-${p.key}`} onClick={() => setColor(p.key)} />
@@ -384,10 +580,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                     Redo
                   </button>
                 </div>
-                <p className="muted small">Left button draws, right button erases. Stretched to {spriteSize.x}×{spriteSize.y} in the game.</p>
-              </div>
-              <div className="se-canvas-wrap">
-                <canvas ref={canvasRef} className="se-canvas" data-testid="se-canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ cursor: tool === 'pick' ? 'copy' : 'crosshair' }} />
+                <p className="muted small">Left button draws, right button erases, hold Alt to pick a color. Stretched to {spriteSize.x}×{spriteSize.y} in the game.</p>
               </div>
             </div>
             <div className="se-frames">
@@ -403,7 +596,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 <button className="chip-btn" data-testid="se-duplicate-frame" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, true)), setFrame(frameRef.current + 1))} title="A copy of this frame after it, to change a little">
                   Duplicate frame
                 </button>
-                <button className="chip-btn" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, false)), setFrame(frameRef.current + 1))}>
+                <button className="chip-btn" data-testid="se-empty-frame" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, false)), setFrame(frameRef.current + 1))}>
                   Empty frame
                 </button>
                 <button className="chip-btn" disabled={frame === 0} onClick={() => (change((d) => moveFrame(d, frameRef.current, -1)), setFrame(Math.max(0, frameRef.current - 1)))} aria-label="Move frame earlier">

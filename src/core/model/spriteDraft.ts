@@ -159,3 +159,64 @@ export function usedPalette(d: SpriteDraft): PixelArt['palette'] {
   const used = new Set(d.frames.flatMap((f) => f.flatMap((r) => [...r])));
   return d.palette.filter((p) => used.has(p.key));
 }
+
+// ---------------------------------------------------------------- selections
+
+/** A rectangle of pixels (inclusive of x, y; w × h big). */
+export interface PixelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The rectangle between two corner pixels (in any order), clipped to the picture. */
+export function rectBetween(d: SpriteDraft, a: { x: number; y: number }, b: { x: number; y: number }): PixelRect | null {
+  const x0 = Math.max(0, Math.min(a.x, b.x));
+  const y0 = Math.max(0, Math.min(a.y, b.y));
+  const x1 = Math.min(d.width - 1, Math.max(a.x, b.x));
+  const y1 = Math.min(d.height - 1, Math.max(a.y, b.y));
+  return x1 < x0 || y1 < y0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+export const inRect = (r: PixelRect, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+
+/** The pixels in a rectangle (transparent where it reaches past the picture). */
+export function copyRect(d: SpriteDraft, frame: number, r: PixelRect): string[] {
+  return Array.from({ length: r.h }, (_, j) => Array.from({ length: r.w }, (_, i) => d.frames[frame][r.y + j]?.[r.x + i] ?? '.').join(''));
+}
+
+/** Writes pixels at (x, y), clipped to the picture; with `opaque` false, transparent pixels leave what is under them. */
+export function stamp(d: SpriteDraft, frame: number, rows: string[], x: number, y: number, opaque = false): SpriteDraft {
+  const out = d.frames[frame].map((r) => [...r]);
+  rows.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      const tx = x + i;
+      const ty = y + j;
+      if (tx < 0 || ty < 0 || tx >= d.width || ty >= d.height) continue;
+      if (row[i] === '.' && !opaque) continue;
+      out[ty][tx] = row[i];
+    }
+  });
+  const frames = d.frames.slice();
+  frames[frame] = out.map((r) => r.join(''));
+  return { ...d, frames };
+}
+
+/** Makes a rectangle transparent. */
+export function clearRect(d: SpriteDraft, frame: number, r: PixelRect): SpriteDraft {
+  return stamp(d, frame, Array.from({ length: r.h }, () => '.'.repeat(r.w)), r.x, r.y, true);
+}
+
+/** Moves a rectangle's pixels by (dx, dy): where they were becomes transparent, and they cover what is under them where they land. */
+export function moveRect(d: SpriteDraft, frame: number, r: PixelRect, dx: number, dy: number): SpriteDraft {
+  if (!dx && !dy) return d;
+  return stamp(clearRect(d, frame, r), frame, copyRect(d, frame, r), r.x + dx, r.y + dy);
+}
+
+/** Mirrors a rectangle's pixels left to right ("x") or top to bottom ("y"), in place. */
+export function flipRect(d: SpriteDraft, frame: number, r: PixelRect, axis: 'x' | 'y'): SpriteDraft {
+  const rows = copyRect(d, frame, r);
+  const flipped = axis === 'x' ? rows.map((row) => [...row].reverse().join('')) : rows.slice().reverse();
+  return stamp(d, frame, flipped, r.x, r.y, true);
+}
