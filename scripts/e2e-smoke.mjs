@@ -42,6 +42,12 @@ const check = async (cond, msg) => {
   console.log(`  ✓ ${msg}`);
 };
 
+/** A first visit (nothing saved) asks what kind of game to make; pages that don't test that pick a platformer. */
+const startPlatformer = async (p) => {
+  await p.getByTestId('viewport-canvas').waitFor();
+  if (await p.getByTestId('game-chooser').count()) await p.getByTestId('game-platformer').click();
+};
+
 /** Stand-in for the language model: same protocol, deterministic answers. */
 const aiRequests = [];
 let diagnostics = null;
@@ -378,6 +384,10 @@ try {
   });
   diagnostics = async () => (await page.evaluate(() => window.__events.slice(-30))).join('\n');
   await page.goto(URL);
+  await check(async () => await page.getByTestId('game-chooser').isVisible(), 'the first visit asks what kind of game to make');
+  await page.screenshot({ path: `${OUT}/00-game-chooser.png` });
+  await page.getByTestId('game-platformer').click();
+  await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'picking Platformer goes straight to the editor');
 
   const canvas = page.getByTestId('viewport-canvas');
   const box = await canvas.boundingBox();
@@ -1238,7 +1248,20 @@ try {
   await page.getByTestId('close-details').click();
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
-  await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project starts an empty level');
+  await check(async () => await page.getByTestId('game-chooser').isVisible(), 'New project asks what kind of game');
+  const entitiesBefore = await canvas.getAttribute('data-entities');
+  await page.getByTestId('game-topdown').click();
+  await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'a new top-down game starts with an empty level');
+  await openLibrary();
+  await check(async () => (await page.getByTestId('definition-Wall').count()) === 1 && (await page.getByTestId('definition-Floor').count()) === 1 && (await page.getByTestId('definition-Ladder').count()) === 0, 'with the top-down objects (walls, floor, a slime…) and no ladders');
+  await page.screenshot({ path: `${OUT}/00b-top-down-library.png` });
+  await page.keyboard.press('Escape');
+  await page.getByTestId('undo').click();
+  await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, 'Undo brings back the game from before');
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('menu-new').click();
+  await page.getByTestId('game-platformer').click();
+  await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project → Platformer starts an empty level');
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Flying Robot').count()) === 0 && (await page.getByTestId('definition-Ladder').count()) === 1, 'with only the built-in objects, as they ship');
   await page.keyboard.press('Escape');
@@ -1288,6 +1311,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   await lp.goto(URL);
+  await startPlatformer(lp);
   const lCanvas = lp.getByTestId('viewport-canvas');
   const lBox = await lCanvas.boundingBox();
   const lAt = (wx, wy) => ({ x: lBox.x + lBox.width / 2 + wx, y: lBox.y + lBox.height / 2 + wy });
@@ -1420,6 +1444,7 @@ try {
     window.claude = Object.freeze({ use: async (name) => (name === 'sample' ? sample : name === 'downloads' ? downloads : null) });
   });
   await cp2.goto(URL);
+  await startPlatformer(cp2);
   await cp2.getByTestId('main-menu').click();
   await cp2.getByTestId('menu-ai-connection').click();
   await check(async () => (await cp2.getByTestId('ai-connection-status').innerText()).includes('your Claude account') && (await cp2.getByTestId('ai-key-input').count()) === 0, 'in the published app the AI uses your Claude account; no API key field');
@@ -1450,6 +1475,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   await swp.goto(URL);
+  await startPlatformer(swp);
   const sw_sCanvas = swp.getByTestId('viewport-canvas');
   const sw_sBox = await sw_sCanvas.boundingBox();
   const sw_sAt = (wx, wy) => ({ x: sw_sBox.x + sw_sBox.width / 2 + wx, y: sw_sBox.y + sw_sBox.height / 2 + wy });
@@ -1581,6 +1607,7 @@ try {
     return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 10 } });
   });
   await kp.goto(URL);
+  await startPlatformer(kp);
   const kCanvas = kp.getByTestId('viewport-canvas');
   const kBox = await kCanvas.boundingBox();
   const kAt = (wx, wy) => ({ x: kBox.x + kBox.width / 2 + wx, y: kBox.y + kBox.height / 2 + wy });
@@ -1735,6 +1762,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   await gp.goto(URL);
+  await startPlatformer(gp);
   const gCanvas = gp.getByTestId('viewport-canvas');
   const gBox = await gCanvas.boundingBox();
   const gAt = (wx, wy) => ({ x: gBox.x + gBox.width / 2 + wx, y: gBox.y + gBox.height / 2 + wy });
@@ -1800,6 +1828,7 @@ try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
     });
     await dp.goto(URL);
+  await startPlatformer(dp);
     await dp.getByTestId('global-prompt-toggle').click();
     const lp = dp.getByTestId('global-prompt');
     const lAsk = async (text) => {
@@ -1868,6 +1897,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
   });
   await ep.goto(URL);
+  await startPlatformer(ep);
   await ep.setViewportSize({ width: 900, height: 860 });
   await check(async () => {
     const play = await ep.getByTestId('play').boundingBox();

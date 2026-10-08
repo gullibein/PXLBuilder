@@ -2,7 +2,7 @@ import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
 import { projectFromBundle, projectToBundle } from '../core/serialization/serialize';
-import type { Project } from '../core/types';
+import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 
 const AUTOSAVE_KEY = 'pxlbuilder.autosave';
@@ -106,11 +106,17 @@ async function writeAutosave(project: Project): Promise<void> {
   }
 }
 
-export function newProject(): void {
-  const project = createProject(componentRegistry);
-  // Undoable, so there is no need to ask "are you sure?".
-  useEditor.getState().replaceProject('New project', project);
-  useEditor.getState().logMessage('info', 'Created a new project');
+/**
+ * A new game of the chosen kind. On the first visit it simply becomes the
+ * game; later it replaces the current one as an undoable step, so there is no
+ * need to ask "are you sure?".
+ */
+export function startNewGame(gameType: GameType, first = false): void {
+  const project = createProject(componentRegistry, 'Untitled Game', gameType);
+  const kind = gameType === 'topdown' ? 'top-down game' : 'platformer';
+  if (first) useEditor.getState().loadProject(project);
+  else useEditor.getState().replaceProject('New project', project);
+  useEditor.getState().logMessage('info', `Started a new ${kind}`);
 }
 
 /**

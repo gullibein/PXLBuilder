@@ -3,7 +3,7 @@ import { createScene } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
 import { addScene, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
-import { newProject, openProjectFile, PROJECT_FILE_EXTENSION, saveProjectToFile } from '../persistence';
+import { openProjectFile, PROJECT_FILE_EXTENSION, saveProjectToFile } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
 
@@ -236,7 +236,7 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
   const name = useEditor((s) => s.project.name);
   const dirty = useEditor((s) => s.dirty);
   const items: { label: string; hint?: string; detail?: string; run: () => void; testId: string; sep?: boolean }[] = [
-    { label: 'New project', detail: 'An empty level with all built-in objects as they ship', run: newProject, testId: 'menu-new' },
+    { label: 'New project', detail: 'Pick a platformer or a top-down game: an empty level with that kind of built-in objects', run: () => useEditor.getState().setGameChooser('new'), testId: 'menu-new' },
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
     { label: 'Save', hint: 'Ctrl+S', run: saveProjectToFile, testId: 'menu-save' },
     {

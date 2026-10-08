@@ -82,6 +82,8 @@ export interface EditorState {
   /** The AI connection dialog (the user's own API key) is open. */
   aiConnectionOpen: boolean;
   stylePickerOpen: boolean;
+  /** "What kind of game?": on the first visit, or for a new game (⋯ → New project); null when closed. */
+  gameChooser: 'first' | 'new' | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -123,6 +125,7 @@ export interface EditorState {
   setLogicOpen(open: boolean): void;
   setAIConnectionOpen(open: boolean): void;
   setStylePickerOpen(open: boolean): void;
+  setGameChooser(mode: 'first' | 'new' | null): void;
   flashEntities(ids: Id[]): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
@@ -177,6 +180,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     logicOpen: false,
     aiConnectionOpen: false,
     stylePickerOpen: false,
+    gameChooser: null,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -387,6 +391,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ flash: { ids, until: performance.now() + 2200 } });
     },
 
+    setGameChooser(gameChooser) {
+      set({ gameChooser });
+    },
     setStylePickerOpen(stylePickerOpen) {
       set({ stylePickerOpen });
     },

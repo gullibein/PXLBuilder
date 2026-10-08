@@ -474,6 +474,15 @@ AI-placed objects don't drop onto surfaces; `build_path` (a platforming tool)
 refuses with what to use instead; and the AI context says `level.view`
 (`side`/`topdown`) with `playerReach` null.
 
+A game starts as a platformer or a top-down game (`createProject(registry,
+name, gameType)`, chosen in the editor's GameChooser on the first visit and on
+New project). `project.settings.gameType` records it (optional; older games
+are platformers) and decides which starter set "reset objects" restores:
+`core/model/topDownStarters.ts` has the top-down one (pixel art drawn from
+above; a Floor with no collider on `Sprite.layer` -1; an Enemy with `Wander`).
+`Sprite.layer` orders drawing and editor picking; the level map leaves out
+looks under everything, so painted floor reads as walkable.
+
 ### Debugging (Phase 9): play recording, problem checker, AI diagnosis
 - **Event log** (`runtime/gameplay.ts`): every game event, with names and
   ids of who took part. `respawned` says why (`fell`, `died`, `rule`,

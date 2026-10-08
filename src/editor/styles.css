@@ -161,6 +161,11 @@
 
 /* ---------------------------------------------------------------- the style picker */
 .style-dialog { width: min(560px, calc(100% - 32px)); }
+.game-dialog { width: min(640px, calc(100% - 32px)); }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.game-card { padding: 10px; cursor: pointer; }
+.game-preview { position: relative; display: block; width: 256px; max-width: 100%; height: 96px; margin: 0 auto 6px; border-radius: 8px; overflow: hidden; }
+.game-preview > img, .game-preview > span { position: absolute; display: block; image-rendering: pixelated; }
 .style-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .style-card { display: grid; gap: 4px; padding: 8px; text-align: left; border: 2px solid var(--line); border-radius: 12px; background: var(--surface-2); }
 .style-card:hover { border-color: var(--accent-hi); }

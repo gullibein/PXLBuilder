@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
+import { GameChooser } from './chrome/GameChooser';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
@@ -74,6 +75,7 @@ export function App() {
         <SpritesPanel />
         <AIConnection />
         <StylePicker />
+        <GameChooser />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -151,6 +153,7 @@ function useGlobalShortcuts() {
         else if (state.logicOpen) state.setLogicOpen(false);
         else if (state.aiConnectionOpen) state.setAIConnectionOpen(false);
         else if (state.stylePickerOpen) state.setStylePickerOpen(false);
+        else if (state.gameChooser) state.setGameChooser(null);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {
