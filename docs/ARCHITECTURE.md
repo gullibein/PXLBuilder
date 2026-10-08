@@ -480,6 +480,15 @@ New project). `project.settings.gameType` records it (optional; older games
 are platformers) and decides which starter set "reset objects" restores:
 `core/model/topDownStarters.ts` has the top-down one (pixel art drawn from
 above; a Floor with no collider on `Sprite.layer` -1; an Enemy with `Wander`).
+**Pushable** things are solid to everything except their pushers: a mover
+about to walk into one (`Runtime.pushAlong`) first shoves it by as much as it
+would sink in (against walls, other pushables and other moving solids), or,
+with `step` > 0, starts it gliding exactly one step if that spot is free;
+event `pushed`. They are left out of the static solids and looked up where
+they are each step. **Knock back** (`DamageReceiver.knockback`, 0 = none) is a
+short shove (`RuntimeEntity.knock`): afterwards, once landed when there is
+gravity, the victim's velocity goes back to what it was before the hit.
+Scripts see what is on a square with `thing_at(x, y, tag?)`.
 `Sprite.layer` orders drawing and editor picking; the level map leaves out
 looks under everything, so painted floor reads as walkable.
 

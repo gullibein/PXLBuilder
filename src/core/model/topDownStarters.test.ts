@@ -23,7 +23,7 @@ describe('a new top-down game', () => {
   });
 
   it('has the top-down starter objects, under the same names as the platformer ones', () => {
-    expect(project.definitions.map((d) => d.name)).toEqual(['Player', 'Wall', 'Floor', 'Enemy', 'Coin', 'Key', 'Door', 'Switch', 'Hazard', 'Teleporter', 'Goal']);
+    expect(project.definitions.map((d) => d.name)).toEqual(['Player', 'Wall', 'Floor', 'Enemy', 'Coin', 'Key', 'Door', 'Switch', 'Hazard', 'Teleporter', 'Goal', 'Barrel']);
     expect(def(project, 'Player').components.CharacterController.movement).toBe('topdown');
     expect(def(project, 'Enemy').components.Wander).toBeTruthy();
     // The floor is only a look, under everything.

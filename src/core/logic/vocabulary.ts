@@ -41,6 +41,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'ledge_grabbed', description: 'A character with LedgeGrab grabs a ledge.', subject: 'who grabbed it', other: null, phrase: '{subject} grabs a ledge' },
   { type: 'signal', description: 'A behavior script sent a signal (detail.name).', subject: 'the sender', other: null, phrase: '{subject} sends a signal' },
   { type: 'script_error', description: 'A behavior script had a problem while running (detail.message); it was stopped there.', subject: 'whose script', other: null, phrase: "{subject}'s script has a problem" },
+  { type: 'pushed', description: 'Something Pushable starts being pushed (each push for step pushes).', subject: 'what was pushed', other: 'who pushed it', phrase: '{other} pushes {subject}' },
   { type: 'spawned', description: 'A new entity appears (by a spawn action).', subject: 'the new entity', other: null, phrase: '{subject} appears' },
 ];
 

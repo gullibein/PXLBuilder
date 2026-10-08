@@ -232,6 +232,30 @@ const STAIRS: PixelArt = {
   ],
 };
 
+// A barrel seen from above (to push).
+const BARREL: PixelArt = {
+  palette: [{ key: 'k', color: '#2a1a10' }, { key: 'i', color: '#4b4f5c' }, { key: 'w', color: '#9b6a3c' }, { key: 'l', color: '#c08850' }, { key: 'd', color: '#7a522c' }],
+  rows: [
+    '.....kkkkkk.....',
+    '...kkiiiiiikk...',
+    '..kiiwwwwwwiik..',
+    '.kiwwllllllwwik.',
+    '.kiwlwwwwwwlwik.',
+    'kiwlwwddddwwlwik',
+    'kiwlwdwwwwdwlwik',
+    'kiwlwdwwwwdwlwik',
+    'kiwlwdwwwwdwlwik',
+    'kiwlwdwwwwdwlwik',
+    'kiwlwwddddwwlwik',
+    '.kiwlwwwwwwlwik.',
+    '.kiwwllllllwwik.',
+    '..kiiwwwwwwiik..',
+    '...kkiiiiiikk...',
+    '.....kkkkkk.....',
+  ],
+};
+
+
 /** Images the top-down starter objects use. */
 export interface TopDownStarterAssets {
   player: AssetRecord;
@@ -245,6 +269,7 @@ export interface TopDownStarterAssets {
   teleporter: AssetRecord;
   goal: AssetRecord;
   lever: AssetRecord;
+  barrel: AssetRecord;
 }
 
 export function createTopDownStarterAssets(): TopDownStarterAssets {
@@ -260,6 +285,7 @@ export function createTopDownStarterAssets(): TopDownStarterAssets {
     teleporter: createPixelArtAsset('Teleporter pad', PAD),
     goal: createPixelArtAsset('Stairs', STAIRS),
     lever: createLeverAsset(),
+    barrel: createPixelArtAsset('Barrel', BARREL),
   };
 }
 
@@ -275,6 +301,7 @@ const CATEGORIES: Record<string, string> = {
   Hazard: 'Environment',
   Teleporter: 'Environment',
   Goal: 'Environment',
+  Barrel: 'Environment',
 };
 const TILES = new Set(['Wall', 'Floor', 'Hazard']);
 
@@ -398,6 +425,17 @@ export function createTopDownStarterDefinitions(registry: ComponentRegistry, ass
       },
       ['goal'],
       'Stairs down: reaching them wins the level (play goes on to the next level).',
+    ),
+    createDefinition(
+      'Barrel',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#9b6a3c', assetId: assets.barrel.id }),
+        // A hair smaller than a tile, so it slides along corridors without catching on wall corners.
+        Collider: c('Collider', { size: { x: 30, y: 30 }, matchSprite: false }),
+        Pushable: c('Pushable', { step: 32 }),
+      },
+      ['barrel', 'pushable'],
+      'A barrel the player can push, one tile per push (for puzzles); it blocks everything else like a wall.',
     ),
   ];
   for (const def of defs) {

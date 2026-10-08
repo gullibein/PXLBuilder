@@ -97,6 +97,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {
       damageSources: { kind: 'stringList', default: ['hazard', 'enemy'], description: 'Tags of entities that can deal damage' },
       invincibilityDuration: { kind: 'number', default: 1, min: 0, step: 0.1, description: 'Seconds of invincibility after a hit' },
+      knockback: { kind: 'number', default: 160, min: 0, max: 1000, step: 10, description: 'How hard a hit shoves it away from what hurt it (px/s, for a moment; then it moves as before). 0 = not at all: for grid and turn-based games, where things must stay on their squares' },
     },
   },
   {
@@ -166,6 +167,18 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   // ------------------------------------------------------------ behaviors: what things do on their own
+  {
+    type: 'Pushable',
+    label: 'Pushable',
+    description:
+      'Can be pushed: a character (one tagged as a pusher) walking into it shoves it along, unless a wall or something else is in the way; it blocks everything else like a wall. Sideways in a platformer (a crate with a dynamic Physics Body also falls), in all four directions seen from above. step 0: it slides along as long as it is pushed; step 32: each push moves it exactly one tile (Sokoban), so it stays on the grid.',
+    category: 'Physics',
+    fields: {
+      step: { kind: 'number', default: 0, min: 0, step: 8, description: '0 = slides smoothly while pushed; more = each push moves it exactly this many pixels (32 = one tile, for puzzles on a grid)' },
+      pushers: { kind: 'stringList', default: ['player'], description: 'Tags of who can push it' },
+      speed: { kind: 'number', default: 160, min: 1, step: 10, description: 'For step pushes: how fast it slides to the next spot (px/s)' },
+    },
+  },
   {
     type: 'Wander',
     label: 'Wander',

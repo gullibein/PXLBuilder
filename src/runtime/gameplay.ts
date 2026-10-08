@@ -44,6 +44,8 @@ export interface Message {
 const MAX_EVENTS_PER_STEP = 200;
 const MAX_LOG = 2000;
 const KNOCKBACK = { x: 160, y: 220 };
+/** How long a knock back shoves (seconds); with gravity it lasts until landing. */
+const KNOCK_TIME = 0.15;
 /** Touching includes standing on something or pressing against it. */
 const TOUCH_SLOP = 0.5;
 /** How far below a stompable's top the feet may have been and still count as landing on it. */
@@ -255,18 +257,21 @@ export class Gameplay {
     victim.health.current = Math.max(0, victim.health.current - amount);
     victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
-    if (victim.body === 'dynamic' && source) {
-      // A small knock back, away from what hurt it (seen from above: straight away from it).
+    const strength = victim.receiver?.knockback ?? KNOCKBACK.x;
+    if (victim.body === 'dynamic' && source && strength > 0) {
+      // A small knock back, away from what hurt it (seen from above: straight away from it), for a moment.
+      const restore = victim.knock?.restore ?? { vx: victim.vx, vy: victim.vy };
       if (this.rt.floats(victim)) {
         const dx = victim.x - source.x;
         const dy = victim.y - source.y;
         const d = Math.hypot(dx, dy) || 1;
-        victim.vx = (d > 0.5 ? dx / d : victim.facing === 1 ? -1 : 1) * KNOCKBACK.x;
-        victim.vy = d > 0.5 ? (dy / d) * KNOCKBACK.x : 0;
+        victim.vx = (d > 0.5 ? dx / d : victim.facing === 1 ? -1 : 1) * strength;
+        victim.vy = d > 0.5 ? (dy / d) * strength : 0;
       } else {
-        victim.vx = (victim.x >= source.x ? 1 : -1) * KNOCKBACK.x;
-        victim.vy = -KNOCKBACK.y;
+        victim.vx = (victim.x >= source.x ? 1 : -1) * strength;
+        victim.vy = -KNOCKBACK.y * (strength / KNOCKBACK.x);
       }
+      victim.knock = { t: KNOCK_TIME, restore };
       victim.climbing = false;
     }
     this.emit('damaged', victim, source, { amount, health: victim.health.current });

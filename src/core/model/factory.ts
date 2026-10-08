@@ -162,6 +162,29 @@ const ENEMY_ART: PixelArt = {
   ],
 };
 
+/** A wooden crate (to push). */
+const CRATE: PixelArt = {
+  palette: [{ key: 'k', color: '#2a1a10' }, { key: 'w', color: '#b07a43' }, { key: 'd', color: '#7a522c' }, { key: 'l', color: '#d49a5c' }],
+  rows: [
+    'kkkkkkkkkkkkkkkk',
+    'kllllllllllllllk',
+    'kldddddddddddddk',
+    'kldwwwwwwwwwwdlk',
+    'kldwdwwwwwwdwdlk',
+    'kldwwdwwwwdwwdlk',
+    'kldwwwdwwdwwwdlk',
+    'kldwwwwddwwwwdlk',
+    'kldwwwwddwwwwdlk',
+    'kldwwwdwwdwwwdlk',
+    'kldwwdwwwwdwwdlk',
+    'kldwdwwwwwwdwdlk',
+    'kldwwwwwwwwwwdlk',
+    'kldddddddddddddk',
+    'kllllllllllllllk',
+    'kkkkkkkkkkkkkkkk',
+  ],
+};
+
 /** An image asset drawn from pixel art; it keeps the pixels, so they can be redrawn and varied later. */
 /** The two-tile spikes drawing of format v8 (recognized when upgrading older games). */
 export const SPIKES_ART_V8_ROWS: readonly string[] = [
@@ -260,10 +283,11 @@ export interface StarterAssets {
   hazard: AssetRecord;
   teleporter: AssetRecord;
   goal: AssetRecord;
+  crate: AssetRecord;
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset() };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE) };
 }
 
 /** Library categories of the starter objects. */
@@ -280,6 +304,7 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Hazard: 'Environment',
   Teleporter: 'Environment',
   Goal: 'Environment',
+  Crate: 'Environment',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder']);
 
@@ -405,6 +430,17 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       ['goal'],
       'The level goal: reaching it wins the level (play goes on to the next level).',
     ),
+    createDefinition(
+      'Crate',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#b07a43', assetId: assets.crate.id }),
+        Collider: c('Collider', { size: { x: 32, y: 32 } }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
+        Pushable: c('Pushable'),
+      },
+      ['crate', 'pushable'],
+      'A crate the player can push sideways (it falls off ledges); stand on it to reach higher.',
+    ),
   ];
   for (const def of defs) {
     // Remembers which starter this is, so it can be reset even after being renamed.
@@ -443,6 +479,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal],
+    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal, assets.crate],
   };
 }

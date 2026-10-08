@@ -4,6 +4,7 @@ import { createBuiltinRegistry } from '../core/components/builtin';
 import { createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { addRelationship } from '../core/logic/mutations';
+import { setScript } from '../core/script/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { Runtime } from './runtime';
@@ -270,5 +271,154 @@ describe('sprite layers', () => {
     const mk = (name: string, layer?: number) => ({ name, components: { Sprite: layer === undefined ? {} : { layer } } }) as never;
     const list = [mk('player'), mk('floor', -1), mk('roof', 1), mk('coin'), mk('floor2', -1)];
     expect(byLayer(list).map((e: { name: string }) => e.name)).toEqual(['floor', 'floor2', 'player', 'coin', 'roof']);
+  });
+});
+
+describe('knock back', () => {
+  it('seen from above, a hit shoves an enemy a little, then it stops (no sliding into a wall)', () => {
+    const rt = room((d, _s, place) => {
+      const def = d.definitions.find((x) => x.name === 'Enemy')!;
+      def.components.Health = { ...registry.createDefault('Health'), maxHealth: 5, currentHealth: 5 };
+      def.components.DamageReceiver = { ...registry.createDefault('DamageReceiver'), damageSources: ['player'] };
+      place('Enemy', { x: 0, y: 64 });
+    });
+    const enemy = rt.find('Enemy')!;
+    rt.gameplay.hurt(enemy, 1, rt.find('Player')!);
+    run(rt, new InputState(), 1);
+    expect(enemy.vy).toBe(0);
+    expect(enemy.y - 64).toBeGreaterThan(5);
+    expect(enemy.y - 64).toBeLessThan(40);
+  });
+
+  it('knockback 0 keeps it exactly on its square (grid and turn-based games)', () => {
+    const rt = room((d, _s, place) => {
+      const def = d.definitions.find((x) => x.name === 'Enemy')!;
+      def.components.Health = { ...registry.createDefault('Health'), maxHealth: 5, currentHealth: 5 };
+      def.components.DamageReceiver = { ...registry.createDefault('DamageReceiver'), knockback: 0 };
+      place('Enemy', { x: 0, y: 64 });
+    });
+    const enemy = rt.find('Enemy')!;
+    rt.gameplay.hurt(enemy, 1, rt.find('Player')!);
+    run(rt, new InputState(), 1);
+    expect(enemy.health!.current).toBe(4);
+    expect(enemy.x).toBe(0);
+    expect(enemy.y).toBe(64);
+  });
+
+  it('with gravity, a knocked enemy goes back to how it moved once it lands (it no longer slides on forever)', () => {
+    const rt = room((d, _s, place) => {
+      const def = d.definitions.find((x) => x.name === 'Enemy')!;
+      def.components.Health = { ...registry.createDefault('Health'), maxHealth: 5, currentHealth: 5 };
+      def.components.DamageReceiver = registry.createDefault('DamageReceiver');
+      // A floor under the enemy.
+      for (let x = -64; x <= 64; x += 32) place('Stone', { x, y: 112 });
+      place('Enemy', { x: 0, y: 80 });
+    }, 980);
+    const enemy = rt.find('Enemy')!;
+    run(rt, new InputState(), 0.3);
+    rt.gameplay.hurt(enemy, 1, rt.find('Player')!);
+    run(rt, new InputState(), 1.5);
+    expect(enemy.grounded).toBe(true);
+    expect(enemy.vx).toBe(0);
+  });
+});
+
+describe('Pushable', () => {
+  const withBarrel = (pushable: Record<string, unknown>, at: Vec2, gravity = 0) =>
+    room((d, _s, place) => {
+      const barrel = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_barrel', name: 'Barrel', tags: ['barrel'] };
+      barrel.components = { ...barrel.components, Pushable: { ...registry.createDefault('Pushable'), ...pushable } };
+      d.definitions.push(JSON.parse(JSON.stringify(barrel)));
+      place('Barrel', at);
+    }, gravity);
+
+  it('seen from above, walking into a barrel pushes it along (down here)', () => {
+    const rt = withBarrel({}, { x: 0, y: 64 });
+    const p = rt.find('Player')!;
+    const barrel = rt.find('Barrel')!;
+    const input = new InputState();
+    input.press('down');
+    run(rt, input, 0.6);
+    expect(barrel.y).toBeGreaterThan(100);
+    // The player stays right behind it (touching, not inside).
+    expect(barrel.y - 16 - (p.y + 16)).toBeGreaterThanOrEqual(-0.01);
+    expect(barrel.y - 16 - (p.y + 16)).toBeLessThan(2);
+    expect(rt.eventLog.filter((e) => e.type === 'pushed')).toHaveLength(1);
+  });
+
+  it('a wall stops the barrel, and the barrel stops the player', () => {
+    const rt = withBarrel({}, { x: -48, y: 0 });
+    const p = rt.find('Player')!;
+    const barrel = rt.find('Barrel')!;
+    const input = new InputState();
+    input.press('left');
+    run(rt, input, 2);
+    // The wall's right edge is x = -80: the barrel rests against it, the player against the barrel.
+    expect(barrel.x).toBeCloseTo(-80 + 16, 3);
+    expect(p.x).toBeCloseTo(-80 + 32 + 14, 1);
+  });
+
+  it('step 32: each push moves it exactly one tile, so it stays on the grid', () => {
+    const rt = withBarrel({ step: 32, speed: 320 }, { x: 0, y: 48 });
+    const barrel = rt.find('Barrel')!;
+    const input = new InputState();
+    input.press('down');
+    run(rt, input, 0.2);
+    input.release('down');
+    run(rt, input, 0.5);
+    expect(barrel.y - 48).toBeCloseTo(32 * Math.round((barrel.y - 48) / 32), 5);
+    expect(barrel.y).toBeGreaterThan(48);
+    expect(barrel.x).toBe(0);
+  });
+
+  it('only pushers can push it; an enemy just bumps into it', () => {
+    const rt = withBarrel({}, { x: 64, y: 0 });
+    const barrel = rt.find('Barrel')!;
+    const input = new InputState();
+    input.press('right');
+    run(rt, input, 0.5);
+    expect(barrel.x).toBeGreaterThan(64);
+    const rt2 = withBarrel({ pushers: ['someone else'] }, { x: 64, y: 0 });
+    const input2 = new InputState();
+    input2.press('right');
+    run(rt2, input2, 0.5);
+    expect(rt2.find('Barrel')!.x).toBe(64);
+  });
+
+  it('in a platformer it is pushed sideways only, and a crate with gravity falls off a ledge', () => {
+    const rt = room((d, _s, place) => {
+      const crate = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_crate', name: 'Crate', tags: ['crate'] };
+      crate.components = { ...crate.components, PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'dynamic' }, Pushable: registry.createDefault('Pushable') };
+      d.definitions.push(JSON.parse(JSON.stringify(crate)));
+      m.setDefinitionComponentField(d, d.definitions.find((x) => x.name === 'Player')!.id, 'CharacterController', 'movement', 'platformer', registry);
+      // A short floor: x -48..48 at y 48 (top 32).
+      for (const x of [-32, 0, 32]) place('Stone', { x, y: 48 });
+      place('Crate', { x: 0, y: 16 });
+      d.scenes[0].entities.find((e) => e.name === 'Player')!.transform.position = { x: -48, y: 16 };
+    }, 980);
+    const crate = rt.find('Crate')!;
+    const input = new InputState();
+    input.press('right');
+    run(rt, input, 1.5);
+    // Pushed off the right end of the floor, it fell.
+    expect(crate.y).toBeGreaterThan(60);
+  });
+});
+
+describe('thing_at', () => {
+  it('a script can see what is on a grid square', () => {
+    const rt = room((d, _s, place) => {
+      const coin = place('Coin', { x: 64, y: 0 });
+      void coin;
+      const player = d.scenes[0].entities.find((e) => e.name === 'Player')!.id;
+      setScript(d, { target: 'instance', id: player }, {
+        name: 'Look',
+        handlers: [
+          { when: { on: 'start' }, do: [{ do: 'if', cond: 'thing_at(self.x + 64, self.y, "collectible") != null and thing_at(self.x - 64, self.y) == null', then: [{ do: 'message', text: 'coin to the right' }], else: [] }] },
+        ],
+      });
+    });
+    run(rt, new InputState(), 0.1);
+    expect(rt.messages).toContain('coin to the right');
   });
 });

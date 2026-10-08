@@ -705,6 +705,23 @@ export class ScriptSystem {
         return this.input?.wasPressed(show(v[0]) as never) ?? false;
       case 'solid_at':
         return this.solidAt(n(0), n(1));
+      case 'thing_at': {
+        const x = n(0);
+        const y = n(1);
+        const tag = v.length > 2 && v[2] !== null ? show(v[2]) : null;
+        return (
+          this.rt.entities.find((o) => {
+            if (o === self || !o.alive || (tag !== null && !o.tags.includes(tag))) return false;
+            const b = this.rt.boxOf(o);
+            if (b) return Math.abs(x - b.x) < b.hw && Math.abs(y - b.y) < b.hh;
+            // No collider: its picture's box.
+            const s = o.base.components.Sprite;
+            const hw = (Number(s?.width) || 0) / 2;
+            const hh = (Number(s?.height) || 0) / 2;
+            return Math.abs(x - o.x) < hw && Math.abs(y - o.y) < hh;
+          }) ?? null
+        );
+      }
       case 'can_see': {
         const a = asEntity(v[0]);
         if (!a) return false;

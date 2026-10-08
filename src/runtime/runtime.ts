@@ -68,7 +68,11 @@ export interface RuntimeEntity {
   open: boolean;
   switch: { activation: 'interact' | 'touch'; once: boolean; on: boolean; used: boolean } | null;
   health: { current: number; max: number } | null;
-  receiver: { sources: string[]; invincibility: number } | null;
+  receiver: { sources: string[]; invincibility: number; knockback: number } | null;
+  /** Pushable: how it moves when pushed (step 0 = slides), who may push it, and when it was last pushed (a push after a pause is a new "pushed" event). */
+  pushable: { step: number; pushers: string[]; speed: number; pushedAt: number } | null;
+  /** Being knocked back by a hit: for how long, and the velocity it had before (it goes back to that after). */
+  knock: { t: number; restore: { vx: number; vy: number } } | null;
   /** Damage dealt on contact (Damage.amount), or null. */
   damage: number | null;
   /** Seconds left without taking damage. */
@@ -306,7 +310,9 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     open: c.Openable?.startsOpen === true,
     switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
     health: c.Health ? { current: Number(c.Health.currentHealth), max: Number(c.Health.maxHealth) } : null,
-    receiver: c.DamageReceiver ? { sources: (c.DamageReceiver.damageSources as string[]) ?? [], invincibility: Number(c.DamageReceiver.invincibilityDuration) } : null,
+    receiver: c.DamageReceiver ? { sources: (c.DamageReceiver.damageSources as string[]) ?? [], invincibility: Number(c.DamageReceiver.invincibilityDuration), knockback: typeof c.DamageReceiver.knockback === 'number' ? c.DamageReceiver.knockback : 160 } : null,
+    knock: null,
+    pushable: c.Pushable ? { step: Number(c.Pushable.step) || 0, pushers: (c.Pushable.pushers as string[]) ?? ['player'], speed: Number(c.Pushable.speed) || 160, pushedAt: -Infinity } : null,
     damage: c.Damage ? Number(c.Damage.amount) : null,
     invincible: 0,
     inventory,
@@ -485,7 +491,8 @@ export class Runtime {
       if (e.collider && e.body !== 'dynamic') this.solidsDirty = true;
     }
     if (this.solidsDirty) {
-      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
+      // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
+      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
       this.rebuildLadders();
       this.solidsDirty = false;
     }
@@ -501,6 +508,7 @@ export class Runtime {
       }
     }
     const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
+    const pushables = this.entities.filter((e) => e.pushable && this.isSolid(e));
 
     for (const e of this.entities) {
       if (e.body !== 'dynamic' || !e.alive) continue;
@@ -510,6 +518,17 @@ export class Runtime {
         e.vx = 0;
         e.vy = 0;
         continue;
+      }
+      if (e.knock) {
+        // A knock back lasts a moment (and, with gravity, until it lands); then it moves as it did before the hit.
+        e.knock.t -= dt;
+        if (e.knock.t <= 0 && (this.floats(e) || e.grounded)) {
+          if (!e.controller) {
+            e.vx = e.knock.restore.vx;
+            if (this.floats(e)) e.vy = e.knock.restore.vy;
+          }
+          e.knock = null;
+        }
       }
       if (e.controller) this.control(e, input, dt);
       if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
@@ -521,9 +540,12 @@ export class Runtime {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
       } else {
+        if (pushables.length && !e.pushable) this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids, pushables);
         // Ladder tops hold you up unless you are climbing (or already below them).
         const prevBottom = box.y + box.hh;
-        const surfaces = e.climbing ? solids : [...solids, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
+        const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => boxOf(p)!) : [];
+        const base = others.length ? [...solids, ...others] : solids;
+        const surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
         const r = moveAndCollide(box, e.vx * dt, e.vy * dt, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
@@ -747,9 +769,53 @@ export class Runtime {
     return true;
   }
 
-  /** Solids that don't move this step (for behaviors looking at walls and floors). */
+  /** Solids (walls, floors, and pushable things where they are now), for behaviors and shots looking at what is in the way. */
   get solids(): readonly Box[] {
-    return this.staticSolids;
+    const pushed = this.entities.filter((e) => e.pushable && this.isSolid(e));
+    return pushed.length ? [...this.staticSolids, ...pushed.map((e) => boxOf(e)!)] : this.staticSolids;
+  }
+
+  /**
+   * `e` is about to move by (dx, dy): whatever Pushable it would walk into
+   * (and may push) is shoved ahead of it first, as far as walls and other
+   * things allow, so `e` then follows right behind it. A step Pushable instead
+   * starts gliding one step, if that spot is free.
+   */
+  private pushAlong(e: RuntimeEntity, box: Box, dx: number, dy: number, walls: readonly Box[], pushables: RuntimeEntity[]): void {
+    const mine = pushables.filter((p) => p.alive && p.pushable!.pushers.some((t) => e.tags.includes(t)));
+    if (!mine.length) return;
+    const blockers = (p: RuntimeEntity) => [
+      ...walls,
+      ...pushables.filter((o) => o !== p).map((o) => boxOf(o)!),
+      // Other moving solid things (characters, enemies) are in the way too, but not the pusher.
+      ...this.entities.filter((o) => o !== p && o !== e && o.alive && o.body === 'dynamic' && !o.pushable && o.collider && !o.collider.trigger).map((o) => boxOf(o)!),
+    ];
+    for (const [ax, d] of [['x', dx], ['y', dy]] as const) {
+      if (Math.abs(d) < 1e-9) continue;
+      const moved: Box = ax === 'x' ? { ...box, x: box.x + d } : { ...box, y: box.y + d };
+      for (const p of mine) {
+        const pb = boxOf(p)!;
+        if (!overlaps(moved, pb)) continue;
+        const s = p.pushable!;
+        const dir = Math.sign(d);
+        if (s.step > 0) {
+          if (p.moveTarget) continue;
+          const to = ax === 'x' ? { x: p.x + dir * s.step, y: p.y } : { x: p.x, y: p.y + dir * s.step };
+          const target: Box = { ...pb, x: pb.x + (to.x - p.x), y: pb.y + (to.y - p.y) };
+          if (blockers(p).some((b) => overlaps(target, b))) continue;
+          this.moveTo(p, to, s.speed);
+        } else {
+          // Shove it by as much as `e` would sink into it.
+          const sink = ax === 'x' ? (d > 0 ? moved.x + moved.hw - (pb.x - pb.hw) : moved.x - moved.hw - (pb.x + pb.hw)) : d > 0 ? moved.y + moved.hh - (pb.y - pb.hh) : moved.y - moved.hh - (pb.y + pb.hh);
+          const r = moveAndCollide(pb, ax === 'x' ? sink : 0, ax === 'y' ? sink : 0, blockers(p));
+          p.x += r.x - pb.x;
+          p.y += r.y - pb.y;
+          if (r.x === pb.x && r.y === pb.y) continue;
+        }
+        if (this.time - s.pushedAt > 0.1) this.gameplay.emit('pushed', p, e);
+        s.pushedAt = this.time;
+      }
+    }
   }
 
   /** Fires a shot from `from` in direction (dx, dy) (normalized), as a runtime-only entity. */
@@ -822,6 +888,7 @@ export class Runtime {
     e.spin = 0;
     e.speedFactor = 1;
     e.gravityScale = e.baseGravity;
+    e.knock = null;
     if (e.health) e.health.current = e.health.max;
     if (!e.alive) {
       e.alive = true;
