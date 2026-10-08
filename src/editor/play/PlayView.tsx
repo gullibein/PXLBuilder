@@ -21,6 +21,8 @@ interface Hud {
   messages: string[];
   hasSwitches: boolean;
   canShoot: boolean;
+  /** The player walks in every direction (top-down): no jumping. */
+  topDown: boolean;
   /** "Level complete!" while moving on, or "You finished the game!" after the last level. */
   banner: string | null;
 }
@@ -29,7 +31,7 @@ const sameHud = (a: Hud, b: Hud) => JSON.stringify(a) === JSON.stringify(b);
 
 export function PlayView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, banner: null });
+  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -47,12 +49,14 @@ export function PlayView() {
     let recorder = new PlayRecorder(runtime);
     let hasSwitches = false;
     let canShoot = false;
+    let topDown = false;
     const look = () => {
+      topDown = runtime.entities.some((e) => e.controller?.movement === 'topdown');
       hasSwitches = runtime.entities.some((e) => e.switch);
       canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
     };
     look();
-    let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot, banner: null };
+    let shown: Hud = { health: null, items: [], messages: [], hasSwitches, canShoot, topDown, banner: null };
     /** The game is finished: the last level was won (play stops, the banner stays). */
     let finished = false;
     const input = new InputState();
@@ -172,6 +176,7 @@ export function PlayView() {
         messages: runtime.messages,
         hasSwitches,
         canShoot,
+        topDown,
         banner,
       };
       if (!sameHud(next, shown)) {
@@ -226,7 +231,7 @@ export function PlayView() {
           {hud.messages.at(-1)}
         </div>
       )}
-      <div className="hud-keys">Arrows move · Space jumps{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts · Esc stops</div>
+      <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts · Esc stops</div>
     </div>
   );
 }

@@ -102,7 +102,7 @@ export class Gameplay {
             bestD = d;
           }
         }
-        const flying = f.gravityScale === 0;
+        const flying = this.rt.floats(f);
         if (!best || (range > 0 && bestD > range) || !this.check(r.conditions, { subject: f, other: best })) {
           f.vx = 0;
           if (flying) f.vy = 0;
@@ -114,6 +114,7 @@ export class Gameplay {
           const d = Math.hypot(dx, dy);
           f.vx = d > 2 ? (dx / d) * speed : 0;
           f.vy = d > 2 ? (dy / d) * speed : 0;
+          if (d > 2) f.heading = Math.abs(dy) > Math.abs(dx) ? { x: 0, y: Math.sign(dy) } : { x: Math.sign(dx), y: 0 };
         } else {
           f.vx = Math.abs(dx) > 2 ? Math.sign(dx) * speed : 0;
         }
@@ -195,7 +196,8 @@ export class Gameplay {
 
   /** `e` came down onto the top of `o` and may stomp it. */
   private landedOn(e: RuntimeEntity, o: RuntimeEntity): boolean {
-    if (!e.alive || e.vy < 0 || !e.tags.some((t) => o.stompable!.stompers.includes(t))) return false;
+    // Without gravity there is no landing on top (walking into it from above is just touching it).
+    if (!e.alive || e.vy < 0 || this.rt.floats(e) || !e.tags.some((t) => o.stompable!.stompers.includes(t))) return false;
     const eb = this.rt.boxOf(e);
     const ob = this.rt.boxOf(o);
     if (!eb || !ob) return false;
@@ -254,9 +256,17 @@ export class Gameplay {
     victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
     if (victim.body === 'dynamic' && source) {
-      // A small knock back, away from what hurt it.
-      victim.vx = (victim.x >= source.x ? 1 : -1) * KNOCKBACK.x;
-      victim.vy = -KNOCKBACK.y;
+      // A small knock back, away from what hurt it (seen from above: straight away from it).
+      if (this.rt.floats(victim)) {
+        const dx = victim.x - source.x;
+        const dy = victim.y - source.y;
+        const d = Math.hypot(dx, dy) || 1;
+        victim.vx = (d > 0.5 ? dx / d : victim.facing === 1 ? -1 : 1) * KNOCKBACK.x;
+        victim.vy = d > 0.5 ? (dy / d) * KNOCKBACK.x : 0;
+      } else {
+        victim.vx = (victim.x >= source.x ? 1 : -1) * KNOCKBACK.x;
+        victim.vy = -KNOCKBACK.y;
+      }
       victim.climbing = false;
     }
     this.emit('damaged', victim, source, { amount, health: victim.health.current });

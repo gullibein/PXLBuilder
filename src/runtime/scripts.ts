@@ -269,7 +269,7 @@ export class ScriptSystem {
         if (!t || t === e) break;
         const dx = t.x - e.x;
         const dy = t.y - e.y;
-        if (e.gravityScale === 0 || e.body !== 'dynamic') {
+        if (this.rt.floats(e) || e.body !== 'dynamic') {
           const d = Math.hypot(dx, dy);
           e.vx = d > 1 ? (dx / d) * speed : 0;
           e.vy = d > 1 ? (dy / d) * speed : 0;

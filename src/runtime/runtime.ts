@@ -25,6 +25,8 @@ import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
 export interface Controller {
+  /** platformer: run, jump and climb with gravity; topdown: walk in every direction, seen from above. */
+  movement: 'platformer' | 'topdown';
   speed: number;
   acceleration: number;
   jumpForce: number;
@@ -77,6 +79,8 @@ export interface RuntimeEntity {
   stompable: { stompers: string[]; bounce: number; damage: number } | null;
   /** Which way it faces (1 right, -1 left): set by running and patrolling; drawn mirrored when -1. */
   facing: 1 | -1;
+  /** The way it last moved or looked, as a direction (x, y each -1, 0 or 1; diagonals too): where a top-down character shoots. */
+  heading: { x: number; y: number };
   /** The side it bumped into a wall on in the last step (-1 left, 1 right, 0 none). */
   bumped: -1 | 0 | 1;
   /** Behavior scripts this entity runs (its own copy: variables, state). */
@@ -177,13 +181,14 @@ export interface ScreenDrawing {
   order: number;
 }
 
-export type Situation = 'idle' | 'run' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot';
+export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot';
 /** How long the hurt and shoot looks last (seconds). */
 const HURT_LOOK = 0.4;
 const SHOOT_LOOK = 0.25;
 
 export interface Behaviors {
-  patrol: { speed: number; distance: number; turnAtLedges: boolean; originX: number; originY: number; dir: 1 | -1 } | null;
+  /** dir: 1 right (or down when vertical), -1 left (or up). */
+  patrol: { speed: number; distance: number; turnAtLedges: boolean; originX: number; originY: number; dir: 1 | -1; vertical: boolean } | null;
   jumper: { interval: number; jumpForce: number; t: number } | null;
   shooter: { trigger: 'auto' | 'key'; interval: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number } | null;
   mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
@@ -201,7 +206,7 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
   const mv = c.MovingPlatform;
   const t = c.Timer;
   return {
-    patrol: p ? { speed: num(p.speed, 60), distance: num(p.distance, 0), turnAtLedges: p.turnAtLedges !== false, originX: at.x, originY: at.y, dir: p.startDirection === 'left' ? -1 : 1 } : null,
+    patrol: p ? { speed: num(p.speed, 60), distance: num(p.distance, 0), turnAtLedges: p.turnAtLedges !== false, originX: at.x, originY: at.y, dir: p.startDirection === 'left' || p.startDirection === 'up' ? -1 : 1, vertical: p.startDirection === 'up' || p.startDirection === 'down' } : null,
     jumper: j ? { interval: num(j.interval, 2), jumpForce: num(j.jumpForce, 300), t: 0 } : null,
     shooter: s
       ? {
@@ -286,7 +291,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     speedFactor: 1,
     collider,
-    controller: cc ? { speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
+    controller: cc ? { movement: cc.movement === 'topdown' ? 'topdown' : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
     grounded: false,
     climbing: false,
@@ -305,6 +310,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
     stompGrace: 0,
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
+    heading: c.Patrol?.startDirection === 'up' ? { x: 0, y: -1 } : c.Patrol?.startDirection === 'down' ? { x: 0, y: 1 } : { x: c.Patrol?.startDirection === 'left' ? -1 : 1, y: 0 },
     bumped: 0,
     hurtAt: -Infinity,
     shotAt: -Infinity,
@@ -500,7 +506,7 @@ export class Runtime {
         continue;
       }
       if (e.controller) this.control(e, input, dt);
-      if (!e.climbing && !e.hanging) {
+      if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
         e.vx += this.gravity.x * e.gravityScale * dt;
         e.vy = Math.min(MAX_FALL_SPEED, e.vy + this.gravity.y * e.gravityScale * dt);
       }
@@ -522,7 +528,8 @@ export class Runtime {
         // Climbing down onto the floor (or standing on it) ends the climb.
         if (e.climbing && e.grounded && e.vy >= 0) e.climbing = false;
       }
-      if (e.y > this.fallLimit) this.respawn(e, 'fell');
+      // Without gravity nothing falls out of the level (a top-down character can walk below it).
+      if (e.y > this.fallLimit && !this.floats(e)) this.respawn(e, 'fell');
     }
     this.behaviors.after(dt);
     this.gameplay.update(dt, input);
@@ -573,9 +580,19 @@ export class Runtime {
     return e;
   }
 
+  /**
+   * Nothing pulls it down: a top-down character, something with no gravity of
+   * its own, or anything in a level without gravity. It can't stand, jump,
+   * fall or land on things; it moves in every direction.
+   */
+  floats(e: RuntimeEntity): boolean {
+    return e.controller?.movement === 'topdown' || e.gravityScale === 0 || (this.gravity.x === 0 && this.gravity.y === 0);
+  }
+
   /** Player-style movement for entities with a CharacterController. */
   private control(e: RuntimeEntity, input: InputState, dt: number): void {
     const c = e.controller!;
+    if (c.movement === 'topdown') return this.walkTopDown(e, input, dt);
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
     const ladder = this.ladderAt(e);
 
@@ -641,6 +658,37 @@ export class Runtime {
     if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
     // Releasing jump early makes a shorter hop.
     if (input.wasReleased('jump') && e.vy < 0) e.vy *= 0.5;
+  }
+
+  /**
+   * Top-down walking: the arrow keys (or WASD) move it in eight directions at
+   * the same speed (diagonals aren't faster), speeding up and slowing down by
+   * its acceleration. Walls stop it; nothing pulls it down.
+   */
+  private walkTopDown(e: RuntimeEntity, input: InputState, dt: number): void {
+    const c = e.controller!;
+    const dx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
+    const dy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
+    if (dx !== 0) e.facing = dx as 1 | -1;
+    if (dx !== 0 || dy !== 0) e.heading = { x: dx, y: dy };
+    const len = Math.hypot(dx, dy) || 1;
+    const tx = (dx / len) * c.speed * e.speedFactor;
+    const ty = (dy / len) * c.speed * e.speedFactor;
+    // Toward the wanted velocity, at most `acceleration` per second (as one vector, so turning is smooth).
+    const ex = tx - e.vx;
+    const ey = ty - e.vy;
+    const off = Math.hypot(ex, ey);
+    const step = c.acceleration * dt;
+    if (off <= step) {
+      e.vx = tx;
+      e.vy = ty;
+    } else {
+      e.vx += (ex / off) * step;
+      e.vy += (ey / off) * step;
+    }
+    e.grounded = false;
+    e.climbing = false;
+    e.hanging = null;
   }
 
   /**
@@ -818,12 +866,16 @@ export class Runtime {
     else if (this.time - e.shotAt < SHOOT_LOOK) situation = 'shoot';
     else if (e.hanging) situation = 'hang';
     else if (e.climbing) situation = 'climb';
-    else if (e.body === 'dynamic' && !e.grounded && e.gravityScale !== 0) situation = e.vy < 0 ? 'jump' : 'fall';
+    else if (this.floats(e)) {
+      // Seen from above (or flying): moving up or down the screen, else sideways.
+      if (Math.abs(e.vy) > 5 && Math.abs(e.vy) > Math.abs(e.vx)) situation = e.vy < 0 ? 'up' : 'down';
+      else if (Math.abs(e.vx) > 5) situation = 'run';
+    } else if (e.body === 'dynamic' && !e.grounded) situation = e.vy < 0 ? 'jump' : 'fall';
     else if (Math.abs(e.vx) > 5) situation = 'run';
     const states = e.base.components.SpriteStates as Record<string, unknown> | undefined;
     if (!states || situation === 'idle') return { situation, assetId: null };
     const pick = (k: string) => (typeof states[k] === 'string' && states[k] ? (states[k] as string) : null);
-    return { situation, assetId: pick(situation) ?? (situation === 'fall' ? pick('jump') : null) };
+    return { situation, assetId: pick(situation) ?? (situation === 'fall' ? pick('jump') : situation === 'up' || situation === 'down' ? pick('run') : null) };
   }
 
   /** On-screen messages from rules ("You win!"). */

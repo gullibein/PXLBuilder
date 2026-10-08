@@ -24,7 +24,7 @@ export class BehaviorSystem {
       const b = e.beh;
       if (b.mover) this.moveOnPath(e, dt);
       if (b.patrol && !e.chasing && e.invincible <= 0) this.patrol(e);
-      if (b.jumper && e.body === 'dynamic') {
+      if (b.jumper && e.body === 'dynamic' && !this.rt.floats(e)) {
         b.jumper.t += dt;
         if (e.grounded && b.jumper.t >= b.jumper.interval) {
           b.jumper.t = 0;
@@ -84,6 +84,8 @@ export class BehaviorSystem {
       this.rt.markSolidsDirty();
     }
     const box = this.rt.boxOf(e);
+    const floats = this.rt.floats(e) || e.body !== 'dynamic';
+    if (p.vertical && floats) return this.patrolUpDown(e, box);
     let turn = e.bumped === p.dir;
     if (p.distance > 0 && (e.x - p.originX) * p.dir >= p.distance) turn = true;
     if (box && !turn) {
@@ -91,15 +93,30 @@ export class BehaviorSystem {
       const front: Box = { x: box.x + p.dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 };
       if (this.rt.solids.some((s) => overlaps(front, s))) turn = true;
       // No floor ahead (walkers only, and only while on the ground).
-      else if (p.turnAtLedges && e.body === 'dynamic' && e.gravityScale !== 0 && e.grounded) {
+      else if (p.turnAtLedges && !floats && e.grounded) {
         const below: Box = { x: box.x + p.dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 };
         if (!this.rt.solids.some((s) => overlaps(below, s))) turn = true;
       }
     }
     if (turn) p.dir = p.dir === 1 ? -1 : 1;
     e.vx = p.dir * p.speed * e.speedFactor;
-    if (e.gravityScale === 0 || e.body !== 'dynamic') e.vy = 0;
+    if (floats) e.vy = 0;
     e.facing = p.dir;
+    e.heading = { x: p.dir, y: 0 };
+  }
+
+  /** Up and down (no gravity): turns at walls above and below and after `distance`. */
+  private patrolUpDown(e: RuntimeEntity, box: Box | null): void {
+    const p = e.beh.patrol!;
+    let turn = p.distance > 0 && (e.y - p.originY) * p.dir >= p.distance;
+    if (box && !turn) {
+      const front: Box = { x: box.x, y: box.y + p.dir * (box.hh + 1), hw: box.hw - 1, hh: 1 };
+      if (this.rt.solids.some((s) => overlaps(front, s))) turn = true;
+    }
+    if (turn) p.dir = p.dir === 1 ? -1 : 1;
+    e.vx = 0;
+    e.vy = p.dir * p.speed * e.speedFactor;
+    e.heading = { x: 0, y: p.dir };
   }
 
   /** Moving platform: glides to origin + offset and back, waiting `pause` at each end, carrying what stands on it. */
@@ -191,8 +208,20 @@ export class BehaviorSystem {
       }
       default: {
         // Facing: patrollers and characters face where they go; still things face the target.
-        if (target && !e.beh.patrol && !e.controller) e.facing = target.x < e.x ? -1 : 1;
-        dx = e.facing;
+        if (target && !e.beh.patrol && !e.controller) {
+          e.facing = target.x < e.x ? -1 : 1;
+          // Seen from above: along whichever way the target is further off.
+          const ox = target.x - e.x;
+          const oy = target.y - e.y;
+          e.heading = Math.abs(oy) > Math.abs(ox) ? { x: 0, y: Math.sign(oy) } : { x: e.facing, y: 0 };
+        }
+        if (this.rt.floats(e)) {
+          // Without gravity it shoots the way it last went (up, down, diagonally…).
+          const d = Math.hypot(e.heading.x, e.heading.y) || 1;
+          dx = e.heading.x / d;
+          dy = e.heading.y / d;
+          if (dx === 0 && dy === 0) dx = e.facing;
+        } else dx = e.facing;
       }
     }
     const shot = this.rt.shoot(e, dx, dy, s);

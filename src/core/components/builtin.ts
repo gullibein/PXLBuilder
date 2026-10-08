@@ -24,7 +24,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'SpriteStates',
     label: 'Sprites by situation',
     description:
-      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
+      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting, and (without gravity) moving up or down. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
     category: 'Rendering',
     fields: {
       run: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving along the ground' },
@@ -34,6 +34,8 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       hang: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While hanging from a ledge' },
       hurt: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after being hurt' },
       shoot: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after shooting' },
+      up: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving up the screen without gravity (top-down games, fliers); else the running image' },
+      down: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving down the screen without gravity (top-down games, fliers); else the running image' },
     },
   },
   {
@@ -65,9 +67,11 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'CharacterController',
     label: 'Character Controller',
-    description: 'Player-style movement parameters (run and jump).',
+    description:
+      'Player-controlled movement. platformer: runs left and right, jumps (Space) and climbs ladders, pulled down by gravity. topdown: walks in every direction with the arrow keys or WASD, seen from above (Zelda, Rogue), no gravity and no jumping.',
     category: 'Movement',
     fields: {
+      movement: { kind: 'enum', options: ['platformer', 'topdown'], default: 'platformer', description: 'platformer: run and jump, with gravity. topdown: walk in all directions (diagonals too), seen from above, no gravity or jumping' },
       speed: { kind: 'number', default: 200, min: 0, step: 10, description: 'Max horizontal speed (px/s)' },
       acceleration: { kind: 'number', default: 1500, min: 0, step: 50, description: 'Horizontal acceleration (px/s²)' },
       jumpForce: { kind: 'number', default: 350, min: 0, step: 5, description: 'Initial jump speed (px/s). Jump height ≈ jumpForce² / (2 × gravity): 350 at gravity 980 is about 1.9 tiles, enough to reach the next row up easily (not two rows)' },
@@ -164,13 +168,13 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Patrol',
     label: 'Patrol',
-    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Without gravity (gravityScale 0) it flies back and forth.',
+    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Without gravity (gravityScale 0, or a level with no gravity) it flies back and forth. startDirection up or down: it goes up and down instead (only without gravity, e.g. in a top-down level).',
     category: 'Behavior',
     fields: {
       speed: { kind: 'number', default: 60, min: 0, step: 10, description: 'Pixels per second (the player runs at 200)' },
       distance: { kind: 'number', default: 0, min: 0, step: 32, description: 'How far it goes each way from its start, in pixels (32 = one tile); 0 = until a wall or ledge' },
       turnAtLedges: { kind: 'boolean', default: true, description: 'Turn around instead of walking off a ledge' },
-      startDirection: { kind: 'enum', options: ['right', 'left'], default: 'right' },
+      startDirection: { kind: 'enum', options: ['right', 'left', 'up', 'down'], default: 'right', description: 'right/left: back and forth sideways; up/down: up and down (without gravity only)' },
     },
   },
   {
