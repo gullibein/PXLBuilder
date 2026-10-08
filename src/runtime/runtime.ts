@@ -50,6 +50,8 @@ export interface RuntimeEntity {
   gravityScale: number;
   /** PhysicsBody.friction: slowing down while sliding on the ground (0..1). */
   friction: number;
+  /** PhysicsBody.mass (1 without one): how much hits and pushes move it, and how hard it is to push. */
+  mass: number;
   /** The gravity it starts with (respawning restores it). */
   baseGravity: number;
   /** Scales how fast it walks, climbs and patrols (1: normal; scripts set it, e.g. water). */
@@ -128,6 +130,9 @@ export interface RuntimeEntity {
 export const STEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 12;
 const MAX_FALL_SPEED = 1400;
+const MIN_MASS = 0.01;
+/** A Pushable this many times heavier than its pusher can't be moved by it. */
+export const TOO_HEAVY = 10;
 /** Friction 1 takes this much speed away per second (px/s²); 0.2 takes a fifth of it. */
 const FRICTION_DECEL = 1000;
 const COYOTE_TIME = 0.1;
@@ -301,6 +306,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     body: pb ? (pb.bodyType as BodyKind) : 'none',
     gravityScale: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     friction: typeof pb?.friction === 'number' ? Math.min(1, Math.max(0, pb.friction)) : 0.2,
+    mass: typeof pb?.mass === 'number' && pb.mass > 0 ? Math.max(MIN_MASS, pb.mass) : 1,
     baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     speedFactor: 1,
     collider,
@@ -547,13 +553,14 @@ export class Runtime {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
       } else {
-        if (pushables.length && !e.pushable) this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids, pushables);
+        // Pushing something heavier slows the pusher's steps (not its speed, which its controls keep up).
+        const ease = pushables.length && !e.pushable ? this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids, pushables) : { x: 1, y: 1 };
         // Ladder tops hold you up unless you are climbing (or already below them).
         const prevBottom = box.y + box.hh;
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => boxOf(p)!) : [];
         const base = others.length ? [...solids, ...others] : solids;
         const surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
-        const r = moveAndCollide(box, e.vx * dt, e.vy * dt, surfaces);
+        const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
         e.bumped = r.hitX ? (e.vx > 0 ? 1 : e.vx < 0 ? -1 : 0) : 0;
@@ -809,11 +816,14 @@ export class Runtime {
    * `e` is about to move by (dx, dy): whatever Pushable it would walk into
    * (and may push) is shoved ahead of it first, as far as walls and other
    * things allow, so `e` then follows right behind it. A step Pushable instead
-   * starts gliding one step, if that spot is free.
+   * starts gliding one step, if that spot is free. Something heavier than
+   * `e` moves by only (e's mass ÷ its mass) of that; returns, per axis, the
+   * share of its step `e` itself may then take (to stay right behind it).
    */
-  private pushAlong(e: RuntimeEntity, box: Box, dx: number, dy: number, walls: readonly Box[], pushables: RuntimeEntity[]): void {
+  private pushAlong(e: RuntimeEntity, box: Box, dx: number, dy: number, walls: readonly Box[], pushables: RuntimeEntity[]): { x: number; y: number } {
+    const share = { x: 1, y: 1 };
     const mine = pushables.filter((p) => p.alive && p.pushable!.pushers.some((t) => e.tags.includes(t)));
-    if (!mine.length) return;
+    if (!mine.length) return share;
     const blockers = (p: RuntimeEntity) => [
       ...walls,
       ...pushables.filter((o) => o !== p).map((o) => boxOf(o)!),
@@ -828,15 +838,19 @@ export class Runtime {
         if (!overlaps(moved, pb)) continue;
         const s = p.pushable!;
         const dir = Math.sign(d);
+        // Heavier than the pusher: slower (by the ratio of their masses); far too heavy: it doesn't move.
+        if (p.mass >= e.mass * TOO_HEAVY) continue;
+        const ease = Math.min(1, e.mass / p.mass);
         if (s.step > 0) {
           if (p.moveTarget) continue;
           const to = ax === 'x' ? { x: p.x + dir * s.step, y: p.y } : { x: p.x, y: p.y + dir * s.step };
           const target: Box = { ...pb, x: pb.x + (to.x - p.x), y: pb.y + (to.y - p.y) };
           if (blockers(p).some((b) => overlaps(target, b))) continue;
-          this.moveTo(p, to, s.speed);
+          this.moveTo(p, to, s.speed * ease);
         } else {
-          // Shove it by as much as `e` would sink into it.
-          const sink = ax === 'x' ? (d > 0 ? moved.x + moved.hw - (pb.x - pb.hw) : moved.x - moved.hw - (pb.x + pb.hw)) : d > 0 ? moved.y + moved.hh - (pb.y - pb.hh) : moved.y - moved.hh - (pb.y + pb.hh);
+          // Shove it by as much as `e` would sink into it (less when it is heavier; `e` then follows only that far).
+          share[ax] = Math.min(share[ax], ease);
+          const sink = ease * (ax === 'x' ? (d > 0 ? moved.x + moved.hw - (pb.x - pb.hw) : moved.x - moved.hw - (pb.x + pb.hw)) : d > 0 ? moved.y + moved.hh - (pb.y - pb.hh) : moved.y - moved.hh - (pb.y + pb.hh));
           const r = moveAndCollide(pb, ax === 'x' ? sink : 0, ax === 'y' ? sink : 0, blockers(p));
           p.x += r.x - pb.x;
           p.y += r.y - pb.y;
@@ -846,6 +860,7 @@ export class Runtime {
         s.pushedAt = this.time;
       }
     }
+    return share;
   }
 
   /** Fires a shot from `from` in direction (dx, dy) (normalized), as a runtime-only entity. */

@@ -489,7 +489,7 @@ they are each step. **Knock back** (`DamageReceiver.knockback`, 0 = none) is a
 short shove (`RuntimeEntity.knock`): afterwards, once landed when there is
 gravity, the victim's velocity goes back to what it was before the hit.
 Scripts see what is on a square with `thing_at(x, y, tag?)`.
-**Friction** (`PhysicsBody.friction`, `Runtime.applyFriction`) runs at the start of each step, before behaviors and scripts set speeds: grounded dynamic bodies lose `friction × 1000` px/s per second horizontally, and in levels without gravity everything loses it along its direction of travel; controllers, shots, knock backs and climbers are exempt, and nothing slows in the air.
+**Mass** (`PhysicsBody.mass`, `RuntimeEntity.mass`) divides knock backs and script pushes; a Pushable heavier than its pusher moves (and lets the pusher step) by the ratio of their masses, and at `TOO_HEAVY` (10) times the pusher's mass not at all. **Friction** (`PhysicsBody.friction`, `Runtime.applyFriction`) runs at the start of each step, before behaviors and scripts set speeds: grounded dynamic bodies lose `friction × 1000` px/s per second horizontally, and in levels without gravity everything loses it along its direction of travel; controllers, shots, knock backs and climbers are exempt, and nothing slows in the air.
 `Sprite.layer` orders drawing and editor picking; the level map leaves out
 looks under everything, so painted floor reads as walkable.
 

@@ -59,7 +59,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     category: 'Physics',
     fields: {
       bodyType: { kind: 'enum', options: ['dynamic', 'static', 'kinematic'], default: 'dynamic' },
-      mass: { kind: 'number', default: 1, min: 0, step: 0.1 },
+      mass: { kind: 'number', default: 1, min: 0.01, step: 0.1, description: 'How heavy it is (1 = the player). A hit knocks it back less (knockback ÷ mass), a script push moves it less, and pushing a Pushable heavier than yourself is slower (your mass ÷ its mass of full speed); one 10 times heavier than its pusher does not move. Gravity and friction are the same for all masses' },
       velocity: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Initial velocity in pixels/second' },
       gravityScale: { kind: 'number', default: 1, step: 0.1, description: 'Multiplier on world gravity' },
       friction: { kind: 'number', default: 0.2, min: 0, max: 1, step: 0.05, description: 'How fast it slows down while sliding on the ground (seen from above: on the floor, every way), once nothing keeps it moving: 0 = like ice, never slows; 0.2 = a crate shoved at running speed slides about 3 tiles; 1 = stops almost at once. Not in the air. Things that set their own speed (the player, patrols, wanderers, chasers) are not slowed' },

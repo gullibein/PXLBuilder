@@ -222,7 +222,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   if: { example: '{"do":"if","cond":"dist(player) < 100","then":[…],"else":[…]}', doc: 'choose' },
   each: { example: '{"do":"each","tag":"enemy","then":[{"do":"damage","target":"it","amount":"1"}]}', doc: 'run "then" for every living entity with the tag, as "it" (at most 200)' },
   velocity: { example: '{"do":"velocity","x":"-80","y":null}', doc: 'set speed in px/s; null keeps that axis. Things with gravity keep falling; set y only to fly or launch' },
-  push: { example: '{"do":"push","x":"0","y":"-200","on":"other"}', doc: 'add to speed (here: bounce whoever touched it upward)' },
+  push: { example: '{"do":"push","x":"0","y":"-200","on":"other"}', doc: 'add to speed, divided by its PhysicsBody mass (here: bounce whoever touched it upward; mass 2 goes half as fast)' },
   move_toward: { example: '{"do":"move_toward","target":"player","speed":"90"}', doc: 'head for an entity: walkers (with gravity) only sideways, flyers (gravity 0) straight at it; sets facing' },
   glide_to: { example: '{"do":"glide_to","x":"self.spawn_x","y":"self.spawn_y - 64","speed":"60"}', doc: 'move smoothly to a point (no gravity while gliding; speed 0 = at once)' },
   position: { example: '{"do":"position","x":"self.x","y":"self.y - 32"}', doc: 'jump to a point instantly' },

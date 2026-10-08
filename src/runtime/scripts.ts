@@ -258,8 +258,9 @@ export class ScriptSystem {
       case 'push': {
         const t = ent(s.on);
         if (!t) break;
-        t.vx += n(s.x);
-        t.vy += n(s.y);
+        // A push moves heavier things less.
+        t.vx += n(s.x) / t.mass;
+        t.vy += n(s.y) / t.mass;
         if (t.vy < 0) t.grounded = false;
         break;
       }

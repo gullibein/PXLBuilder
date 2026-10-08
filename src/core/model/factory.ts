@@ -435,11 +435,12 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       {
         Sprite: c('Sprite', { width: 32, height: 32, color: '#b07a43', assetId: assets.crate.id }),
         Collider: c('Collider', { size: { x: 32, y: 32 } }),
-        PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
+        // Twice the player's weight: pushing it is slow going.
+        PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic', mass: 2 }),
         Pushable: c('Pushable'),
       },
       ['crate', 'pushable'],
-      'A crate the player can push sideways (it falls off ledges); stand on it to reach higher.',
+      'A heavy crate the player can push sideways, slowly (it falls off ledges); stand on it to reach higher.',
     ),
   ];
   for (const def of defs) {

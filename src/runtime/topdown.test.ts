@@ -388,16 +388,16 @@ describe('Pushable', () => {
 
   it('in a platformer it is pushed sideways only, and a crate with gravity falls off a ledge', () => {
     const rt = room((d, _s, place) => {
-      const crate = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_crate', name: 'Crate', tags: ['crate'] };
+      const crate = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_crate', name: 'Test crate', tags: ['crate'] };
       crate.components = { ...crate.components, PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'dynamic' }, Pushable: registry.createDefault('Pushable') };
       d.definitions.push(JSON.parse(JSON.stringify(crate)));
       m.setDefinitionComponentField(d, d.definitions.find((x) => x.name === 'Player')!.id, 'CharacterController', 'movement', 'platformer', registry);
       // A short floor: x -48..48 at y 48 (top 32).
       for (const x of [-32, 0, 32]) place('Stone', { x, y: 48 });
-      place('Crate', { x: 0, y: 16 });
+      place('Test crate', { x: 0, y: 16 });
       d.scenes[0].entities.find((e) => e.name === 'Player')!.transform.position = { x: -48, y: 16 };
     }, 980);
-    const crate = rt.find('Crate')!;
+    const crate = rt.find('Test crate')!;
     const input = new InputState();
     input.press('right');
     run(rt, input, 1.5);
@@ -527,5 +527,82 @@ describe('friction', () => {
     block.vx = 200;
     run(rt, new InputState(), 1);
     expect(block.vx).toBeCloseTo(200, 5);
+  });
+});
+
+describe('mass', () => {
+  /** A top-down barrel (Pushable, sliding) of the given mass to the right of the player; the player has `playerMass`. */
+  const push = (barrelMass: number, playerMass = 1) => {
+    const rt = room((d, _s, place) => {
+      const barrel = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_barrel', name: 'Barrel', tags: ['barrel'] };
+      barrel.components = { ...barrel.components, PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'static', mass: barrelMass }, Pushable: registry.createDefault('Pushable') };
+      d.definitions.push(JSON.parse(JSON.stringify(barrel)));
+      const player = d.definitions.find((x) => x.name === 'Player')!;
+      player.components.PhysicsBody = { ...player.components.PhysicsBody, mass: playerMass };
+      place('Barrel', { x: 64, y: 0 });
+    });
+    const input = new InputState();
+    input.press('right');
+    // Walk up to it, then push for a second.
+    run(rt, input, 0.3);
+    const from = rt.find('Barrel')!.x;
+    run(rt, input, 1);
+    return rt.find('Barrel')!.x - from;
+  };
+
+  it('pushing something twice your weight goes at half speed, and as heavy as you at full speed', () => {
+    const light = push(1);
+    const heavy = push(2);
+    expect(light).toBeGreaterThan(140);
+    expect(heavy / light).toBeCloseTo(0.5, 1);
+  });
+
+  it('something 10 times heavier does not move, until the pusher gets stronger (heavier)', () => {
+    expect(push(10)).toBe(0);
+    expect(push(10, 2)).toBeGreaterThan(20);
+  });
+
+  it('a hit knocks heavier things back less', () => {
+    const knocked = (mass: number) => {
+      const rt = room((d, _s, place) => {
+        const def = d.definitions.find((x) => x.name === 'Enemy')!;
+        def.components.PhysicsBody = { ...def.components.PhysicsBody, mass, friction: 0 };
+        def.components.Health = { ...registry.createDefault('Health'), maxHealth: 5, currentHealth: 5 };
+        def.components.DamageReceiver = registry.createDefault('DamageReceiver');
+        place('Enemy', { x: 0, y: 64 });
+      });
+      const enemy = rt.find('Enemy')!;
+      rt.gameplay.hurt(enemy, 1, rt.find('Player')!);
+      return enemy.vy;
+    };
+    expect(knocked(1)).toBeCloseTo(160, 5);
+    expect(knocked(4)).toBeCloseTo(40, 5);
+  });
+
+  it("a script's push moves heavier things less", () => {
+    const pushed = (mass: number) => {
+      const rt = room((d, _s, place) => {
+        const def = d.definitions.find((x) => x.name === 'Enemy')!;
+        def.components.PhysicsBody = { ...def.components.PhysicsBody, mass };
+        const id = place('Enemy', { x: 0, y: 64 });
+        setScript(d, { target: 'instance', id }, { name: 'Shove', handlers: [{ when: { on: 'start' }, do: [{ do: 'push', x: '200', y: '0' }] }] });
+      });
+      rt.update(1 / 60, new InputState());
+      return rt.find('Enemy')!.vx;
+    };
+    expect(pushed(2) / pushed(1)).toBeCloseTo(0.5, 2);
+  });
+
+  it('heavy and light things fall equally fast', () => {
+    const fall = (mass: number) => {
+      const rt = room((d, _s, place) => {
+        const def = d.definitions.find((x) => x.name === 'Enemy')!;
+        def.components.PhysicsBody = { ...def.components.PhysicsBody, mass };
+        place('Enemy', { x: 0, y: 0 });
+      }, 980);
+      run(rt, new InputState(), 0.3);
+      return rt.find('Enemy')!.y;
+    };
+    expect(fall(5)).toBeCloseTo(fall(0.5), 5);
   });
 });

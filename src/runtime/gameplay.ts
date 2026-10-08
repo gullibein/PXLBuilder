@@ -257,7 +257,8 @@ export class Gameplay {
     victim.health.current = Math.max(0, victim.health.current - amount);
     victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
-    const strength = victim.receiver?.knockback ?? KNOCKBACK.x;
+    // Heavier things are shoved less.
+    const strength = (victim.receiver?.knockback ?? KNOCKBACK.x) / victim.mass;
     if (victim.body === 'dynamic' && source && strength > 0) {
       // A small knock back, away from what hurt it (seen from above: straight away from it), for a moment.
       const restore = victim.knock?.restore ?? { vx: victim.vx, vy: victim.vy };
