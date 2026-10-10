@@ -197,16 +197,40 @@ function ContextMenu(props: { x: number; y: number; items: { label: string; test
   );
 }
 
+const GROUPS_KEY = 'pxlbuilder.objectGroups';
+
 function ObjectsPanel() {
   const definitions = useEditor((s) => s.project.definitions);
   const assets = useEditor((s) => s.project.assets);
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   const [category, setCategory] = useState<string>('All');
+  // The groups can be hidden (they take room a phone doesn't have); remembered in this browser.
+  const [groupsShown, setGroupsShown] = useState(() => {
+    try {
+      return localStorage.getItem(GROUPS_KEY) !== 'hidden';
+    } catch {
+      return true;
+    }
+  });
+  const toggleGroups = () => {
+    setGroupsShown(!groupsShown);
+    try {
+      localStorage.setItem(GROUPS_KEY, groupsShown ? 'hidden' : 'shown');
+    } catch {
+      // Not remembered (storage unavailable).
+    }
+  };
   const present = CATEGORIES.filter((c) => definitions.some((d) => categoryOf(d) === c));
   const shown = category === 'All' ? definitions : definitions.filter((d) => categoryOf(d) === category);
   return (
-    <section className="dock-panel objects" data-testid="library-panel" aria-label="Objects">
-      <nav className="category-list" role="tablist" aria-label="Categories">
+    <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" aria-label="Objects">
+      <button className="groups-toggle" data-testid="groups-toggle" aria-expanded={groupsShown} title={groupsShown ? 'Hide the groups' : 'Show the groups'} onClick={toggleGroups}>
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d={groupsShown ? 'M3 7.5 6 4.5l3 3' : 'M3 4.5 6 7.5l3-3'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Groups{category !== 'All' && !groupsShown ? `: ${category}` : ''}
+      </button>
+      <nav className="category-list" role="tablist" aria-label="Categories" hidden={!groupsShown}>
         {['All', ...present].map((c) => (
           <button key={c} role="tab" aria-selected={category === c} className={`category${category === c ? ' on' : ''}`} onClick={() => setCategory(c)}>
             {c}

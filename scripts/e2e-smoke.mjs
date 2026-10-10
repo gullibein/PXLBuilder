@@ -2181,6 +2181,41 @@ try {
   await check(async () => (await htmlStyle()) === 'classic', '(including the Classic style)');
   await ec.close();
 
+  step = 'phone';
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    const pp = await phone.newPage();
+    pp.on('pageerror', (e) => errors.push(`pageerror (phone): ${e.message}`));
+    await pp.goto(URL);
+    await startPlatformer(pp);
+    await pp.getByTestId('dock-library').click();
+    const panel = pp.getByTestId('library-panel');
+    await check(async () => (await panel.isVisible()) && (await panel.boundingBox()).height <= 844 * 0.4, 'on a phone the Objects panel takes at most about a third of the screen');
+    const tiles = panel.locator('.tile');
+    await check(async () => {
+      const ys = await tiles.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      return ys.filter((y) => y === ys[0]).length >= 5;
+    }, 'objects are small tiles, at least five to a row');
+    await check(async () => {
+      const list = await panel.locator('.category-list').boundingBox();
+      return list.height < 50 && list.width > 300;
+    }, 'the groups are one row of chips above the objects, not a column');
+    await check(async () => {
+      const p = await panel.boundingBox();
+      const chips = await pp.locator('.tray-chips').boundingBox();
+      // Whatever overlaps, the panel is on top: the element at the panel's bottom right corner belongs to the panel.
+      return await pp.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-testid="library-panel"]'), [p.x + p.width - 20, p.y + p.height - 12]) || !chips;
+    }, 'the History/Console buttons do not cover the open panel');
+    await pp.screenshot({ path: `${OUT}/30-phone-objects.png` });
+    await pp.getByTestId('groups-toggle').click();
+    await check(async () => (await panel.locator('.category-list').count()) === 0 || !(await panel.locator('.category-list').isVisible()), 'the Groups button hides the groups');
+    await pp.screenshot({ path: `${OUT}/30b-phone-objects-no-groups.png` });
+    await pp.reload();
+    await pp.getByTestId('dock-library').click();
+    await check(async () => (await pp.getByTestId('groups-toggle').getAttribute('aria-expanded')) === 'false', 'and that is remembered');
+    await phone.close();
+  }
+
   step = 'console errors';
   await check(errors.length === 0, `no page/console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   console.log(`\nE2E passed (${passed} checks).`);
