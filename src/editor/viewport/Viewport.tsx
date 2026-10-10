@@ -62,6 +62,12 @@ export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<ViewSize>({ width: 1, height: 1 });
   const dragRef = useRef<Drag | null>(null);
+  /**
+   * Fingers on the screen. One finger works like the mouse; a second one turns
+   * it into a two-finger gesture (pan with both, pinch to zoom) and cancels
+   * whatever the first finger started, until all fingers are lifted.
+   */
+  const touchRef = useRef<{ points: Map<number, Vec2>; gesture: { mid: Vec2; dist: number; camera: Camera } | null; lastTap: { at: number; x: number; y: number } | null }>({ points: new Map(), gesture: null, lastTap: null });
   const hoverRef = useRef<Id | null>(null);
   /** The connection (arrow) under the pointer, if any. */
   const hoverLinkRef = useRef<Id | null>(null);
@@ -295,6 +301,8 @@ export function Viewport() {
     };
     const onGestureChange = (ev: Event) => {
       ev.preventDefault();
+      // Touch pinches are handled from the fingers themselves (with panning); this is for trackpads.
+      if (touchRef.current.points.size >= 2) return;
       const g = ev as Event & { scale: number; clientX: number; clientY: number };
       zoomAt(localPoint(canvas, g), (gestureZoom * g.scale) / useEditor.getState().camera.zoom);
     };
@@ -334,10 +342,31 @@ export function Viewport() {
   const toWorld = (ev: { clientX: number; clientY: number }) =>
     screenToWorld(useEditor.getState().camera, viewRef.current, localPoint(canvasRef.current!, ev));
 
+  /** Starts a two-finger gesture from the fingers down now. */
+  const startGesture = () => {
+    const [a, b] = [...touchRef.current.points.values()];
+    touchRef.current.gesture = { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), camera: { ...useEditor.getState().camera } };
+  };
+
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
     canvas.focus();
     const state = useEditor.getState();
+    if (ev.pointerType === 'touch') {
+      const touch = touchRef.current;
+      touch.points.set(ev.pointerId, localPoint(canvas, ev));
+      capture(canvas, ev.pointerId);
+      if (touch.points.size >= 2 || touch.gesture) {
+        // A second finger: this is a pan/zoom, not a drawing or a drag. What the first finger began is dropped.
+        const drag = dragRef.current;
+        if (drag?.kind === 'marquee') state.selectEntities(drag.baseSelection);
+        dragRef.current = null;
+        if (touch.points.size >= 2) startGesture();
+        return;
+      }
+      // Tapping a placed object selects it, also while drawing with an object.
+      if (state.tool.kind === 'brush' && pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))) state.setTool({ kind: 'select' });
+    }
     if (state.dock) state.setDock(null);
     // Working on the level closes the whole-level/game card (its prompt carries on; dots on ✦ show it).
     if (state.globalPrompt.open) state.setGlobalPrompt(false);
@@ -357,7 +386,7 @@ export function Viewport() {
       const handle = connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
       if (handle) {
         dragRef.current = { kind: 'connect', fromId: handle.entityId, from: handle.point, current: world, targetId: null };
-        canvas.setPointerCapture(ev.pointerId);
+        capture(canvas, ev.pointerId);
         return;
       }
       const hit = pick(entities, world);
@@ -388,10 +417,26 @@ export function Viewport() {
     } else {
       return;
     }
-    canvas.setPointerCapture(ev.pointerId);
+    capture(canvas, ev.pointerId);
   };
 
   const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>) => {
+    const touch = touchRef.current;
+    if (ev.pointerType === 'touch' && touch.points.has(ev.pointerId)) {
+      touch.points.set(ev.pointerId, localPoint(canvasRef.current!, ev));
+      const g = touch.gesture;
+      if (g) {
+        if (touch.points.size < 2) return;
+        // Pan with the point between the fingers, zoom by how far apart they are, around that point.
+        const [a, b] = [...touch.points.values()];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, g.camera.zoom * (Math.hypot(a.x - b.x, a.y - b.y) / g.dist)));
+        const view = viewRef.current;
+        const anchor = screenToWorld(g.camera, view, g.mid);
+        useEditor.getState().setCamera({ zoom, x: anchor.x - (mid.x - view.width / 2) / zoom, y: anchor.y - (mid.y - view.height / 2) / zoom });
+        return;
+      }
+    }
     const drag = dragRef.current;
     const state = useEditor.getState();
     pointerWorldRef.current = toWorld(ev);
@@ -454,6 +499,16 @@ export function Viewport() {
   };
 
   const onPointerUp = (ev: React.PointerEvent<HTMLCanvasElement>) => {
+    const touch = touchRef.current;
+    if (ev.pointerType === 'touch') {
+      touch.points.delete(ev.pointerId);
+      if (touch.gesture) {
+        // The gesture lasts until every finger is up; with two still down it goes on from where they are.
+        if (touch.points.size >= 2) startGesture();
+        else if (touch.points.size === 0) touch.gesture = null;
+        return;
+      }
+    }
     const drag = dragRef.current;
     dragRef.current = null;
     if (canvasRef.current?.hasPointerCapture(ev.pointerId)) canvasRef.current.releasePointerCapture(ev.pointerId);
@@ -475,6 +530,15 @@ export function Viewport() {
       state.selectEntities([]);
       state.setWorldContext(false);
       state.selectConnection(null);
+      // Double-tap on empty space: the level's prompt (as a double-click does; touch screens don't always send one).
+      if (ev.pointerType === 'touch' && ev.type === 'pointerup') {
+        const p = localPoint(canvasRef.current!, ev);
+        const last = touch.lastTap;
+        if (last && ev.timeStamp - last.at < 350 && Math.hypot(p.x - last.x, p.y - last.y) < 24) {
+          touch.lastTap = null;
+          state.setWorldContext(toWorld(ev));
+        } else touch.lastTap = { at: ev.timeStamp, x: p.x, y: p.y };
+      }
     }
   };
 
@@ -606,6 +670,15 @@ function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag |
 function localPoint(canvas: HTMLCanvasElement, ev: { clientX: number; clientY: number }): Vec2 {
   const rect = canvas.getBoundingClientRect();
   return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+
+/** Keeps a pointer's events coming to the canvas while it is down (a finger or a drag leaving it); never fails the gesture. */
+function capture(canvas: HTMLCanvasElement, pointerId: number): void {
+  try {
+    canvas.setPointerCapture(pointerId);
+  } catch {
+    // Not an active pointer any more (lifted already): nothing to keep.
+  }
 }
 
 /** Topmost entity under a world point. */

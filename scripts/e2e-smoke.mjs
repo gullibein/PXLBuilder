@@ -1171,6 +1171,76 @@ try {
   }, 'middle-button drag pans the view');
   await check(async () => (await prompts.count()) === 0, 'panning does not select anything');
 
+  step = 'touch screen';
+  {
+    // Fingers, as a touch screen sends them (pointer events of type "touch").
+    const touch = (type, id, p) =>
+      page.evaluate(([type, id, x, y]) => {
+        const c = document.querySelector('[data-testid="viewport-canvas"]');
+        c.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, bubbles: true, cancelable: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }));
+      }, [type, id, p.x, p.y]);
+    const both = async (a, b, steps, from = [{ x: 0, y: 0 }, { x: 0, y: 0 }]) => {
+      for (let i = 1; i <= steps; i++) {
+        await touch('pointermove', 1, { x: a.x + (from[0].x * i) / steps, y: a.y + (from[0].y * i) / steps });
+        await touch('pointermove', 2, { x: b.x + (from[1].x * i) / steps, y: b.y + (from[1].y * i) / steps });
+      }
+    };
+    const entities = async () => Number(await canvas.getAttribute('data-entities'));
+    await page.getByTestId('dock-library').click();
+    await page.getByTestId('definition-Platform').click();
+    await page.keyboard.press('Escape');
+    const n0 = await entities();
+    const [, , z0] = await cam();
+    const A = { x: mid.x - 40, y: mid.y };
+    const B = { x: mid.x + 40, y: mid.y };
+    // Pinch out (86 → 200 px apart) with the Platform brush chosen: the first finger touches down and moves a little before the second.
+    await touch('pointerdown', 1, A);
+    await touch('pointermove', 1, { x: A.x - 6, y: A.y });
+    await touch('pointerdown', 2, B);
+    await both({ x: A.x - 6, y: A.y }, B, 6, [{ x: -54, y: 0 }, { x: 60, y: 0 }]);
+    await touch('pointerup', 1, { x: A.x - 60, y: A.y });
+    await touch('pointerup', 2, { x: B.x + 60, y: B.y });
+    await check(async () => (await entities()) === n0 && Math.abs((await cam())[2] / z0 - 200 / 86) < 0.01, 'pinching out with two fingers zooms in, and with a brush chosen it draws nothing between the fingers');
+    // Two fingers moving together pan the view.
+    const [x1, y1, z1] = await cam();
+    await touch('pointerdown', 1, A);
+    await touch('pointerdown', 2, B);
+    await both(A, B, 5, [{ x: 100, y: 50 }, { x: 100, y: 50 }]);
+    await touch('pointerup', 1, { x: A.x + 100, y: A.y + 50 });
+    await touch('pointerup', 2, { x: B.x + 100, y: B.y + 50 });
+    await check(async () => {
+      const [x, y, z] = await cam();
+      return z === z1 && Math.abs(x - (x1 - 100 / z1)) < 0.5 && Math.abs(y - (y1 - 50 / z1)) < 0.5 && (await entities()) === n0;
+    }, 'two fingers moving together pan the view (nothing drawn)');
+    // Back as it was: the same pan and pinch the other way.
+    await touch('pointerdown', 1, { x: A.x + 100, y: A.y + 50 });
+    await touch('pointerdown', 2, { x: B.x + 100, y: B.y + 50 });
+    await both({ x: A.x + 100, y: A.y + 50 }, { x: B.x + 100, y: B.y + 50 }, 5, [{ x: -100, y: -50 }, { x: -100, y: -50 }]);
+    await touch('pointerup', 1, A);
+    await touch('pointerup', 2, B);
+    await touch('pointerdown', 1, { x: A.x - 60, y: A.y });
+    await touch('pointerdown', 2, { x: B.x + 60, y: B.y });
+    // (The pinch began with the fingers 86 px apart, when the second one touched down.)
+    await both({ x: A.x - 60, y: A.y }, { x: B.x + 60, y: B.y }, 6, [{ x: 54, y: 0 }, { x: -60, y: 0 }]);
+    await touch('pointerup', 1, { x: A.x - 6, y: A.y });
+    await touch('pointerup', 2, B);
+    await check(async () => Math.abs((await cam())[2] - z0) < 0.001, '(pinched back to the zoom it had)');
+    // With the brush still chosen, tapping a placed object selects it.
+    const [cx, cy, cz] = await cam();
+    const playerAt = { x: box.x + center.x + (-256 - cx) * cz, y: box.y + center.y + (0 - cy) * cz };
+    await touch('pointerdown', 1, playerAt);
+    await touch('pointerup', 1, playerAt);
+    await check(async () => (await prompts.count()) === 1 && (await entities()) === n0, 'with a brush chosen, tapping a placed object selects it (instead of drawing)');
+    // A double tap on empty space opens the level's prompt.
+    await page.keyboard.press('Escape');
+    await touch('pointerdown', 1, emptySpot);
+    await touch('pointerup', 1, emptySpot);
+    await touch('pointerdown', 1, emptySpot);
+    await touch('pointerup', 1, emptySpot);
+    await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'a double tap on empty space opens the level prompt');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'camera';
   await page.keyboard.press('Escape');
   const frameOf = async () => ((await canvas.getAttribute('data-camera-frame')) ?? '').split(',').filter(Boolean).map(Number);
