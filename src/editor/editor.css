@@ -39,7 +39,7 @@
 
 * { box-sizing: border-box; }
 /* clip (not hidden): these must never become scroll containers, or programmatic scrolling could shift the whole editor. */
-html, body, #root { margin: 0; height: 100%; overflow: clip; }
+html, body, #root { margin: 0; height: 100%; overflow: clip; overscroll-behavior: none; }
 body { background: var(--ink); color: var(--text); }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:disabled { cursor: default; }

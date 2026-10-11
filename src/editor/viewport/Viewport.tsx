@@ -113,7 +113,8 @@ export function Viewport() {
       const dpr = canvas.width / view.width;
       const drag = dragRef.current;
 
-      let entities = resolveSceneEntities(state.project, scene.id);
+      const placed = resolveSceneEntities(state.project, scene.id);
+      let entities = placed;
       if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
         const moving = new Set(drag.ids);
         entities = entities.map((e) =>
@@ -147,7 +148,8 @@ export function Viewport() {
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
       if (state.layout.showCameraOutlines) {
-        const f = cameraFrame(scene, entities, view);
+        // From where things are, not where they're being dragged: the camera frame stays put while the player is held.
+        const f = cameraFrame(scene, placed, view);
         drawCameraFrame(ctx, f, state.camera.zoom, { hover: hoverOutlineRef.current, selected: state.cameraOutline });
         frameAttr = [f.frame.minX, f.frame.minY, f.frame.maxX, f.frame.maxY].map((v) => v.toFixed(0)).join(',');
       }
@@ -306,11 +308,16 @@ export function Viewport() {
       const g = ev as Event & { scale: number; clientX: number; clientY: number };
       zoomAt(localPoint(canvas, g), (gestureZoom * g.scale) / useEditor.getState().camera.zoom);
     };
+    // A finger on the level never scrolls or pans the page (Safari can otherwise take a drag over: the view moves and
+    // the drag is cancelled). Panning is with two fingers, done here.
+    const onTouchMove = (ev: TouchEvent) => ev.preventDefault();
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('gesturestart', onGestureStart);
     canvas.addEventListener('gesturechange', onGestureChange);
     return () => {
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchmove', onTouchMove);
       canvas.removeEventListener('gesturestart', onGestureStart);
       canvas.removeEventListener('gesturechange', onGestureChange);
     };
@@ -524,8 +531,11 @@ export function Viewport() {
       if (drag.targetId) connectSwitch(drag.fromId, drag.targetId);
       return;
     }
+    // Over the trash when let go (or when the browser took the touch over: pointercancel's position isn't reliable,
+    // so the last move counts).
+    const dropOnTrash = drag?.kind === 'move' && (ev.type === 'pointerup' ? overTrash(ev) : state.trashHot);
     state.setTrashHot(false);
-    if (drag?.kind === 'move' && ev.type === 'pointerup' && overTrash(ev)) {
+    if (drag?.kind === 'move' && dropOnTrash) {
       // Dropped on the trash can: deleted (Undo brings them back).
       state.edit(drag.ids.length === 1 ? 'Delete entity' : `Delete ${drag.ids.length} entities`, (p) => removeEntities(p, state.activeSceneId, drag.ids));
       return;

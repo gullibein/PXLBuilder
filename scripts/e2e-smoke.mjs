@@ -1272,12 +1272,26 @@ try {
         const c = document.querySelector('[data-testid="viewport-canvas"]');
         c.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }));
       }, [type, p.x, p.y]);
+    const camBefore = await canvas.getAttribute('data-camera');
+    const frameBefore = await canvas.getAttribute('data-camera-frame');
     await touch('pointerdown', playerAt);
     for (let i = 1; i <= 8; i++) await touch('pointermove', { x: playerAt.x + ((trashAt.x - playerAt.x) * i) / 8, y: playerAt.y + ((trashAt.y - playerAt.y) * i) / 8 });
+    await page.waitForTimeout(100);
+    await check(
+      async () => (await canvas.getAttribute('data-camera')) === camBefore && (await canvas.getAttribute('data-camera-frame')) === frameBefore,
+      'while the player is held, neither the view nor the camera outline moves with it',
+    );
     await touch('pointerup', trashAt);
     await check(async () => (await entities()) === n0 - 1, 'with a finger too: dragging an object onto the trash can deletes it');
     await page.getByTestId('undo').click();
     await check(async () => (await entities()) === n0, '(and Undo brings it back)');
+    // If the browser takes the touch over at the end (pointercancel), the drop on the trash still counts.
+    await touch('pointerdown', playerAt);
+    for (let i = 1; i <= 8; i++) await touch('pointermove', { x: playerAt.x + ((trashAt.x - playerAt.x) * i) / 8, y: playerAt.y + ((trashAt.y - playerAt.y) * i) / 8 });
+    await touch('pointercancel', { x: 0, y: 0 });
+    await check(async () => (await entities()) === n0 - 1, 'a touch the browser cancels over the trash can still deletes the object');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, '(Undo again)');
     await page.keyboard.press('Escape');
   }
 
