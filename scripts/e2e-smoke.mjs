@@ -832,6 +832,31 @@ try {
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('Blinky') && !(await sp.locator('.sprite-choice.on').innerText()).includes('▶'), 'saving one frame makes it a still picture again');
   await page.getByTestId('undo').click();
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('▶ Blinky'), 'Undo brings the animation back');
+  // A new sprite from inside the editor: a walk cycle started from the drawing being edited.
+  await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
+  await se.getByTestId('se-new').click();
+  await se.getByTestId('se-new-copy').click();
+  await check(
+    async () => (await se.getByTestId('se-name').inputValue()) === 'Blinky 2' && (await se.locator('.bg-head').first().innerText()).includes('New sprite') && (await se.locator('.se-frame').count()) === 2 && (await se.getByTestId('se-use').count()) === 1,
+    '+ New sprite → Start from this drawing: a new sprite with the same frames, a new name, and where to use it',
+  );
+  await se.getByTestId('se-name').fill('Blinky-walk');
+  await se.getByTestId('se-use').selectOption('run');
+  await se.getByTestId('se-save').click();
+  await check(
+    async () => (await se.count()) === 0 && (await sp.getByTestId('sprite-list').innerText()).includes('Blinky-walk') && (await sp.locator('.sprite-choice.on .sprite-cap').innerText()).trim() === '▶ Blinky',
+    'saved as its own sprite, used while running; the original stays the normal look',
+  );
+  await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
+  await clickPixel(0, 0);
+  await se.getByTestId('se-new').click();
+  await check(async () => (await se.getByTestId('se-new-menu').innerText()).includes('Your changes to Blinky are saved first'), 'with unsaved changes it says they are saved first');
+  await se.getByTestId('se-new-blank').click();
+  await check(async () => !(await px()).replace(/[./]/g, '') && (await se.locator('.se-frame').count()) === 1, 'Blank starts an empty one-frame sprite');
+  await se.getByTestId('se-close').click();
+  await page.getByTestId('undo').click();
+  await page.getByTestId('undo').click();
+  await check(async () => !(await sp.getByTestId('sprite-list').innerText()).includes('Blinky-walk'), '(Undo takes both back)');
   await check(async () => (await sp.locator('.sprite-choice', { hasText: 'Enemy' }).getByTestId('sprite-edit').count()) === 1, "the object's own pixel-art drawing can be edited too");
   // The tool panel, Alt to pick a color, and the selection tool.
   await sp.getByTestId('draw-sprite').click();
@@ -1292,6 +1317,46 @@ try {
     await check(async () => (await entities()) === n0 - 1, 'a touch the browser cancels over the trash can still deletes the object');
     await page.getByTestId('undo').click();
     await check(async () => (await entities()) === n0, '(Undo again)');
+    await page.keyboard.press('Escape');
+  }
+
+  step = 'typed commands';
+  {
+    // Plain editing words in the prompt card are done by the app itself, at once (no AI needed).
+    const entities = async () => Number(await canvas.getAttribute('data-entities'));
+    const n0 = await entities();
+    const said = async () => (await result.last().innerText()).replace(/\s+/g, ' ');
+    await clickWorld(-256, 0);
+    await ask('duplicate it 2 times to the right');
+    await check(async () => (await entities()) === n0 + 2, '"duplicate it 2 times to the right" makes two copies side by side');
+    await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'the copies are selected');
+    await ask('move them up 2');
+    await check(async () => (await said()).includes('Moved 2 objects 2 squares up'), '"move them up 2" moves the selection two squares');
+    await ask('copy');
+    await check(async () => (await said()).includes('Copied 2 objects'), '"copy" copies the selection');
+    await ask('delete');
+    await check(async () => (await entities()) === n0, '"delete" deletes the selected objects');
+    await clickWorld(-256, 0);
+    await ask('paste');
+    await check(async () => (await entities()) === n0 + 2 && (await prompts.getAttribute('data-context')) === 'pair', '"paste" places the copied objects again (selected)');
+    await ask('rename to Twin');
+    await check(async () => (await said()).includes('Renamed 2 objects Twin'), '"rename to Twin" renames them');
+    await ask('undo');
+    await check(async () => (await said()).includes('Undid: Rename to Twin'), '"undo" undoes the last step');
+    await ask('erase them');
+    await check(async () => (await entities()) === n0, '"erase them" deletes them too');
+    await page.keyboard.press('Escape');
+    // Ctrl+C / Ctrl+V on placed objects.
+    await clickWorld(-256, 0);
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await check(async () => (await entities()) === n0 + 1, 'Ctrl+C then Ctrl+V pastes a copy of a placed object');
+    await page.keyboard.press('Delete');
+    await check(async () => (await entities()) === n0, '(the pasted copy deleted again)');
+    // Anything more goes to the AI as before.
+    await clickWorld(-256, 0);
+    await ask('help');
+    await check(async () => (await said()).includes('without the AI') && (await said()).includes('duplicate'), '"help" lists what works without the AI');
     await page.keyboard.press('Escape');
   }
 

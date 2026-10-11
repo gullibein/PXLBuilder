@@ -30,6 +30,15 @@ import {
 import { whenImageReady } from '../images';
 import { useEditor } from '../store';
 
+/** "Use as": keep the new sprite in the object's list without using it yet. */
+const KEEP = '__keep';
+
+/** "While moving along the ground (run)" for a SpriteStates situation. */
+function situationLabel(key: string): string {
+  const d = componentRegistry.get('SpriteStates')?.fields[key]?.description;
+  return d ? `${d.split(/ \(| \u2014|;/)[0]} (${key})` : `While: ${key}`;
+}
+
 type Tool = 'pencil' | 'eraser' | 'fill' | 'pick' | 'select';
 
 const icon = (d: string, extra?: React.ReactNode) => (
@@ -125,7 +134,12 @@ export function SpriteEditor() {
 
 function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; assetId: string | null }) {
   const def = useEditor((s) => s.project.definitions.find((d) => d.id === definitionId));
-  const asset = useEditor((s) => (assetId ? s.project.assets.find((a) => a.id === assetId) : undefined));
+  // The sprite being edited; null while drawing a new one (also after "New sprite" here).
+  const [editingId, setEditingId] = useState(assetId);
+  const asset = useEditor((s) => (editingId ? s.project.assets.find((a) => a.id === editingId) : undefined));
+  const assets = useEditor((s) => s.project.assets);
+  const [newMenu, setNewMenu] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   const close = () => useEditor.getState().openSpriteEditor(null);
   const spriteSize = { x: Number(def?.components.Sprite?.width) || 32, y: Number(def?.components.Sprite?.height) || 32 };
   const [draft, setDraft] = useState<SpriteDraft | null>(() => {
@@ -442,19 +456,55 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     if (t && !mod && !e.altKey) setTool(t.tool);
   };
 
+  /** A name no sprite has yet: "P1-rest 2", "P1-rest 3"… */
+  const freshName = (base: string) => {
+    const stem = base.replace(/ \d+$/, '');
+    for (let i = 2; ; i++) if (!assets.some((a) => a.name === `${stem} ${i}`)) return `${stem} ${i}`;
+  };
+  /**
+   * Starts a new sprite in the editor: blank (same size), or a copy of the drawing as it is now (a walk cycle
+   * from the standing picture). Changes not saved yet to the sprite being edited are saved to it first.
+   */
+  const startNew = (blank: boolean) => {
+    const cur = latest.current;
+    if (!cur) return;
+    if (asset && past.length) saveTo(asset.id, cur, name.trim() || asset.name);
+    const next = blank ? { ...blankDraft(cur.width, cur.height), palette: cur.palette } : cur;
+    setPast([]);
+    setFuture([]);
+    latest.current = next;
+    setDraft(next);
+    setFrame(0);
+    setSel(null);
+    setEditingId(null);
+    setUse('');
+    setName(freshName(asset?.name ?? (name.trim() || `${def.name} sprite`)));
+    setNewMenu(false);
+    requestAnimationFrame(() => nameRef.current?.select());
+  };
+  /** Saves a drawing into an existing sprite (one undoable step). */
+  const saveTo = (id: string, d: SpriteDraft, title: string) => {
+    const palette = usedPalette(d);
+    return useEditor.getState().edit(`Edit sprite ${title}`, (p) => {
+      m.updatePixelArtAsset(p, id, palette.length ? palette : d.palette.slice(0, 1), d.frames, d.fps);
+      p.assets.find((a) => a.id === id)!.name = title;
+    });
+  };
+
   const save = () => {
     if (!draft) return;
     const palette = usedPalette(draft);
     const title = name.trim() || 'Sprite';
-    const ok = useEditor.getState().edit(asset ? `Edit sprite ${title}` : `Draw sprite for ${def.name}`, (p) => {
-      if (asset) {
-        m.updatePixelArtAsset(p, asset.id, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
-        p.assets.find((a) => a.id === asset.id)!.name = title;
-        return;
-      }
+    if (asset) {
+      if (saveTo(asset.id, draft, title)) close();
+      return;
+    }
+    const ok = useEditor.getState().edit(`Draw sprite ${title} for ${def.name}`, (p) => {
       const made = createAnimatedPixelArtAsset(title, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
       m.addAsset(p, made);
-      if (!use) m.useDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 }, componentRegistry);
+      // Kept in the object's sprites, to use later (Sprites panel, or the Inspector).
+      if (use === KEEP) m.addDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 });
+      else if (!use) m.useDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 }, componentRegistry);
       else {
         if (!p.definitions.find((d) => d.id === def.id)!.components.SpriteStates) m.addDefinitionComponent(p, def.id, 'SpriteStates', componentRegistry);
         m.setDefinitionComponentField(p, def.id, 'SpriteStates', use, made.id, componentRegistry);
@@ -471,8 +521,27 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
       <section ref={dialogRef} tabIndex={-1} className="dialog sprite-editor" role="dialog" aria-label="Sprite editor" data-testid="sprite-editor" onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()}>
         <header className="bg-head">
           <span>
-            {asset ? 'Edit sprite' : 'Draw a sprite'} <span className="muted">· {def.name}</span>
+            {asset ? `Edit sprite ${asset.name}` : 'New sprite'} <span className="muted">· {def.name}</span>
           </span>
+          {draft && (
+            <span className="se-new-wrap">
+              <button className="chip-btn" data-testid="se-new" aria-expanded={newMenu} onClick={() => setNewMenu(!newMenu)} title="Start another sprite for this object (e.g. a walk cycle next to the standing one)">
+                + New sprite
+              </button>
+              {newMenu && (
+                <span className="se-new-menu" role="menu" data-testid="se-new-menu">
+                  <button className="chip-btn" role="menuitem" data-testid="se-new-copy" onClick={() => startNew(false)}>
+                    Start from this drawing
+                  </button>
+                  <button className="chip-btn" role="menuitem" data-testid="se-new-blank" onClick={() => startNew(true)}>
+                    Blank
+                  </button>
+                  {asset && past.length > 0 && <span className="muted small">Your changes to {asset.name} are saved first.</span>}
+                </span>
+              )}
+            </span>
+          )}
+          <span className="grow" />
           <button className="icon-btn" aria-label="Close without saving" data-testid="se-close" onClick={close}>
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -620,18 +689,19 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
             <footer className="se-footer">
               <label className="se-row">
                 <span>Name</span>
-                <input value={name} data-testid="se-name" onChange={(e) => setName(e.target.value)} />
+                <input ref={nameRef} value={name} data-testid="se-name" onChange={(e) => setName(e.target.value)} />
               </label>
               {!asset && (
                 <label className="se-row">
                   <span>Use as</span>
                   <select value={use} data-testid="se-use" onChange={(e) => setUse(e.target.value)}>
-                    <option value="">Normal look</option>
+                    <option value="">Its normal look</option>
                     {situations.map((s) => (
                       <option key={s} value={s}>
-                        While: {s}
+                        {situationLabel(s)}
                       </option>
                     ))}
+                    <option value={KEEP}>Not used yet (kept in its sprites)</option>
                   </select>
                 </label>
               )}

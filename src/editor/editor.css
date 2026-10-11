@@ -328,6 +328,8 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .bg-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }
 .bg-head > span { display: flex; align-items: center; gap: 8px; }
 .bg-head svg { color: #7fb6ff; }
+.se-new-wrap { position: relative; font-weight: 400; }
+.se-new-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 200px; padding: 8px; border-radius: 10px; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .bg-section { display: grid; gap: 8px; }
 .bg-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .bg-label .muted { font-family: var(--font-data); letter-spacing: 0; text-transform: none; }

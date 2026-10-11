@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
@@ -138,6 +139,13 @@ function useGlobalShortcuts() {
       } else if (mod && key === 'd') {
         e.preventDefault();
         duplicateSelection();
+      } else if (mod && (key === 'c' || key === 'x') && state.selectedEntityIds.length) {
+        // Copy / cut placed objects (Ctrl+V pastes them, also into another level).
+        e.preventDefault();
+        runQuickCommand(null, { kind: key === 'c' ? 'copy' : 'cut' });
+      } else if (mod && key === 'v' && hasCopiedObjects()) {
+        e.preventDefault();
+        pasteObjects();
       } else if (mod && key === 'a') {
         e.preventDefault();
         selectAll();

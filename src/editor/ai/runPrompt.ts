@@ -23,6 +23,9 @@ import { produce } from 'immer';
 import { levelMap, type LevelMap } from '../../core/model/levelMap';
 import { reachabilityProblems } from '../../core/model/reachability';
 import { useEditor } from '../store';
+import { parseQuickCommand, QUICK_COMMAND_HELP, type QuickCommand } from '../../core/commands/quickCommands';
+import { runQuickCommand } from '../quickCommands';
+import { removeRelationship } from '../../core/logic/mutations';
 import type { Id, Project } from '../../core/types';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
@@ -77,6 +80,23 @@ async function currentProvider(): Promise<AIProvider> {
   return key ? new BrowserClaudeProvider(key) : httpProvider;
 }
 
+/** The plain editing command this prompt is, for this card (objects, the level; "delete" also for a connection). */
+function quickCommandFor(ctx: AIContext, request: string): QuickCommand | { kind: 'connection-delete' } | null {
+  const cmd = parseQuickCommand(request);
+  if (!cmd) return null;
+  if (ctx.kind === 'connection') return cmd.kind === 'delete' ? { kind: 'connection-delete' } : null;
+  return ctx.kind === 'entity' || ctx.kind === 'pair' || ctx.kind === 'group' || ctx.kind === 'level' ? cmd : null;
+}
+
+function deleteConnection(ctx: AIContext): PromptOutcome {
+  if (ctx.kind !== 'connection') return { status: 'error', message: 'Not a connection.' };
+  const { edit, selectConnection } = useEditor.getState();
+  const ok = edit('Remove connection', (p) => removeRelationship(p, ctx.sceneId, ctx.relationshipId));
+  if (!ok) return { status: 'error', message: useEditor.getState().log.at(-1)?.message ?? "The connection couldn't be removed." };
+  selectConnection(null);
+  return { status: 'applied', message: 'Removed the connection.', changes: [], result: EMPTY_RESULT, transactionId: useEditor.getState().history.past.at(-1)?.id };
+}
+
 export function labelFor(request: string): string {
   const text = request.trim().replace(/\s+/g, ' ');
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
@@ -84,6 +104,12 @@ export function labelFor(request: string): string {
 
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn): Promise<PromptOutcome> {
   const state = useEditor.getState();
+  // Plain editing commands ("delete", "duplicate 3 times to the right", "paste"…) are done by the app itself, at once.
+  const quick = quickCommandFor(ctx, request);
+  if (quick) {
+    trace?.('note', `Done by the app itself (no AI): ${quick.kind}`);
+    return quick.kind === 'connection-delete' ? deleteConnection(ctx) : runQuickCommand(ctx, quick);
+  }
   const body = {
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random),
     request,
@@ -136,7 +162,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    const message = e instanceof AIUnavailableError ? e.message : `AI request failed: ${(e as Error).message}`;
+    const message = e instanceof AIUnavailableError ? `${e.message} (Without an AI these still work: ${QUICK_COMMAND_HELP}.)` : `AI request failed: ${(e as Error).message}`;
     trace?.('error', message);
     state.logMessage('error', message);
     return { status: 'error', message };
