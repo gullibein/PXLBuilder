@@ -1,4 +1,5 @@
 import { PlayButton } from './TopBar';
+import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
 import { playRecipe } from '../audio/synth';
 import { useEffect, useRef, useState } from 'react';
@@ -42,6 +43,7 @@ export function Dock() {
           </svg>
           Objects
         </button>
+        <TrashButton />
         {playHere && <PlayButton />}
       </nav>
     </div>
@@ -194,6 +196,33 @@ function ContextMenu(props: { x: number; y: number; items: { label: string; test
       ))}
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The trash can: deletes what is selected (objects, or a connection), and
+ * objects dragged onto it (the level view drops them here; it lights up while
+ * they are over it). For touch screens, which have no Delete key. Undo brings
+ * them back.
+ */
+function TrashButton() {
+  const count = useEditor((s) => s.selectedEntityIds.length);
+  const connection = useEditor((s) => s.selectedConnectionId !== null);
+  const hot = useEditor((s) => s.trashHot);
+  const what = connection ? 'the selected connection' : count === 1 ? 'the selected object' : count > 1 ? `the ${count} selected objects` : null;
+  return (
+    <button
+      className={`dock-btn trash-btn${hot ? ' hot' : ''}`}
+      data-testid="trash"
+      aria-label={what ? `Delete ${what}` : 'Trash: select objects (or drag them here) to delete them'}
+      title={what ? `Delete ${what} (Del)` : 'Drag objects here to delete them, or select them and tap this'}
+      aria-disabled={!what}
+      onClick={() => what && deleteSelection()}
+    >
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
 }
 

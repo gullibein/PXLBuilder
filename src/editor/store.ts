@@ -86,6 +86,8 @@ export interface EditorState {
   gameChooser: 'first' | 'new' | null;
   /** The sprite editor: which object's sprite (an existing picture, or a new one), or null when closed. */
   spriteEditor: { definitionId: Id; assetId: Id | null } | null;
+  /** Objects are being dragged over the trash can (it lights up; dropping them there deletes them). */
+  trashHot: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -129,6 +131,7 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  setTrashHot(hot: boolean): void;
   flashEntities(ids: Id[]): void;
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
@@ -185,6 +188,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     stylePickerOpen: false,
     gameChooser: null,
     spriteEditor: null,
+    trashHot: false,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -400,6 +404,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
+    },
+    setTrashHot(trashHot) {
+      if (get().trashHot !== trashHot) set({ trashHot });
     },
     setStylePickerOpen(stylePickerOpen) {
       set({ stylePickerOpen });

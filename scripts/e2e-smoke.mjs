@@ -1241,6 +1241,46 @@ try {
     await page.keyboard.press('Escape');
   }
 
+  step = 'trash can';
+  {
+    const trash = page.getByTestId('trash');
+    const entities = async () => Number(await canvas.getAttribute('data-entities'));
+    const n0 = await entities();
+    await check(async () => (await trash.getAttribute('aria-disabled')) === 'true', 'the trash can in the bottom bar is faint while nothing is selected');
+    await clickWorld(-256, 0);
+    await check(async () => (await trash.getAttribute('aria-disabled')) === 'false' && (await trash.getAttribute('aria-label')).includes('the selected object'), 'with an object selected it can delete it');
+    await trash.click();
+    await check(async () => (await entities()) === n0 - 1 && (await prompts.count()) === 0, 'tapping the trash can deletes the selected object');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, 'Undo brings it back');
+    // Dragging an object onto the trash can (with the mouse, then with a finger).
+    const [cx, cy, cz] = await cam();
+    const playerAt = { x: box.x + center.x + (-256 - cx) * cz, y: box.y + center.y + (0 - cy) * cz };
+    const t = await trash.boundingBox();
+    const trashAt = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+    await page.mouse.move(playerAt.x, playerAt.y);
+    await page.mouse.down();
+    await page.mouse.move(trashAt.x, trashAt.y, { steps: 8 });
+    await check(async () => (await trash.getAttribute('class')).includes('hot'), 'dragging an object over the trash can lights it up');
+    await page.screenshot({ path: `${OUT}/12c-trash-drag.png` });
+    await page.mouse.up();
+    await check(async () => (await entities()) === n0 - 1 && !(await trash.getAttribute('class')).includes('hot'), 'dropping it on the trash can deletes it');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, '(Undo brings it back)');
+    const touch = (type, p) =>
+      page.evaluate(([type, x, y]) => {
+        const c = document.querySelector('[data-testid="viewport-canvas"]');
+        c.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }));
+      }, [type, p.x, p.y]);
+    await touch('pointerdown', playerAt);
+    for (let i = 1; i <= 8; i++) await touch('pointermove', { x: playerAt.x + ((trashAt.x - playerAt.x) * i) / 8, y: playerAt.y + ((trashAt.y - playerAt.y) * i) / 8 });
+    await touch('pointerup', trashAt);
+    await check(async () => (await entities()) === n0 - 1, 'with a finger too: dragging an object onto the trash can deletes it');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, '(and Undo brings it back)');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'camera';
   await page.keyboard.press('Escape');
   const frameOf = async () => ((await canvas.getAttribute('data-camera-frame')) ?? '').split(',').filter(Boolean).map(Number);

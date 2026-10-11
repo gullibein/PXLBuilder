@@ -479,6 +479,8 @@ export function Viewport() {
       canvasRef.current!.style.cursor = 'grabbing';
       state.setCamera({ x: drag.startCamera.x - (ev.clientX - drag.startScreen.x) / z, y: drag.startCamera.y - (ev.clientY - drag.startScreen.y) / z });
     } else if (drag.kind === 'move') {
+      // Over the trash can: it lights up (dropping deletes them).
+      state.setTrashHot(overTrash(ev));
       const world = toWorld(ev);
       const raw = { x: drag.anchor.x + world.x - drag.startWorld.x, y: drag.anchor.y + world.y - drag.startWorld.y };
       // The object under the cursor leads; the rest of the selection keeps its offsets.
@@ -520,6 +522,12 @@ export function Viewport() {
     }
     if (drag?.kind === 'connect') {
       if (drag.targetId) connectSwitch(drag.fromId, drag.targetId);
+      return;
+    }
+    state.setTrashHot(false);
+    if (drag?.kind === 'move' && ev.type === 'pointerup' && overTrash(ev)) {
+      // Dropped on the trash can: deleted (Undo brings them back).
+      state.edit(drag.ids.length === 1 ? 'Delete entity' : `Delete ${drag.ids.length} entities`, (p) => removeEntities(p, state.activeSceneId, drag.ids));
       return;
     }
     if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
@@ -670,6 +678,12 @@ function drawBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag |
 function localPoint(canvas: HTMLCanvasElement, ev: { clientX: number; clientY: number }): Vec2 {
   const rect = canvas.getBoundingClientRect();
   return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+
+/** The pointer is over the trash can in the bottom bar. */
+function overTrash(ev: { clientX: number; clientY: number }): boolean {
+  const r = document.querySelector('[data-testid="trash"]')?.getBoundingClientRect();
+  return !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
 }
 
 /** Keeps a pointer's events coming to the canvas while it is down (a finger or a drag leaving it); never fails the gesture. */

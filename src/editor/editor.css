@@ -493,7 +493,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 
 /* A narrow level view: the History/Console chips must not run into the centered bottom bar.
    First they shrink to icons; narrower still, they move up above the bar. */
-@container stage (max-width: 980px) {
+@container stage (max-width: 1100px) {
   .tray-chip { padding: 0 12px; }
   .tray-chip .chip-label { display: none; }
 }
@@ -608,3 +608,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 }
 /* An open panel is above the History/Console buttons (they would cover its bottom row). */
 .dock-wrap:has(.dock-panel) { z-index: 17; }
+
+/* The trash can in the bottom bar: faint until something is selected, red while objects are dragged over it. */
+.trash-btn { padding: 0 11px; color: var(--muted); }
+.trash-btn[aria-disabled='true'] { opacity: 0.55; }
+.trash-btn[aria-disabled='false'] { color: var(--text); }
+.trash-btn.hot { background: var(--danger, #e5534b); color: #fff; opacity: 1; transform: scale(1.12); transition: transform 80ms ease-out; }
