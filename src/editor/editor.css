@@ -661,3 +661,18 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 /* The game's name in the project menu. */
 .game-name-field { cursor: default; }
 .game-name-field input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font: inherit; font-weight: 600; }
+
+/* On-screen buttons for touch screens in play. */
+.touch-controls { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end; padding: 16px max(16px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); pointer-events: none; z-index: 6; }
+.touch-pad { display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px); gap: 4px; }
+.touch-pad .up { grid-column: 2; grid-row: 1; }
+.touch-pad .left { grid-column: 1; grid-row: 2; }
+.touch-pad .right { grid-column: 3; grid-row: 2; }
+.touch-pad .down { grid-column: 2; grid-row: 3; }
+.touch-actions { display: flex; align-items: flex-end; gap: 12px; }
+.touch-btn { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; border: 2px solid rgba(255, 255, 255, 0.35); border-radius: 16px; background: rgba(20, 16, 40, 0.45); color: rgba(255, 255, 255, 0.9); font: 700 20px system-ui, sans-serif; backdrop-filter: blur(2px); }
+.touch-btn:active { background: rgba(123, 108, 246, 0.6); }
+.touch-btn.big { width: 88px; height: 88px; border-radius: 50%; font-size: 17px; }
+.touch-btn.small { width: 62px; height: 62px; border-radius: 50%; }
+/* With the buttons on screen, the keyboard hints aren't needed. */
+.touch-controls ~ .hud-keys { display: none; }

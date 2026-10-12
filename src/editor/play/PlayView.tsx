@@ -3,7 +3,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
 import { audio, playRecipe } from '../audio/synth';
-import { InputState, KEY_BINDINGS } from '../../runtime/input';
+import { InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
 import { imageLookup } from '../images';
@@ -39,10 +39,19 @@ export interface PlayViewProps {
   onEnd?: (report: PlayReport, project: Project) => void;
   /** The key hints' last part ("Esc stops" in the editor). */
   stopHint?: string;
+  /** On-screen buttons for phones and tablets (move, jump, use, shoot), shown on touch screens. */
+  touchControls?: boolean;
+}
+
+/** A touch screen (phones, tablets): where the on-screen buttons are shown. */
+export function isTouchScreen(): boolean {
+  return typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 }
 
 export function PlayView(props: PlayViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // The game's controls, for the on-screen buttons.
+  const inputRef = useRef<InputState | null>(null);
   const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null });
 
   useEffect(() => {
@@ -72,6 +81,7 @@ export function PlayView(props: PlayViewProps) {
     /** The game is finished: the last level was won (play stops, the banner stays). */
     let finished = false;
     const input = new InputState();
+    inputRef.current = input;
 
     const size = { width: 1, height: 1 };
     /**
@@ -241,6 +251,7 @@ export function PlayView(props: PlayViewProps) {
           {hud.messages.at(-1)}
         </div>
       )}
+      {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} />}
       <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts{props.stopHint ? ` · ${props.stopHint}` : ''}</div>
     </div>
   );
@@ -260,4 +271,51 @@ export function playSummaryLine(report: PlayReport): string {
   if (report.scriptErrors.length) parts.push(`${report.scriptErrors.length} script ${report.scriptErrors.length === 1 ? 'problem' : 'problems'}`);
   if (!parts.length) return '';
   return `Last play (${Math.round(report.duration)} s): ${parts.join(', ')}.`;
+}
+
+/**
+ * On-screen buttons for touch screens: arrows on the left (left/right, and up/down for ladders or, seen from
+ * above, walking), jump (side view), use and shoot on the right when the game has switches or shooting. Each
+ * button is held while a finger is on it; several fingers work at once (run and jump).
+ */
+function TouchControls({ input, topDown, use, shoot }: { input: React.RefObject<InputState | null>; topDown: boolean; use: boolean; shoot: boolean }) {
+  const button = (action: Action, label: string, className: string) => (
+    <button
+      key={action}
+      className={`touch-btn ${className}`}
+      data-testid={`touch-${action}`}
+      aria-label={action}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        input.current?.press(action);
+        // Kept until the finger lifts, even if it slides off the button (when the browser allows it).
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // No such pointer (a synthetic event): the button still works.
+        }
+      }}
+      onPointerUp={() => input.current?.release(action)}
+      onPointerCancel={() => input.current?.release(action)}
+      onLostPointerCapture={() => input.current?.release(action)}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="touch-controls" data-testid="touch-controls">
+      <div className="touch-pad">
+        {button('up', '▲', 'up')}
+        {button('left', '◀', 'left')}
+        {button('right', '▶', 'right')}
+        {button('down', '▼', 'down')}
+      </div>
+      <div className="touch-actions">
+        {shoot && button('fire', 'X', 'small')}
+        {use && button('interact', 'E', 'small')}
+        {!topDown && button('jump', 'Jump', 'big')}
+      </div>
+    </div>
+  );
 }

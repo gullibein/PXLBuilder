@@ -100,6 +100,8 @@ export interface EditorState {
   codeEditor: { definitionId: Id | null; entityId: Id | null } | null;
   /** The Save window (names the game, then saves the file). */
   saveDialog: boolean;
+  /** The Export game window (options, then the HTML file). */
+  exportGameOpen: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -143,6 +145,7 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  setExportGameOpen(open: boolean): void;
   setSaveDialog(open: boolean): void;
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
@@ -209,6 +212,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     spriteExport: null,
     codeEditor: null,
     saveDialog: false,
+    exportGameOpen: false,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -427,6 +431,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },
+    setExportGameOpen(exportGameOpen) {
+      set({ exportGameOpen });
+    },
+
     setSaveDialog(saveDialog) {
       set({ saveDialog });
     },

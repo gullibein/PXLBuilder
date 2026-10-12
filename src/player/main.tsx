@@ -24,6 +24,12 @@ function loadGame(): { project: Project } | { error: string } | null {
   }
 }
 
+/** On-screen buttons on phones: chosen when the game was exported; the empty player always has them. */
+const touchControls = (() => {
+  const el = document.getElementById('pxl-game');
+  return !el?.textContent || el.dataset.touch === '1';
+})();
+
 function Player() {
   const [game, setGame] = useState(loadGame);
   // A click (or key) first: browsers only allow sound after one, and the game gets the keyboard.
@@ -92,7 +98,7 @@ function Player() {
   }
   return (
     <>
-      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => 0} stopHint="drop another game to play it" />
+      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => 0} stopHint="drop another game to play it" touchControls={touchControls} />
       {dropHint}
     </>
   );

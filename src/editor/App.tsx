@@ -1,5 +1,6 @@
 import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
+import { ExportGameDialog } from './chrome/ExportGameDialog';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -60,6 +61,7 @@ export function App() {
             startSceneId={useEditor.getState().activeSceneId}
             playPixels={() => useEditor.getState().layout.playPixels}
             stopHint="Esc stops"
+            touchControls
             onEnd={(report, project) => {
               const { setLastPlay, logMessage } = useEditor.getState();
               setLastPlay(report, project);
@@ -95,6 +97,7 @@ export function App() {
         <SpriteExport />
         <CodeEditor />
         <SaveDialog />
+        <ExportGameDialog />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -182,6 +185,7 @@ function useGlobalShortcuts() {
         else if (state.gameChooser) state.setGameChooser(null);
         else if (state.spriteExport) state.openSpriteExport(null);
         else if (state.saveDialog) state.setSaveDialog(false);
+        else if (state.exportGameOpen) state.setExportGameOpen(false);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {

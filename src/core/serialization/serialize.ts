@@ -201,7 +201,7 @@ function formatZodError(error: { issues: { path: PropertyKey[]; message: string 
 export function gameFromText(text: string, registry: ComponentRegistry): LoadResult {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('<')) {
-    const m = /<script type="application\/json" id="pxl-game">([\s\S]*?)<\/script>/.exec(text);
+    const m = /<script type="application\/json" id="pxl-game"[^>]*>([\s\S]*?)<\/script>/.exec(text);
     if (!m) throw new ProjectLoadError('This page has no PXLBuilder game in it');
     return projectFromBundle(JSON.parse(m[1]), registry);
   }

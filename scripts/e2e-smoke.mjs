@@ -1605,7 +1605,9 @@ try {
   step = 'export game as a web page';
   {
     await page.getByTestId('project-menu').click();
-    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('menu-export-game').click()]);
+    await page.getByTestId('menu-export-game').click();
+    await check(async () => (await page.getByTestId('export-touch').isChecked()), 'Export game asks about touch controls for phones (on by default)');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-game-confirm').click()]);
     const file = `${process.cwd()}/${OUT}/exported-game.html`;
     await dl.saveAs(file);
     const html = readFileSync(file, 'utf8');
@@ -1615,6 +1617,31 @@ try {
     gp.on('pageerror', (e) => gameErrors.push(e.message));
     await gp.goto(`file://${file}`);
     await check(async () => (await gp.getByTestId('player-start').innerText()).includes('Click to play'), 'opened in a browser, it shows the game\'s title and "Click to play"');
+    // On a phone: on-screen buttons that play it.
+    {
+      const phone = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+      const ph = await phone.newPage();
+      await ph.goto(`file://${file}`);
+      await ph.getByTestId('player-start').tap();
+      const pcv = ph.getByTestId('play-canvas');
+      await pcv.waitFor();
+      await ph.waitForTimeout(500);
+      await check(async () => (await ph.getByTestId('touch-controls').isVisible()) && (await ph.getByTestId('touch-jump').count()) === 1, 'on a phone the game shows touch controls (arrows, jump)');
+      const x0 = Number(((await pcv.getAttribute('data-player')) ?? '0').split(',')[0]);
+      const btn = await ph.getByTestId('touch-right').boundingBox();
+      const touchOn = (type) =>
+        ph.evaluate(
+          ([type, x, y]) => document.querySelector('[data-testid="touch-right"]').dispatchEvent(new PointerEvent(type, { pointerId: 3, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true })),
+          [type, btn.x + btn.width / 2, btn.y + btn.height / 2],
+        );
+      await touchOn('pointerdown');
+      await ph.waitForTimeout(600);
+      await touchOn('pointerup');
+      const x1 = Number(((await pcv.getAttribute('data-player')) ?? '0').split(',')[0]);
+      await check(x1 > x0 + 20, `holding the ▶ button runs right (${x0} → ${x1})`);
+      await ph.screenshot({ path: `${OUT}/12h-phone-controls.png` });
+      await phone.close();
+    }
     await gp.getByTestId('player-start').click();
     const pc = gp.getByTestId('play-canvas');
     await pc.waitFor();
@@ -1638,7 +1665,7 @@ try {
         },
         [selector, name, text],
       );
-    const bundle = JSON.parse(html.match(/<script type="application\/json" id="pxl-game">([\s\S]*?)<\/script>/)[1]);
+    const bundle = JSON.parse(html.match(/<script type="application\/json" id="pxl-game"[^>]*>([\s\S]*?)<\/script>/)[1]);
     const projectFile = Object.keys(bundle.files).find((k) => k === 'project.json');
     bundle.files[projectFile].name = 'Dropped Game';
     const droppedText = JSON.stringify(bundle);

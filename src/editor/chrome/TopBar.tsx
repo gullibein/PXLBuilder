@@ -5,7 +5,7 @@ import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
 import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
-import { canExportGame, exportGame, exportPlayer } from '../gameExport';
+import { canExportGame, exportPlayer } from '../gameExport';
 import { openProjectFile, PROJECT_FILE_EXTENSION } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
@@ -247,10 +247,7 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
           {
             label: 'Export game (HTML)',
             detail: 'One web page that plays the game in any browser: send it, or put it on a website. No editor needed.',
-            run: () => {
-              const { project, logMessage } = useEditor.getState();
-              void exportGame(project).then((r) => logMessage(r === 'failed' ? 'error' : 'info', r === 'saved' ? `Exported "${project.name}" as a web page` : r === 'declined' ? 'Export cancelled' : "Couldn't save the game's page"));
-            },
+            run: () => useEditor.getState().setExportGameOpen(true),
             testId: 'menu-export-game',
           },
           {

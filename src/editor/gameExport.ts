@@ -16,19 +16,19 @@ export function canExportGame(): boolean {
 }
 
 /** The game's page: the player with the game in it (its name as the title). */
-export function gamePage(project: Project): string {
+export function gamePage(project: Project, options: { touchControls?: boolean } = {}): string {
   if (!template) throw new Error('The game player is not part of this build (run npm run build:player).');
   // In a script element "<" is written as <, so nothing in the game (a name, a message) can end it early.
   const json = JSON.stringify(projectToBundle(project)).replace(/</g, '\\u003c');
   const title = project.name.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
   return template
     .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
-    .replace('<!--PXL_GAME-->', () => `<script type="application/json" id="pxl-game">${json}</script>`);
+    .replace('<!--PXL_GAME-->', () => `<script type="application/json" id="pxl-game"${options.touchControls ? ' data-touch="1"' : ''}>${json}</script>`);
 }
 
-export async function exportGame(project: Project): Promise<'saved' | 'declined' | 'failed'> {
+export async function exportGame(project: Project, options: { touchControls?: boolean } = {}): Promise<'saved' | 'declined' | 'failed'> {
   const name = `${slugify(project.name) || 'game'}.html`;
-  return offerFile(name, new Blob([gamePage(project)], { type: 'text/html' }));
+  return offerFile(name, new Blob([gamePage(project, options)], { type: 'text/html' }));
 }
 
 /** The player page with no game in it: games (saved or exported) are dropped onto it to play them. */
