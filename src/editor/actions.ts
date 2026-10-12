@@ -2,7 +2,11 @@
 import { addRelationship, removeRelationship } from '../core/logic/mutations';
 import type { ResolvedEntity } from '../core/model/resolve';
 import { getWorldBounds } from '../core/model/geometry';
-import { duplicateEntities, moveEntities, removeEntities } from '../core/model/mutations';
+import { componentRegistry } from '../core/components/builtin';
+import type { Rect } from '../core/model/geometry';
+import { duplicateEntities, moveEntities, removeEntities, setEntityComponentField, setEntityTransform } from '../core/model/mutations';
+import { resolveEntity } from '../core/model/resolve';
+import type { Vec2 } from '../core/types';
 import { resolveSceneEntities } from './selectors';
 import { useEditor } from './store';
 
@@ -25,6 +29,39 @@ export function duplicateSelection(): void {
     created = duplicateEntities(p, activeSceneId, ids, { x: g, y: g });
   });
   if (ok) selectEntities(created);
+}
+
+/** Repeats the selection at these offsets (dragging a side of the selection box): one undoable step; all of it selected after. */
+export function extendSelection(ids: string[], offsets: Vec2[]): void {
+  const { activeSceneId, edit, selectEntities } = useEditor.getState();
+  if (!ids.length || !offsets.length) return;
+  const created: string[] = [];
+  const n = ids.length * offsets.length;
+  const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})`, (p) => {
+    for (const o of offsets) created.push(...duplicateEntities(p, activeSceneId, ids, o));
+  });
+  if (ok) selectEntities([...ids, ...created]);
+}
+
+/** Gives one placed object a new size in the level (dragging a corner of its box): its sprite (and collider) size, and its middle. */
+export function resizeEntity(id: string, r: Rect): void {
+  const { project, activeSceneId, edit } = useEditor.getState();
+  const entity = project.scenes.find((s) => s.id === activeSceneId)?.entities.find((e) => e.id === id);
+  if (!entity) return;
+  const resolved = resolveEntity(project, entity, componentRegistry);
+  const sx = Math.abs(resolved.transform.scale.x) || 1;
+  const sy = Math.abs(resolved.transform.scale.y) || 1;
+  const w = Math.round(((r.maxX - r.minX) / sx) * 100) / 100;
+  const h = Math.round(((r.maxY - r.minY) / sy) * 100) / 100;
+  edit(`Resize ${entity.name} to ${Math.round(r.maxX - r.minX)}×${Math.round(r.maxY - r.minY)}`, (p) => {
+    if (resolved.components.Sprite) {
+      setEntityComponentField(p, activeSceneId, id, 'Sprite', 'width', w, componentRegistry);
+      setEntityComponentField(p, activeSceneId, id, 'Sprite', 'height', h, componentRegistry);
+    } else if (resolved.components.Collider) {
+      setEntityComponentField(p, activeSceneId, id, 'Collider', 'size', { x: w, y: h }, componentRegistry);
+    }
+    setEntityTransform(p, activeSceneId, id, { position: { x: (r.minX + r.maxX) / 2, y: (r.minY + r.maxY) / 2 } });
+  });
 }
 
 export function selectAll(): void {

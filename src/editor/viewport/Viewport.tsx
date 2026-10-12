@@ -9,7 +9,8 @@ import type { Id, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
-import { connectSwitch } from '../actions';
+import { connectSwitch, extendSelection, resizeEntity } from '../actions';
+import { extendCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
@@ -31,6 +32,10 @@ type Drag =
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
   | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> }
+  /** Dragging a side point of the selection box: copies of the selection in a line that way (`count` so far). */
+  | { kind: 'extend'; ids: Id[]; box: Rect; dir: Handle['dir']; count: number }
+  /** Dragging a corner point of one object's box: its new size (`rect`, in the level). */
+  | { kind: 'resize'; id: Id; box: Rect; dir: Handle['dir']; rect: Rect }
   /** Dragging from a switch's red connector onto another object. */
   | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null };
 
@@ -123,6 +128,7 @@ export function Viewport() {
             : e,
         );
       }
+      if (drag?.kind === 'resize') entities = entities.map((e) => (e.id === drag.id ? resizedEntity(e, drag.rect) : e));
       const byId = new Map(entities.map((e) => [e.id, e]));
       const selected = state.selectedEntityIds.map((id) => byId.get(id)).filter((e): e is ResolvedEntity => !!e);
 
@@ -160,7 +166,19 @@ export function Viewport() {
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
-      for (const e of selected) drawSelected(ctx, e, state.camera.zoom, time);
+      // Copies a side drag will make, faint until let go.
+      let ghosts: ResolvedEntity[] = [];
+      if (drag?.kind === 'extend' && drag.count > 0) {
+        const originals = entities.filter((e) => drag.ids.includes(e.id));
+        ghosts = extendOffsets(drag.box, drag.dir, drag.count).flatMap((o) =>
+          originals.map((e) => ({ ...e, id: `${e.id}~${o.x},${o.y}`, alpha: 0.55, transform: { ...e.transform, position: { x: e.transform.position.x + o.x, y: e.transform.position.y + o.y } } })),
+        );
+        if (!wire) drawEntities(ctx, ghosts, images, 0.3, time / 1000);
+        else drawWireframe(ctx, ghosts, state.camera.zoom);
+      }
+      drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', drag?.kind === 'extend' ? boxAround([drag.box, ...ghosts.map(getWorldBounds)]) : null);
+      const handlesAttr = selected.length ? selectionFrame(selected).handles.map((h) => `${h.kind[0]}${h.dir.x},${h.dir.y}@${h.at.x.toFixed(0)},${h.at.y.toFixed(0)}`).join(' ') : '';
+      if ((canvas.dataset.handles ?? '') !== handlesAttr) canvas.dataset.handles = handlesAttr;
       if (state.flash && time < state.flash.until) drawFlash(ctx, state.flash.ids, byId, state.camera.zoom, (state.flash.until - time) / 2200);
       const flashAttr = state.flash && time < state.flash.until ? String(state.flash.ids.length) : '';
       if ((canvas.dataset.flash ?? '') !== flashAttr) canvas.dataset.flash = flashAttr;
@@ -396,8 +414,20 @@ export function Viewport() {
         capture(canvas, ev.pointerId);
         return;
       }
-      const hit = pick(entities, world);
       const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+      // A point on the selection box: sides repeat the selection in a line, corners resize one object.
+      const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
+      const frame = chosen.length && !additive ? selectionFrame(chosen) : null;
+      const boxHandle = frame && handleAt(frame.handles, frame.box, world, state.camera.zoom, ev.pointerType === 'touch' ? 18 : 8);
+      if (frame && boxHandle) {
+        dragRef.current =
+          boxHandle.kind === 'side'
+            ? { kind: 'extend', ids: chosen.map((e) => e.id), box: frame.box, dir: boxHandle.dir, count: 0 }
+            : { kind: 'resize', id: chosen[0].id, box: frame.box, dir: boxHandle.dir, rect: frame.box };
+        capture(canvas, ev.pointerId);
+        return;
+      }
+      const hit = pick(entities, world);
       const scene = getActiveScene(state);
       const line = hit ? null : connectionAt(state.project, scene, new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       if (line && !additive) {
@@ -455,6 +485,14 @@ export function Viewport() {
       }
       const world = toWorld(ev);
       const entities = resolveSceneEntities(state.project, state.activeSceneId);
+      const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
+      const frame = chosen.length ? selectionFrame(chosen) : null;
+      const handle = frame && handleAt(frame.handles, frame.box, world, state.camera.zoom, 8);
+      if (handle) {
+        hoverRef.current = null;
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : handleCursor(handle);
+        return;
+      }
       const hit = pick(entities, world);
       hoverRef.current = hit?.id ?? null;
       const onConnector = !!connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
@@ -469,6 +507,15 @@ export function Viewport() {
       drag.current = toWorld(ev);
       const over = pick(resolveSceneEntities(state.project, state.activeSceneId), drag.current);
       drag.targetId = over && over.id !== drag.fromId ? over.id : null;
+      return;
+    }
+    if (drag.kind === 'extend') {
+      drag.count = extendCount(drag.box, drag.dir, toWorld(ev));
+      return;
+    }
+    if (drag.kind === 'resize') {
+      const grid = state.layout.snapToGrid ? state.project.settings.gridSize / 2 : null;
+      drag.rect = resizeRect(drag.box, drag.dir, toWorld(ev), grid, 4);
       return;
     }
     if (drag.kind === 'paint') {
@@ -529,6 +576,15 @@ export function Viewport() {
     }
     if (drag?.kind === 'connect') {
       if (drag.targetId) connectSwitch(drag.fromId, drag.targetId);
+      return;
+    }
+    if (drag?.kind === 'extend') {
+      if (drag.count > 0) extendSelection(drag.ids, extendOffsets(drag.box, drag.dir, drag.count));
+      return;
+    }
+    if (drag?.kind === 'resize') {
+      const r = drag.rect;
+      if (r.minX !== drag.box.minX || r.maxX !== drag.box.maxX || r.minY !== drag.box.minY || r.maxY !== drag.box.maxY) resizeEntity(drag.id, r);
       return;
     }
     // Over the trash when let go (or when the browser took the touch over: pointercancel's position isn't reliable,
@@ -833,30 +889,66 @@ function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: numbe
   ctx.restore();
 }
 
-function drawSelected(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: number, time: number): void {
+/** The selection's box (exactly around it) and its handles; corners only for one unturned object. */
+function selectionFrame(selected: ResolvedEntity[]): { box: Rect; handles: Handle[] } {
+  const box = boxAround(selected.map(getWorldBounds))!;
+  const resizable = selected.length === 1 && selected[0].transform.rotation % 360 === 0 && !!(selected[0].components.Sprite || selected[0].components.Collider);
+  return { box, handles: handlesFor(box, resizable) };
+}
+
+/** A resolved object drawn at a new size (a corner being dragged): its sprite (or collider) size and middle. */
+function resizedEntity(e: ResolvedEntity, r: Rect): ResolvedEntity {
+  const sx = Math.abs(e.transform.scale.x) || 1;
+  const sy = Math.abs(e.transform.scale.y) || 1;
+  const w = (r.maxX - r.minX) / sx;
+  const h = (r.maxY - r.minY) / sy;
+  const components = { ...e.components };
+  if (components.Sprite) components.Sprite = { ...components.Sprite, width: w, height: h };
+  if (components.Collider && (!components.Sprite || components.Collider.matchSprite !== false)) components.Collider = { ...components.Collider, size: { x: w, y: h } };
+  return { ...e, components, transform: { ...e.transform, position: { x: (r.minX + r.maxX) / 2, y: (r.minY + r.maxY) / 2 } } };
+}
+
+/**
+ * The selection: each object outlined exactly (no gap), and the points to drag: on one object its corners
+ * (resize) and sides (repeat in a line); on several, the sides of the box around them all.
+ */
+function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[], zoom: number, time: number, withHandles: boolean, extended: Rect | null): void {
+  if (!selected.length) return;
   const breathe = 0.75 + 0.25 * Math.sin(time / 600);
-  const size = getEntitySize(e);
-  const { position, rotation, scale } = e.transform;
-  const pad = 4 / zoom;
-  const w = size.x * Math.abs(scale.x) + pad * 2;
-  const h = size.y * Math.abs(scale.y) + pad * 2;
   ctx.save();
-  ctx.translate(position.x, position.y);
-  ctx.rotate((rotation * Math.PI) / 180);
-  // Soft glow, thin outline, and small corner handles: the object is "active".
   ctx.shadowColor = theme.selectGlow;
   ctx.shadowBlur = 16 * breathe;
   ctx.strokeStyle = theme.select;
   ctx.lineWidth = 1.5 / zoom;
-  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  for (const e of selected) {
+    ctx.save();
+    traceShape(ctx, e, 0, false);
+    ctx.stroke();
+    ctx.restore();
+  }
   ctx.shadowBlur = 0;
-  const s = 5 / zoom;
-  ctx.fillStyle = theme.handle;
-  ctx.strokeStyle = theme.select;
-  ctx.lineWidth = 1 / zoom;
-  for (const [cx, cy] of [[-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2]]) {
-    ctx.fillRect(cx - s / 2, cy - s / 2, s, s);
-    ctx.strokeRect(cx - s / 2, cy - s / 2, s, s);
+  const frame = selectionFrame(selected);
+  if (selected.length > 1 || extended) {
+    // The box the side points belong to (and how far a side drag reaches).
+    const b = extended ?? frame.box;
+    ctx.setLineDash([5 / zoom, 4 / zoom]);
+    ctx.lineWidth = 1 / zoom;
+    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+    ctx.setLineDash([]);
+  }
+  if (withHandles && !extended && Math.min(frame.box.maxX - frame.box.minX, frame.box.maxY - frame.box.minY) * zoom >= 12) {
+    const s = 7 / zoom;
+    ctx.fillStyle = theme.handle;
+    ctx.strokeStyle = theme.select;
+    ctx.lineWidth = 1.25 / zoom;
+    for (const h of frame.handles) {
+      ctx.beginPath();
+      // Corners square (resize), sides round (repeat in a line).
+      if (h.kind === 'corner') ctx.rect(h.at.x - s / 2, h.at.y - s / 2, s, s);
+      else ctx.arc(h.at.x, h.at.y, s / 2 + 0.5 / zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -915,7 +1007,8 @@ function connectorsFor(selectedIds: Id[], entities: ResolvedEntity[], zoom: numb
   const e = entities.find((x) => x.id === selectedIds[0]);
   if (!e?.components.Switch) return [];
   const b = getWorldBounds(e);
-  const pad = 4 / zoom;
+  // Out past the selection box's side points (those repeat the switch in a line).
+  const pad = 18 / zoom;
   const y = (b.minY + b.maxY) / 2;
   return [
     { entityId: e.id, point: { x: b.minX - pad, y } },

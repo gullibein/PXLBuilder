@@ -1320,6 +1320,62 @@ try {
     await page.keyboard.press('Escape');
   }
 
+  step = 'selection box handles';
+  {
+    const entities = async () => Number(await canvas.getAttribute('data-entities'));
+    const n0 = await entities();
+    // data-handles: "s1,0@x,y" a side point, "c1,1@x,y" a corner, in level coordinates.
+    const handles = async () =>
+      Object.fromEntries(
+        ((await canvas.getAttribute('data-handles')) ?? '').split(' ').filter(Boolean).map((h) => {
+          const [k, at] = h.split('@');
+          return [k, at.split(',').map(Number)];
+        }),
+      );
+    const w2s = async (wx, wy) => {
+      const [cx, cy, z] = (await canvas.getAttribute('data-camera')).split(',').map(Number);
+      const b = await canvas.boundingBox();
+      return { x: b.x + b.width / 2 + (wx - cx) * z, y: b.y + b.height / 2 + (wy - cy) * z };
+    };
+    const dragWorld = async (from, to) => {
+      const a = await w2s(...from);
+      const b = await w2s(...to);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+      await page.mouse.move(b.x, b.y, { steps: 4 });
+      await page.mouse.up();
+    };
+    // A 32×32 platform tile placed by hand.
+    await page.getByTestId('dock-library').click();
+    await page.dragAndDrop('[data-testid="definition-Platform"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: (await canvas.boundingBox()).width / 2 + 200, y: 140 } });
+    await check(async () => (await entities()) === n0 + 1 && (await canvas.getAttribute('data-handles'))?.includes('c1,1'), '(a platform tile placed and selected)');
+    const h = await handles();
+    const [left, right, top, bottom] = [h['s-1,0'][0], h['s1,0'][0], h['s0,-1'][1], h['s0,1'][1]];
+    await check(right - left === 32 && bottom - top === 32 && h['c1,1'][0] === right && h['c1,1'][1] === bottom && h['s1,0'][1] === (top + bottom) / 2, 'the selection box fits a 32×32 tile exactly: 32×32, corner points at its corners, side points in the middle of its sides');
+    // Drag the right side point three tiles out: three copies in a line, all selected.
+    await dragWorld([right, (top + bottom) / 2], [right + 3 * 32 + 6, (top + bottom) / 2]);
+    await check(async () => (await entities()) === n0 + 4 && (await prompts.getAttribute('data-context')) === 'group', "dragging the box's right side point out 3 tiles makes 3 copies in a line (all selected)");
+    const h2 = await handles();
+    await page.screenshot({ path: `${OUT}/12d-selection-handles.png`, clip: await (async () => { const a = await w2s(h2['s-1,0'][0] - 60, h2['s0,-1'][1] - 60); return { x: a.x, y: a.y, width: 300, height: 160 }; })() });
+    await check(h2['s1,0'][0] - h2['s-1,0'][0] === 128 && h2['s0,1'][1] - h2['s0,-1'][1] === 32, 'the line is 4 tiles long with no gaps (the box around it is 128×32)');
+    // And down from the line: a block.
+    await dragWorld([(h2['s-1,0'][0] + h2['s1,0'][0]) / 2, h2['s0,1'][1]], [(h2['s-1,0'][0] + h2['s1,0'][0]) / 2, h2['s0,1'][1] + 2 * 32 + 4]);
+    await check(async () => (await entities()) === n0 + 12, 'dragging the bottom point of the line down 2 rows makes a 4×3 block');
+    await page.getByTestId('undo').click();
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0 + 1, 'each drag is one Undo');
+    // A corner resizes one object (the opposite corner stays).
+    await clickWorld((left + right) / 2, (top + bottom) / 2);
+    await dragWorld([right, bottom], [right + 64, bottom + 1]);
+    const h3 = await handles();
+    await check(h3['c-1,-1'][0] === left && h3['c-1,-1'][1] === top && h3['c1,1'][0] === right + 64 && h3['c1,1'][1] === bottom && (await entities()) === n0 + 1, 'dragging the bottom-right corner 64 to the right makes the tile 96×32, its top-left corner where it was');
+    await page.getByTestId('undo').click();
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, '(back as it was)');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'typed commands';
   {
     // Plain editing words in the prompt card are done by the app itself, at once (no AI needed).
@@ -1799,8 +1855,8 @@ try {
   await sw_sDrop('Switch', -64, 16);
   await sw_sDrop('Door', 64, 0);
   await swp.mouse.click(sw_sAt(-64, 16).x, sw_sAt(-64, 16).y);
-  // The switch (32x32 at -64,16) gets red connectors 4px outside its frame, left and right.
-  const sw_handle = sw_sAt(-64 + 16 + 4, 16);
+  // The switch (32x32 at -64,16) gets red connectors 18px outside its frame, left and right (past the box's side points).
+  const sw_handle = sw_sAt(-64 + 16 + 18, 16);
   await swp.mouse.move(sw_handle.x, sw_handle.y);
   await swp.mouse.down();
   await swp.mouse.move(sw_sAt(0, 10).x, sw_sAt(0, 10).y, { steps: 4 });
