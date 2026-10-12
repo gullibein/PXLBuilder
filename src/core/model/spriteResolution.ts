@@ -14,6 +14,7 @@
  * size); objects that got their own drawing keep it.
  */
 import type { AssetRecord, Project } from '../types';
+import { eightBitArt } from './eightBitSet';
 import { createAnimatedPixelArtAsset, pixelArtFields } from './factory';
 import { MAX_PIXEL_SIDE, suggestedGrid, type PixelArt } from './pixelArt';
 
@@ -250,6 +251,8 @@ export interface StarterLook {
   /** Its source drawing and that drawing's resolution. */
   source: Art;
   sourceRes: number;
+  /** Its own drawing for the 8-pixel size (the hand-drawn 8-pixel set), when it has one. */
+  eight?: Art;
 }
 
 /** A starter object's look (its picture, or a situation's) with its source drawing. */
@@ -271,6 +274,7 @@ export function starterLook(name: string, shipped: AssetRecord | null, spriteWid
 /** The look at a resolution: the shipped picture (or plain box: null) at 32, else a made one. */
 export function lookAt(look: StarterLook, res: SpriteResolution): Pick<AssetRecord, 'kind' | 'data' | 'width' | 'height' | 'grid' | 'pixelArt' | 'animation'> | null {
   if (res === DEFAULT_SPRITE_RESOLUTION) return look.shipped ?? null;
+  if (res === 8 && look.eight) return pixelArtFields(look.eight.palette, look.eight.frames, look.eight.fps ?? 8);
   return variantFields(look.source, look.sourceRes, res, look.shipped?.name ?? look.name);
 }
 
@@ -281,6 +285,8 @@ export function lookData(look: StarterLook): Set<string> {
     const f = lookAt(look, r);
     if (f) out.add(f.data);
   }
+  // The earlier 8-pixel pictures (made from the 16-pixel ones) count as built-in too, so they get replaced.
+  out.add(variantFields(look.source, look.sourceRes, 8, look.shipped?.name ?? look.name).data);
   return out;
 }
 
@@ -302,16 +308,17 @@ export function setSpriteResolution(
     if (!def || !sprite) continue;
     let touched = false;
     // The normal look, then each situation's.
-    const slots: { get: () => unknown; set: (id: string | null) => void; shipped: AssetRecord | null; label: string }[] = [
-      { get: () => sprite.assetId, set: (id) => (sprite.assetId = id), shipped: s.assets.find((a) => a.id === s.sprite.assetId) ?? null, label: s.name },
+    const slots: { get: () => unknown; set: (id: string | null) => void; shipped: AssetRecord | null; label: string; situation: string | null }[] = [
+      { get: () => sprite.assetId, set: (id) => (sprite.assetId = id), shipped: s.assets.find((a) => a.id === s.sprite.assetId) ?? null, label: s.name, situation: null },
       ...Object.entries(s.states).map(([situation, id]) => {
         const states = def.components.SpriteStates as Record<string, unknown> | undefined;
-        return { get: () => states?.[situation], set: (v: string | null) => states && (states[situation] = v), shipped: s.assets.find((a) => a.id === id) ?? null, label: `${s.name} (${situation})` };
+        return { get: () => states?.[situation], set: (v: string | null) => states && (states[situation] = v), shipped: s.assets.find((a) => a.id === id) ?? null, label: `${s.name} (${situation})`, situation };
       }),
     ];
     for (const slot of slots) {
-      const look = starterLook(slot.label, slot.shipped, Number(sprite.width) || s.sprite.width);
-      if (!look) continue;
+      const found = starterLook(slot.label, slot.shipped, Number(sprite.width) || s.sprite.width);
+      if (!found) continue;
+      const look: StarterLook = { ...found, eight: eightBitArt(project.settings.gameType ?? 'platformer', s.name, slot.situation) ?? undefined };
       const current = project.assets.find((a) => a.id === slot.get()) ?? null;
       const builtIn = lookData(look);
       // Still a built-in look: no picture yet (a shipped plain box), or one of the built-in pictures.

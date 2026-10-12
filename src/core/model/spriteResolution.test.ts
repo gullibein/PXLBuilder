@@ -89,4 +89,35 @@ describe('sprite size', () => {
     expect(parseQuickCommand('sprite size 64')).toEqual({ kind: 'sprite_resolution', resolution: 64 });
     expect(parseQuickCommand('make the sprites 12x12')).toBeNull();
   });
+  it('8×8 is its own hand-drawn set: every built-in look, every drawing used, nothing made from the other sizes', async () => {
+    const { EIGHT_BIT_KEYS, eightBitArt } = await import('./eightBitSet');
+    const used = new Set<string>();
+    for (const gameType of ['platformer', 'topdown'] as const) {
+      const p = produce(createProject(registry, 'x', gameType), (d) => void m.changeSpriteResolution(d, 8, registry));
+      for (const def of p.definitions) {
+        const looks: [string | null, unknown][] = [[null, (def.components.Sprite as { assetId?: string }).assetId], ...Object.entries(def.components.SpriteStates ?? {})];
+        for (const [situation, id] of looks) {
+          if (typeof id !== 'string' || !id) continue;
+          const art = eightBitArt(gameType, def.name, situation);
+          expect(art, `${gameType} ${def.name} ${situation ?? ''}`).not.toBeNull();
+          const asset = p.assets.find((a) => a.id === id)!;
+          expect(asset.pixelArt!.frames ?? [asset.pixelArt!.rows], `${gameType} ${def.name}`).toEqual(art!.frames);
+          for (const k of EIGHT_BIT_KEYS) if (k === `${gameType}:${def.name}${situation ? `:${situation}` : ''}` || k === `*:${def.name}${situation ? `:${situation}` : ''}`) used.add(k);
+        }
+      }
+    }
+    expect(EIGHT_BIT_KEYS.filter((k) => !used.has(k))).toEqual([]);
+  });
+
+  it('every 8-pixel drawing is valid pixel art with frames of one size', async () => {
+    const { EIGHT_BIT_KEYS, eightBitArt } = await import('./eightBitSet');
+    for (const key of EIGHT_BIT_KEYS) {
+      const [gameType, object, situation] = key.split(':');
+      const art = eightBitArt(gameType === '*' ? 'platformer' : gameType, object, situation ?? null)!;
+      for (const f of art.frames) {
+        expect(checkPixelArt({ palette: art.palette, rows: f }), key).toBeNull();
+        expect([f.length, f[0].length], key).toEqual([art.frames[0].length, art.frames[0][0].length]);
+      }
+    }
+  });
 });
