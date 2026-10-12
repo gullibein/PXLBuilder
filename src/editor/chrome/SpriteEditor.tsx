@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { createAnimatedPixelArtAsset, MAX_FRAMES } from '../../core/model/factory';
 import * as m from '../../core/model/mutations';
-import { suggestedGrid } from '../../core/model/pixelArt';
+import { gridFor } from '../../core/model/spriteResolution';
 import {
   addColor,
   addFrame,
@@ -144,7 +144,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   const spriteSize = { x: Number(def?.components.Sprite?.width) || 32, y: Number(def?.components.Sprite?.height) || 32 };
   const [draft, setDraft] = useState<SpriteDraft | null>(() => {
     if (asset) return draftFromAsset(asset);
-    const g = suggestedGrid(spriteSize);
+    const g = gridFor(spriteSize, useEditor.getState().project.settings.spriteResolution);
     return blankDraft(g.width, g.height);
   });
   const [error, setError] = useState<string | null>(null);

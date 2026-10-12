@@ -94,6 +94,10 @@ export const operationSchema = z.union([
     components: z.array(z.object({ component: z.string(), propsJson: z.string() })),
   }),
   z.object({
+    op: z.literal('set_sprite_resolution'),
+    resolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).describe('Art pixels per 32 px tile for the built-in objects: 8 (8×8 sprites, chunky), 16, 32 (as they ship) or 64 (detailed)'),
+  }),
+  z.object({
     op: z.literal('create_level'),
     ref: z.string().describe('Temporary name for the new level, usable as sceneId in later operations of this list (place_instance, build_path, draw_tiles, set_world, create_rule…)'),
     name: z.string().describe('Its name, e.g. "Level 2" or "The Mines"'),
@@ -511,6 +515,9 @@ export function applyOperations(
         result.createdDefinitionIds.push(def.id);
         break;
       }
+      case 'set_sprite_resolution':
+        m.changeSpriteResolution(project, op.resolution, registry);
+        break;
       case 'create_level': {
         if (levelRefs.has(op.ref)) throw new m.ModelError(`Two new levels are called "${op.ref}"; give each its own ref`);
         if (!op.name.trim()) throw new m.ModelError('A new level needs a name');

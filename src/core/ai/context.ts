@@ -19,7 +19,7 @@ import { LEVEL_CELL } from '../model/placement';
 import { levelDesignIdea, type LevelDesignIdea } from './levelIdeas';
 import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
-import { suggestedGrid } from '../model/pixelArt';
+import { gridFor } from '../model/spriteResolution';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
 import type { BehaviorScript, Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
@@ -158,6 +158,8 @@ export interface AIPayload {
      * every direction, nothing falls, walls block; playerReach is then null (no jumping).
      */
     view: 'side' | 'topdown';
+    /** The game's sprite size: art pixels per 32 px tile of the built-in objects' pictures (32 = as they ship). */
+    spriteResolution: number;
     /**
      * For building or rebuilding a level: the layout to use this time (chosen at random by the app, so levels
      * differ), where the start and goal go, and the shapes of the game's other levels. Follow it unless the user
@@ -274,7 +276,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       scale: r.transform.scale,
       components: r.components,
       instanceOverrides: [...r.overriddenFields],
-      spriteGrid: suggestedGrid(getEntitySize(r)),
+      spriteGrid: gridFor(getEntitySize(r), project.settings.spriteResolution),
       scripts: { object: def?.scripts ?? [], own: entity.scripts ?? [] },
       look: lookOf(r.components),
     };
@@ -333,6 +335,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },
       map: levelMap(project, scene.id, registry),
       view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
+      spriteResolution: project.settings.spriteResolution ?? 32,
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
       playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {

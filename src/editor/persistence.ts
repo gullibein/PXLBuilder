@@ -1,3 +1,6 @@
+import { produce } from 'immer';
+import { changeSpriteResolution } from '../core/model/mutations';
+import { DEFAULT_SPRITE_RESOLUTION, type SpriteResolution } from '../core/model/spriteResolution';
 import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
@@ -111,8 +114,10 @@ async function writeAutosave(project: Project): Promise<void> {
  * game; later it replaces the current one as an undoable step, so there is no
  * need to ask "are you sure?".
  */
-export function startNewGame(gameType: GameType, first = false): void {
-  const project = createProject(componentRegistry, 'Untitled Game', gameType);
+export function startNewGame(gameType: GameType, first = false, spriteResolution: SpriteResolution = DEFAULT_SPRITE_RESOLUTION): void {
+  const project = produce(createProject(componentRegistry, 'Untitled Game', gameType), (p) => {
+    if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
+  });
   const kind = gameType === 'topdown' ? 'top-down game' : 'platformer';
   if (first) useEditor.getState().loadProject(project);
   else useEditor.getState().replaceProject('New project', project);

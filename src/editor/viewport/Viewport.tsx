@@ -160,7 +160,8 @@ export function Viewport() {
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
-      if (state.layout.showCameraOutlines) {
+      // No camera outline before there is a player to follow (an empty or unfinished level).
+      if (state.layout.showCameraOutlines && placed.some(hasPlayer)) {
         // From where things are, not where they're being dragged: the camera frame stays put while the player is held.
         const f = cameraFrame(scene, placed, view);
         drawCameraFrame(ctx, f, state.camera.zoom, { hover: hoverOutlineRef.current, selected: state.cameraOutline });
@@ -449,7 +450,7 @@ export function Viewport() {
         return;
       }
       // A camera outline: select it (it glows) and ask about the camera in the level's card.
-      const outline = hit || additive || !state.layout.showCameraOutlines ? null : outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom);
+      const outline = hit || additive || !state.layout.showCameraOutlines || !entities.some(hasPlayer) ? null : outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom);
       if (outline) {
         state.selectCameraOutline(outline, world);
         return;
@@ -513,7 +514,7 @@ export function Viewport() {
       const line = hit || onConnector ? null : connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       hoverLinkRef.current = line;
       const onLine = !!line;
-      hoverOutlineRef.current = hit || onConnector || onLine || !state.layout.showCameraOutlines ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current), world, state.camera.zoom);
+      hoverOutlineRef.current = hit || onConnector || onLine || !state.layout.showCameraOutlines || !entities.some(hasPlayer) ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current), world, state.camera.zoom);
       canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine || hoverOutlineRef.current ? 'pointer' : 'default';
       return;
     }
@@ -913,6 +914,9 @@ function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: numbe
   ctx.stroke();
   ctx.restore();
 }
+
+/** A player-controlled character (what the camera outline waits for). */
+const hasPlayer = (e: ResolvedEntity) => !!e.components.CharacterController;
 
 /** The selection's box (exactly around it) and its handles; corners only for one unturned object. */
 function selectionFrame(selected: ResolvedEntity[]): { box: Rect; handles: Handle[] } {

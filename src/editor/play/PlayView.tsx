@@ -140,7 +140,8 @@ export function PlayView() {
       const view = runtime.cam.frame();
       drawBackground(ctx, size, dpr, scene.world, view, images);
       applyCamera(ctx, view, size, dpr);
-      drawEntities(ctx, runtime.renderList(), images, 0, runtime.time);
+      // (Animations hold still too once the level is won.)
+      drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time);
       // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top.
       const drawings = [...runtime.drawings.values()];
       drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time);

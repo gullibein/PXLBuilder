@@ -21,11 +21,13 @@ export type QuickCommand =
   | { kind: 'deselect' }
   | { kind: 'undo' }
   | { kind: 'redo' }
-  | { kind: 'help' };
+  | { kind: 'help' }
+  /** The built-in objects' pictures in another size: 8, 16, 32 or 64 art pixels per tile. */
+  | { kind: 'sprite_resolution'; resolution: 8 | 16 | 32 | 64 };
 
 /** For messages: what can be typed without an AI. */
 export const QUICK_COMMAND_HELP =
-  'delete (or erase, remove), duplicate (also "duplicate 3 times to the right"), copy, cut, paste, move left/right/up/down (also "move up 3"), rename to …, select all (also "select all coins"), deselect, undo, redo';
+  'delete (or erase, remove), duplicate (also "duplicate 3 times to the right"), copy, cut, paste, move left/right/up/down (also "move up 3"), rename to …, select all (also "select all coins"), deselect, undo, redo, and "make the sprites 8x8" (16x16, 32x32 or 64x64)';
 
 const WORDS: Record<string, number> = { one: 1, once: 1, a: 1, two: 2, twice: 2, three: 3, thrice: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const number = (w: string | undefined): number | null => {
@@ -60,6 +62,14 @@ export function parseQuickCommand(text: string): QuickCommand | null {
   const whole = (re: string) => new RegExp(`^${re}$`).exec(t);
 
   if (whole(String.raw`(?:help|commands|what can i (?:type|say|do)|\?)`)) return { kind: 'help' };
+  // "make the sprites 8x8 pixels", "16x16 sprites", "sprite size 64"
+  const size = whole(String.raw`(?:(?:make|set|change|switch|turn|use)\s+)?(?:(?:the|all|all the)\s+)?(?:(?:sprites?|pictures?|graphics)(?:\s+(?:size|resolution))?\s*(?:to\s+|be\s+|into\s+|at\s+)?(\d+)(?:\s*(?:x|×|by)\s*(\d+))?|(\d+)\s*(?:x|×|by)\s*(\d+)\s+(?:sprites?|pictures?|graphics))(?:\s*(?:pixels?|px))?(?:\s+sprites?)?`);
+  if (size) {
+    const a = Number(size[1] ?? size[3]);
+    const b = Number(size[2] ?? size[4] ?? a);
+    if (a === b && (a === 8 || a === 16 || a === 32 || a === 64)) return { kind: 'sprite_resolution', resolution: a };
+    return null;
+  }
   if (whole(String.raw`(?:undo|undo (?:that|it|this|the last (?:change|step|thing))|go back|take (?:that|it) back)`)) return { kind: 'undo' };
   if (whole(String.raw`(?:redo|redo (?:that|it|this))`)) return { kind: 'redo' };
   if (whole(String.raw`(?:delete|erase|remove|del|trash|bin|destroy|get rid of|throw away|throw out)\s*${OBJECT}(?:from (?:the|this) level)?`)) return { kind: 'delete' };

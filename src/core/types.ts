@@ -227,6 +227,11 @@ export interface ProjectSettings {
    * choice: those are platformers. A game can still mix anything.
    */
   gameType?: GameType;
+  /**
+   * How detailed the built-in objects' pictures are: art pixels per 32 px tile (8, 16, 32 or 64). Missing: 32,
+   * as they ship.
+   */
+  spriteResolution?: 8 | 16 | 32 | 64;
 }
 
 export type GameType = 'platformer' | 'topdown';

@@ -619,3 +619,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 
 /* The prompt card steps aside while objects are being dragged on the level. */
 .context-layer.stepped-aside { display: none; }
+
+/* Sprite size: in the project menu and when starting a game. */
+.sprite-size-row { cursor: default; }
+.sprite-size-row .chip-btn { padding: 2px 8px; }
+.chip-btn.on { background: var(--accent, #7c6cff); color: #fff; border-color: transparent; }
+.sprite-size-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }

@@ -1,3 +1,5 @@
+import { SPRITE_RESOLUTIONS } from '../../core/model/spriteResolution';
+import { applySpriteResolution } from '../quickCommands';
 import { useEffect, useRef, useState } from 'react';
 import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
@@ -278,6 +280,8 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
               </button>
             </div>
           ))}
+          <div className="menu-sep" />
+          <SpriteSizeRow onPicked={() => setOpen(false)} />
         </div>
       )}
     </div>
@@ -291,4 +295,32 @@ function resetObjectsToDefaults(): void {
     counts = resetAllStarterDefinitions(p, componentRegistry);
   });
   if (ok) logMessage('info', `Reset ${counts.reset} built-in objects to their defaults${counts.added ? ` and restored ${counts.added} deleted one${counts.added === 1 ? '' : 's'}` : ''}. Undo brings your versions back.`);
+}
+
+/** The built-in objects' sprite size: 8, 16, 32 (as they ship) or 64 art pixels per tile. */
+function SpriteSizeRow({ onPicked }: { onPicked: () => void }) {
+  const res = useEditor((s) => s.project.settings.spriteResolution ?? 32);
+  return (
+    <div className="menu-row stacked sprite-size-row" data-testid="sprite-size">
+      <span className="menu-row-main">
+        <span className="grow">Sprite size</span>
+        {SPRITE_RESOLUTIONS.map((r) => (
+          <button
+            key={r}
+            className={`chip-btn${r === res ? ' on' : ''}`}
+            aria-pressed={r === res}
+            data-testid={`sprite-size-${r}`}
+            title={`${r}×${r} pixels a tile${r === 32 ? ' (as the objects ship)' : ''}`}
+            onClick={() => {
+              onPicked();
+              applySpriteResolution(r);
+            }}
+          >
+            {r}
+          </button>
+        ))}
+      </span>
+      <span className="menu-detail">How detailed the built-in objects' pictures are. Objects with your own drawings keep them.</span>
+    </div>
+  );
 }

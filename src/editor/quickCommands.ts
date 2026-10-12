@@ -7,6 +7,8 @@ import type { AIContext } from '../core/ai/context';
 import { QUICK_COMMAND_HELP, stepOf, type QuickCommand } from '../core/commands/quickCommands';
 import type { ApplyResult } from '../core/commands/operations';
 import { generateId } from '../core/ids';
+import { changeSpriteResolution } from '../core/model/mutations';
+import { componentRegistry } from '../core/components/builtin';
 import { addEntity, duplicateEntities, moveEntities, removeEntities, renameEntity } from '../core/model/mutations';
 import { getWorldBounds } from '../core/model/geometry';
 import type { EntityInstance, Id, Vec2 } from '../core/types';
@@ -94,6 +96,8 @@ export function runQuickCommand(ctx: AIContext | null, cmd: QuickCommand): Promp
   const failed = (): PromptOutcome => ({ status: 'error', message: useEditor.getState().log.at(-1)?.message ?? "That couldn't be done." });
 
   switch (cmd.kind) {
+    case 'sprite_resolution':
+      return applySpriteResolution(cmd.resolution);
     case 'help':
       return { status: 'message', tone: 'info', message: `These work right away, without the AI: ${QUICK_COMMAND_HELP}. Anything else goes to the AI.` };
     case 'undo': {
@@ -185,4 +189,19 @@ function spanOf(ids: Id[]): Vec2 {
   const w = Math.max(...boxes.map((b) => b.maxX)) - Math.min(...boxes.map((b) => b.minX));
   const h = Math.max(...boxes.map((b) => b.maxY)) - Math.min(...boxes.map((b) => b.minY));
   return { x: Math.ceil(w / g - 0.01) * g, y: Math.ceil(h / g - 0.01) * g };
+}
+
+/** The built-in objects' pictures in another size (one undoable step); says which objects changed. */
+export function applySpriteResolution(res: 8 | 16 | 32 | 64): PromptOutcome {
+  const { edit, logMessage } = useEditor.getState();
+  let changed: string[] = [];
+  const ok = edit(`Sprite size ${res}×${res}`, (p) => {
+    changed = changeSpriteResolution(p, res, componentRegistry);
+  });
+  if (!ok) return { status: 'error', message: useEditor.getState().log.at(-1)?.message ?? "The sprite size couldn't be changed." };
+  const message = changed.length
+    ? `Sprites are ${res}×${res} pixels a tile now: ${changed.join(', ')}.${res === 32 ? ' (As they ship.)' : ''} Objects with their own drawings keep them.`
+    : `Sprites are ${res}×${res} pixels a tile now. No built-in object needed a change (objects with their own drawings keep them).`;
+  logMessage('info', message);
+  return { status: 'applied', message, changes: [], result: NONE, transactionId: useEditor.getState().history.past.at(-1)?.id };
 }

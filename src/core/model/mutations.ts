@@ -4,6 +4,7 @@
  * validation in one place regardless of who calls it: the inspector today, the
  * command/transaction system and AI operations later.
  */
+import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
 import type { ComponentRegistry } from '../components/registry';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDownStarterAssets } from './topDownStarters';
 import { checkCamera, type CameraSettings } from './camera';
@@ -422,6 +423,14 @@ export function resetStarterDefinition(project: Project, definitionId: Id, regis
   if (!key) throw new ModelError(`"${def.name}" is not a built-in object, so it has no default to go back to`);
   applyStarter(project, def, defs.find((s) => s.name === key)!, newAssets);
   def.name = key;
+  // In the game's sprite size.
+  keepSpriteResolution(project, registry);
+}
+
+/** Built-in looks put back (reset) come in the game's chosen sprite size. */
+function keepSpriteResolution(project: Project, registry: ComponentRegistry): void {
+  const res = project.settings.spriteResolution;
+  if (res && res !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(project, res, registry);
 }
 
 /** Resets every starter object and re-adds deleted ones. Objects the user created are left alone. Returns how many were reset/added. */
@@ -441,6 +450,7 @@ export function resetAllStarterDefinitions(project: Project, registry: Component
       added++;
     }
   }
+  keepSpriteResolution(project, registry);
   return { reset, added };
 }
 
@@ -607,3 +617,20 @@ function forEachInstance(project: Project, definitionId: Id, fn: (e: EntityInsta
   for (const scene of project.scenes) for (const e of scene.entities) if (e.definitionId === definitionId) fn(e, scene);
 }
 
+
+/**
+ * "Make the sprites 8×8": the built-in objects that still look built-in get their pictures at that resolution
+ * (art pixels per tile: 8, 16, 32 as they ship, or 64); objects with their own drawings keep them. Returns the
+ * names of the objects that changed.
+ */
+export function changeSpriteResolution(project: Project, res: SpriteResolution, registry: ComponentRegistry): string[] {
+  if (!SPRITE_RESOLUTIONS.includes(res)) throw new ModelError(`Sprite size must be one of ${SPRITE_RESOLUTIONS.join(', ')}`);
+  const { defs, newAssets } = freshStarters(project, registry);
+  const assets = [...newAssets, ...project.assets];
+  const starters = defs.map((d) => {
+    const sprite = (d.components.Sprite ?? {}) as Record<string, unknown>;
+    const states = Object.fromEntries(Object.entries((d.components.SpriteStates ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string' && !!e[1]));
+    return { name: d.name, sprite: { width: Number(sprite.width) || 32, assetId: typeof sprite.assetId === 'string' ? sprite.assetId : null }, states, assets };
+  });
+  return setSpriteResolution(project, res, starters);
+}

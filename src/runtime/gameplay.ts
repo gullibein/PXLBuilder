@@ -80,6 +80,12 @@ export class Gameplay {
     this.messages = this.messages.filter((m) => m.until > this.rt.time);
   }
 
+  /** While a won level stands still: what was already set off still happens (a rule on level_completed, its message). */
+  frozen(): void {
+    this.process();
+    this.messages = this.messages.filter((m) => m.until > this.rt.time);
+  }
+
   /**
    * "Enemy follows Player": before things move, each follower heads for the
    * nearest of its targets that is within range. Walkers only steer

@@ -82,7 +82,11 @@ export const projectSchema = z.object({
   formatVersion: z.number().int(),
   id,
   name: z.string(),
-  settings: z.object({ gridSize: z.number().int().positive(), gameType: z.enum(['platformer', 'topdown']).optional() }),
+  settings: z.object({
+    gridSize: z.number().int().positive(),
+    gameType: z.enum(['platformer', 'topdown']).optional(),
+    spriteResolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).optional(),
+  }),
   startSceneId: id,
   scenes: z.array(sceneSchema).min(1),
   definitions: z.array(definitionSchema),

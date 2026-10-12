@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
 import { createStarterAssets } from '../../core/model/factory';
 import { createTopDownStarterAssets } from '../../core/model/topDownStarters';
 import type { GameType } from '../../core/types';
@@ -14,9 +15,10 @@ import { useEditor } from '../store';
 export function GameChooser() {
   const mode = useEditor((s) => s.gameChooser);
   const close = useEditor((s) => s.setGameChooser);
+  const [res, setRes] = useState<SpriteResolution>(DEFAULT_SPRITE_RESOLUTION);
   if (!mode) return null;
   const pick = (type: GameType) => {
-    startNewGame(type, mode === 'first');
+    startNewGame(type, mode === 'first', res);
     close(null);
   };
   return (
@@ -41,6 +43,15 @@ export function GameChooser() {
             <span className="style-name">Top-down</span>
             <span className="style-blurb">Seen from above: walk in every direction through rooms and corridors (like Zelda or Rogue).</span>
           </button>
+        </div>
+        <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size">
+          <span>Sprite size</span>
+          {SPRITE_RESOLUTIONS.map((r) => (
+            <button key={r} role="radio" aria-checked={r === res} className={`chip-btn${r === res ? ' on' : ''}`} data-testid={`new-sprite-size-${r}`} onClick={() => setRes(r)}>
+              {r}×{r}
+            </button>
+          ))}
+          <span className="muted small">pixels a tile (change it any time: ⋯ project menu, or ask "make the sprites 8x8")</span>
         </div>
         <p className="muted small">
           This picks the starting objects; nothing is locked. Mix freely later, or ask the AI to turn it into the other kind.

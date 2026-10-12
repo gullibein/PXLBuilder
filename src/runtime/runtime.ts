@@ -485,7 +485,10 @@ export class Runtime {
 
   /** The level is won (a Goal reached, or a rule). Only once. */
   completeLevel(by: RuntimeEntity | null): void {
-    if (this.completed !== null) return;
+    if (this.completed !== null) {
+      this.gameplay.frozen();
+      return;
+    }
     this.completed = this.time;
     this.gameplay.emit('level_completed', by);
   }
@@ -508,6 +511,8 @@ export class Runtime {
 
   step(dt: number, input: InputState): void {
     this.time += dt;
+    // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
+    if (this.completed !== null) return;
     // Turning (scripts' rotate over time, and spin).
     for (const e of this.entities) {
       const before = e.angle;

@@ -1117,8 +1117,12 @@ describe('winning a level', () => {
     const { rt, input } = level((b) => thing(b, 'Flag', 96, { Goal: {} }));
     walkRight(rt, input, 0.6);
     expect(rt.completed).not.toBeNull();
+    const p = rt.find('Player')!;
+    const at = { x: p.x, y: p.y };
     walkRight(rt, input, 0.6);
     expect(events(rt, 'level_completed')).toEqual([expect.objectContaining({ subject: 'Player' })]);
+    // Won: everything stands still (the player can't be steered on) while "Level complete!" shows.
+    expect({ x: p.x, y: p.y }).toEqual(at);
   });
 
   it('a rule: when no coin is left, complete the level', () => {

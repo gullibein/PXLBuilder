@@ -85,6 +85,8 @@ function quickCommandFor(ctx: AIContext, request: string): QuickCommand | { kind
   const cmd = parseQuickCommand(request);
   if (!cmd) return null;
   if (ctx.kind === 'connection') return cmd.kind === 'delete' ? { kind: 'connection-delete' } : null;
+  // The sprite size is about the whole game: from any card about the game.
+  if (cmd.kind === 'sprite_resolution') return ctx.kind === 'editor' || ctx.kind === 'create' ? null : cmd;
   return ctx.kind === 'entity' || ctx.kind === 'pair' || ctx.kind === 'group' || ctx.kind === 'level' ? cmd : null;
 }
 
