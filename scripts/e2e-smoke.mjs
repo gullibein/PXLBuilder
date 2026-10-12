@@ -1616,6 +1616,20 @@ try {
   await openPlayerDetails();
   await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '350', 'right-click → Reset to default resets one object');
   await page.getByTestId('close-details').click();
+  // A "Whole game" conversation in this game (it must not show up in the next one).
+  const wholeGame = async () => {
+    if ((await page.getByTestId('global-prompt').count()) === 0) await page.getByTestId('global-prompt-toggle').click();
+    await page.getByTestId('global-prompt').getByRole('radio', { name: 'Whole game' }).click();
+    return page.getByTestId('global-prompt');
+  };
+  let wg = await wholeGame();
+  await wg.getByTestId('prompt-input').fill('What is this game about?');
+  await wg.getByTestId('prompt-input').press('Enter');
+  await wg.getByTestId('prompt-result').waitFor({ timeout: 10000 });
+  await page.keyboard.press('Escape');
+  wg = await wholeGame();
+  await check(async () => (await wg.getByTestId('chat-past').count()) + (await wg.getByTestId('prompt-result').count()) >= 1, '(a Whole game conversation in this game)');
+  await page.keyboard.press('Escape');
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await check(async () => await page.getByTestId('game-chooser').isVisible(), 'New project asks what kind of game');
@@ -1632,6 +1646,9 @@ try {
   await page.getByTestId('menu-new').click();
   await page.getByTestId('game-platformer').click();
   await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project → Platformer starts an empty level');
+  wg = await wholeGame();
+  await check(async () => (await wg.getByTestId('chat-past').count()) === 0 && (await wg.getByTestId('prompt-chat').count()) === 0, "a new game's Whole game card starts empty: another game's conversation isn't in it");
+  await page.keyboard.press('Escape');
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Flying Robot').count()) === 0 && (await page.getByTestId('definition-Ladder').count()) === 1, 'with only the built-in objects, as they ship');
   await page.keyboard.press('Escape');

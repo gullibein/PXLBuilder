@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { clearAILog, useAILog, type AILogEntry } from '../ai/aiLog';
 import { offerTextFile } from '../persistence';
@@ -84,7 +84,12 @@ const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit'
  * ended. "My edits too" adds your own changes from the undo history.
  */
 function HistoryList() {
-  const entries = useAILog((s) => s.entries);
+  const all = useAILog((s) => s.entries);
+  const project = useEditor((s) => s.project.id);
+  // This game's exchanges (and the editor's own); "All games" shows the others too.
+  const [everything, setEverything] = useState(false);
+  const entries = useMemo(() => (everything ? all : all.filter((e) => e.project === project || e.key === 'editor')), [all, everything, project]);
+  const others = all.length - all.filter((e) => e.project === project || e.key === 'editor').length;
   const past = useEditor((s) => s.history.past);
   const future = useEditor((s) => s.history.future);
   const [mine, setMine] = useState(false);
@@ -103,6 +108,12 @@ function HistoryList() {
           <input type="checkbox" checked={mine} data-testid="history-mine" onChange={(e) => setMine(e.target.checked)} />
           My edits too
         </label>
+        {others > 0 && (
+          <label className="dialog-check" title="Exchanges about other games (and from before conversations were kept per game)">
+            <input type="checkbox" checked={everything} data-testid="history-all-games" onChange={(e) => setEverything(e.target.checked)} />
+            All games ({others} more)
+          </label>
+        )}
         {entries.length > 0 && (
           <span className="ai-log-actions">
             <button className="text-btn" data-testid="history-download" title="Save the recent exchanges with what happened under the hood (to share when something goes wrong; no API keys are in it)" onClick={() => void downloadTrace(entries)}>

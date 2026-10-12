@@ -21,6 +21,8 @@ export interface AILogEntry {
   time: number;
   /** Which conversation it belongs to (the prompt's context key). Missing in entries from before conversations were kept. */
   key?: string;
+  /** The game it was about (its project id). Missing in entries from before conversations were kept per game. */
+  project?: string;
   /** What the prompt was about: "Player", "World", "Switch → Door", "Whole game"… */
   where: string;
   request: string;
@@ -128,14 +130,17 @@ function fields(outcome: PromptOutcome): Pick<AILogEntry, 'status' | 'message' |
 /** A prompt finished; returns its log id (to update it later: undone, made a new object…). */
 export function logExchange(ctx: AIContext, key: string, request: string, outcome: PromptOutcome, trace?: TraceStep[]): number {
   const id = nextId++;
-  put([...useAILog.getState().entries, { id, time: Date.now(), key, where: contextName(ctx), request, ...fields(outcome), ...(trace?.length ? { trace } : {}) }]);
+  put([...useAILog.getState().entries, { id, time: Date.now(), key, project: useEditor.getState().project.id, where: contextName(ctx), request, ...fields(outcome), ...(trace?.length ? { trace } : {}) }]);
   return id;
 }
 
-/** The exchanges of one conversation since its last "New chat", oldest first (at most the last `max`). */
-export function chatEntries(state: { entries: AILogEntry[]; starts: Record<string, number> }, key: string, max = CARD_TURNS): AILogEntry[] {
-  const start = state.starts[key] ?? 0;
-  return state.entries.filter((e) => e.key === key && e.time > start).slice(-max);
+/** Conversations belong to one game (another game's "Whole game" chat isn't this one's); the editor's own chat to none. */
+const scoped = (key: string, project: string) => (key === 'editor' ? key : `${project}/${key}`);
+
+/** The exchanges of one conversation in this game since its last "New chat", oldest first (at most the last `max`). */
+export function chatEntries(state: { entries: AILogEntry[]; starts: Record<string, number> }, key: string, max = CARD_TURNS, project = useEditor.getState().project.id): AILogEntry[] {
+  const start = state.starts[scoped(key, project)] ?? 0;
+  return state.entries.filter((e) => e.key === key && (key === 'editor' || e.project === project) && e.time > start).slice(-max);
 }
 
 /**
@@ -154,7 +159,7 @@ export function chatHistory(key: string): { request: string; reply: string }[] {
 
 /** "New chat": the conversation about this starts again (the AI History log keeps the old one). */
 export function newChat(key: string): void {
-  const starts = { ...useAILog.getState().starts, [key]: Date.now() };
+  const starts = { ...useAILog.getState().starts, [scoped(key, useEditor.getState().project.id)]: Date.now() };
   useAILog.setState({ starts });
   try {
     localStorage.setItem(STARTS_KEY, JSON.stringify(starts));

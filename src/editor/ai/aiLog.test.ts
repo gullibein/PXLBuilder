@@ -24,15 +24,20 @@ const entry = (id: number, key: string, request: string, extra: Record<string, u
 
 describe('AI conversations (kept in the AI History log)', () => {
   it('survive a reload: the AI is reminded of the last exchanges about the same thing, with failures and the app\'s notes', async () => {
-    const store = storage({
-      'pxlbuilder.aiLog': JSON.stringify([
-        entry(1, 'entity:p', 'Make the player a green lizard', { changes: ['Player: new look', "⚠ Left out one part that couldn't be applied: Sprite: All sprite rows must be the same length"] }),
-        entry(2, 'entity:e', 'Make the enemy faster'),
-        entry(3, 'entity:p', 'It did not change!', { status: 'error', message: "The AI's answer was too long and got cut off." }),
-      ]),
-    });
+    const store = storage({});
     vi.stubGlobal('localStorage', store);
     vi.resetModules();
+    // The game open now; one exchange is about another game.
+    const game = (await import('../store')).useEditor.getState().project.id;
+    store.setItem(
+      'pxlbuilder.aiLog',
+      JSON.stringify([
+        entry(1, 'entity:p', 'Make the player a green lizard', { project: game, changes: ['Player: new look', "⚠ Left out one part that couldn't be applied: Sprite: All sprite rows must be the same length"] }),
+        entry(2, 'entity:e', 'Make the enemy faster', { project: game }),
+        entry(3, 'entity:p', 'It did not change!', { project: game, status: 'error', message: "The AI's answer was too long and got cut off." }),
+        entry(4, 'project', 'Make a space game', { project: 'prj_other' }),
+      ]),
+    );
     const log = await import('./aiLog');
     const history = log.chatHistory('entity:p');
     expect(history.map((h) => h.request)).toEqual(['Make the player a green lizard', 'It did not change!']);
@@ -48,7 +53,10 @@ describe('AI conversations (kept in the AI History log)', () => {
     vi.resetModules();
     const again = await import('./aiLog');
     expect(again.chatHistory('entity:p')).toEqual([]);
-    expect(again.useAILog.getState().entries).toHaveLength(3);
+    expect(again.useAILog.getState().entries).toHaveLength(4);
+    // Another game's "Whole game" conversation isn't this game's.
+    expect(again.chatHistory('project')).toEqual([]);
+    expect(again.chatEntries(again.useAILog.getState(), 'project', 30, 'prj_other').map((e) => e.request)).toEqual(['Make a space game']);
     vi.unstubAllGlobals();
   });
 });

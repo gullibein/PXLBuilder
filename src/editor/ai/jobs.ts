@@ -131,3 +131,9 @@ export function resetJobs(): void {
   openCards.clear();
   useJobs.setState({ jobs: {} });
 }
+
+// Another game opened (New project, a file): its cards start clean, and a prompt still running for the old game
+// is stopped (its change would land in the wrong game).
+useEditor.subscribe((s, prev) => {
+  if (s.project.id !== prev.project.id) resetJobs();
+});

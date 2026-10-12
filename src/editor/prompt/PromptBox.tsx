@@ -21,10 +21,11 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
   // without the exchange shown below it with its buttons.
   const entries = useAILog((s) => s.entries);
   const starts = useAILog((s) => s.starts);
+  const project = useEditor((s) => s.project.id);
   const thread: AILogEntry[] = useMemo(() => {
-    const all = chatEntries({ entries, starts }, key);
+    const all = chatEntries({ entries, starts }, key, undefined, project);
     return job?.phase === 'done' && job.logId !== undefined ? all.filter((e) => e.id !== job.logId) : all;
-  }, [entries, starts, key, job]);
+  }, [entries, starts, key, job, project]);
 
   // While this card is on screen, what finishes here counts as seen.
   useEffect(() => cardOpened(key), [key]);
