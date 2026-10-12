@@ -31,8 +31,8 @@ export function duplicateSelection(): void {
   if (ok) selectEntities(created);
 }
 
-/** Repeats the selection at these offsets (dragging a side of the selection box): one undoable step; all of it selected after. */
-export function extendSelection(ids: string[], offsets: Vec2[]): void {
+/** Repeats these objects at these offsets (dragging a side of the selection box): one undoable step; the selection and the copies selected after. */
+export function extendSelection(ids: string[], offsets: Vec2[], selection: string[] = ids): void {
   const { activeSceneId, edit, selectEntities } = useEditor.getState();
   if (!ids.length || !offsets.length) return;
   const created: string[] = [];
@@ -40,7 +40,7 @@ export function extendSelection(ids: string[], offsets: Vec2[]): void {
   const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})`, (p) => {
     for (const o of offsets) created.push(...duplicateEntities(p, activeSceneId, ids, o));
   });
-  if (ok) selectEntities([...ids, ...created]);
+  if (ok) selectEntities([...new Set([...selection, ...created])]);
 }
 
 /** Gives one placed object a new size in the level (dragging a corner of its box): its sprite (and collider) size, and its middle. */

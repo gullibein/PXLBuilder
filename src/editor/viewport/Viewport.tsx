@@ -10,7 +10,7 @@ import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
 import { connectSwitch, extendSelection, resizeEntity } from '../actions';
-import { extendCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
+import { edgeSlice, extendCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
@@ -32,8 +32,8 @@ type Drag =
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
   | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> }
-  /** Dragging a side point of the selection box: copies of the selection in a line that way (`count` so far). */
-  | { kind: 'extend'; ids: Id[]; box: Rect; dir: Handle['dir']; count: number }
+  /** Dragging a side point of the selection box: copies of what is along that side (`ids`), `step` apart, `count` so far. */
+  | { kind: 'extend'; selection: Id[]; ids: Id[]; step: number; box: Rect; dir: Handle['dir']; count: number }
   /** Dragging a corner point of one object's box: its new size (`rect`, in the level). */
   | { kind: 'resize'; id: Id; box: Rect; dir: Handle['dir']; rect: Rect }
   /** Dragging from a switch's red connector onto another object. */
@@ -170,7 +170,7 @@ export function Viewport() {
       let ghosts: ResolvedEntity[] = [];
       if (drag?.kind === 'extend' && drag.count > 0) {
         const originals = entities.filter((e) => drag.ids.includes(e.id));
-        ghosts = extendOffsets(drag.box, drag.dir, drag.count).flatMap((o) =>
+        ghosts = extendOffsets(drag.dir, drag.step, drag.count).flatMap((o) =>
           originals.map((e) => ({ ...e, id: `${e.id}~${o.x},${o.y}`, alpha: 0.55, transform: { ...e.transform, position: { x: e.transform.position.x + o.x, y: e.transform.position.y + o.y } } })),
         );
         if (!wire) drawEntities(ctx, ghosts, images, 0.3, time / 1000);
@@ -422,7 +422,7 @@ export function Viewport() {
       if (frame && boxHandle) {
         dragRef.current =
           boxHandle.kind === 'side'
-            ? { kind: 'extend', ids: chosen.map((e) => e.id), box: frame.box, dir: boxHandle.dir, count: 0 }
+            ? { kind: 'extend', selection: chosen.map((e) => e.id), ...edgeSlice(chosen.map((e) => ({ id: e.id, bounds: getWorldBounds(e) })), frame.box, boxHandle.dir), box: frame.box, dir: boxHandle.dir, count: 0 }
             : { kind: 'resize', id: chosen[0].id, box: frame.box, dir: boxHandle.dir, rect: frame.box };
         capture(canvas, ev.pointerId);
         return;
@@ -510,7 +510,7 @@ export function Viewport() {
       return;
     }
     if (drag.kind === 'extend') {
-      drag.count = extendCount(drag.box, drag.dir, toWorld(ev));
+      drag.count = extendCount(drag.box, drag.dir, toWorld(ev), drag.step);
       return;
     }
     if (drag.kind === 'resize') {
@@ -579,7 +579,7 @@ export function Viewport() {
       return;
     }
     if (drag?.kind === 'extend') {
-      if (drag.count > 0) extendSelection(drag.ids, extendOffsets(drag.box, drag.dir, drag.count));
+      if (drag.count > 0) extendSelection(drag.ids, extendOffsets(drag.dir, drag.step, drag.count), drag.selection);
       return;
     }
     if (drag?.kind === 'resize') {

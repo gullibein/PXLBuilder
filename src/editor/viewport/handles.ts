@@ -1,8 +1,9 @@
 /**
  * The handles on a selection box. The box fits the selection exactly (a 32×32
- * object gets a 32×32 box). The points on its sides repeat the selection in a
- * line that way (a floor, a wall, a ladder: drag the right side out and copies
- * fill in, one object width each); the corner points resize a single object
+ * object gets a 32×32 box). The points on its sides repeat what is along that
+ * side, one object at a time (a floor, a wall, a ladder: drag the right side
+ * out and copies of the last tile fill in; drag a row's top up and copies of
+ * the row stack on it); the corner points resize a single object
  * (the opposite corner stays put).
  */
 import type { Rect } from '../../core/model/geometry';
@@ -58,19 +59,27 @@ export function handleAt(handles: Handle[], box: Rect, p: Vec2, zoom: number, ra
   return best;
 }
 
-/** How many copies a side drag to this point makes: one per box width (or height) past the side, from half way. */
-export function extendCount(box: Rect, dir: Handle['dir'], p: Vec2): number {
-  const step = dir.x ? box.maxX - box.minX : box.maxY - box.minY;
+/**
+ * What a side drag repeats: the objects along that side of the box (for a row of tiles dragged right, the last
+ * tile; dragged up, the whole row), one of their thickness at a time. `step` is that thickness.
+ */
+export function edgeSlice<T extends { id: string; bounds: Rect }>(items: T[], box: Rect, dir: Handle['dir']): { ids: string[]; step: number } {
+  const eps = 0.5;
+  const at = items.filter((i) => (dir.x > 0 ? i.bounds.maxX >= box.maxX - eps : dir.x < 0 ? i.bounds.minX <= box.minX + eps : dir.y > 0 ? i.bounds.maxY >= box.maxY - eps : i.bounds.minY <= box.minY + eps));
+  const step = dir.x > 0 ? box.maxX - Math.min(...at.map((i) => i.bounds.minX)) : dir.x < 0 ? Math.max(...at.map((i) => i.bounds.maxX)) - box.minX : dir.y > 0 ? box.maxY - Math.min(...at.map((i) => i.bounds.minY)) : Math.max(...at.map((i) => i.bounds.maxY)) - box.minY;
+  return { ids: at.map((i) => i.id), step: at.length ? step : 0 };
+}
+
+/** How many copies a side drag to this point makes: one per `step` past the side, from half way. */
+export function extendCount(box: Rect, dir: Handle['dir'], p: Vec2, step: number): number {
   if (step <= 0) return 0;
   const past = dir.x > 0 ? p.x - box.maxX : dir.x < 0 ? box.minX - p.x : dir.y > 0 ? p.y - box.maxY : box.minY - p.y;
   return Math.max(0, Math.min(MAX_EXTEND, Math.floor(past / step + 0.5)));
 }
 
-/** Where the copies go, relative to the originals. */
-export function extendOffsets(box: Rect, dir: Handle['dir'], count: number): Vec2[] {
-  const w = box.maxX - box.minX;
-  const h = box.maxY - box.minY;
-  return Array.from({ length: count }, (_, i) => ({ x: dir.x * w * (i + 1), y: dir.y * h * (i + 1) }));
+/** Where the copies go, relative to the objects repeated. */
+export function extendOffsets(dir: Handle['dir'], step: number, count: number): Vec2[] {
+  return Array.from({ length: count }, (_, i) => ({ x: dir.x * step * (i + 1), y: dir.y * step * (i + 1) }));
 }
 
 /**

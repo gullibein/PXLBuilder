@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extendCount, extendOffsets, handleAt, handlesFor, resizeRect, unionRect } from './handles';
+import { edgeSlice, extendCount, extendOffsets, handleAt, handlesFor, resizeRect, unionRect } from './handles';
 
 const tile = { minX: 0, minY: 0, maxX: 32, maxY: 32 };
 
@@ -18,14 +18,26 @@ describe('selection handles', () => {
     // A small object on screen: the reach shrinks so its middle can still be grabbed.
     expect(handleAt(hs, tile, { x: 16, y: 16 }, 0.25, 20)).toBeNull();
   });
-  it('a side drag counts copies one box width at a time', () => {
-    expect(extendCount(tile, { x: 1, y: 0 }, { x: 40, y: 16 })).toBe(0);
-    expect(extendCount(tile, { x: 1, y: 0 }, { x: 50, y: 16 })).toBe(1);
-    expect(extendCount(tile, { x: 1, y: 0 }, { x: 130, y: 0 })).toBe(3);
-    expect(extendCount(tile, { x: -1, y: 0 }, { x: -70, y: 0 })).toBe(2);
-    expect(extendCount(tile, { x: 0, y: -1 }, { x: 0, y: -40 })).toBe(1);
-    expect(extendCount(tile, { x: 1, y: 0 }, { x: -100, y: 0 })).toBe(0);
-    expect(extendOffsets({ minX: 0, minY: 0, maxX: 96, maxY: 32 }, { x: 0, y: 1 }, 2)).toEqual([{ x: 0, y: 32 }, { x: 0, y: 64 }]);
+  it('a side drag counts copies one step at a time', () => {
+    expect(extendCount(tile, { x: 1, y: 0 }, { x: 40, y: 16 }, 32)).toBe(0);
+    expect(extendCount(tile, { x: 1, y: 0 }, { x: 50, y: 16 }, 32)).toBe(1);
+    expect(extendCount(tile, { x: 1, y: 0 }, { x: 130, y: 0 }, 32)).toBe(3);
+    expect(extendCount(tile, { x: -1, y: 0 }, { x: -70, y: 0 }, 32)).toBe(2);
+    expect(extendCount(tile, { x: 0, y: -1 }, { x: 0, y: -40 }, 32)).toBe(1);
+    expect(extendCount(tile, { x: 1, y: 0 }, { x: -100, y: 0 }, 32)).toBe(0);
+    expect(extendOffsets({ x: 0, y: 1 }, 32, 2)).toEqual([{ x: 0, y: 32 }, { x: 0, y: 64 }]);
+  });
+  it('repeats what is along the dragged side, one object thick', () => {
+    // Two rows of 8 tiles (y 0..64): the right side is the last column, the top the upper row.
+    const items = [];
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 8; c++) items.push({ id: `${r}-${c}`, bounds: { minX: c * 32, maxX: c * 32 + 32, minY: r * 32, maxY: r * 32 + 32 } });
+    const box = { minX: 0, minY: 0, maxX: 256, maxY: 64 };
+    expect(edgeSlice(items, box, { x: 1, y: 0 })).toEqual({ ids: ['0-7', '1-7'], step: 32 });
+    const up = edgeSlice(items, box, { x: 0, y: -1 });
+    expect(up.step).toBe(32);
+    expect(up.ids).toEqual(['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6', '0-7']);
+    // One row up past the top: one more row (not two).
+    expect(extendCount(box, { x: 0, y: -1 }, { x: 0, y: -33 }, up.step)).toBe(1);
   });
   it('a corner drag resizes from the opposite corner, on the grid', () => {
     expect(resizeRect(tile, { x: 1, y: 1 }, { x: 70, y: 30 }, 32, 4)).toEqual({ minX: 0, minY: 0, maxX: 64, maxY: 32 });

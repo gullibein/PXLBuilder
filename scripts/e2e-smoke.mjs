@@ -1369,6 +1369,15 @@ try {
     // And down from the line: a block.
     await dragWorld([(h2['s-1,0'][0] + h2['s1,0'][0]) / 2, h2['s0,1'][1]], [(h2['s-1,0'][0] + h2['s1,0'][0]) / 2, h2['s0,1'][1] + 2 * 32 + 4]);
     await check(async () => (await entities()) === n0 + 12, 'dragging the bottom point of the line down 2 rows makes a 4×3 block');
+    // With several selected, a side still adds one object's worth at a time: the top up one row adds one row.
+    const h4 = await handles();
+    await dragWorld([h4['s0,-1'][0], h4['s0,-1'][1]], [h4['s0,-1'][0], h4['s0,-1'][1] - 32 - 6]);
+    await check(async () => (await entities()) === n0 + 16, 'pulling the top point of the 4×3 block up one row adds one row of 4 (not a copy of the whole block)');
+    const h5 = await handles();
+    await dragWorld([h5['s1,0'][0], h5['s1,0'][1]], [h5['s1,0'][0] + 32 + 6, h5['s1,0'][1]]);
+    await check(async () => (await entities()) === n0 + 20, 'pulling its right point out one tile adds one column of 4');
+    await page.getByTestId('undo').click();
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await check(async () => (await entities()) === n0 + 1, 'each drag is one Undo');
