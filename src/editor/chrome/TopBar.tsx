@@ -3,9 +3,9 @@ import { applySpriteResolution } from '../quickCommands';
 import { useEffect, useRef, useState } from 'react';
 import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
-import { addScene, resetAllStarterDefinitions } from '../../core/model/mutations';
+import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
-import { openProjectFile, PROJECT_FILE_EXTENSION, saveProjectToFile } from '../persistence';
+import { openProjectFile, PROJECT_FILE_EXTENSION } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
 
@@ -240,7 +240,7 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
   const items: { label: string; hint?: string; detail?: string; run: () => void; testId: string; sep?: boolean }[] = [
     { label: 'New project', detail: 'Pick a platformer or a top-down game: an empty level with that kind of built-in objects', run: () => useEditor.getState().setGameChooser('new'), testId: 'menu-new' },
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
-    { label: 'Save', hint: 'Ctrl+S', run: saveProjectToFile, testId: 'menu-save' },
+    { label: 'Save…', hint: 'Ctrl+S', detail: 'Name the game and save it as a file', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
     {
       label: 'Export sprites…',
       detail: "All of the game's pictures as one sprite sheet: a PNG, and a JSON saying where each one is",
@@ -266,6 +266,8 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
       </button>
       {open && (
         <div className="menu-pop wide" role="menu" data-testid="project-menu-pop">
+          <GameNameField />
+          <div className="menu-sep" />
           {items.map((item) => (
             <div key={item.label}>
               {item.sep && <div className="menu-sep" />}
@@ -328,5 +330,39 @@ function SpriteSizeRow({ onPicked }: { onPicked: () => void }) {
       </span>
       <span className="menu-detail">How detailed the built-in objects' pictures are. Objects with your own drawings keep them.</span>
     </div>
+  );
+}
+
+/** The game's name, renamed right here (Enter or leaving the field; Esc puts it back). One Undo step. */
+function GameNameField() {
+  const name = useEditor((s) => s.project.name);
+  const [text, setText] = useState(name);
+  useEffect(() => setText(name), [name]);
+  const commit = () => {
+    const next = text.trim();
+    if (!next) return setText(name);
+    if (next !== name) useEditor.getState().edit(`Rename game to ${next}`, (p) => renameProject(p, next));
+  };
+  return (
+    <label className="menu-row stacked game-name-field">
+      <span className="menu-detail">Game name</span>
+      <input
+        value={text}
+        maxLength={80}
+        data-testid="game-name"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            commit();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === 'Escape') {
+            setText(name);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+    </label>
   );
 }

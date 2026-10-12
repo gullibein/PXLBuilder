@@ -1583,6 +1583,25 @@ try {
     await page.keyboard.press('Escape');
   }
 
+  step = 'game name, one prompt card';
+  {
+    await page.getByTestId('project-menu').click();
+    const nameField = page.getByTestId('game-name');
+    const before = await nameField.inputValue();
+    await nameField.fill('Boulder Run');
+    await nameField.press('Enter');
+    await check(async () => (await page.getByTestId('project-menu').innerText()).includes('Boulder Run'), 'clicking the game\'s name: it can be renamed right there');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('undo').click();
+    await check(async () => (await page.getByTestId('project-menu').innerText()).includes(before), '(Undo puts the old name back)');
+    // An object's card is open; the ✦ (level/game) card replaces it.
+    await clickWorld(-256, 0);
+    await check(async () => (await prompts.count()) === 1, '(an object\'s prompt card is open)');
+    await page.getByTestId('global-prompt-toggle').click();
+    await check(async () => (await prompts.count()) === 0 && (await page.getByTestId('global-prompt').count()) === 1, 'opening the level/game card closes the open prompt card');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'typed commands';
   {
     // Plain editing words in the prompt card are done by the app itself, at once (no AI needed).
@@ -2063,7 +2082,11 @@ try {
   await check(sampleCalls.length === 1 && sampleCalls[0].input.includes('REPLY FORMAT') && sampleCalls[0].cache === false && cServer === 0, 'it asked Claude via claude.ai with the reply format, never a server, never a cached answer');
   await cp2.getByTestId('project-menu').click();
   await cp2.getByTestId('menu-save').click();
-  await check(async () => saves.length === 1 && saves[0].filename === 'untitled-game.pxlproj.json' && JSON.parse(saves[0].text).kind === 'pxlbuilder.bundle', 'Save hands the project file to claude.ai to offer for download');
+  await check(async () => (await cp2.getByTestId('save-name').inputValue()) === 'Untitled Game', 'Save asks for the name (the game\'s name now)');
+  await cp2.getByTestId('save-name').fill('Mole Mine');
+  await check(async () => (await cp2.getByTestId('save-filename').innerText()) === 'mole-mine.pxlproj.json', '(and shows the file name it gives)');
+  await cp2.getByTestId('save-confirm').click();
+  await check(async () => saves.length === 1 && saves[0].filename === 'mole-mine.pxlproj.json' && JSON.parse(saves[0].text).kind === 'pxlbuilder.bundle' && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine'), 'Save renames the game and hands the project file to claude.ai to offer for download');
   await check(async () => (await cp2.locator('.dirty-dot').count()) === 0, 'and the project counts as saved');
   await cc.close();
 

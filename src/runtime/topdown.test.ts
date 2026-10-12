@@ -636,4 +636,22 @@ describe('top-down goals', () => {
     rt.step(1 / 120, new InputState());
     expect(rt.completed).not.toBeNull();
   });
+  it('an exit with a solid collider (an older or hand-made one) is walked onto and won by standing on it too', () => {
+    const rt = room((d, _s, place) => {
+      const goal = d.definitions.find((x) => x.name === 'Goal')!;
+      (goal.components.Collider as { isTrigger: boolean }).isTrigger = false;
+      place('Goal', { x: 96, y: 0 });
+    });
+    const p = rt.find('Player')!;
+    const input = new InputState();
+    input.press('right');
+    let wonAt: number | null = null;
+    for (let t = 0; t < 2 && wonAt === null; t += 1 / 60) {
+      rt.update(1 / 60, input);
+      if (rt.completed !== null) wonAt = p.x;
+    }
+    // Walked onto it (not stopped at its edge) and won with its middle on the exit.
+    expect(wonAt).not.toBeNull();
+    expect(Math.abs(wonAt! - 96)).toBeLessThanOrEqual(rt.boxOf(rt.find('Goal')!)!.hw);
+  });
 });

@@ -1,4 +1,5 @@
 import { CodeEditor } from './chrome/CodeEditor';
+import { SaveDialog } from './chrome/SaveDialog';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -16,7 +17,6 @@ import { ToolPanel } from './chrome/ToolPanel';
 import { PlayButton, TopBar } from './chrome/TopBar';
 import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
-import { saveProjectToFile } from './persistence';
 import { ContextPrompt } from './prompt/ContextPrompt';
 import { useEditor } from './store';
 import { PlayView } from './play/PlayView';
@@ -83,6 +83,7 @@ export function App() {
         <SpriteEditor />
         <SpriteExport />
         <CodeEditor />
+        <SaveDialog />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -116,7 +117,7 @@ function useGlobalShortcuts() {
       }
       if (mod && key === 's') {
         e.preventDefault();
-        void saveProjectToFile();
+        state.setSaveDialog(true);
         return;
       }
       if (mod && key === 'o') {
@@ -169,6 +170,7 @@ function useGlobalShortcuts() {
         else if (state.stylePickerOpen) state.setStylePickerOpen(false);
         else if (state.gameChooser) state.setGameChooser(null);
         else if (state.spriteExport) state.openSpriteExport(null);
+        else if (state.saveDialog) state.setSaveDialog(false);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {

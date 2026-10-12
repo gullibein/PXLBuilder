@@ -657,3 +657,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .se-sprite:disabled { opacity: 0.45; cursor: default; }
 .se-sprite-name { font-size: 11.5px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .se-sprite-use { font-size: 10.5px; opacity: 0.65; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The game's name in the project menu. */
+.game-name-field { cursor: default; }
+.game-name-field input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font: inherit; font-weight: 600; }

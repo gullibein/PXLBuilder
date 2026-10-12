@@ -83,11 +83,11 @@ export class Gameplay {
 
   /**
    * Seen from above, a goal or exit (stairs, a hole, a portal on the floor) is won by standing on it: the
-   * player's middle has to be on it, not just brushing its edge. A solid goal (one you can't walk onto) is still
-   * won by touching it.
+   * player's middle has to be on it, not just brushing its edge. (Goals never block, so it can always be walked
+   * onto, whatever its collider says: also an exit made before this, or by hand, with a solid one.)
    */
-  private standsOn(player: RuntimeEntity, goal: RuntimeEntity): boolean {
-    return (player.controller?.movement === 'topdown' || this.rt.floats(player)) && !!goal.collider?.trigger;
+  private standsOn(player: RuntimeEntity, _goal: RuntimeEntity): boolean {
+    return player.controller?.movement === 'topdown' || this.rt.floats(player);
   }
 
   private standOnGoals(): void {

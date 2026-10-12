@@ -634,7 +634,8 @@ export class Runtime {
   }
 
   private isSolid(e: RuntimeEntity): boolean {
-    return e.alive && !e.open && !!e.collider && !e.collider.trigger;
+    // A goal is reached, never bumped into: it never blocks (a top-down exit is won by standing on it).
+    return e.alive && !e.open && !!e.collider && !e.collider.trigger && !e.base.components.Goal;
   }
 
   /** Something opened, closed, appeared or went away. */

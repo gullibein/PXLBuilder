@@ -98,6 +98,8 @@ export interface EditorState {
   spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The Code Editor: the behavior code of a library object, or of one placed thing (and its object). */
   codeEditor: { definitionId: Id | null; entityId: Id | null } | null;
+  /** The Save window (names the game, then saves the file). */
+  saveDialog: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -141,6 +143,7 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  setSaveDialog(open: boolean): void;
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
   setObjectDrag(dragging: boolean): void;
@@ -205,6 +208,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     objectDrag: false,
     spriteExport: null,
     codeEditor: null,
+    saveDialog: false,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -327,6 +331,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setGlobalPrompt(open, scope) {
+      // Opening the level/game card closes an object's or the level's card (only one prompt card at a time).
+      if (open) set({ selectedEntityIds: [], worldContext: null, selectedConnectionId: null, cameraOutline: null });
       set((s) => ({ globalPrompt: { open, scope: scope ?? s.globalPrompt.scope } }));
     },
 
@@ -421,6 +427,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },
+    setSaveDialog(saveDialog) {
+      set({ saveDialog });
+    },
+
     openCodeEditor(codeEditor) {
       set({ codeEditor });
     },
