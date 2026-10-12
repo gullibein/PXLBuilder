@@ -19,7 +19,7 @@ import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
 import { ContextPrompt } from './prompt/ContextPrompt';
 import { useEditor } from './store';
-import { PlayView } from './play/PlayView';
+import { PlayView, playSummaryLine } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
 import { applyAccent, applyStyle } from './theme';
 import type { EditorLayout } from './layout/settings';
@@ -55,7 +55,18 @@ export function App() {
       <div className={`editor playing ${layoutClasses(layout)}`}>
         <TopBar />
         <main className="stage">
-          <PlayView />
+          <PlayView
+            project={useEditor.getState().project}
+            startSceneId={useEditor.getState().activeSceneId}
+            playPixels={() => useEditor.getState().layout.playPixels}
+            stopHint="Esc stops"
+            onEnd={(report, project) => {
+              const { setLastPlay, logMessage } = useEditor.getState();
+              setLastPlay(report, project);
+              const summary = playSummaryLine(report);
+              if (summary) logMessage(report.scriptErrors.length ? 'warn' : 'info', `${summary} Open Debug to see what happened, or ask the AI why.`);
+            }}
+          />
           {layout.playButton === 'bottom' && (
             <div className="play-float">
               <PlayButton />

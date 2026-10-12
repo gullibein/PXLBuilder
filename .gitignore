@@ -6,3 +6,5 @@ dist
 !.env.example
 test-results
 *.tsbuildinfo
+dist-player
+src/player/template.generated.ts

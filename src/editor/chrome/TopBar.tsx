@@ -5,6 +5,7 @@ import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
 import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
+import { canExportGame, exportGame, exportPlayer } from '../gameExport';
 import { openProjectFile, PROJECT_FILE_EXTENSION } from '../persistence';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
@@ -241,6 +242,25 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
     { label: 'New project', detail: 'Pick a platformer or a top-down game: an empty level with that kind of built-in objects', run: () => useEditor.getState().setGameChooser('new'), testId: 'menu-new' },
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
     { label: 'Save…', hint: 'Ctrl+S', detail: 'Name the game and save it as a file', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
+    ...(canExportGame()
+      ? [
+          {
+            label: 'Export game (HTML)',
+            detail: 'One web page that plays the game in any browser: send it, or put it on a website. No editor needed.',
+            run: () => {
+              const { project, logMessage } = useEditor.getState();
+              void exportGame(project).then((r) => logMessage(r === 'failed' ? 'error' : 'info', r === 'saved' ? `Exported "${project.name}" as a web page` : r === 'declined' ? 'Export cancelled' : "Couldn't save the game's page"));
+            },
+            testId: 'menu-export-game',
+          },
+          {
+            label: 'Download game player (HTML)',
+            detail: 'A web page that plays any game dropped onto it (a saved .pxlproj.json, or an exported game)',
+            run: () => void exportPlayer(),
+            testId: 'menu-export-player',
+          },
+        ]
+      : []),
     {
       label: 'Export sprites…',
       detail: "All of the game's pictures as one sprite sheet: a PNG, and a JSON saying where each one is",

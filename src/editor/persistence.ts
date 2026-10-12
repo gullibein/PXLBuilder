@@ -4,7 +4,7 @@ import { DEFAULT_SPRITE_RESOLUTION, type SpriteResolution } from '../core/model/
 import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
-import { projectFromBundle, projectToBundle } from '../core/serialization/serialize';
+import { gameFromText, projectFromBundle, projectToBundle } from '../core/serialization/serialize';
 import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 
@@ -196,7 +196,7 @@ export async function saveProjectToFile(): Promise<void> {
 export async function openProjectFile(file: File): Promise<void> {
   const { replaceProject, logMessage } = useEditor.getState();
   try {
-    const { project, warnings } = projectFromBundle(JSON.parse(await file.text()), componentRegistry);
+    const { project, warnings } = gameFromText(await file.text(), componentRegistry);
     replaceProject(`Open ${file.name}`, project);
     logMessage('info', `Opened "${project.name}" from ${file.name}`);
     for (const w of warnings) logMessage('warn', w);

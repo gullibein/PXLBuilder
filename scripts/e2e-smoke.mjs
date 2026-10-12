@@ -17,7 +17,7 @@ const URL = `http://localhost:${PORT}/PXLBuilder/`;
 const OUT = 'test-results';
 mkdirSync(OUT, { recursive: true });
 
-execSync('npx vite build', { stdio: ['ignore', 'ignore', 'inherit'] });
+execSync('node scripts/build-player.mjs && npx vite build', { stdio: ['ignore', 'ignore', 'inherit'] });
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], {
   stdio: 'pipe',
   env: { ...process.env, ANTHROPIC_API_KEY: '' },
@@ -1600,6 +1600,67 @@ try {
     await page.getByTestId('global-prompt-toggle').click();
     await check(async () => (await prompts.count()) === 0 && (await page.getByTestId('global-prompt').count()) === 1, 'opening the level/game card closes the open prompt card');
     await page.keyboard.press('Escape');
+  }
+
+  step = 'export game as a web page';
+  {
+    await page.getByTestId('project-menu').click();
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('menu-export-game').click()]);
+    const file = `${process.cwd()}/${OUT}/exported-game.html`;
+    await dl.saveAs(file);
+    const html = readFileSync(file, 'utf8');
+    await check(dl.suggestedFilename().endsWith('.html') && html.includes('id="pxl-game"') && !html.includes('<script type="module" src='), 'Export game saves one HTML file with the game and the player inside (nothing else to load)');
+    const gp = await page.context().newPage();
+    const gameErrors = [];
+    gp.on('pageerror', (e) => gameErrors.push(e.message));
+    await gp.goto(`file://${file}`);
+    await check(async () => (await gp.getByTestId('player-start').innerText()).includes('Click to play'), 'opened in a browser, it shows the game\'s title and "Click to play"');
+    await gp.getByTestId('player-start').click();
+    const pc = gp.getByTestId('play-canvas');
+    await pc.waitFor();
+    await gp.waitForTimeout(500);
+    const startAt = (await pc.getAttribute('data-player')) ?? '';
+    await gp.keyboard.down('ArrowRight');
+    await gp.waitForTimeout(600);
+    await gp.keyboard.up('ArrowRight');
+    const movedAt = (await pc.getAttribute('data-player')) ?? '';
+    await check(startAt !== '' && Number(movedAt.split(',')[0]) > Number(startAt.split(',')[0]) + 20 && gameErrors.length === 0, `and the game plays: the player runs right (${startAt.split(',')[0]} → ${movedAt.split(',')[0]})`);
+    await gp.screenshot({ path: `${OUT}/12g-exported-game.png` });
+    // Dropping a file: a helper that drops text as a file on an element.
+    const dropFile = (pg, selector, name, text) =>
+      pg.evaluate(
+        ([selector, name, text]) => {
+          const dt = new DataTransfer();
+          dt.items.add(new File([text], name, { type: 'application/json' }));
+          const target = document.querySelector(selector);
+          target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+          target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        },
+        [selector, name, text],
+      );
+    const bundle = JSON.parse(html.match(/<script type="application\/json" id="pxl-game">([\s\S]*?)<\/script>/)[1]);
+    const projectFile = Object.keys(bundle.files).find((k) => k === 'project.json');
+    bundle.files[projectFile].name = 'Dropped Game';
+    const droppedText = JSON.stringify(bundle);
+    await dropFile(gp, 'body', 'dropped.pxlproj.json', droppedText);
+    await check(async () => (await gp.title()) === 'Dropped Game' && (await gp.getByTestId('play-canvas').count()) === 1, 'the standalone player plays a saved game dropped onto it');
+    await gp.close();
+    // The empty player: games are dropped onto it.
+    await page.getByTestId('project-menu').click();
+    const [pl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('menu-export-player').click()]);
+    const playerFile = `${process.cwd()}/${OUT}/pxlbuilder-player.html`;
+    await pl.saveAs(playerFile);
+    const pp = await page.context().newPage();
+    await pp.goto(`file://${playerFile}`);
+    await check(async () => (await pp.getByTestId('player-empty').innerText()).includes('Drop a game here'), 'Download game player: a page that asks for a game to be dropped onto it');
+    await dropFile(pp, 'body', 'dropped.pxlproj.json', droppedText);
+    await check(async () => (await pp.getByTestId('play-canvas').count()) === 1, 'and plays the game dropped onto it');
+    await pp.close();
+    // The editor: a saved game dropped on the level opens it (Undo goes back).
+    await dropFile(page, '.viewport', 'dropped.pxlproj.json', droppedText);
+    await check(async () => (await page.getByTestId('project-menu').innerText()).includes('Dropped Game'), 'dropping a saved game file on the editor opens it');
+    await page.getByTestId('undo').click();
+    await check(async () => !(await page.getByTestId('project-menu').innerText()).includes('Dropped Game'), '(Undo brings back the game from before)');
   }
 
   step = 'typed commands';

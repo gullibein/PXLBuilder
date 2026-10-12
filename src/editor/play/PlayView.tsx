@@ -8,7 +8,7 @@ import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
 import { imageLookup } from '../images';
 import type { PlayReport } from '../../core/debug/playReport';
-import { useEditor } from '../store';
+import type { Project } from '../../core/types';
 
 /**
  * Play mode: builds a fresh Runtime from the current project, runs it, and
@@ -29,13 +29,25 @@ interface Hud {
 
 const sameHud = (a: Hud, b: Hud) => JSON.stringify(a) === JSON.stringify(b);
 
-export function PlayView() {
+export interface PlayViewProps {
+  /** The game to play (a snapshot: playing never changes it) and the level to start at. */
+  project: Project;
+  startSceneId: string;
+  /** The play resolution now (0: the screen's own; else about this many pixels tall), read on every resize. */
+  playPixels: () => number;
+  /** Play ended (the view closed): what happened, for the editor's Debug tab. */
+  onEnd?: (report: PlayReport, project: Project) => void;
+  /** The key hints' last part ("Esc stops" in the editor). */
+  stopHint?: string;
+}
+
+export function PlayView(props: PlayViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const { project, activeSceneId } = useEditor.getState();
+    const { project, startSceneId: activeSceneId } = props;
     const images = imageLookup(project);
     const looks = new LookCache(project, componentRegistry);
     // Sounds the game plays (made by the synthesizer from their recipes). Started now: Play was just clicked.
@@ -71,7 +83,7 @@ export function PlayView() {
     const measure = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const target = useEditor.getState().layout.playPixels;
+      const target = props.playPixels();
       const shrink = target > 0 ? Math.max(1, Math.round((rect.height * dpr) / target)) : 1;
       size.width = rect.width;
       size.height = rect.height;
@@ -191,10 +203,7 @@ export function PlayView() {
       cancelAnimationFrame(frame);
       const report = recorder.report();
       recorder.stop();
-      const { setLastPlay, logMessage } = useEditor.getState();
-      setLastPlay(report, project);
-      const summary = playSummaryLine(report);
-      if (summary) logMessage(report.scriptErrors.length ? 'warn' : 'info', `${summary} Open Debug to see what happened, or ask the AI why.`);
+      props.onEnd?.(report, project);
       ro.disconnect();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -232,7 +241,7 @@ export function PlayView() {
           {hud.messages.at(-1)}
         </div>
       )}
-      <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts · Esc stops</div>
+      <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts{props.stopHint ? ` · ${props.stopHint}` : ''}</div>
     </div>
   );
 }

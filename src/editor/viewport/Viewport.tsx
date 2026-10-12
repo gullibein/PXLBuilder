@@ -11,6 +11,7 @@ import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
 import { ContextMenu, editSpriteOf } from '../chrome/Dock';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommands';
+import { openProjectFile } from '../persistence';
 import { connectSwitch, deleteSelection, extendSelection, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
@@ -649,13 +650,22 @@ export function Viewport() {
   };
 
   const onDragOver = (ev: React.DragEvent) => {
-    if (ev.dataTransfer.types.includes(DEFINITION_DRAG_TYPE)) {
+    // A file from the computer: a saved game (or an exported game page) to open.
+    if (ev.dataTransfer.types.includes(DEFINITION_DRAG_TYPE) || ev.dataTransfer.types.includes('Files')) {
       ev.preventDefault();
       ev.dataTransfer.dropEffect = 'copy';
     }
   };
 
   const onDrop = (ev: React.DragEvent) => {
+    const file = ev.dataTransfer.files?.[0];
+    if (file) {
+      ev.preventDefault();
+      // Opens it in place of the game here (Undo brings this one back).
+      if (/\.(json|html?)$/i.test(file.name)) void openProjectFile(file);
+      else useEditor.getState().logMessage('warn', `${file.name} isn't a saved game (a .pxlproj.json file, or a game exported as .html)`);
+      return;
+    }
     const definitionId = ev.dataTransfer.getData(DEFINITION_DRAG_TYPE);
     if (!definitionId) return;
     ev.preventDefault();

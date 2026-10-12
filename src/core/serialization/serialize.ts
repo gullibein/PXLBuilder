@@ -193,3 +193,23 @@ function formatZodError(error: { issues: { path: PropertyKey[]; message: string 
     .map((i) => `${i.path.map(String).join('.') || '(root)'}: ${i.message}`)
     .join('; ');
 }
+
+/**
+ * A game from a file's text: a saved game (the bundle Save writes) or an exported game page (its HTML, with the
+ * game inside). Throws ProjectLoadError when it is neither.
+ */
+export function gameFromText(text: string, registry: ComponentRegistry): LoadResult {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('<')) {
+    const m = /<script type="application\/json" id="pxl-game">([\s\S]*?)<\/script>/.exec(text);
+    if (!m) throw new ProjectLoadError('This page has no PXLBuilder game in it');
+    return projectFromBundle(JSON.parse(m[1]), registry);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new ProjectLoadError('Not a PXLBuilder game file');
+  }
+  return projectFromBundle(raw, registry);
+}
