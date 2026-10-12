@@ -608,3 +608,32 @@ describe('mass', () => {
     expect(fall(5)).toBeCloseTo(fall(0.5), 5);
   });
 });
+
+describe('top-down goals', () => {
+  it('seen from above, the level is won by standing on the goal, not by brushing its edge', () => {
+    const rt = room((_d, _s, place) => place('Goal', { x: 96, y: 0 }));
+    const p = rt.find('Player')!;
+    const goal = rt.boxOf(rt.find('Goal')!)!;
+    const me = rt.boxOf(p)!;
+    // Overlapping its edge by a few pixels: not yet.
+    p.x = goal.x - goal.hw - me.hw + 4;
+    run(rt, new InputState(), 0.2);
+    expect(rt.completed).toBeNull();
+    // On it (its middle within the goal): won.
+    p.x = goal.x;
+    run(rt, new InputState(), 0.1);
+    expect(rt.completed).not.toBeNull();
+  });
+
+  it('a side-view player still wins by touching it', () => {
+    const rt = room((_d, _s, place) => place('Goal', { x: 96, y: 0 }), 980);
+    const p = rt.find('Player')!;
+    p.controller!.movement = 'platformer';
+    const goal = rt.boxOf(rt.find('Goal')!)!;
+    p.x = goal.x - goal.hw - rt.boxOf(p)!.hw + 4;
+    p.y = goal.y;
+    rt.step(1 / 120, new InputState());
+    rt.step(1 / 120, new InputState());
+    expect(rt.completed).not.toBeNull();
+  });
+});

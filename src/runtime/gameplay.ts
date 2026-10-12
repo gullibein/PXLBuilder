@@ -74,10 +74,31 @@ export class Gameplay {
       if (e.stompGrace > 0) e.stompGrace = Math.max(0, e.stompGrace - dt);
     }
     this.updateTouches();
+    this.standOnGoals();
     this.useSwitches(input);
     this.collectAndHurt();
     this.process();
     this.messages = this.messages.filter((m) => m.until > this.rt.time);
+  }
+
+  /**
+   * Seen from above, a goal or exit (stairs, a hole, a portal on the floor) is won by standing on it: the
+   * player's middle has to be on it, not just brushing its edge. A solid goal (one you can't walk onto) is still
+   * won by touching it.
+   */
+  private standsOn(player: RuntimeEntity, goal: RuntimeEntity): boolean {
+    return (player.controller?.movement === 'topdown' || this.rt.floats(player)) && !!goal.collider?.trigger;
+  }
+
+  private standOnGoals(): void {
+    for (const p of this.rt.entities) {
+      if (!p.alive || !p.controller) continue;
+      for (const g of this.rt.entities) {
+        if (!g.alive || !g.base.components.Goal || !this.standsOn(p, g)) continue;
+        const box = this.rt.boxOf(g);
+        if (box && Math.abs(p.x - box.x) <= box.hw && Math.abs(p.y - box.y) <= box.hh) this.rt.completeLevel(p);
+      }
+    }
   }
 
   /** While a won level stands still: what was already set off still happens (a rule on level_completed, its message). */
@@ -384,8 +405,8 @@ export class Gameplay {
     if (ev.type === 'touch_started' && ev.subject && ev.other) {
       const [toucher, touched] = [ev.subject, ev.other];
       if (touched.switch?.activation === 'touch' && toucher.controller) this.activate(touched, toucher);
-      // A Goal wins the level for the player who reaches it.
-      if (touched.base.components.Goal && toucher.controller) this.rt.completeLevel(toucher);
+      // A Goal wins the level for the player who reaches it (seen from above: who stands on it, see standOnGoals).
+      if (touched.base.components.Goal && toucher.controller && !this.standsOn(toucher, touched)) this.rt.completeLevel(toucher);
       // "Door requires Key": opens for whoever touches it carrying the item.
       for (const r of this.relationships('requires')) {
         if (!refMatches(r.source, touched) || touched.open) continue;
