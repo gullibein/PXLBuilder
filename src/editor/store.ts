@@ -41,7 +41,11 @@ export interface EditOptions {
 export type DockPanel = 'library' | 'create' | null;
 
 /** Select (click, drag, box-select) or brush (draw copies of a library object onto the level). */
-export type Tool = { kind: 'select' } | { kind: 'brush'; definitionId: Id };
+/**
+ * `once`: picked in the Objects panel while selecting. After placing it (one click or one line) the editor goes
+ * back to selecting, with what was just placed selected. Without it (the Draw tool chosen first) drawing goes on.
+ */
+export type Tool = { kind: 'select' } | { kind: 'brush'; definitionId: Id; once?: boolean };
 export type TrayTab = 'history' | 'console' | 'debug';
 
 export interface EditorState {

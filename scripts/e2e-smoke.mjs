@@ -447,11 +447,18 @@ try {
   await page.mouse.move(p1.x, p1.y, { steps: 3 });
   await page.mouse.up();
   await check(async () => (await entityCount()) === 1 + 6, 'one drag draws a continuous row of 6 tiles (no gaps even with a fast stroke)');
+  await check(
+    async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true' && (await prompts.getAttribute('data-context')) === 'entity' && Number((await page.getByTestId('viewport-canvas').getAttribute('data-handles')).match(/s1,0@(-?[\d.]+)/)[1]) > -110,
+    'picked from the Objects panel: after the line is drawn it is back to the Select tool, with the last tile drawn (the right end) selected',
+  );
+  // With the Draw tool on, drawing goes on after a stroke.
+  await page.getByTestId('tool-pen').click();
   await page.mouse.move(p0.x, p0.y);
   await page.mouse.down();
   await page.mouse.move(p1.x, p1.y, { steps: 8 });
   await page.mouse.up();
   await check(async () => (await entityCount()) === 7, 'drawing over existing tiles does not stack duplicates');
+  await check(async () => (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true', 'with the Draw tool chosen first, the pen stays after a stroke');
   const single = toScreen(40, 136);
   await page.mouse.click(single.x, single.y);
   await check(async () => (await entityCount()) === 8, 'a single click draws one tile');

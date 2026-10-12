@@ -98,7 +98,8 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
         if (!armOnClick) return;
         if (armed) setTool({ kind: 'select' });
         else {
-          setTool({ kind: 'brush', definitionId: def.id });
+          // Already drawing (the Draw tool): go on drawing with this. Else: place it once, then back to selecting.
+          setTool({ kind: 'brush', definitionId: def.id, once: tool.kind !== 'brush' || tool.once === true });
           setDock(null);
         }
       }}

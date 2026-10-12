@@ -702,9 +702,14 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
   if (!free.length) return;
   let n = scene.entities.filter((e) => e.definitionId === def.id).length;
   const created = free.map((c) => instantiateDefinition(def, cellCenter(c, cell), n++ === 0 ? def.name : `${def.name} ${n}`));
-  state.edit(created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`, (p) => {
+  const ok = state.edit(created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`, (p) => {
     for (const e of created) addEntity(p, scene.id, e);
   });
+  // Picked in the Objects panel (not with the Draw tool): back to selecting, the last one placed selected.
+  if (ok && state.tool.kind === 'brush' && state.tool.once) {
+    state.setTool({ kind: 'select' });
+    state.selectEntities([created[created.length - 1].id]);
+  }
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
