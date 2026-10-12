@@ -706,6 +706,19 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 </label>
               )}
               <span className="grow" />
+              <button
+                className="chip-btn"
+                data-testid="se-export"
+                title="Save this sprite (all its frames, as drawn now) as a PNG or JSON"
+                onClick={() => {
+                  const palette = usedPalette(draft);
+                  const title = name.trim() || 'Sprite';
+                  const sheet = createAnimatedPixelArtAsset(title, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
+                  useEditor.getState().openSpriteExport({ assets: [sheet], name: title });
+                }}
+              >
+                Export…
+              </button>
               <button className="chip-btn" onClick={close}>
                 Cancel
               </button>

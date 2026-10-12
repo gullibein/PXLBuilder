@@ -625,3 +625,8 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .sprite-size-row .chip-btn { padding: 2px 8px; }
 .chip-btn.on { background: var(--accent, #7c6cff); color: #fff; border-color: transparent; }
 .sprite-size-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+
+/* Export sprites. */
+.export-dialog { width: min(560px, calc(100% - 32px)); }
+.export-preview-wrap { display: flex; justify-content: center; align-items: center; min-height: 120px; max-height: 50vh; overflow: auto; padding: 12px; border-radius: 12px; background: repeating-conic-gradient(#2b2a3d 0 25%, #34334a 0 50%) 0 0 / 16px 16px; }
+.export-sheet { image-rendering: pixelated; width: auto; max-width: 100%; min-width: min(100%, 256px); height: auto; }

@@ -19,7 +19,7 @@ import type { Operation } from '../core/commands/operations';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
 import { ModelError } from '../core/model/mutations';
-import type { Id, Project, Vec2 } from '../core/types';
+import type { AssetRecord, Id, Project, Vec2 } from '../core/types';
 import type { Camera } from '../render/renderer';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -94,6 +94,8 @@ export interface EditorState {
   trashHot: boolean;
   /** Objects are being moved, stretched or resized on the level right now (the prompt card steps aside meanwhile). */
   objectDrag: boolean;
+  /** The "Export sprites" window: these pictures (null: all of the game's), named after `name`. */
+  spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -137,6 +139,7 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
   setObjectDrag(dragging: boolean): void;
   setTrashHot(hot: boolean): void;
   flashEntities(ids: Id[]): void;
@@ -197,6 +200,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     spriteEditor: null,
     trashHot: false,
     objectDrag: false,
+    spriteExport: null,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -413,6 +417,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },
+    openSpriteExport(spriteExport) {
+      set({ spriteExport });
+    },
+
     setObjectDrag(objectDrag) {
       if (get().objectDrag !== objectDrag) set({ objectDrag });
     },

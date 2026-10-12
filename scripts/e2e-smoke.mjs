@@ -6,6 +6,7 @@
 // context the editor actually sends. Everything else (selection context,
 // prompt placement, validation, transactions, undo, rendering) is real.
 // A final pass runs against the real server endpoint with no API key.
+import { readFileSync } from 'node:fs';
 import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -1466,6 +1467,46 @@ try {
     await check(async () => !(await menu.innerText()).includes('The Mines') && !(await menu.innerText()).includes('The Tower'), 'one Undo takes all the new levels away');
     await page.keyboard.press('Escape');
     void levelsBefore;
+  }
+
+  step = 'export sprites';
+  {
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-export-sprites').click();
+    const ex = page.getByTestId('sprite-export');
+    await check(async () => (await ex.isVisible()) && (await ex.getByTestId('export-preview').count()) === 1, 'Export sprites shows the sprite sheet of all the pictures');
+    const usedCount = await ex.getByTestId('export-count').innerText();
+    await ex.getByTestId('export-only-used').uncheck();
+    const num = (t) => Number(t.replace(/\D+/g, ''));
+    await check(async () => num(await ex.getByTestId('export-count').innerText()) >= num(usedCount) && num(usedCount) > 0, 'by default the pictures the game uses; unticked, all of them');
+    await ex.getByTestId('export-only-used').check();
+    await ex.getByTestId('export-scale-4').click();
+    await ex.screenshot({ path: `${OUT}/12e-export-sprites.png` });
+    const [w, h] = (await ex.getByTestId('export-size').innerText()).split(' ')[0].split('×').map(Number);
+    const [png] = await Promise.all([page.waitForEvent('download'), ex.getByTestId('export-png').click()]);
+    const pngBytes = readFileSync(await png.path());
+    const pngW = pngBytes.readUInt32BE(16);
+    const pngH = pngBytes.readUInt32BE(20);
+    await check(png.suggestedFilename().endsWith('@4x.png') && pngBytes.subarray(1, 4).toString() === 'PNG' && pngW === w && pngH === h, `Save PNG saves the sheet as a PNG at the chosen scale (${pngW}×${pngH})`);
+    const [json] = await Promise.all([page.waitForEvent('download'), ex.getByTestId('export-json').click()]);
+    const atlas = JSON.parse(readFileSync(await json.path(), 'utf8'));
+    await check(json.suggestedFilename().endsWith('.json') && atlas.frames.Player && atlas.meta.size.w === w && atlas.meta.image === png.suggestedFilename() && atlas.pixelArt.Player.frames.length === 1, 'Save JSON saves the atlas: where each picture is on that PNG, with pixel art as data');
+    // A pixel picture's frame is exactly where it was drawn on the sheet: check one pixel of the Player.
+    const f = atlas.frames.Player.frame;
+    const drawn = await page.evaluate(async ([data, x, y]) => {
+      const img = new Image();
+      img.src = data;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      return Array.from(g.getImageData(x, y, 1, 1).data);
+    }, [`data:image/png;base64,${pngBytes.toString('base64')}`, f.x + Math.floor(f.w / 2), f.y + Math.floor(f.h / 2)]);
+    await check(drawn[3] === 255, 'the Player is drawn where the JSON says it is');
+    await page.keyboard.press('Escape');
+    await check(async () => (await ex.count()) === 0, 'Esc closes it');
   }
 
   step = 'typed commands';

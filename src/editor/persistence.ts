@@ -129,7 +129,11 @@ export function startNewGame(gameType: GameType, first = false, spriteResolution
  * user confirms), as an ordinary download elsewhere.
  */
 export async function offerTextFile(filename: string, text: string, type = 'application/json'): Promise<'saved' | 'declined' | 'failed'> {
-  const blob = new Blob([text], { type });
+  return offerFile(filename, new Blob([text], { type }));
+}
+
+/** Offers any file (a PNG…) to save, the same way. */
+export async function offerFile(filename: string, blob: Blob): Promise<'saved' | 'declined' | 'failed'> {
   const downloads = await claudeCapability<ViewerDownloads>('downloads');
   if (downloads) {
     try {

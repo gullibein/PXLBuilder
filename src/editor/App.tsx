@@ -1,3 +1,4 @@
+import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
 import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
@@ -79,6 +80,7 @@ export function App() {
         <StylePicker />
         <GameChooser />
         <SpriteEditor />
+        <SpriteExport />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -164,6 +166,7 @@ function useGlobalShortcuts() {
         else if (state.aiConnectionOpen) state.setAIConnectionOpen(false);
         else if (state.stylePickerOpen) state.setStylePickerOpen(false);
         else if (state.gameChooser) state.setGameChooser(null);
+        else if (state.spriteExport) state.openSpriteExport(null);
         else if (state.spritesFor) state.openSprites(null);
         else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
         else {

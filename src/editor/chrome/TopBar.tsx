@@ -242,6 +242,12 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
     { label: 'Save', hint: 'Ctrl+S', run: saveProjectToFile, testId: 'menu-save' },
     {
+      label: 'Export sprites…',
+      detail: "All of the game's pictures as one sprite sheet: a PNG, and a JSON saying where each one is",
+      run: () => useEditor.getState().openSpriteExport({ assets: null, name: useEditor.getState().project.name }),
+      testId: 'menu-export-sprites',
+    },
+    {
       label: 'Reset objects to defaults',
       detail: 'Built-in objects go back to how they ship. Your level and your own objects stay.',
       run: resetObjectsToDefaults,
