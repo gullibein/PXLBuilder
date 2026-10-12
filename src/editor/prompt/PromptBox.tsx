@@ -85,9 +85,45 @@ export interface PromptBoxProps {
   header?: React.ReactNode;
 }
 
+/**
+ * What was typed in a card and not sent yet, per game and per thing (an object, the level…). A card closed by
+ * clicking elsewhere (or a reload) loses nothing: opening it again brings the text back. Kept in this browser.
+ */
+const DRAFTS_KEY = 'pxlbuilder.promptDrafts';
+const drafts: Record<string, string> = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '{}');
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+})();
+function saveDraft(key: string, text: string): void {
+  if (text) drafts[key] = text;
+  else delete drafts[key];
+  try {
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    // Storage unavailable: drafts last while the page is open.
+  }
+}
+
 export function PromptBox(props: PromptBoxProps) {
   const runner = usePromptRunner(props.ctx, props.onApplied);
-  const [text, setText] = useState('');
+  const project = useEditor((s) => s.project.id);
+  const draftKey = `${project}/${contextKey(props.ctx)}`;
+  const [text, setTextState] = useState(() => drafts[draftKey] ?? '');
+  const setText = (t: string) => {
+    setTextState(t);
+    saveDraft(draftKey, t);
+  };
+  // The same card about something else (another object): its own draft.
+  const shownKey = useRef(draftKey);
+  useEffect(() => {
+    if (shownKey.current === draftKey) return;
+    shownKey.current = draftKey;
+    setTextState(drafts[draftKey] ?? '');
+  }, [draftKey]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const undo = useEditor((s) => s.undo);
   const undoLayout = useEditor((s) => s.undoLayout);
@@ -130,7 +166,11 @@ export function PromptBox(props: PromptBoxProps) {
   };
 
   useEffect(() => {
-    if (props.autoFocus) inputRef.current?.focus();
+    const el = inputRef.current;
+    if (!props.autoFocus || !el) return;
+    el.focus();
+    // A draft brought back: carry on typing at its end.
+    el.setSelectionRange(el.value.length, el.value.length);
   }, [props.autoFocus]);
 
   const submit = () => {

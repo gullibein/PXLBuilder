@@ -1398,6 +1398,18 @@ try {
     const entities = async () => Number(await canvas.getAttribute('data-entities'));
     const n0 = await entities();
     const said = async () => (await result.last().innerText()).replace(/\s+/g, ' ');
+    // Typed but not sent, then a click elsewhere closes the card: the text is still there when it opens again.
+    await clickWorld(-256, 0);
+    await promptInput.click();
+    await promptInput.fill('make the player glow and');
+    await clickWorld(150, -220);
+    await check(async () => (await prompts.count()) === 0, '(clicking empty level closes the card)');
+    await clickWorld(-256, 0);
+    await check(async () => (await promptInput.inputValue()) === 'make the player glow and', "a prompt typed but not sent isn't lost when the card closes: it's back when the object is selected again");
+    await clickWorld(-32, 0);
+    await check(async () => (await promptInput.inputValue()) === '', "(another object's card has its own, empty, text)");
+    await clickWorld(-256, 0);
+    await promptInput.fill('');
     await clickWorld(-256, 0);
     await ask('duplicate it 2 times to the right');
     await check(async () => (await entities()) === n0 + 2, '"duplicate it 2 times to the right" makes two copies side by side');
