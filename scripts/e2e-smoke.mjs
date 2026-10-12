@@ -1298,6 +1298,7 @@ try {
     await page.mouse.down();
     await page.mouse.move(trashAt.x, trashAt.y, { steps: 8 });
     await check(async () => (await trash.getAttribute('class')).includes('hot'), 'dragging an object over the trash can lights it up');
+    await check(async () => (await prompts.count()) === 1 && !(await prompts.isVisible()), "while an object is being moved, its prompt card is out of the way");
     await page.screenshot({ path: `${OUT}/12c-trash-drag.png` });
     await page.mouse.up();
     await check(async () => (await entities()) === n0 - 1 && !(await trash.getAttribute('class')).includes('hot'), 'dropping it on the trash can deletes it');
@@ -1380,6 +1381,23 @@ try {
     const h5 = await handles();
     await dragWorld([h5['s1,0'][0], h5['s1,0'][1]], [h5['s1,0'][0] + 32 + 6, h5['s1,0'][1]]);
     await check(async () => (await entities()) === n0 + 20, 'pulling its right point out one tile adds one column of 4');
+    // Pushing the top point down one row takes the top row away (5 tiles); the prompt card is out of the way meanwhile.
+    const h6 = await handles();
+    {
+      const a = await w2s(h6['s0,-1'][0], h6['s0,-1'][1]);
+      const b = await w2s(h6['s0,-1'][0], h6['s0,-1'][1] + 32 + 6);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      await page.mouse.move(a.x, (a.y + b.y) / 2, { steps: 3 });
+      await page.mouse.move(b.x, b.y, { steps: 3 });
+      await check(async () => !(await prompts.isVisible()), 'while a point of the box is dragged, the prompt card is out of the way');
+      await page.mouse.up();
+    }
+    await check(async () => (await entities()) === n0 + 15 && (await prompts.isVisible()), 'pushing the top point down one row removes the top row (and the card is back after letting go)');
+    const h7 = await handles();
+    await check(h7['s0,1'][1] - h7['s0,-1'][1] === 96, '(the block is 3 rows tall now)');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0 + 20, '(Undo brings the row back)');
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { edgeSlice, extendCount, extendOffsets, handleAt, handlesFor, resizeRect, unionRect } from './handles';
+import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handlesFor, resizeRect, unionRect } from './handles';
 
 const tile = { minX: 0, minY: 0, maxX: 32, maxY: 32 };
 
@@ -48,5 +48,20 @@ describe('selection handles', () => {
   it('union of bounds', () => {
     expect(unionRect([tile, { minX: 32, minY: 0, maxX: 64, maxY: 32 }])).toEqual({ minX: 0, minY: 0, maxX: 64, maxY: 32 });
     expect(unionRect([])).toBeNull();
+  });
+  it('shortening takes layers away from the dragged side, one at a time, never the last one', () => {
+    // A ladder of 4 pieces (top to bottom y 0..128).
+    const ladder = [0, 1, 2, 3].map((i) => ({ id: `l${i}`, bounds: { minX: 0, maxX: 32, minY: i * 32, maxY: i * 32 + 32 } }));
+    const fromTop = edgeLayers(ladder, { x: 0, y: -1 });
+    expect(fromTop.map((l) => l.ids)).toEqual([['l0'], ['l1'], ['l2']]);
+    expect(edgeLayers(ladder, { x: 0, y: 1 }).map((l) => l.ids)).toEqual([['l3'], ['l2'], ['l1']]);
+    const box = { minX: 0, minY: 0, maxX: 32, maxY: 128 };
+    // The top point dragged down 40px: past half of the first piece and not half of the second.
+    expect(pastSide(box, { x: 0, y: -1 }, { x: 16, y: 40 })).toBe(-40);
+    expect(shrinkCount(fromTop, 40)).toBe(1);
+    expect(shrinkCount(fromTop, 15)).toBe(0);
+    expect(shrinkCount(fromTop, 500)).toBe(3);
+    // A single object can't be shortened.
+    expect(edgeLayers([ladder[0]], { x: 1, y: 0 })).toEqual([]);
   });
 });

@@ -43,6 +43,15 @@ export function extendSelection(ids: string[], offsets: Vec2[], selection: strin
   if (ok) selectEntities([...new Set([...selection, ...created])]);
 }
 
+/** Takes objects away from one side of the selection (dragging a side of its box inward): one undoable step; the rest stays selected. */
+export function shortenSelection(ids: string[], selection: string[]): void {
+  const { activeSceneId, edit, selectEntities } = useEditor.getState();
+  if (!ids.length) return;
+  const ok = edit(`Shorten (${ids.length} removed)`, (p) => removeEntities(p, activeSceneId, ids));
+  const gone = new Set(ids);
+  if (ok) selectEntities(selection.filter((id) => !gone.has(id)));
+}
+
 /** Gives one placed object a new size in the level (dragging a corner of its box): its sprite (and collider) size, and its middle. */
 export function resizeEntity(id: string, r: Rect): void {
   const { project, activeSceneId, edit } = useEditor.getState();

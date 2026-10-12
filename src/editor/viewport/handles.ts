@@ -77,6 +77,42 @@ export function extendCount(box: Rect, dir: Handle['dir'], p: Vec2, step: number
   return Math.max(0, Math.min(MAX_EXTEND, Math.floor(past / step + 0.5)));
 }
 
+/** How far past the dragged side the pointer is, outward (negative: back inside the box). */
+export function pastSide(box: Rect, dir: Handle['dir'], p: Vec2): number {
+  return dir.x > 0 ? p.x - box.maxX : dir.x < 0 ? box.minX - p.x : dir.y > 0 ? p.y - box.maxY : box.minY - p.y;
+}
+
+/**
+ * What dragging a side inward takes away, in order: the objects along that side, then the next ones in, and so
+ * on (a row of tiles dragged in from the right loses its last tile, then the one before…). Never all of them:
+ * the last layer stays.
+ */
+export function edgeLayers<T extends { id: string; bounds: Rect }>(items: T[], dir: Handle['dir']): { ids: string[]; thickness: number }[] {
+  const layers: { ids: string[]; thickness: number }[] = [];
+  let rest = items;
+  while (rest.length) {
+    const box = unionRect(rest.map((i) => i.bounds))!;
+    const slice = edgeSlice(rest, box, dir);
+    if (!slice.ids.length || slice.ids.length === rest.length) break;
+    layers.push({ ids: slice.ids, thickness: slice.step });
+    const gone = new Set(slice.ids);
+    rest = rest.filter((i) => !gone.has(i.id));
+  }
+  return layers;
+}
+
+/** How many layers an inward drag of `inward` px takes away: each goes once the pointer is half way across it. */
+export function shrinkCount(layers: { thickness: number }[], inward: number): number {
+  let n = 0;
+  let across = 0;
+  for (const l of layers) {
+    if (inward < across + l.thickness / 2) break;
+    across += l.thickness;
+    n++;
+  }
+  return n;
+}
+
 /** Where the copies go, relative to the objects repeated. */
 export function extendOffsets(dir: Handle['dir'], step: number, count: number): Vec2[] {
   return Array.from({ length: count }, (_, i) => ({ x: dir.x * step * (i + 1), y: dir.y * step * (i + 1) }));

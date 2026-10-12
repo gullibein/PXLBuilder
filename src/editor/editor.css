@@ -616,3 +616,6 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .trash-btn[aria-disabled='true'] { opacity: 0.55; }
 .trash-btn[aria-disabled='false'] { color: var(--text); }
 .trash-btn.hot { background: var(--danger, #e5534b); color: #fff; opacity: 1; transform: scale(1.12); transition: transform 80ms ease-out; }
+
+/* The prompt card steps aside while objects are being dragged on the level. */
+.context-layer.stepped-aside { display: none; }

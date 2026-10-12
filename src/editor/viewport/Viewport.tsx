@@ -9,8 +9,8 @@ import type { Id, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
-import { connectSwitch, extendSelection, resizeEntity } from '../actions';
-import { edgeSlice, extendCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
+import { connectSwitch, extendSelection, resizeEntity, shortenSelection } from '../actions';
+import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
@@ -32,8 +32,12 @@ type Drag =
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
   | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> }
-  /** Dragging a side point of the selection box: copies of what is along that side (`ids`), `step` apart, `count` so far. */
-  | { kind: 'extend'; selection: Id[]; ids: Id[]; step: number; box: Rect; dir: Handle['dir']; count: number }
+  /**
+   * Dragging a side point of the selection box: out, copies of what is along that side (`ids`), `step` apart;
+   * in, the selection gets shorter from that side (`layers`, outermost first). `count`: copies so far, or minus
+   * the layers taken away.
+   */
+  | { kind: 'extend'; selection: Id[]; ids: Id[]; step: number; box: Rect; dir: Handle['dir']; count: number; layers: { ids: Id[]; thickness: number }[] }
   /** Dragging a corner point of one object's box: its new size (`rect`, in the level). */
   | { kind: 'resize'; id: Id; box: Rect; dir: Handle['dir']; rect: Rect }
   /** Dragging from a switch's red connector onto another object. */
@@ -129,8 +133,11 @@ export function Viewport() {
         );
       }
       if (drag?.kind === 'resize') entities = entities.map((e) => (e.id === drag.id ? resizedEntity(e, drag.rect) : e));
+      // Shortening: what will go is shown faint (and out of the selection) until let go.
+      const shortening = drag?.kind === 'extend' && drag.count < 0 ? new Set(drag.layers.slice(0, -drag.count).flatMap((l) => l.ids)) : null;
+      if (shortening) entities = entities.map((e) => (shortening.has(e.id) ? { ...e, alpha: 0.2 } : e));
       const byId = new Map(entities.map((e) => [e.id, e]));
-      const selected = state.selectedEntityIds.map((id) => byId.get(id)).filter((e): e is ResolvedEntity => !!e);
+      const selected = state.selectedEntityIds.filter((id) => !shortening?.has(id)).map((id) => byId.get(id)).filter((e): e is ResolvedEntity => !!e);
 
       // Observable view state (used by tests and handy when debugging).
       const camAttr = `${state.camera.x.toFixed(1)},${state.camera.y.toFixed(1)},${state.camera.zoom.toFixed(4)}`;
@@ -176,7 +183,8 @@ export function Viewport() {
         if (!wire) drawEntities(ctx, ghosts, images, 0.3, time / 1000);
         else drawWireframe(ctx, ghosts, state.camera.zoom);
       }
-      drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', drag?.kind === 'extend' ? boxAround([drag.box, ...ghosts.map(getWorldBounds)]) : null);
+      const reach = drag?.kind === 'extend' ? (shortening ? boxAround(selected.map(getWorldBounds)) : boxAround([drag.box, ...ghosts.map(getWorldBounds)])) : null;
+      drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
       const handlesAttr = selected.length ? selectionFrame(selected).handles.map((h) => `${h.kind[0]}${h.dir.x},${h.dir.y}@${h.at.x.toFixed(0)},${h.at.y.toFixed(0)}`).join(' ') : '';
       if ((canvas.dataset.handles ?? '') !== handlesAttr) canvas.dataset.handles = handlesAttr;
       if (state.flash && time < state.flash.until) drawFlash(ctx, state.flash.ids, byId, state.camera.zoom, (state.flash.until - time) / 2200);
@@ -386,6 +394,7 @@ export function Viewport() {
         const drag = dragRef.current;
         if (drag?.kind === 'marquee') state.selectEntities(drag.baseSelection);
         dragRef.current = null;
+        state.setObjectDrag(false);
         if (touch.points.size >= 2) startGesture();
         return;
       }
@@ -422,8 +431,13 @@ export function Viewport() {
       if (frame && boxHandle) {
         dragRef.current =
           boxHandle.kind === 'side'
-            ? { kind: 'extend', selection: chosen.map((e) => e.id), ...edgeSlice(chosen.map((e) => ({ id: e.id, bounds: getWorldBounds(e) })), frame.box, boxHandle.dir), box: frame.box, dir: boxHandle.dir, count: 0 }
+            ? (() => {
+                const items = chosen.map((e) => ({ id: e.id, bounds: getWorldBounds(e) }));
+                return { kind: 'extend' as const, selection: chosen.map((e) => e.id), ...edgeSlice(items, frame.box, boxHandle.dir), box: frame.box, dir: boxHandle.dir, count: 0, layers: edgeLayers(items, boxHandle.dir) };
+              })()
             : { kind: 'resize', id: chosen[0].id, box: frame.box, dir: boxHandle.dir, rect: frame.box };
+        // The prompt card steps aside while the box is being dragged.
+        state.setObjectDrag(true);
         capture(canvas, ev.pointerId);
         return;
       }
@@ -510,7 +524,9 @@ export function Viewport() {
       return;
     }
     if (drag.kind === 'extend') {
-      drag.count = extendCount(drag.box, drag.dir, toWorld(ev), drag.step);
+      const p = toWorld(ev);
+      const past = pastSide(drag.box, drag.dir, p);
+      drag.count = past >= 0 ? extendCount(drag.box, drag.dir, p, drag.step) : -shrinkCount(drag.layers, -past);
       return;
     }
     if (drag.kind === 'resize') {
@@ -533,6 +549,8 @@ export function Viewport() {
       canvasRef.current!.style.cursor = 'grabbing';
       state.setCamera({ x: drag.startCamera.x - (ev.clientX - drag.startScreen.x) / z, y: drag.startCamera.y - (ev.clientY - drag.startScreen.y) / z });
     } else if (drag.kind === 'move') {
+      // Moving objects: the prompt card steps aside until they're let go.
+      state.setObjectDrag(true);
       // Over the trash can: it lights up (dropping deletes them).
       state.setTrashHot(overTrash(ev));
       const world = toWorld(ev);
@@ -567,6 +585,7 @@ export function Viewport() {
     }
     const drag = dragRef.current;
     dragRef.current = null;
+    useEditor.getState().setObjectDrag(false);
     if (canvasRef.current?.hasPointerCapture(ev.pointerId)) canvasRef.current.releasePointerCapture(ev.pointerId);
     const state = useEditor.getState();
     canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : state.tool.kind === 'brush' ? 'crosshair' : 'default';
@@ -580,6 +599,7 @@ export function Viewport() {
     }
     if (drag?.kind === 'extend') {
       if (drag.count > 0) extendSelection(drag.ids, extendOffsets(drag.dir, drag.step, drag.count), drag.selection);
+      else if (drag.count < 0) shortenSelection(drag.layers.slice(0, -drag.count).flatMap((l) => l.ids), drag.selection);
       return;
     }
     if (drag?.kind === 'resize') {

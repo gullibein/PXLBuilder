@@ -92,6 +92,8 @@ export interface EditorState {
   spriteEditor: { definitionId: Id; assetId: Id | null } | null;
   /** Objects are being dragged over the trash can (it lights up; dropping them there deletes them). */
   trashHot: boolean;
+  /** Objects are being moved, stretched or resized on the level right now (the prompt card steps aside meanwhile). */
+  objectDrag: boolean;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -135,6 +137,7 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  setObjectDrag(dragging: boolean): void;
   setTrashHot(hot: boolean): void;
   flashEntities(ids: Id[]): void;
   openSprites(definitionId: Id | null): void;
@@ -193,6 +196,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     gameChooser: null,
     spriteEditor: null,
     trashHot: false,
+    objectDrag: false,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -409,6 +413,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },
+    setObjectDrag(objectDrag) {
+      if (get().objectDrag !== objectDrag) set({ objectDrag });
+    },
+
     setTrashHot(trashHot) {
       if (get().trashHot !== trashHot) set({ trashHot });
     },

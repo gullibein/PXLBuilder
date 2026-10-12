@@ -1283,3 +1283,25 @@ describe('enemies on ladders', () => {
     expect(e.beh.patrol!.hunting).toBe(false);
   });
 });
+
+describe('no sideways teleports', () => {
+  it('an enemy sunk a little into the floor walks on from where it is (it used to be thrown to the end of the row)', () => {
+    // 32px tall at y=17: its bottom is 1px inside the ground row (top at 32).
+    const { rt, input } = level((b) => {
+      m.addDefinitionComponent(b.d, b.def('Enemy'), 'Patrol', registry, { speed: 60, startDirection: 'left' });
+      const e = b.place('Enemy', { x: 100, y: 17 });
+      m.setEntityComponentField(b.d, b.sceneId, e, 'Sprite', 'height', 32, registry);
+    });
+    const e = rt.find('Enemy')!;
+    let biggest = 0;
+    let last = e.x;
+    run(rt, input, 1, () => {
+      biggest = Math.max(biggest, Math.abs(e.x - last));
+      last = e.x;
+    });
+    expect(biggest).toBeLessThan(3);
+    expect(e.x).toBeGreaterThan(30);
+    expect(e.x).toBeLessThan(100);
+    expect(e.y).toBeCloseTo(16, 5); // lifted onto the floor
+  });
+});

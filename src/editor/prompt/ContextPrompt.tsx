@@ -21,6 +21,8 @@ export function ContextPrompt() {
   const worldContext = useEditor((s) => s.worldContext);
   const selectedConnectionId = useEditor((s) => s.selectedConnectionId);
   const cameraOutline = useEditor((s) => s.cameraOutline);
+  // Out of the way while objects are moved, stretched or resized; back when they're let go.
+  const objectDrag = useEditor((s) => s.objectDrag);
   const ctx = useMemo(
     () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId }),
     [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId],
@@ -107,7 +109,7 @@ export function ContextPrompt() {
     selectConnection(null);
   };
   return (
-    <div className="context-layer">
+    <div className={`context-layer${objectDrag ? ' stepped-aside' : ''}`}>
       <svg className="connector" aria-hidden="true">
         <line ref={lineRef} style={{ visibility: 'hidden' }} />
         <circle ref={dotRef} r="2.5" style={{ visibility: 'hidden' }} />

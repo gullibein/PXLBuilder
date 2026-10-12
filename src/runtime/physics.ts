@@ -28,7 +28,16 @@ export interface MoveResult {
   hitCeiling: boolean;
 }
 
-/** Moves `box` by (dx, dy) against static `solids`, x first, then y. */
+/** A body sunk at most this far into the top of a floor is lifted back onto it. */
+const MAX_SINK = 4;
+
+/**
+ * Moves `box` by (dx, dy) against static `solids`, x first, then y.
+ *
+ * A body that starts a step a little inside something (sunk a pixel or two into a floor: placed so, resized, or
+ * put there by a script) is first lifted out onto it, and moving sideways never snaps it to the far side of a
+ * solid it already overlaps (that used to throw it to the end of a whole row of floor tiles).
+ */
 export function moveAndCollide(box: Box, dx: number, dy: number, solids: readonly Box[]): MoveResult {
   let { x, y } = box;
   let hitX = false;
@@ -36,10 +45,19 @@ export function moveAndCollide(box: Box, dx: number, dy: number, solids: readonl
   let grounded = false;
   let hitCeiling = false;
 
+  for (const s of solids) {
+    if (!overlaps({ ...box, x, y }, s)) continue;
+    const sunk = y + box.hh - (s.y - s.hh);
+    if (y < s.y && sunk > 0 && sunk <= MAX_SINK) {
+      y -= sunk;
+      grounded = true;
+    }
+  }
+  const start = { ...box, x, y };
   if (dx !== 0) {
     x += dx;
     for (const s of solids) {
-      if (!overlaps({ ...box, x, y }, s)) continue;
+      if (overlaps(start, s) || !overlaps({ ...box, x, y }, s)) continue;
       x = dx > 0 ? s.x - s.hw - box.hw : s.x + s.hw + box.hw;
       hitX = true;
     }
