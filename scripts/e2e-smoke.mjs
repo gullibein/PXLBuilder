@@ -877,6 +877,21 @@ try {
     async () => (await se.count()) === 0 && (await sp.getByTestId('sprite-list').innerText()).includes('Blinky-walk') && (await sp.locator('.sprite-choice.on .sprite-cap').innerText()).trim() === '▶ Blinky',
     'saved as its own sprite, used while running; the original stays the normal look',
   );
+  // All of the object's sprites are in the editor: switch between them; changes are kept.
+  await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
+  const strip = se.getByTestId('se-sprites');
+  await check(async () => (await strip.innerText()).includes('Blinky-walk') && (await strip.innerText()).includes('Its look') && (await strip.locator('.se-sprite').count()) >= 3, "the sprite editor lists all the object's sprites (its look, its running look, the others)");
+  await strip.locator('.se-sprite', { hasText: 'Blinky-walk' }).click();
+  await check(async () => (await se.getByTestId('se-name').inputValue()) === 'Blinky-walk' && (await se.locator('.se-frame').count()) === 2, 'clicking one edits that sprite');
+  await clickPixel(1, 1);
+  await se.screenshot({ path: `${OUT}/10c-sprite-editor-sprites.png` });
+  const walkPixels = await px();
+  await strip.locator('.se-sprite', { hasText: 'Its look' }).click();
+  await check(async () => (await se.getByTestId('se-name').inputValue()) === 'Blinky', '(back to its look)');
+  await strip.locator('.se-sprite', { hasText: 'Blinky-walk' }).click();
+  await check(async () => (await px()) === walkPixels, 'what was drawn on a sprite is kept when switching to another (saved)');
+  await se.getByTestId('se-close').click();
+  await page.getByTestId('undo').click();
   await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
   await clickPixel(0, 0);
   await se.getByTestId('se-new').click();

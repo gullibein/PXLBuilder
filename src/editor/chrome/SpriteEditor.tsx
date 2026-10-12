@@ -28,6 +28,8 @@ import {
   type SpriteDraft,
 } from '../../core/model/spriteDraft';
 import { whenImageReady } from '../images';
+import { SpriteImage } from '../SpriteImage';
+import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
 
 /** "Use as": keep the new sprite in the object's list without using it yet. */
@@ -283,6 +285,23 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
 
   const situations = useMemo(() => Object.keys(componentRegistry.get('SpriteStates')?.fields ?? {}), []);
 
+  /** All of the object's sprites: its look, its looks for situations, and the others in its list (once each). */
+  const objectSprites = useMemo(() => {
+    const out: { assetId: string; label: string; asset: AssetRecord; editable: boolean }[] = [];
+    if (!def) return out;
+    const add = (assetId: unknown, label: string) => {
+      if (typeof assetId !== 'string' || out.some((o) => o.assetId === assetId)) return;
+      const a = assets.find((x) => x.id === assetId);
+      if (!a || (a.kind !== 'image' && a.kind !== 'spritesheet')) return;
+      const editable = !!a.pixelArt || (a.kind === 'image' && a.width <= 64 && a.height <= 64);
+      out.push({ assetId, label, asset: a, editable });
+    };
+    add(def.components.Sprite?.assetId, 'Its look');
+    for (const [situation, id] of Object.entries((def.components.SpriteStates ?? {}) as Record<string, unknown>)) add(id, situationLabel(situation));
+    for (const r of m.getDefinitionSprites(def)) add(r.assetId, 'In its sprites');
+    return out;
+  }, [def, assets]);
+
   if (!def) return null;
 
   /** An edit that can be undone in the editor, made on the latest drawing. */
@@ -491,16 +510,16 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     });
   };
 
-  const save = () => {
-    if (!draft) return;
+  /** Stores the new sprite being drawn (where "Use as" says); returns its id, or null if it couldn't be saved. */
+  const saveNew = (): string | null => {
+    const draft = latest.current;
+    if (!draft) return null;
     const palette = usedPalette(draft);
     const title = name.trim() || 'Sprite';
-    if (asset) {
-      if (saveTo(asset.id, draft, title)) close();
-      return;
-    }
+    let id: string | null = null;
     const ok = useEditor.getState().edit(`Draw sprite ${title} for ${def.name}`, (p) => {
       const made = createAnimatedPixelArtAsset(title, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
+      id = made.id;
       m.addAsset(p, made);
       // Kept in the object's sprites, to use later (Sprites panel, or the Inspector).
       if (use === KEEP) m.addDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 });
@@ -511,8 +530,45 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
         m.addDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 });
       }
     });
-    if (ok) close();
+    return ok ? id : null;
   };
+
+  const save = () => {
+    if (!draft) return;
+    if (asset) {
+      if (saveTo(asset.id, draft, name.trim() || 'Sprite')) close();
+      return;
+    }
+    if (saveNew()) close();
+  };
+
+  /**
+   * Edits another of the object's sprites. What was changed in this one is saved first (one Undo step each), so
+   * moving between them loses nothing; a new sprite that was drawn on is saved where "Use as" says.
+   */
+  const switchTo = (id: string) => {
+    if (id === editingId) return;
+    const cur = latest.current;
+    if (cur && past.length) {
+      if (asset) saveTo(asset.id, cur, name.trim() || asset.name);
+      else if (!saveNew()) return;
+    }
+    const next = useEditor.getState().project.assets.find((a) => a.id === id);
+    if (!next) return;
+    setPast([]);
+    setFuture([]);
+    setFrame(0);
+    setSel(null);
+    setError(null);
+    setNewMenu(false);
+    setEditingId(id);
+    setName(next.name);
+    // Pixel art opens at once; a small imported picture is read by the effect above.
+    const d = draftFromAsset(next);
+    latest.current = d;
+    setDraft(d);
+  };
+
 
   const swatch = draft?.palette.find((p) => p.key === color);
 
@@ -548,6 +604,26 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
             </svg>
           </button>
         </header>
+        {objectSprites.length > 0 && (
+          <div className="se-sprites" role="tablist" aria-label={`${def.name}'s sprites`} data-testid="se-sprites">
+            {objectSprites.map((o, i) => (
+              <button
+                key={o.assetId}
+                role="tab"
+                aria-selected={o.assetId === editingId}
+                className={`se-sprite${o.assetId === editingId ? ' on' : ''}`}
+                data-testid={`se-sprite-${i}`}
+                disabled={!o.editable}
+                title={o.editable ? `${o.asset.name} · ${o.label}${o.assetId !== editingId && past.length ? ' (switching saves your changes here first)' : ''}` : `${o.asset.name}: an imported sprite sheet, edited in your drawing program`}
+                onClick={() => switchTo(o.assetId)}
+              >
+                <SpriteImage asset={o.asset} size={36} />
+                <span className="se-sprite-name">{o.asset.name}</span>
+                <span className="se-sprite-use">{o.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {error && <p className="form-error">{error}</p>}
         {draft && (
           <>
