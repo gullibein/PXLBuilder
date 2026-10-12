@@ -6,6 +6,9 @@ import { FORMAT_VERSION } from '../serialization/version';
 import type { AssetRecord, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
 
+/** How the built-in enemy patrols: about 4 tiles each way from its start, ladders now and then, chasing the player it sees within 8 tiles. */
+export const ENEMY_PATROL = { speed: 60, distance: 128, turnAtLedges: true, climbLadders: true, chaseRange: 256 };
+
 export function createTransform(position: Vec2 = { x: 0, y: 0 }): Transform {
   return { position: { ...position }, rotation: 0, scale: { x: 1, y: 1 } };
 }
@@ -391,9 +394,10 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
         Collider: c('Collider', { size: { x: 30, y: 30 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
         Damage: c('Damage', { amount: 1 }),
+        Patrol: c('Patrol', ENEMY_PATROL),
       },
       ['enemy'],
-      'A basic enemy that hurts on contact.',
+      'A basic enemy that hurts on contact. It patrols near where it starts (sometimes up or down a ladder) and chases the player once it sees it.',
     ),
     createDefinition(
       'Coin',

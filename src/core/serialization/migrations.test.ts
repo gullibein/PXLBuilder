@@ -175,4 +175,19 @@ describe('format v2 -> v3', () => {
     const own = migrateProject({ formatVersion: 9, assets: [], scenes: [], definitions: [{ id: 'd', name: 'Teleporter', description: '', tags: [], metadata: {}, components: {} }] }) as unknown as Out;
     expect(own.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal']); // the game's own Teleporter is kept, not doubled
   });
+
+  it('v10 -> v11: the starter Enemy patrols and chases, unless it was given its own behavior or the game is top-down', async () => {
+    const { migrateProject } = await import('./migrations');
+    type Out = { definitions: { name: string; components: Record<string, Record<string, unknown>> }[] };
+    const enemy = (components: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ id: 'e', name: 'Enemy', description: '', tags: [], metadata: {}, components: { Damage: { amount: 1 }, ...components }, ...extra });
+    const base = { formatVersion: 10, assets: [], scenes: [] };
+    const plain = migrateProject({ ...base, definitions: [enemy({})] }) as unknown as Out;
+    expect(plain.definitions[0].components.Patrol).toMatchObject({ climbLadders: true, chaseRange: 256, distance: 128 });
+    const own = migrateProject({ ...base, definitions: [enemy({ Wander: { speed: 50 } })] }) as unknown as Out;
+    expect(own.definitions[0].components.Patrol).toBeUndefined();
+    const scripted = migrateProject({ ...base, definitions: [enemy({}, { scripts: [{ name: 'Hunt' }] })] }) as unknown as Out;
+    expect(scripted.definitions[0].components.Patrol).toBeUndefined();
+    const topDown = migrateProject({ ...base, gameType: 'topdown', definitions: [enemy({})] }) as unknown as Out;
+    expect(topDown.definitions[0].components.Patrol).toBeUndefined();
+  });
 });

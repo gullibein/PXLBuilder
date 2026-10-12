@@ -63,6 +63,13 @@ export interface RuntimeEntity {
   climbable: boolean;
   grounded: boolean;
   climbing: boolean;
+  /**
+   * Characters without a controller (enemies): which way it climbs a ladder (-1 up, 1 down, 0 holds still or
+   * isn't climbing), set by a script ("climb") or by chasing; it keeps going until the ladder's end or another
+   * order. `climbSpeed` in px/s.
+   */
+  climbDir: -1 | 0 | 1;
+  climbSpeed: number;
   coyote: number;
   jumpBuffer: number;
   spawn: Vec2;
@@ -155,7 +162,7 @@ function zoneOf(e: RuntimeEntity): Box {
   return { x: e.x, y: e.y, hw: (size.x * Math.abs(scale.x)) / 2, hh: (size.y * Math.abs(scale.y)) / 2 };
 }
 
-interface Ladder {
+export interface Ladder {
   x: number;
   hw: number;
   top: number;
@@ -201,7 +208,22 @@ const SHOOT_LOOK = 0.25;
 
 export interface Behaviors {
   /** dir: 1 right (or down when vertical), -1 left (or up). */
-  patrol: { speed: number; distance: number; turnAtLedges: boolean; originX: number; originY: number; dir: 1 | -1; vertical: boolean } | null;
+  patrol: {
+    speed: number;
+    distance: number;
+    turnAtLedges: boolean;
+    originX: number;
+    originY: number;
+    dir: 1 | -1;
+    vertical: boolean;
+    climbLadders: boolean;
+    chaseRange: number;
+    /** The ladder it last decided about (so it decides once per ladder it passes). */
+    lastLadder: string | null;
+    /** Chasing the player it saw, and for how long it has been out of sight. */
+    hunting: boolean;
+    lost: number;
+  } | null;
   jumper: { interval: number; jumpForce: number; t: number } | null;
   shooter: { trigger: 'auto' | 'key'; interval: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number } | null;
   mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
@@ -221,7 +243,22 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
   const mv = c.MovingPlatform;
   const t = c.Timer;
   return {
-    patrol: p ? { speed: num(p.speed, 60), distance: num(p.distance, 0), turnAtLedges: p.turnAtLedges !== false, originX: at.x, originY: at.y, dir: p.startDirection === 'left' || p.startDirection === 'up' ? -1 : 1, vertical: p.startDirection === 'up' || p.startDirection === 'down' } : null,
+    patrol: p
+      ? {
+          speed: num(p.speed, 60),
+          distance: num(p.distance, 0),
+          turnAtLedges: p.turnAtLedges !== false,
+          originX: at.x,
+          originY: at.y,
+          dir: p.startDirection === 'left' || p.startDirection === 'up' ? -1 : 1,
+          vertical: p.startDirection === 'up' || p.startDirection === 'down',
+          climbLadders: p.climbLadders === true,
+          chaseRange: num(p.chaseRange, 0),
+          lastLadder: null,
+          hunting: false,
+          lost: 0,
+        }
+      : null,
     jumper: j ? { interval: num(j.interval, 2), jumpForce: num(j.jumpForce, 300), t: 0 } : null,
     shooter: s
       ? {
@@ -314,6 +351,8 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     climbable: !!c.Climbable,
     grounded: false,
     climbing: false,
+    climbDir: 0,
+    climbSpeed: 80,
     coyote: 0,
     jumpBuffer: 0,
     spawn: { ...r.transform.position },
@@ -544,6 +583,7 @@ export class Runtime {
         }
       }
       if (e.controller) this.control(e, input, dt);
+      else if ((e.climbing || e.climbDir !== 0) && !this.floats(e)) this.climbAlong(e, dt);
       if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
         e.vx += this.gravity.x * e.gravityScale * dt;
         e.vy = Math.min(MAX_FALL_SPEED, e.vy + this.gravity.y * e.gravityScale * dt);
@@ -560,6 +600,7 @@ export class Runtime {
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => boxOf(p)!) : [];
         const base = others.length ? [...solids, ...others] : solids;
         const surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
+        const goingDown = e.vy > 0;
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
@@ -568,7 +609,11 @@ export class Runtime {
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
         // Climbing down onto the floor (or standing on it) ends the climb.
-        if (e.climbing && e.grounded && e.vy >= 0) e.climbing = false;
+        // (An enemy lining up with a ladder on the floor hasn't started down or up yet.)
+        if (e.climbing && e.grounded && e.vy >= 0 && (e.controller || goingDown || e.climbDir === 0)) {
+          e.climbing = false;
+          e.climbDir = 0;
+        }
       }
       // Without gravity nothing falls out of the level (a top-down character can walk below it).
       if (e.y > this.fallLimit && !this.floats(e)) this.respawn(e, 'fell');
@@ -909,6 +954,143 @@ export class Runtime {
       }
     }
     return best;
+  }
+
+  /**
+   * An enemy (no controller) climbing a ladder: it first lines up with the ladder's middle (so the edge of a
+   * platform beside the ladder can't catch it), then climbs, and stops standing on the top. With no direction it
+   * holds still on the ladder. Off a ladder the order is dropped.
+   */
+  private climbAlong(e: RuntimeEntity, dt: number): void {
+    const ladder = this.ladderAt(e);
+    const me = zoneOf(e);
+    if (!e.climbing) {
+      const atTop = ladder !== null && me.y + me.hh <= ladder.top + 0.5;
+      if (!ladder || (e.climbDir < 0 && atTop) || (e.climbDir > 0 && this.isOnFloorBelowLadder(e))) {
+        e.climbDir = 0;
+        return;
+      }
+      e.climbing = true;
+    }
+    if (!ladder) {
+      e.climbing = false;
+      e.climbDir = 0;
+      return;
+    }
+    const speed = e.climbSpeed * e.speedFactor;
+    e.grounded = false;
+    if (e.climbDir === 0) {
+      // Holding on: no falling; moving sideways (its own speed) steps off onto a floor beside the ladder.
+      e.vy = 0;
+      return;
+    }
+    const off = ladder.x - e.x;
+    if (Math.abs(off) > 0.5) {
+      e.vx = Math.max(-speed, Math.min(speed, off / dt));
+      e.vy = 0;
+      return;
+    }
+    e.x = ladder.x;
+    e.vx = 0;
+    e.vy = e.climbDir * speed;
+    if (e.climbDir < 0 && me.y + me.hh + e.vy * dt <= ladder.top) {
+      e.y = ladder.top - me.hh;
+      e.vy = 0;
+      e.climbing = false;
+      e.climbDir = 0;
+      e.grounded = true;
+    }
+  }
+
+  /** No wall between the middles of a and b. */
+  canSee(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.min(200, Math.ceil(d / 8));
+    for (let i = 1; i < steps; i++) {
+      const x = a.x + ((b.x - a.x) * i) / steps;
+      const y = a.y + ((b.y - a.y) * i) / steps;
+      if (this.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * One step of chasing `target` at `speed`: flyers go straight at it; walkers go sideways, and up or down by
+   * ladder when it is higher or lower (walk to a ladder going that way, line up, climb, step off level with it).
+   */
+  chase(f: RuntimeEntity, target: RuntimeEntity, speed: number): void {
+    const dx = target.x - f.x;
+    const dy = target.y - f.y;
+    if (this.floats(f)) {
+      const d = Math.hypot(dx, dy);
+      f.vx = d > 2 ? (dx / d) * speed : 0;
+      f.vy = d > 2 ? (dy / d) * speed : 0;
+      if (d > 2) f.heading = Math.abs(dy) > Math.abs(dx) ? { x: 0, y: Math.sign(dy) } : { x: Math.sign(dx), y: 0 };
+    } else {
+      const way = this.ladderWay(f, target);
+      f.climbSpeed = speed;
+      if (way && 'climb' in way) {
+        f.climbDir = way.climb;
+        f.vx = 0;
+      } else {
+        // Level with it on a ladder: hold on and step off sideways toward it.
+        if (f.climbing) f.climbDir = 0;
+        const goal = way ? way.walkTo - f.x : dx;
+        f.vx = Math.abs(goal) > 1 ? Math.sign(goal) * Math.min(speed, Math.abs(goal) * 60) : 0;
+      }
+    }
+    if (Math.abs(dx) > 2) f.facing = dx < 0 ? -1 : 1;
+  }
+
+  /** The ladder a character could climb where it is (public for behaviors). */
+  ladderHere(e: RuntimeEntity): Ladder | null {
+    return this.ladderAt(e);
+  }
+
+  /** Which ways a character standing at a ladder could climb it from here. */
+  ladderWays(e: RuntimeEntity, l: Ladder): { up: boolean; down: boolean } {
+    const me = zoneOf(e);
+    const feet = me.y + me.hh;
+    return { up: feet > l.top + 0.5, down: feet < l.bottom - 0.5 && !this.isOnFloorBelowLadder(e) };
+  }
+
+  /** Floor under this box: something solid, or the top of a ladder. */
+  floorIn(box: Box): boolean {
+    return this.solids.some((s) => overlaps(box, s)) || this.ladderTops.some((t) => overlaps(box, t));
+  }
+
+  /** Whether a character is on a ladder it could climb (or is climbing one). */
+  onLadder(e: RuntimeEntity): boolean {
+    return e.climbing || this.ladderAt(e) !== null;
+  }
+
+  /**
+   * For an enemy chasing something higher or lower (with gravity): which way to climb now, or where to walk to
+   * reach a ladder that goes that way (the nearest one from this floor); null when no ladder helps.
+   */
+  ladderWay(e: RuntimeEntity, target: RuntimeEntity): { climb: -1 | 1 } | { walkTo: number } | null {
+    const me = zoneOf(e);
+    const feet = me.y + me.hh;
+    const them = zoneOf(target);
+    // Where its feet are compared with the target's: on a ladder it climbs until level with them (then steps
+    // off); on the ground it looks for a ladder only when the target is clearly higher or lower.
+    const diff = them.y + them.hh - feet;
+    const near = e.climbing ? 2 : me.hh;
+    const want: -1 | 1 | 0 = diff < -near ? -1 : diff > near ? 1 : 0;
+    if (!want) {
+      // Level with a target standing on a floor, on a ladder: exactly level, so it steps off onto that floor.
+      if (e.climbing && target.grounded) e.y += diff;
+      return null;
+    }
+    const here = this.ladderAt(e);
+    if (here && (want < 0 ? feet > here.top + 0.5 : !this.isOnFloorBelowLadder(e) && feet < here.bottom - 0.5)) return { climb: want };
+    let best: Ladder | null = null;
+    for (const l of this.ladders) {
+      // Up: a ladder reaching this floor and going higher. Down: one whose top is this floor.
+      const ok = want < 0 ? l.top < feet - 1 && l.bottom >= feet - 1 : l.top <= feet + 2 && l.bottom > feet + 1;
+      if (ok && (!best || Math.abs(l.x - e.x) < Math.abs(best.x - e.x))) best = l;
+    }
+    return best ? { walkTo: best.x } : null;
   }
 
   /** Standing on solid ground with the ladder going up: pressing down shouldn't start a climb into the floor. */

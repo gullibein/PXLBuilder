@@ -305,6 +305,14 @@ export class ScriptSystem {
         if (t && d !== 0) t.facing = d < 0 ? -1 : 1;
         break;
       }
+      case 'climb': {
+        const t = ent(s.on);
+        if (!t || t.controller) break;
+        const d = n(s.dir);
+        t.climbDir = d < 0 ? -1 : d > 0 ? 1 : 0;
+        if (s.speed) t.climbSpeed = Math.max(0, n(s.speed));
+        break;
+      }
       case 'gravity': {
         const t = ent(s.on);
         if (t) t.gravityScale = n(s.scale);
@@ -725,13 +733,7 @@ export class ScriptSystem {
       }
       case 'can_see': {
         const a = asEntity(v[0]);
-        if (!a) return false;
-        const d = Math.hypot(a.x - self.x, a.y - self.y);
-        const steps = Math.min(200, Math.ceil(d / 8));
-        for (let i = 1; i < steps; i++) {
-          if (this.solidAt(self.x + ((a.x - self.x) * i) / steps, self.y + ((a.y - self.y) * i) / steps)) return false;
-        }
-        return true;
+        return !!a && this.rt.canSee(self, a);
       }
       case 'touching': {
         const tag = show(v[0]);
@@ -739,6 +741,10 @@ export class ScriptSystem {
         const box = who && this.rt.boxOf(who);
         if (!who || !box) return false;
         return this.rt.entities.some((o) => o !== who && o.alive && !o.projectile && o.tags.includes(tag) && boxesOverlap(box, this.rt.boxOf(o)));
+      }
+      case 'on_ladder': {
+        const who = v.length ? asEntity(v[0]) : self;
+        return !!who && this.rt.onLadder(who);
       }
       case 'overlaps': {
         const a = asEntity(v[0]);
@@ -821,7 +827,7 @@ function show(v: Value): string {
 }
 
 function member(e: RuntimeEntity | null, name: string): Value {
-  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'open' || name === 'on' ? false : 0;
+  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'climbing' || name === 'open' || name === 'on' ? false : 0;
   switch (name) {
     case 'x':
       return e.x;
@@ -837,6 +843,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.collider ? e.collider.hh * 2 : 0;
     case 'grounded':
       return e.grounded;
+    case 'climbing':
+      return e.climbing;
     case 'facing':
       return e.facing;
     case 'angle':

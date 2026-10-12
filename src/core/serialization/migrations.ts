@@ -1,7 +1,7 @@
 import { componentRegistry } from '../components/builtin';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
-import { createStarterAssets, createStarterDefinitions, SPIKES_ART_V8_ROWS } from '../model/factory';
+import { createStarterAssets, createStarterDefinitions, ENEMY_PATROL, SPIKES_ART_V8_ROWS } from '../model/factory';
 import { FORMAT_VERSION } from './version';
 
 /**
@@ -283,6 +283,24 @@ function migrateV9toV10(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v10 -> v11
+ * - The built-in side-view Enemy patrols near its start (now and then up or down a ladder) and chases the
+ *   player it sees. Given to a game's Enemy only when it still does nothing on its own (no Patrol, Wander,
+ *   Jumper or scripts) and the game isn't top-down; a changed enemy keeps what it does.
+ */
+function migrateV10toV11(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  if (project.gameType === 'topdown') return project;
+  for (const d of project.definitions ?? []) {
+    const c = d.components ?? {};
+    if ((d.metadata?.starter ?? d.name) !== 'Enemy' || c.Patrol || c.Wander || c.Jumper || c.CharacterController || (d.scripts ?? []).length) continue;
+    c.Patrol = { ...ENEMY_PATROL, startDirection: 'right' };
+    d.components = c;
+  }
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -293,6 +311,7 @@ export const MIGRATIONS: Migration[] = [
   { from: 7, to: 8, migrate: migrateV7toV8 },
   { from: 8, to: 9, migrate: migrateV8toV9 },
   { from: 9, to: 10, migrate: migrateV9toV10 },
+  { from: 10, to: 11, migrate: migrateV10toV11 },
 ];
 
 export class MigrationError extends Error {

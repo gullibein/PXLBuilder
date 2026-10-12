@@ -227,7 +227,11 @@ function stubModel(body) {
     return { kind: 'apply', message: 'Drew a jumping sprite; it shows while the player is in the air.', changes: ['Player: jumping sprite'], operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Player jumping', palette, rows, situation: 'jump' }] };
   }
   if (req.includes('patrol')) {
-    return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: [{ op: 'add_component', ...own(t[0]), component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }] };
+    // (Like the AI: an enemy that already patrols gets its distance changed.)
+    const ops = t[0].components?.Patrol
+      ? [{ op: 'set_component_field', ...own(t[0]), component: 'Patrol', field: 'distance', valueJson: '64' }]
+      : [{ op: 'add_component', ...own(t[0]), component: 'Patrol', propsJson: '{"speed":60,"distance":64}' }];
+    return { kind: 'apply', message: 'The enemy now walks back and forth, turning at walls and ledges.', changes: [`${t[0].name}: patrols`], operations: ops };
   }
   if (req.includes('jetpack')) {
     return { kind: 'unsupported', message: "Enemies can't fly with a jetpack yet: jetpacks aren't in this version.", changes: [], operations: [] };

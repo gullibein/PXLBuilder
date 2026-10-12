@@ -10,6 +10,9 @@ import type { InputState } from './input';
 import { moveAndCollide, overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
 
+/** A chasing patroller gives up after this many seconds without seeing its target. */
+const LOSE_SIGHT = 3;
+
 /** At most this many shots in the air at once (oldest shots aren't removed; new ones just aren't fired). */
 const MAX_SHOTS = 100;
 
@@ -23,7 +26,7 @@ export class BehaviorSystem {
       if (!e.alive) continue;
       const b = e.beh;
       if (b.mover) this.moveOnPath(e, dt);
-      if (b.patrol && !e.chasing && e.invincible <= 0) this.patrol(e);
+      if (b.patrol && !e.chasing && e.invincible <= 0) this.patrol(e, dt);
       if (b.wander && !b.patrol && !e.chasing && e.invincible <= 0) this.wander(e, dt);
       if (b.jumper && e.body === 'dynamic' && !this.rt.floats(e)) {
         b.jumper.t += dt;
@@ -76,8 +79,12 @@ export class BehaviorSystem {
     if (removed) this.rt.entities = this.rt.entities.filter((e) => e.alive || !e.projectile);
   }
 
-  /** Walks (or flies) back and forth: turns at walls, at ledges and after `distance`. */
-  private patrol(e: RuntimeEntity): void {
+  /**
+   * Walks (or flies) back and forth: turns at walls, at ledges and after `distance` from its start. With
+   * climbLadders it now and then climbs a ladder it walks past; with chaseRange it chases the player once it sees
+   * it, and patrols again after losing sight of it for a while.
+   */
+  private patrol(e: RuntimeEntity, dt: number): void {
     const p = e.beh.patrol!;
     if (e.body === 'static' || e.body === 'none') {
       // Something that never moved on its own now does: it moves without gravity.
@@ -86,7 +93,48 @@ export class BehaviorSystem {
     }
     const box = this.rt.boxOf(e);
     const floats = this.rt.floats(e) || e.body !== 'dynamic';
+    if (p.chaseRange > 0) {
+      const target = this.nearestPlayer(e);
+      const d = target ? Math.hypot(target.x - e.x, target.y - e.y) : Infinity;
+      if (target && d <= p.chaseRange && this.rt.canSee(e, target)) {
+        p.hunting = true;
+        p.lost = 0;
+      } else if (p.hunting) {
+        p.lost += dt;
+        if (!target || p.lost > LOSE_SIGHT || d > p.chaseRange * 2) p.hunting = false;
+      }
+      if (p.hunting && target) {
+        this.rt.chase(e, target, p.speed * e.speedFactor);
+        e.heading = { x: e.facing, y: 0 };
+        return;
+      }
+    }
     if (p.vertical && floats) return this.patrolUpDown(e, box);
+    if (e.climbing) {
+      // On a ladder (it chose to climb, or stopped chasing on one): on to its end.
+      if (e.climbDir === 0) e.climbDir = -1;
+      return;
+    }
+    if (p.climbLadders && !floats && e.grounded) {
+      const l = this.rt.ladderHere(e);
+      if (!l) p.lastLadder = null;
+      else {
+        const key = `${l.x},${l.top}`;
+        const ahead = (l.x - e.x) * p.dir;
+        // Passing the ladder's middle: decide once whether to climb it (about half the time), and which way.
+        if (p.lastLadder !== key && ahead <= p.speed * e.speedFactor * dt + 1) {
+          p.lastLadder = key;
+          const ways = this.rt.ladderWays(e, l);
+          const choices = [...(ways.up ? [-1 as const] : []), ...(ways.down ? [1 as const] : [])];
+          if (choices.length && this.rt.random() < 0.5) {
+            e.climbDir = choices[Math.floor(this.rt.random() * choices.length) % choices.length];
+            e.climbSpeed = p.speed;
+            e.vx = 0;
+            return;
+          }
+        }
+      }
+    }
     let turn = e.bumped === p.dir;
     if (p.distance > 0 && (e.x - p.originX) * p.dir >= p.distance) turn = true;
     if (box && !turn) {
@@ -95,8 +143,9 @@ export class BehaviorSystem {
       if (this.rt.solids.some((s) => overlaps(front, s))) turn = true;
       // No floor ahead (walkers only, and only while on the ground).
       else if (p.turnAtLedges && !floats && e.grounded) {
+        // (The top of a ladder is floor: it walks over it.)
         const below: Box = { x: box.x + p.dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 };
-        if (!this.rt.solids.some((s) => overlaps(below, s))) turn = true;
+        if (!this.rt.floorIn(below)) turn = true;
       }
     }
     if (turn) p.dir = p.dir === 1 ? -1 : 1;
@@ -139,6 +188,21 @@ export class BehaviorSystem {
     if (floats) e.vy = w.dy * w.speed * e.speedFactor;
     if (w.dx !== 0) e.facing = w.dx as 1 | -1;
     if (w.dx !== 0 || w.dy !== 0) e.heading = { x: w.dx, y: w.dy };
+  }
+
+  /** The nearest living player-controlled character (what a patroller chases). */
+  private nearestPlayer(e: RuntimeEntity): RuntimeEntity | null {
+    let best: RuntimeEntity | null = null;
+    let bestD = Infinity;
+    for (const o of this.rt.entities) {
+      if (o === e || !o.alive || !o.controller) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d < bestD) {
+        best = o;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /** Up and down (no gravity): turns at walls above and below and after `distance`. */

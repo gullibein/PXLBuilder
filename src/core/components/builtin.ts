@@ -194,13 +194,15 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Patrol',
     label: 'Patrol',
-    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Without gravity (gravityScale 0, or a level with no gravity) it flies back and forth. startDirection up or down: it goes up and down instead (only without gravity, e.g. in a top-down level).',
+    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Can climb ladders on its way (climbLadders) and chase the player once it sees it (chaseRange). Without gravity (gravityScale 0, or a level with no gravity) it flies back and forth. startDirection up or down: it goes up and down instead (only without gravity, e.g. in a top-down level).',
     category: 'Behavior',
     fields: {
       speed: { kind: 'number', default: 60, min: 0, step: 10, description: 'Pixels per second (the player runs at 200)' },
       distance: { kind: 'number', default: 0, min: 0, step: 32, description: 'How far it goes each way from its start, in pixels (32 = one tile); 0 = until a wall or ledge' },
       turnAtLedges: { kind: 'boolean', default: true, description: 'Turn around instead of walking off a ledge' },
       startDirection: { kind: 'enum', options: ['right', 'left', 'up', 'down'], default: 'right', description: 'right/left: back and forth sideways; up/down: up and down (without gravity only)' },
+      climbLadders: { kind: 'boolean', default: false, description: 'Now and then climbs a ladder it walks past (up or down, lined up with the ladder), then patrols on that floor' },
+      chaseRange: { kind: 'number', default: 0, min: 0, step: 32, description: 'Chases the player when it sees it (no wall between) within this many pixels, using ladders; goes back to patrolling after losing sight of it for a few seconds. 0 = never chases' },
     },
   },
   {

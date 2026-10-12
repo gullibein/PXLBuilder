@@ -46,6 +46,7 @@ export type Stmt =
   | { do: 'position'; x: string; y: string; on: string | null }
   | { do: 'jump'; force: string; on: string | null }
   | { do: 'face'; dir: string; on: string | null }
+  | { do: 'climb'; dir: string; speed: string | null; on: string | null }
   | { do: 'gravity'; scale: string; on: string | null }
   | { do: 'speed_factor'; value: string; on: string | null }
   | { do: 'shoot'; dx: string; dy: string; speed: string; damage: string; range: string; object: string | null }
@@ -152,6 +153,7 @@ export const MEMBERS: Record<string, string> = {
   width: 'width (px)',
   height: 'height (px)',
   grounded: 'standing on something',
+  climbing: 'on a ladder, climbing or holding on',
   facing: '1 facing right, -1 facing left',
   angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
@@ -206,6 +208,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   can_see: { args: 'e', min: 1, max: 1, doc: 'no wall between self and e' },
   touching: { args: 'tag, e?', min: 1, max: 2, doc: 'self (or e) overlaps a living entity with the tag right now: touching("water"), touching("water", other)' },
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
+  on_ladder: { args: 'e?', min: 0, max: 1, doc: 'self (or e) is at a ladder it can climb (at least half of it in the ladder\'s width), or climbing one' },
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
   field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
   has_component: { args: 'e, "Component"', min: 2, max: 2, doc: 'e has that component now' },
@@ -228,6 +231,10 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   position: { example: '{"do":"position","x":"self.x","y":"self.y - 32"}', doc: 'jump to a point instantly' },
   jump: { example: '{"do":"jump","force":"320"}', doc: 'leap up (sets vy = -force); usually guarded with self.grounded' },
   face: { example: '{"do":"face","dir":"sign(dx(player))"}', doc: '1 = right, -1 = left (drawn mirrored)' },
+  climb: {
+    example: '{"do":"climb","dir":"-1","speed":"80"}',
+    doc: 'climb the ladder it is at (on_ladder()): dir -1 up, 1 down, 0 hold still on it. It first lines up with the ladder\'s middle (so platform edges beside the ladder can\'t catch it), then climbs on by itself until the ladder\'s top (standing on it) or the floor, or another climb; speed null = 80. Setting a sideways velocity while holding (dir 0) steps off. For enemies (the player climbs with Up/Down)',
+  },
   gravity: { example: '{"do":"gravity","scale":"0.3","on":"other"}', doc: 'change a gravity scale (0 = floats, 1 = normal); it stays until changed again (or it respawns)' },
   speed_factor: { example: '{"do":"speed_factor","value":"0.4","on":"other"}', doc: 'scale how fast it walks/runs: 1 normal, 0.4 slow (water, mud), 1.5 fast; works on the player (whose own running speed is otherwise fixed) and on patrollers; stays until changed (or it respawns)' },
   shoot: { example: '{"do":"shoot","dx":"self.facing","dy":"0","speed":"260","damage":"1","range":"400","object":null}', doc: 'fire a shot in direction (dx, dy) (normalized). It hurts like this entity (same tags + "projectile") through normal damage rules, never its shooter, and vanishes on hits and walls. object: a library object id to fire, or null for a small built-in shot' },
@@ -299,6 +306,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('position'), x: expr, y: expr, on: nexpr }),
     z.object({ do: z.literal('jump'), force: expr, on: nexpr }),
     z.object({ do: z.literal('face'), dir: expr, on: nexpr }),
+    z.object({ do: z.literal('climb'), dir: expr, speed: nexpr, on: nexpr }),
     z.object({ do: z.literal('gravity'), scale: expr, on: nexpr }),
     z.object({ do: z.literal('speed_factor'), value: expr, on: nexpr }),
     z.object({
@@ -419,6 +427,8 @@ export function exprSlots(s: Stmt): string[] {
       return [s.force, ...(s.on ? [s.on] : [])];
     case 'face':
       return [s.dir, ...(s.on ? [s.on] : [])];
+    case 'climb':
+      return [s.dir, ...(s.speed ? [s.speed] : []), ...(s.on ? [s.on] : [])];
     case 'gravity':
       return [s.scale, ...(s.on ? [s.on] : [])];
     case 'speed_factor':
@@ -602,7 +612,7 @@ ${Object.entries(TRIGGERS)
   .join('\n')}
 
 Statements ("do"); every value is an expression given as a JSON string ("90", "self.vx * -1", "\\"left\\"")
-Movement and look statements (velocity, push, glide_to, position, jump, face, gravity, speed_factor, alpha) act on this entity, or on another one given by "on" (an expression: "other", "it", "player", nearest("enemy")). A zone that affects what enters it (water, wind, a trampoline, a conveyor belt) does it with "on": "other" in its touch handlers, or "on": "it" inside "each" with overlaps(it).
+Movement and look statements (velocity, push, glide_to, position, jump, face, climb, gravity, speed_factor, alpha) act on this entity, or on another one given by "on" (an expression: "other", "it", "player", nearest("enemy")). A zone that affects what enters it (water, wind, a trampoline, a conveyor belt) does it with "on": "other" in its touch handlers, or "on": "it" inside "each" with overlaps(it).
 ${Object.entries(STATEMENTS)
   .map(([k, s]) => `  ${k}: ${s.doc}. ${s.example}`)
   .join('\n')}

@@ -86,6 +86,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`${who(s.on)}jump (${x(s.force)})`);
     case 'face':
       return one(`${who(s.on)}face ${x(s.dir)}`);
+    case 'climb':
+      return one(`${who(s.on)}climb ${x(s.dir)}${s.speed ? ` at ${x(s.speed)}` : ''}`);
     case 'gravity':
       return one(`${who(s.on)}gravity × ${x(s.scale)}`);
     case 'speed_factor':

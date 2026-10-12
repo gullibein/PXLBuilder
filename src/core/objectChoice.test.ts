@@ -11,6 +11,10 @@ const registry = createBuiltinRegistry();
 
 function twoEnemies() {
   let project = createProject(registry);
+  // An enemy without a patrol (the change under test adds one).
+  project = produce(project, (d) => {
+    delete d.definitions.find((x) => x.name === 'Enemy')!.components.Patrol;
+  });
   const sceneId = project.scenes[0].id;
   const enemy = project.definitions.find((d) => d.name === 'Enemy')!;
   const a = instantiateDefinition(enemy, { x: 0, y: 0 });

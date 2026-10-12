@@ -110,18 +110,8 @@ export class Gameplay {
           if (flying) f.vy = 0;
           continue;
         }
-        const dx = best.x - f.x;
-        const dy = best.y - f.y;
-        if (flying) {
-          const d = Math.hypot(dx, dy);
-          f.vx = d > 2 ? (dx / d) * speed : 0;
-          f.vy = d > 2 ? (dy / d) * speed : 0;
-          if (d > 2) f.heading = Math.abs(dy) > Math.abs(dx) ? { x: 0, y: Math.sign(dy) } : { x: Math.sign(dx), y: 0 };
-        } else {
-          f.vx = Math.abs(dx) > 2 ? Math.sign(dx) * speed : 0;
-        }
+        this.rt.chase(f, best, speed);
         f.chasing = true;
-        if (Math.abs(dx) > 2) f.facing = dx < 0 ? -1 : 1;
       }
     }
   }

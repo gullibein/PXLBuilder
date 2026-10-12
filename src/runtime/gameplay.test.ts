@@ -4,7 +4,7 @@ import { createBuiltinRegistry } from '../core/components/builtin';
 import * as logic from '../core/logic/mutations';
 import { SCRIPT_EXAMPLES } from '../core/script/examples';
 import { setScript } from '../core/script/mutations';
-import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
+import { createDefinition, createProject, ENEMY_PATROL, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
@@ -27,6 +27,8 @@ function level(extra: (b: Builder) => void = () => {}) {
   let project = createProject(registry);
   const sceneId = project.scenes[0].id;
   project = produce(project, (d) => {
+    // The tests give the enemy what it does themselves: here it stands still (the built-in one patrols).
+    delete d.definitions.find((x) => x.name === 'Enemy')!.components.Patrol;
     const def = (name: string) => d.definitions.find((x) => x.name === name)!.id;
     const place = (name: string, pos: Vec2, as?: string) => {
       const e = instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos, as);
@@ -1190,5 +1192,94 @@ describe('the play recorder (for debugging)', () => {
     const report = rec.report();
     expect(report.restarts).toBe(1);
     expect(report.events.filter((e) => e.type === 'level_started')).toHaveLength(2);
+  });
+});
+
+describe('enemies on ladders', () => {
+  /**
+   * Lode Runner style: the ground (top 32), an upper floor (top -128) with a one-tile gap at x=80 where a ladder
+   * comes up from the ground (pieces y=16..-112). An enemy is placed off the ladder's middle.
+   */
+  function ladderLevel(enemyX: number, more: (b: Builder, enemy: string) => void = () => {}) {
+    return level((b) => {
+      for (let x = -144; x <= 144; x += 32) if (x !== 80) b.place('Platform', { x, y: -112 });
+      for (let y = 16; y >= -112; y -= 32) b.place('Ladder', { x: 80, y });
+      more(b, b.place('Enemy', { x: enemyX, y: 17 }));
+    });
+  }
+  const onUpperFloor = (e: { y: number }) => Math.abs(e.y - (-128 - 15)) < 1;
+  /** The built-in enemy's patrol (level() takes it away for the other tests). */
+  const builtin = (b: Builder) => m.addDefinitionComponent(b.d, b.def('Enemy'), 'Patrol', registry, ENEMY_PATROL);
+
+  it('a script\'s "climb" lines the enemy up with the ladder first, so the floor beside the gap can\'t stop it', () => {
+    // 14px right of the middle: half of it is on the ladder, but going straight up it would hit the floor's edge.
+    const { rt, input } = ladderLevel(94, (b, id) =>
+      setScript(b.d, { target: 'instance', id }, { name: 'Up', handlers: [{ when: { on: 'start' }, do: [{ do: 'climb', dir: '-1', speed: '80', on: null }] }] }),
+    );
+    const e = rt.find('Enemy')!;
+    run(rt, input, 0.3);
+    expect(e.climbing).toBe(true);
+    run(rt, input, 3);
+    expect(onUpperFloor(e)).toBe(true);
+    expect(e.x).toBeCloseTo(80, 5);
+    expect(e.climbing).toBe(false);
+    expect(e.grounded).toBe(true);
+  });
+
+  it('a chasing enemy walks to the ladder, climbs it and goes after the player on the floor above', () => {
+    const { rt, input } = ladderLevel(-60, (b, id) =>
+      logic.addRelationship(b.d, b.sceneId, { type: 'follows', source: { kind: 'entity', id }, target: { kind: 'object', id: b.def('Player') }, params: { speed: 80, range: 0 }, conditions: [] }),
+    );
+    const p = rt.find('Player')!;
+    p.x = -100;
+    p.y = -128 - 16;
+    const e = rt.find('Enemy')!;
+    let climbed = false;
+    run(rt, input, 8, () => {
+      if (e.climbing) climbed = true;
+    });
+    expect(climbed).toBe(true);
+    expect(onUpperFloor(e)).toBe(true);
+    // Then along the upper floor toward the player.
+    expect(e.x).toBeLessThan(0);
+  });
+
+  it('the built-in enemy patrols near its start, now and then up or down a ladder, and chases the player it sees', () => {
+    const { rt, input } = ladderLevel(20, builtin);
+    const e = rt.find('Enemy')!;
+    const p = rt.find('Player')!;
+    // Keep the player out of sight (far away behind the upper floor) for now.
+    p.x = -140;
+    p.y = -128 - 16;
+    rt.random = (() => {
+      let s = 1;
+      return () => ((s = (s * 16807) % 2147483647) / 2147483647);
+    })();
+    let highest = Infinity;
+    let farthest = 0;
+    run(rt, input, 30, () => {
+      highest = Math.min(highest, e.y);
+      if (Math.abs(e.y - (32 - 15)) < 2) farthest = Math.max(farthest, Math.abs(e.x - 20));
+    });
+    // It went up the ladder at some point, and on the ground it stayed within its 4 tiles (+ its half width).
+    expect(highest).toBeLessThan(-100);
+    expect(farthest).toBeLessThanOrEqual(128 + 16);
+  });
+
+  it('a patrolling enemy starts chasing when it sees the player, and gives up after losing it', () => {
+    const { rt, input } = level((b) => {
+      builtin(b);
+      b.place('Enemy', { x: 120, y: 17 });
+    });
+    const e = rt.find('Enemy')!;
+    const p = rt.find('Player')!;
+    run(rt, input, 0.5);
+    expect(e.beh.patrol!.hunting).toBe(true); // the player is 120px away on the same floor, nothing between
+    expect(Math.sign(e.vx)).toBe(-1);
+    // The player goes far away: after a few seconds it patrols again.
+    p.x = 2000;
+    p.y = -2000;
+    run(rt, input, 0.1);
+    expect(e.beh.patrol!.hunting).toBe(false);
   });
 });

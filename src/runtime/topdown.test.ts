@@ -26,6 +26,8 @@ function room(extra: (p: Project, sceneId: string, place: (name: string, pos: Ve
       return e.id;
     };
     m.setWorldSettings(d, sceneId, { gravity: { x: 0, y: gravity } });
+    // The tests give the enemy what it does themselves (the built-in one patrols).
+    delete d.definitions.find((x) => x.name === 'Enemy')!.components.Patrol;
     m.setDefinitionComponentField(d, d.definitions.find((x) => x.name === 'Player')!.id, 'CharacterController', 'movement', 'topdown', registry);
     for (let i = -3; i <= 3; i++) {
       place('Stone', { x: -96, y: i * 32 });
