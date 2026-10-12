@@ -10,7 +10,7 @@
 import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
-import { createAnimatedPixelArtAsset, createDefinition, instantiateDefinition, MAX_FRAMES } from '../model/factory';
+import { createAnimatedPixelArtAsset, createDefinition, createLevelFor, instantiateDefinition, MAX_FRAMES } from '../model/factory';
 import { buildPath } from './buildPath';
 import { parseSoundRecipe, soundDataUrl } from '../audio/sound';
 import { generateId } from '../ids';
@@ -92,6 +92,11 @@ export const operationSchema = z.union([
     category: z.string(),
     tags: z.array(z.string()),
     components: z.array(z.object({ component: z.string(), propsJson: z.string() })),
+  }),
+  z.object({
+    op: z.literal('create_level'),
+    ref: z.string().describe('Temporary name for the new level, usable as sceneId in later operations of this list (place_instance, build_path, draw_tiles, set_world, create_rule…)'),
+    name: z.string().describe('Its name, e.g. "Level 2" or "The Mines"'),
   }),
   z.object({
     op: z.literal('place_instance'),
@@ -262,6 +267,8 @@ export interface ApplyResult {
   createdRuleIds: Id[];
   removedEntityIds: Id[];
   createdAssetIds: Id[];
+  /** New levels (create_level), in order. */
+  createdSceneIds: Id[];
 }
 
 /** Largest number of cells one draw_tiles may fill. */
@@ -417,7 +424,9 @@ export function applyOperations(
 ): ApplyResult {
   const refs = new Map<string, Id>();
   const entityRefs = new Map<string, Id>();
-  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
+  /** Levels made earlier in this list, by their ref. */
+  const levelRefs = new Map<string, Id>();
+  const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [], createdSceneIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
 
   const applyOne = (given: Operation): void => {
@@ -428,6 +437,7 @@ export function applyOperations(
       if (id) op = { ...op, id } as Operation;
     }
     if (op.op === 'set_transform' && entityRefs.has(op.entityId)) op = { ...op, entityId: entityRefs.get(op.entityId)! };
+    if ('sceneId' in op && levelRefs.has(op.sceneId)) op = { ...op, sceneId: levelRefs.get(op.sceneId)! } as Operation;
     switch (op.op) {
       case 'set_component_field': {
         const value = parseJson(op.valueJson, `${op.component}.${op.field} value`);
@@ -499,6 +509,15 @@ export function applyOperations(
         m.addDefinition(project, def, registry);
         refs.set(op.ref, def.id);
         result.createdDefinitionIds.push(def.id);
+        break;
+      }
+      case 'create_level': {
+        if (levelRefs.has(op.ref)) throw new m.ModelError(`Two new levels are called "${op.ref}"; give each its own ref`);
+        if (!op.name.trim()) throw new m.ModelError('A new level needs a name');
+        const scene = createLevelFor(project, op.name.trim());
+        m.addScene(project, scene);
+        levelRefs.set(op.ref, scene.id);
+        result.createdSceneIds.push(scene.id);
         break;
       }
       case 'place_instance': {

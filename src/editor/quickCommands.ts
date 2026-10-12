@@ -14,7 +14,7 @@ import { resolveSceneEntities } from './selectors';
 import type { PromptOutcome } from './ai/runPrompt';
 import { useEditor } from './store';
 
-const NONE: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
+const NONE: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [], createdSceneIds: [] };
 
 /** Copied placed objects (as they were when copied), and how many times they've been pasted since. */
 let clipboard: { entities: EntityInstance[]; pasted: number } | null = null;

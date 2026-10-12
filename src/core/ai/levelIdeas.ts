@@ -21,7 +21,12 @@ export interface LevelDesignIdea {
   goal: string;
   /** The shapes of the game's other levels (don't build the same again). */
   otherLevels: string[];
+  /** For new levels made in the same answer (create_level): one different idea each, in order. */
+  forNewLevels: { layout: { name: string; how: string }; start: string; goal: string }[];
 }
+
+/** How many ideas for new levels each request carries. */
+const NEW_LEVEL_IDEAS = 4;
 
 /** Side-view (platformer) layouts, each with how to build it with build_path. */
 const SIDE_LAYOUTS: { name: string; how: string }[] = [
@@ -119,12 +124,22 @@ export function levelShape(project: Project, scene: Scene, registry: ComponentRe
 export function levelDesignIdea(project: Project, scene: Scene, registry: ComponentRegistry, random: () => number): LevelDesignIdea {
   const topDown = isTopDownScene(project, scene, registry);
   const pick = <T,>(list: T[]) => list[Math.floor(random() * list.length) % list.length];
-  const layout = pick(topDown ? TOPDOWN_LAYOUTS : SIDE_LAYOUTS);
-  const mirrored = random() < 0.5;
+  const layouts = topDown ? TOPDOWN_LAYOUTS : SIDE_LAYOUTS;
+  // Different layouts for this level and each new one (in a random order; repeats only past the list's end).
+  const order = layouts.map((l) => ({ l, k: random() })).sort((a, b) => a.k - b.k).map((x) => x.l);
+  const idea = (i: number) => {
+    const layout = order[i % order.length];
+    const mirrored = random() < 0.5;
+    return {
+      layout: { name: layout.name, how: topDown ? layout.how : `${layout.how}${mirrored ? ' Build it mirrored: the main direction is LEFT (direction "left").' : ''}` },
+      start: pick(topDown ? TD_STARTS : SIDE_STARTS),
+      goal: pick(topDown ? TD_GOALS : SIDE_GOALS),
+    };
+  };
+  const first = idea(0);
   return {
-    layout: { name: layout.name, how: topDown ? layout.how : `${layout.how}${mirrored ? ' Build it mirrored: the main direction is LEFT (direction "left").' : ''}` },
-    start: pick(topDown ? TD_STARTS : SIDE_STARTS),
-    goal: pick(topDown ? TD_GOALS : SIDE_GOALS),
+    ...first,
+    forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => idea(i + 1)),
     otherLevels: project.scenes.filter((s) => s.id !== scene.id).flatMap((s) => {
       const shape = levelShape(project, s, registry);
       return shape ? [`${s.name}: ${shape}`] : [];

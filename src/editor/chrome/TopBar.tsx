@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createScene } from '../../core/model/factory';
+import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
 import { addScene, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
@@ -127,7 +127,7 @@ function SceneSelector() {
             className="menu-row"
             data-testid="new-scene"
             onClick={() => {
-              const scene = createScene(`Level ${scenes.length + 1}`);
+              const scene = createLevelFor(useEditor.getState().project, `Level ${scenes.length + 1}`, scenes.find((s) => s.id === useEditor.getState().activeSceneId));
               if (edit('New level', (p) => addScene(p, scene))) setActiveScene(scene.id);
               setOpen(false);
             }}

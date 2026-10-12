@@ -73,6 +73,24 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('with three levels')) {
+    // Two new levels, each with its own player, a route and a goal.
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const level = (ref, name, steps) => [
+      { op: 'create_level', ref, name },
+      { op: 'place_instance', sceneId: ref, definitionRef: lib('Player'), x: 16, y: -16, name: null, ref: null },
+      { op: 'build_path', sceneId: ref, start: null, direction: 'right', floor: 'Platform', ladder: null, steps: [...steps, { do: 'put', object: 'Goal', name: null, ref: null }] },
+    ];
+    return {
+      kind: 'apply',
+      message: 'Made two more levels.',
+      changes: ['The Mines: a long run', 'The Tower: up a ladder'],
+      operations: [
+        ...level('L2', 'The Mines', [{ do: 'run', cells: 6 }]),
+        ...level('L3', 'The Tower', [{ do: 'run', cells: 2 }, { do: 'climb', rows: 3 }, { do: 'run', cells: 3 }]),
+      ],
+    };
+  }
   if (req.includes('route with a ladder')) {
     return {
       kind: 'preview',
@@ -1412,6 +1430,28 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await entities()) === n0, '(back as it was)');
     await page.keyboard.press('Escape');
+  }
+
+  step = 'more levels';
+  {
+    const levelsBefore = await page.evaluate(() => 0);
+    await page.getByTestId('global-prompt-toggle').click();
+    const gp = page.getByTestId('global-prompt');
+    await gp.getByTestId('prompt-input').fill('Make me a Lode Runner clone with three levels');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await check(aiRequests.at(-1).context.level.design.forNewLevels.length >= 2 && new Set(aiRequests.at(-1).context.level.design.forNewLevels.map((i) => i.layout.name)).size >= 2, 'the AI gets a different layout idea for each new level');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('scene-selector').click();
+    const menu = page.getByTestId('scene-menu');
+    await check(async () => (await menu.innerText()).includes('The Mines') && (await menu.innerText()).includes('The Tower'), '"… with three levels": the AI makes the new levels (create_level), after the existing one');
+    await menu.getByRole('menuitem', { name: 'The Tower' }).click();
+    await check(async () => Number(await canvas.getAttribute('data-entities')) >= 10, 'the new level is built: a player, a route with a ladder, a goal');
+    await page.getByTestId('undo').click();
+    await page.getByTestId('scene-selector').click();
+    await check(async () => !(await menu.innerText()).includes('The Mines') && !(await menu.innerText()).includes('The Tower'), 'one Undo takes all the new levels away');
+    await page.keyboard.press('Escape');
+    void levelsBefore;
   }
 
   step = 'typed commands';

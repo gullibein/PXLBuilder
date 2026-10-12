@@ -337,3 +337,37 @@ describe('drawing levels', () => {
     expect(payload.level.playerReach!.runningJumpDistanceTiles).toBeCloseTo(4.5, 1);
   });
 });
+
+describe('create_level: the AI makes more levels', () => {
+  it('adds levels after the existing ones and builds them in the same answer (their ref is the sceneId)', () => {
+    let project = createProject(registry);
+    // A top-down game: its new levels have no gravity either.
+    project = produce(project, (d) => {
+      d.scenes[0].world.gravity = { x: 0, y: 0 };
+    });
+    const player = project.definitions.find((d) => d.name === 'Player')!.id;
+    const platform = project.definitions.find((d) => d.name === 'Platform')!.id;
+    const ops = operationSchema.array().parse([
+      { op: 'create_level', ref: 'L2', name: 'The Mines' },
+      { op: 'place_instance', sceneId: 'L2', definitionRef: player, x: 16, y: 16, name: null, ref: null },
+      { op: 'draw_tiles', sceneId: 'L2', definitionRef: platform, rects: [{ col: -2, row: 1, width: 6, height: 1 }] },
+      { op: 'create_level', ref: 'L3', name: 'The Tower' },
+      { op: 'place_instance', sceneId: 'L3', definitionRef: player, x: 0, y: 0, name: null, ref: null },
+    ]);
+    const after = apply(project, ops);
+    expect(after.scenes.map((s) => s.name)).toEqual([project.scenes[0].name, 'The Mines', 'The Tower']);
+    expect(after.scenes[1].entities).toHaveLength(7);
+    expect(after.scenes[2].entities).toHaveLength(1);
+    expect(after.scenes[1].world.gravity).toEqual({ x: 0, y: 0 });
+    expect(after.scenes[0].entities).toHaveLength(project.scenes[0].entities.length);
+  });
+
+  it('two new levels with the same ref are refused', () => {
+    const project = createProject(registry);
+    const ops = operationSchema.array().parse([
+      { op: 'create_level', ref: 'L2', name: 'A' },
+      { op: 'create_level', ref: 'L2', name: 'B' },
+    ]);
+    expect(() => apply(project, ops)).toThrow(/Two new levels are called "L2"/);
+  });
+});

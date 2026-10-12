@@ -213,7 +213,7 @@ export function touchedBy(project: Project, sceneId: Id, operations: Operation[]
   return out;
 }
 
-const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [] };
+const EMPTY_RESULT: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [], createdSceneIds: [] };
 
 /**
  * Applies editor-setting operations as one step of the editor's own undo.
@@ -349,17 +349,24 @@ function playability(sceneId: Id, operations: Operation[]): { text: string; map:
   const project = useEditor.getState().project;
   const before = new Set(reachabilityProblems(project, sceneId, componentRegistry).map((p) => p.key));
   let after: Project;
+  let created: Id[] = [];
   try {
     after = produce(project, (d) => {
-      applyOperations(d, operations, componentRegistry);
+      created = applyOperations(d, operations, componentRegistry).createdSceneIds;
     });
   } catch {
     return null;
   }
   const added = reachabilityProblems(after, sceneId, componentRegistry).filter((p) => !before.has(p.key));
-  if (!added.length) return null;
   // The level as the answer would leave it, so the AI can see what went wrong.
-  return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry) };
+  if (added.length) return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry) };
+  // New levels made in the same answer are checked too (everything in them is new).
+  for (const id of created) {
+    const problems = reachabilityProblems(after, id, componentRegistry);
+    const scene = after.scenes.find((s) => s.id === id);
+    if (problems.length && scene) return { text: `In the new level "${scene.name}": ${problems.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry) };
+  }
+  return null;
 }
 
 function mapText(map: LevelMap | null): string {

@@ -25,6 +25,19 @@ export function createScene(name: string): Scene {
   };
 }
 
+/**
+ * A new, empty level for this game: it plays like the game's other levels (the same gravity, so a top-down
+ * game's new level is top-down too; the same background color and camera), modelled on `like` (or the first level).
+ */
+export function createLevelFor(project: Project, name: string, like: Scene | undefined = project.scenes[0]): Scene {
+  const scene = createScene(name);
+  if (!like) return scene;
+  scene.world = { ...scene.world, gravity: { ...like.world.gravity }, backgroundColor: like.world.backgroundColor };
+  // (A plain copy: `like` may be a draft being edited, which structuredClone can't copy.)
+  scene.camera = JSON.parse(JSON.stringify(like.camera));
+  return scene;
+}
+
 export function createDefinition(name: string, components: ComponentMap = {}, tags: string[] = [], description = ''): ObjectDefinition {
   return { id: generateId('def'), name, description, components, tags, metadata: {} };
 }
