@@ -129,6 +129,8 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
                 setDock(null);
               },
             },
+            { label: 'Edit sprite', testId: 'menu-edit-sprite', run: () => editSpriteOf(def.id) },
+            { label: 'Code', testId: 'menu-code', run: () => useEditor.getState().openCodeEditor({ definitionId: def.id, entityId: null }) },
             { label: 'Sprites', testId: 'menu-sprites', run: () => openSprites(def.id) },
             ...(isStarter
               ? [
@@ -147,7 +149,7 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
 }
 
 /** A small menu at the pointer. Closes on outside click, Escape, or after choosing. */
-function ContextMenu(props: { x: number; y: number; items: { label: string; testId?: string; run: () => void }[]; onClose: () => void }) {
+export function ContextMenu(props: { x: number; y: number; items: { label: string; testId?: string; run: () => void }[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e: Event) => {
@@ -338,4 +340,15 @@ function CreatePanel() {
       />
     </section>
   );
+}
+
+/** Opens the sprite editor on an object's look (a new drawing when it has no picture the editor can edit). */
+export function editSpriteOf(definitionId: string): void {
+  const { project, openSpriteEditor } = useEditor.getState();
+  const def = project.definitions.find((d) => d.id === definitionId);
+  if (!def) return;
+  const assetId = typeof def.components.Sprite?.assetId === 'string' ? def.components.Sprite.assetId : null;
+  const asset = assetId ? project.assets.find((a) => a.id === assetId) : undefined;
+  const editable = !!asset && (!!asset.pixelArt || (asset.kind === 'image' && asset.width <= 64 && asset.height <= 64));
+  openSpriteEditor({ definitionId, assetId: editable ? asset!.id : null });
 }

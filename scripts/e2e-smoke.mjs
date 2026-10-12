@@ -777,7 +777,7 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Sprites Reset to default', 'right-clicking a built-in object offers Inspector, Sprites and Reset to default');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Inspector, Edit sprite, Code, Sprites and Reset to default');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
@@ -1507,6 +1507,65 @@ try {
     await check(drawn[3] === 255, 'the Player is drawn where the JSON says it is');
     await page.keyboard.press('Escape');
     await check(async () => (await ex.count()) === 0, 'Esc closes it');
+  }
+
+  step = 'right-click menu and code editor';
+  {
+    const entities = async () => Number(await canvas.getAttribute('data-entities'));
+    const n0 = await entities();
+    const rightClick = async (wx, wy) => {
+      const [cx, cy, z] = (await canvas.getAttribute('data-camera')).split(',').map(Number);
+      const b = await canvas.boundingBox();
+      await page.mouse.click(b.x + b.width / 2 + (wx - cx) * z, b.y + b.height / 2 + (wy - cy) * z, { button: 'right' });
+    };
+    await rightClick(-256, 0);
+    const menu = page.getByTestId('object-menu');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Edit sprite, Code, Copy, Cut, Delete');
+    await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', '(and it is selected)');
+    await page.getByTestId('menu-edit-sprite').click();
+    await check(async () => (await page.getByTestId('sprite-editor').isVisible()) && (await page.getByTestId('se-canvas').getAttribute('data-pixels')).replace(/[./]/g, '').length > 20, 'Edit sprite opens the sprite editor on its picture');
+    await page.getByTestId('se-close').click();
+    // Code: its behavior code.
+    await rightClick(-256, 0);
+    await page.getByTestId('menu-code').click();
+    const ce = page.getByTestId('code-editor');
+    await check(async () => (await ce.isVisible()) && (await ce.getByTestId('code-components').innerText()).includes('"CharacterController"'), 'Code opens the code editor; without scripts it shows its built-in behaviors (components) as code');
+    await ce.getByTestId('code-new-definition').click();
+    await ce.getByTestId('code-text').fill('{ "name": "Hello", "description": "Says hello.", "handlers": [ { "when": { "on": "start" }, "do": [ { "do": "message", "text": "Hello!" } ] } ] ');
+    await ce.getByTestId('code-save').click();
+    await check(async () => (await ce.getByTestId('code-error').innerText()).includes('line'), "broken code isn't saved: it says so, with the line");
+    await ce.getByTestId('code-text').fill('{ "name": "Hello", "description": "Says hello.", "handlers": [ { "when": { "on": "start" }, "do": [ { "do": "mesage", "text": "Hello!" } ] } ] }');
+    await ce.getByTestId('code-save').click();
+    await check(async () => (await ce.getByTestId('code-error').count()) === 1, 'code the game can\'t run is checked like the AI\'s and refused, saying why');
+    await ce.getByTestId('code-text').fill('{ "name": "Hello", "description": "Says hello.", "handlers": [ { "when": { "on": "start" }, "do": [ { "do": "message", "text": "Hello!" } ] } ] }');
+    await ce.getByTestId('code-save').click();
+    await check(async () => (await ce.getByTestId('code-file-Hello').count()) === 1 && (await ce.getByTestId('code-error').count()) === 0, 'a valid script is saved and listed under every Player');
+    await ce.screenshot({ path: `${OUT}/12f-code-editor.png` });
+    await ce.getByTestId('code-tab-readable').click();
+    await check(async () => (await ce.getByTestId('code-readable').innerText()).toLowerCase().includes('hello'), 'Readable shows it in words');
+    await ce.getByTestId('code-file-reference').click();
+    await check(async () => (await ce.getByTestId('code-reference').innerText()).includes('Triggers'), 'the language reference is one click away');
+    await page.keyboard.press('Escape');
+    await check(async () => (await ce.count()) === 0, 'Esc closes the code editor');
+    await page.getByTestId('undo').click();
+    // Copy / Cut / Delete / Paste here.
+    await rightClick(-256, 0);
+    await page.getByTestId('menu-copy').click();
+    await rightClick(150, -220);
+    await check(async () => (await menu.innerText()).trim() === 'Paste here', 'right-clicking empty space after copying offers Paste here');
+    await page.getByTestId('menu-paste').click();
+    await check(async () => (await entities()) === n0 + 1, 'Paste here places the copy');
+    await page.getByTestId('undo').click();
+    await rightClick(-256, 0);
+    await page.getByTestId('menu-delete').click();
+    await check(async () => (await entities()) === n0 - 1, 'Delete deletes it');
+    await page.getByTestId('undo').click();
+    await rightClick(-256, 0);
+    await page.getByTestId('menu-cut').click();
+    await check(async () => (await entities()) === n0 - 1, 'Cut takes it away (to paste)');
+    await page.getByTestId('undo').click();
+    await check(async () => (await entities()) === n0, '(Undo brings it back)');
+    await page.keyboard.press('Escape');
   }
 
   step = 'typed commands';

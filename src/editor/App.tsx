@@ -1,3 +1,4 @@
+import { CodeEditor } from './chrome/CodeEditor';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -81,6 +82,7 @@ export function App() {
         <GameChooser />
         <SpriteEditor />
         <SpriteExport />
+        <CodeEditor />
         <GlobalPrompt />
         <Dock />
         <Tray />

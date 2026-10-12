@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
 import { addEntity, moveEntities, removeEntities } from '../../core/model/mutations';
@@ -9,7 +9,9 @@ import type { Id, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
-import { connectSwitch, extendSelection, resizeEntity, shortenSelection } from '../actions';
+import { ContextMenu, editSpriteOf } from '../chrome/Dock';
+import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommands';
+import { connectSwitch, deleteSelection, extendSelection, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
@@ -69,6 +71,8 @@ export function snapPosition(p: Vec2, entity: ResolvedEntity | null, grid: numbe
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /** The right-click menu on the level (on an object, or on empty space to paste). */
+  const [menu, setMenu] = useState<{ x: number; y: number; entityId: Id | null; definitionId: Id | null; world: Vec2 } | null>(null);
   const viewRef = useRef<ViewSize>({ width: 1, height: 1 });
   const dragRef = useRef<Drag | null>(null);
   /**
@@ -676,8 +680,37 @@ export function Viewport() {
         }}
         onDoubleClick={onDoubleClick}
         onMouseDown={(e) => e.button === 1 && e.preventDefault() /* no autoscroll on middle-drag */}
-        onContextMenu={(e) => e.preventDefault() /* right-drag erases while drawing */}
+        onContextMenu={(e) => {
+          // While drawing, the right button erases; otherwise it's the object's menu.
+          e.preventDefault();
+          const state = useEditor.getState();
+          if (state.tool.kind === 'brush') return;
+          const world = toWorld(e);
+          const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
+          if (hit && !state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
+          if (!hit && !hasCopiedObjects()) return;
+          setMenu({ x: e.clientX, y: e.clientY, entityId: hit?.id ?? null, definitionId: hit?.definitionId ?? null, world });
+        }}
       />
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            ...(menu.definitionId ? [{ label: 'Edit sprite', testId: 'menu-edit-sprite', run: () => editSpriteOf(menu.definitionId!) }] : []),
+            ...(menu.entityId ? [{ label: 'Code', testId: 'menu-code', run: () => useEditor.getState().openCodeEditor({ definitionId: menu.definitionId, entityId: menu.entityId }) }] : []),
+            ...(menu.entityId
+              ? [
+                  { label: 'Copy', testId: 'menu-copy', run: () => void runQuickCommand(null, { kind: 'copy' }) },
+                  { label: 'Cut', testId: 'menu-cut', run: () => void runQuickCommand(null, { kind: 'cut' }) },
+                ]
+              : []),
+            ...(hasCopiedObjects() ? [{ label: 'Paste here', testId: 'menu-paste', run: () => void pasteObjects(menu.world) }] : []),
+            ...(menu.entityId ? [{ label: 'Delete', testId: 'menu-delete', run: deleteSelection }] : []),
+          ]}
+        />
+      )}
     </div>
   );
 }
