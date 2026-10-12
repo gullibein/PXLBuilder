@@ -185,8 +185,13 @@ export interface AIPayload {
     placedCount: number;
     /** Its size in pixels, and how many 32 px level cells it takes (a 32×64 door: 1×2). */
     size: { w: number; h: number; cells: { w: number; h: number } };
-    /** Behavior scripts every copy runs (in full when it's a target's object; else id, name and description). */
-    scripts: { id: Id; name: string; description: string }[];
+    /**
+     * Behavior scripts every copy runs. scriptsInFull true: the whole code (as targets' scripts are), so how this
+     * object behaves (falls, hurts, gets collected…) can be read and changed. False: only id, name and description
+     * (a very big game: the objects most related to the targets come in full first).
+     */
+    scripts: ({ id: Id; name: string; description: string } | BehaviorScript)[];
+    scriptsInFull: boolean;
     /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
     sprites: { assetId: Id; image: string; frame: number; sheet: boolean }[];
   }[];
@@ -259,6 +264,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
   const endIds = (ref: EntityRef) => (ref.kind === 'entity' ? [ref.id] : []);
   const targetIds = 'entityIds' in ctx ? ctx.entityIds : connection ? [...endIds(connection.source), ...endIds(connection.target)] : [];
   const placed = (defId: Id) => project.scenes.reduce((n, s) => n + s.entities.filter((e) => e.definitionId === defId).length, 0);
+  const fullScripts = scriptsInFull(project, scene, targetIds);
 
   const detail = (id: Id): EntityDetail | null => {
     const entity = scene.entities.find((e) => e.id === id);
@@ -363,7 +369,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         const s = getEntitySize(resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry));
         return { w: s.x, h: s.y, cells: { w: Math.max(1, Math.round(s.x / LEVEL_CELL)), h: Math.max(1, Math.round(s.y / LEVEL_CELL)) } };
       })(),
-      scripts: (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: x.description })),
+      scripts: fullScripts.has(d.id) ? (d.scripts ?? []) : (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: x.description })),
+      scriptsInFull: fullScripts.has(d.id),
       sprites: getDefinitionSprites(d).map((r) => {
         const a = project.assets.find((x) => x.id === r.assetId);
         return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, sheet: a?.kind === 'spritesheet' };
@@ -393,4 +400,41 @@ function debugPayload(project: Project, scene: Scene, registry: ComponentRegistr
     ? 'The game was changed after this play, so it shows the game as it was then; things may already be different.'
     : 'Nothing was changed since this play: it shows the game as it is now.';
   return { problems, lastPlay: { ...summarizePlay(lastPlay.report, focus, players), note } };
+}
+
+/** How much script code (characters of JSON) the library may carry in full. */
+const LIBRARY_SCRIPT_BUDGET = 60_000;
+
+/**
+ * The library objects whose scripts go to the AI in full: every one when they fit (most games), else the ones
+ * that have to do with the targets first (their own objects, objects their code names or that name them: by id,
+ * name or tag, or joined to them by the level's logic), then the most used, while they fit.
+ */
+function scriptsInFull(project: Project, scene: Scene, targetIds: Id[]): Set<Id> {
+  const withScripts = project.definitions.filter((d) => d.scripts?.length);
+  const size = new Map(withScripts.map((d) => [d.id, JSON.stringify(d.scripts).length]));
+  const total = [...size.values()].reduce((a, b) => a + b, 0);
+  if (total <= LIBRARY_SCRIPT_BUDGET) return new Set(withScripts.map((d) => d.id));
+  const targets = targetIds.map((id) => scene.entities.find((e) => e.id === id)).filter((e): e is NonNullable<typeof e> => !!e);
+  const targetDefs = new Set(targets.map((e) => e.definitionId).filter((x): x is Id => !!x));
+  const words = (d: { id: Id; name: string; tags: string[] }) => [d.id, d.name, ...d.tags].filter((w) => w.length > 1);
+  const targetWords = [...targetDefs].flatMap((id) => {
+    const d = project.definitions.find((x) => x.id === id);
+    return d ? words(d) : [];
+  });
+  const targetCode = JSON.stringify([...targets.map((e) => e.scripts ?? []), ...[...targetDefs].map((id) => project.definitions.find((d) => d.id === id)?.scripts ?? [])]);
+  const logic = JSON.stringify([scene.relationships, scene.rules]);
+  const related = (d: (typeof withScripts)[number]) =>
+    targetDefs.has(d.id) || words(d).some((w) => targetCode.includes(w)) || targetWords.some((w) => JSON.stringify(d.scripts).includes(w)) || (logic.includes(d.id) && targetWords.some((w) => logic.includes(w)));
+  const uses = (id: Id) => project.scenes.reduce((n, s) => n + s.entities.filter((e) => e.definitionId === id).length, 0);
+  const order = [...withScripts].sort((a, b) => Number(related(b)) - Number(related(a)) || uses(b.id) - uses(a.id));
+  const out = new Set<Id>();
+  let used = 0;
+  for (const d of order) {
+    const n = size.get(d.id)!;
+    if (!targetDefs.has(d.id) && used + n > LIBRARY_SCRIPT_BUDGET) continue;
+    out.add(d.id);
+    used += n;
+  }
+  return out;
 }

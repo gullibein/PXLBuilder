@@ -371,3 +371,26 @@ describe('create_level: the AI makes more levels', () => {
     expect(() => apply(project, ops)).toThrow(/Two new levels are called "L2"/);
   });
 });
+
+describe("other objects' code goes to the AI", () => {
+  it("with the Mole selected, the Diamond's scripts come in full (so a collision between them can be fixed where it is)", async () => {
+    const { setScript } = await import('./script/mutations');
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    let mole = '';
+    project = produce(project, (d) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      const coin = d.definitions.find((x) => x.name === 'Coin')!;
+      enemy.name = 'Mole';
+      coin.name = 'Diamond';
+      setScript(d, { target: 'definition', id: coin.id }, { name: 'Fall', description: 'Falls when nothing is under it.', handlers: [{ when: { on: 'tick' }, if: "!solid_at(self.x, self.y + 32)", do: [{ do: 'velocity', x: null, y: '200' }] }] });
+      const e = instantiateDefinition(enemy, { x: 0, y: 0 });
+      mole = e.id;
+      m.addEntity(d, sceneId, e);
+    });
+    const payload = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [mole] }, registry);
+    const diamond = payload.library.find((d) => d.name === 'Diamond')!;
+    expect(diamond.scriptsInFull).toBe(true);
+    expect(JSON.stringify(diamond.scripts)).toContain('solid_at(self.x, self.y + 32)');
+  });
+});
