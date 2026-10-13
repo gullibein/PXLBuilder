@@ -1119,6 +1119,8 @@ export class Runtime {
     }
     e.turn = null;
     e.spin = 0;
+    // A glide it was on when it died ends here: it would otherwise carry on from the start point, through walls.
+    e.moveTarget = null;
     e.speedFactor = 1;
     e.gravityScale = e.baseGravity;
     e.knock = null;

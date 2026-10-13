@@ -97,3 +97,19 @@ describe('a player that steps square by square with a script (top-down)', () => 
     expect(diagnoseLevel(fixed, fixed.scenes[0].id, registry).some((p) => p.key.startsWith('script-and-controller-move:'))).toBe(false);
   });
 });
+
+describe('dying in the middle of a glide', () => {
+  it('the glide ends with the respawn: the player stays at its start, not carried on to where it was heading', () => {
+    const { project } = level(1, 0);
+    const rt = new Runtime(project, project.scenes[0].id, registry);
+    const hero = rt.find('Player')!;
+    const start = { x: hero.x, y: hero.y };
+    rt.moveTo(hero, { x: start.x + 320, y: start.y + 96 }, 430);
+    rt.update(1 / 60, new InputState());
+    expect(hero.x).toBeGreaterThan(start.x);
+    rt.respawn(hero, 'died');
+    expect(hero.moveTarget).toBeNull();
+    for (let i = 0; i < 60; i++) rt.update(1 / 60, new InputState());
+    expect({ x: hero.x, y: hero.y }).toEqual(start);
+  });
+});
