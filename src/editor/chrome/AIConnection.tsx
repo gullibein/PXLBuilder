@@ -9,7 +9,7 @@ import { claudeSample } from '../ai/sampleProvider';
 import { useEditor } from '../store';
 
 /** True inside a claude.ai artifact viewer, where the AI runs on the viewer's Claude account. */
-function useClaudeAccount(): boolean | null {
+export function useClaudeAccount(): boolean | null {
   const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
     let live = true;
@@ -28,7 +28,7 @@ export function useApiKey(): string | null {
   return key;
 }
 
-function useGeminiKey(): string | null {
+export function useGeminiKey(): string | null {
   const [key, setKey] = useState(geminiKey.get);
   useEffect(() => geminiKey.onChange(() => setKey(geminiKey.get())), []);
   return key;

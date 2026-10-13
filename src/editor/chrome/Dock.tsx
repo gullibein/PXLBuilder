@@ -121,7 +121,7 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
           onClose={() => setMenu(null)}
           items={[
             {
-              label: 'Inspector',
+              label: 'Details…',
               testId: 'menu-inspector',
               run: () => {
                 selectDefinition(def.id);

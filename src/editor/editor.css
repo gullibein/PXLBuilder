@@ -139,6 +139,16 @@ code { font-family: var(--font-data); font-size: 11px; }
 .prompt.has-header .prompt-close:hover { color: var(--text); background: var(--surface-3); }
 .prompt-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: none; background: none; border-radius: 8px; color: var(--card-muted); --surface: var(--card); }
 .prompt-icon:hover { background: var(--card-line); color: var(--card-text); }
+/* The AI selector: a chip icon and the AI's short name (Opus, Haiku, 3.8 Flash). */
+.prompt-icon.ai-picker { width: auto; gap: 4px; padding: 0 6px; grid-auto-flow: column; font: 600 11px var(--font-ui); white-space: nowrap; }
+.prompt-icon.ai-picker[aria-expanded='true'] { background: var(--card-line); color: var(--card-text); }
+.ai-picker-menu { background: var(--bar); backdrop-filter: none; min-width: 250px; max-height: min(70vh, 520px); overflow: auto; }
+.ai-picker-menu .menu-head { padding: 8px 10px 4px; font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ai-picker-menu .menu-row { font: 13px var(--font-ui); color: inherit; }
+.ai-picker-menu .menu-row .grow { flex: 1; }
+.ai-picker-menu .menu-row.link { color: var(--accent-hi); }
+.ai-picker-menu .menu-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+.ai-picker-note { margin: 4px 10px 2px; }
 .send-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border: none; border-radius: 50%; color: #fff; background: var(--accent); transition: transform 120ms, opacity 120ms; }
 .send-btn:hover:not(:disabled) { transform: scale(1.06); }
 .send-btn:disabled { opacity: 0.35; }

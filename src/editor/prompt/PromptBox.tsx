@@ -1,3 +1,4 @@
+import { AIPicker } from './AIPicker';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
@@ -74,7 +75,6 @@ export interface PromptBoxProps {
   autoFocus?: boolean;
   testId?: string;
   /** Shows a small control that opens the detailed view of the context. */
-  onDetails?: () => void;
   onApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => void;
   /** Extra content shown under an applied result (e.g. the new object to drag in). */
   renderApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => React.ReactNode;
@@ -253,15 +253,7 @@ export function PromptBox(props: PromptBoxProps) {
             }
           }}
         />
-        {props.onDetails && (
-          <button className="prompt-icon" title="Details" aria-label="Open details" data-testid="prompt-details" onClick={props.onDetails}>
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-              <path d="M2 4h10M2 10h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              <circle cx="5" cy="4" r="1.6" fill="var(--surface)" stroke="currentColor" strokeWidth="1.3" />
-              <circle cx="9" cy="10" r="1.6" fill="var(--surface)" stroke="currentColor" strokeWidth="1.3" />
-            </svg>
-          </button>
-        )}
+        <AIPicker />
         <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={!text.trim() || working} onClick={submit}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />

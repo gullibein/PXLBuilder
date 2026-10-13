@@ -55,6 +55,24 @@ let diagnostics = null;
 /** Where a change to what a thing is goes: its library object (the AI is told so), or the thing itself when it has none. */
 const own = (target) => (target.object?.id ? { target: 'definition', id: target.object.id } : { target: 'instance', id: target.id });
 
+/** Opens Details the way a user does on this page: right-click the selected object (or empty level) → Details…. */
+async function openDetailsOn(pg) {
+  const canvas = pg.getByTestId('viewport-canvas');
+  const b = await canvas.boundingBox();
+  // The selection's middle is written when the level is next drawn: wait until it has settled.
+  let sel = await canvas.getAttribute('data-selection');
+  for (let i = 0; i < 10; i++) {
+    await pg.waitForTimeout(60);
+    const now = await canvas.getAttribute('data-selection');
+    if (now === sel) break;
+    sel = now;
+  }
+  const [cx, cy, zoom] = ((await canvas.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+  const at = sel ? sel.split(',').map(Number) : [cx + 420 / zoom, cy + 260 / zoom];
+  await pg.mouse.click(b.x + b.width / 2 + (at[0] - cx) * zoom, b.y + b.height / 2 + (at[1] - cy) * zoom, { button: 'right' });
+  await pg.getByTestId('ctx-details').click();
+}
+
 function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
@@ -448,6 +466,8 @@ try {
     for (const k of opts.modifiers ?? []) await page.keyboard.up(k);
   };
   const emptySpot = toScreen(420, 260);
+  /** Opens the Details panel the way a user does: right-click the selected object (or empty level) → Details…. */
+  const openDetails = () => openDetailsOn(page);
 
   step = 'canvas first';
   await check(async () => (await canvas.isVisible()) && (await page.getByTestId('inspector').count()) === 0, 'the game canvas fills the window; no inspector panel by default');
@@ -499,8 +519,9 @@ try {
   await page.getByTestId('redo').click();
   // Drawing with something else (a coin), the right button still erases the platform tile under it.
   const n7 = await entityCount();
+  await page.getByTestId('tool-pen').click();
   await page.mouse.click(single.x, single.y);
-  await check(async () => (await entityCount()) === n7 + 1, '(a platform tile there again)');
+  await check(async () => (await entityCount()) === n7 + 1, `(a platform tile there again: ${n7} -> ${await entityCount()}, pen ${await page.getByTestId('tool-pen').getAttribute('aria-pressed')}, brush ${await page.getByTestId('tool-brush-pick').getAttribute('title').catch(() => '-')}, undo ${await page.getByTestId('undo').getAttribute('title')})`);
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Coin').click();
   await page.mouse.click(single.x, single.y, { button: 'right' });
@@ -539,7 +560,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(tile.x + 20, tile.y - 50, { steps: 5 });
   await page.mouse.up();
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('transform-position.x').inputValue()) === '-80' && (await page.getByTestId('transform-position.y').inputValue()) === '-16', 'dragging a tile moves it by whole cells (snaps to the tile grid)');
   await page.getByTestId('close-details').click();
   await page.getByTestId('undo').click();
@@ -576,13 +597,13 @@ try {
   await check(last.context.scope === 'entity' && last.context.targets[0].name === 'Player', 'the AI received the selected Player as context');
   await check(last.context.otherEntities.some((e) => e.name === 'Door'), 'other objects are available to the AI by name');
   await page.screenshot({ path: `${OUT}/3-applied.png` });
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '5', 'the details drawer shows the new health (max 5)');
   await page.getByTestId('close-details').click();
 
   step = 'undo/redo';
   await page.getByTestId('undo').click();
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '3' && (await page.getByTestId('field-Health.currentHealth').inputValue()) === '3', 'Undo reverts the whole AI change as one step');
   await page.getByTestId('redo').click();
   await check(async () => (await page.getByTestId('field-Health.maxHealth').inputValue()) === '5', 'Redo restores it');
@@ -608,7 +629,7 @@ try {
   await page.getByTestId('dock-library').click();
   await check(async () => (await page.getByTestId('definition-Enemy 2').count()) === 1 && (await page.getByTestId('definition-Enemy').count()) === 1, 'the new object is in the Objects panel, next to the old Enemy');
   await page.getByTestId('dock-library').click();
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('field-Patrol.distance').inputValue()) === '64', 'the new enemy has the Patrol behavior (shown in its details)');
   await page.getByTestId('close-details').click();
   await page.getByTestId('undo').click();
@@ -623,7 +644,7 @@ try {
   await changeObject();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a custom behavior is written as a script and applied');
   await check(aiRequests.length === askedBefore + 2 && aiRequests.at(-1).request.includes('unknown name "sped" (did you mean "speed"?)'), 'a script that does not check out goes back to the AI once, with the exact problem');
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   const card = page.getByTestId('script-Hopper');
   await check(async () => (await card.count()) === 1 && (await card.innerText()).includes('hops toward the player when it is close'), 'the details panel lists the script with its description');
   await card.getByTestId('script-open').click();
@@ -647,7 +668,7 @@ try {
   await page.getByTestId('undo').click();
   await page.getByTestId('undo').click();
   await clickWorld(-32, 0);
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('script-Hopper').count()) === 0, 'Undo removes the script again (edit, then the AI change)');
   await page.getByTestId('close-details').click();
 
@@ -719,7 +740,7 @@ try {
   await ask('Make gravity 30% weaker.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'world change applied');
   await check(async () => (await result.innerText()).includes('980 → 686'), 'confirmation shows the gravity change');
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('world-gravity.y').inputValue()) === '686', 'level gravity is now 686');
   await page.getByTestId('close-details').click();
   await ask('Make gravity 30% weaker.');
@@ -797,7 +818,7 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Inspector Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Inspector, Edit sprite, Code, Sprites and Reset to default');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Details…, Edit sprite, Code, Sprites and Reset to default');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
@@ -978,7 +999,7 @@ try {
 
   step = 'sprite and collider size link';
   await clickWorld(-32, 0);
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => (await page.getByTestId('size-link').first().getAttribute('aria-pressed')) === 'true', 'sprite and collider sizes start linked');
   await page.getByTestId('field-Sprite.width').fill('48');
   await page.getByTestId('field-Sprite.width').press('Enter');
@@ -1090,7 +1111,7 @@ try {
   step = 'play';
   await clickWorld(-256, 0);
   await check(async () => (await prompts.count()) === 1, 'clicking the Player selects it');
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   const posBefore = [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()];
   await page.getByTestId('close-details').click();
   const undoTitle = await page.getByTestId('undo').getAttribute('title');
@@ -1155,7 +1176,7 @@ try {
   await clickWorld(-256, 0);
   await check(async () => (await prompts.count()) === 1, 'clicking an object right after stopping selects it (the view is measured at once)');
   await check(async () => (await page.getByTestId('undo').getAttribute('title')) === undoTitle, 'playing made no edits (undo history unchanged)');
-  await prompts.getByTestId('prompt-details').click();
+  await openDetails();
   await check(async () => [await page.getByTestId('transform-position.x').inputValue(), await page.getByTestId('transform-position.y').inputValue()].join() === posBefore.join(), 'the player is back at its editor position (runtime state was thrown away)');
   await page.getByTestId('close-details').click();
   await page.keyboard.press('Control+Enter');
@@ -1660,7 +1681,7 @@ try {
     };
     await rightClick(-256, 0);
     const menu = page.getByTestId('object-menu');
-    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Edit sprite, Code, Copy, Cut, Delete');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Details… Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Details…, Edit sprite, Code, Copy, Cut, Delete');
     await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', '(and it is selected)');
     await page.getByTestId('menu-edit-sprite').click();
     await check(async () => (await page.getByTestId('sprite-editor').isVisible()) && (await page.getByTestId('se-canvas').getAttribute('data-pixels')).replace(/[./]/g, '').length > 20, 'Edit sprite opens the sprite editor on its picture');
@@ -1692,7 +1713,7 @@ try {
     await rightClick(-256, 0);
     await page.getByTestId('menu-copy').click();
     await rightClick(150, -220);
-    await check(async () => (await menu.innerText()).trim() === 'Paste here', 'right-clicking empty space after copying offers Paste here');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Details… Paste here', 'right-clicking empty space after copying offers Details… (the level’s) and Paste here');
     await page.getByTestId('menu-paste').click();
     await check(async () => (await entities()) === n0 + 1, 'Paste here places the copy');
     await page.getByTestId('undo').click();
@@ -1826,8 +1847,10 @@ try {
     await check(async () => (await prompts.count()) === 0, '(clicking empty level closes the card)');
     await clickWorld(-256, 0);
     await check(async () => (await promptInput.inputValue()) === 'make the player glow and', "a prompt typed but not sent isn't lost when the card closes: it's back when the object is selected again");
+    // (The card sits over the next object here: close it first by clicking empty level.)
+    await clickWorld(150, -220);
     await clickWorld(-32, 0);
-    await check(async () => (await promptInput.inputValue()) === '', "(another object's card has its own, empty, text)");
+    await check(async () => (await promptInput.inputValue()) === '', `(another object's card has its own, empty, text: ${await prompts.count()} card(s), "${await promptInput.inputValue().catch(() => '?')}", about ${await prompts.getAttribute('data-context').catch(() => '?')} ${(await prompts.innerText().catch(() => '')).slice(0, 60).replace(/\s+/g, ' ')}, selection ${await canvas.getAttribute('data-selection')})`);
     await clickWorld(-256, 0);
     await promptInput.fill('');
     await clickWorld(-256, 0);
@@ -2202,7 +2225,7 @@ try {
   await check(async () => (await logicPanel.count()) === 0, 'Esc closes the Logic card');
 
   await lClick(64, 0);
-  await lPrompt.getByTestId('prompt-details').click();
+  await openDetailsOn(lp);
   await check(async () => (await lp.getByTestId('connections').innerText()).includes('Switch opens and closes Door'), "the door's details show what controls it");
   await lp.getByTestId('close-details').click();
 
@@ -2405,7 +2428,7 @@ try {
   await changeObject(sw_sPrompt);
   await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"make this look like spikes" draws a sprite');
   await check(JSON.stringify(aiRequests.at(-1).context.targets[0].spriteGrid) === '{"width":32,"height":16}', 'the AI is told to draw 32×16 pixels for the one-tile 32×16 hazard (its proportions)');
-  await sw_sPrompt.getByTestId('prompt-details').click();
+  await openDetailsOn(swp);
   await check(async () => (await swp.getByTestId('component-Sprite').innerText()).includes('Spikes'), 'the hazard now uses the drawn "Spikes" image (its size is unchanged)');
   await swp.getByTestId('close-details').click();
   await swp.screenshot({ path: `${OUT}/25-spikes-sprite.png`, clip: { x: sw_sAt(-260, -260).x, y: sw_sAt(-260, -260).y, width: 520, height: 320 } });
@@ -2506,10 +2529,17 @@ try {
     await kAsk('Make the player faster.');
     await kPrompt.getByTestId('prompt-result').waitFor();
     await check(async () => anthropicCalls.at(-1).model === 'claude-haiku-5-5', 'the next prompt asks Haiku');
-    await kp.keyboard.press('Escape');
-    await kp.getByTestId('main-menu').click();
-    await kp.getByTestId('menu-ai-connection').click();
-    await dialog.getByTestId('ai-model-claude-opus-5-5').click();
+    // The AI selector next to the prompt: says which AI answers, and switches it there.
+    const picker = kPrompt.getByTestId('ai-picker');
+    await check(async () => (await picker.innerText()).trim() === 'Haiku', 'the AI selector by the prompt shows the AI answering (Haiku)');
+    await picker.click();
+    const pm = kp.getByTestId('ai-picker-menu');
+    await check(
+      async () => (await pm.getByTestId('pick-claude-haiku-5-5').getAttribute('aria-checked')) === 'true' && (await pm.innerText()).includes('Claude Opus 5.5') && (await pm.innerText()).includes('Claude Sonnet 5.5') && (await pm.getByTestId('pick-add-gemini-key').count()) === 1,
+      'it lists Opus, Sonnet and Haiku for the Anthropic key (Haiku ticked), and offers to add a Gemini key',
+    );
+    await pm.getByTestId('pick-claude-opus-5-5').click();
+    await check(async () => (await picker.innerText()).trim() === 'Opus' && (await pm.count()) === 0, 'choosing Opus there switches to it (and closes the list)');
     await kp.keyboard.press('Escape');
   }
   await kp.keyboard.press('Escape');
@@ -2615,6 +2645,21 @@ try {
   await kAsk('Make the gravity a bit weaker.');
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && googleCalls.length === callsBefore + 1 && googleCalls.at(-1).url.includes('/gemini-3.5-flash:'), 'the next prompt goes straight to the backup for a while (no waiting on the busy model)');
   geminiBusy = false;
+  // The AI selector with a Gemini key: the models that key can use (Google's list), the chosen one ticked.
+  {
+    await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+    const picker = kPrompt.getByTestId('ai-picker');
+    await check(async () => (await picker.innerText()).trim() === '3.8 Flash', 'the AI selector shows Gemini 3.8 Flash');
+    await picker.click();
+    const pm = kp.getByTestId('ai-picker-menu');
+    await check(async () => (await pm.getByTestId('pick-gemini-3.8-flash').getAttribute('aria-checked')) === 'true' && (await pm.getByTestId('pick-gemini-3.5-pro').count()) === 1, "with a Gemini key it lists that key's Gemini models (3.5 Pro among them), 3.8 Flash ticked");
+    await kp.screenshot({ path: `${OUT}/31b-ai-picker.png` });
+    await pm.getByTestId('pick-gemini-3.5-pro').click();
+    await check(async () => (await picker.innerText()).trim() === '3.5 Pro', 'picking Gemini 3.5 Pro there switches to it');
+    await kAsk('Make the gravity a bit weaker.');
+    await check(async () => googleCalls.at(-1).url.includes('/gemini-3.5-pro:'), 'and the next prompt asks it');
+    await kp.keyboard.press('Escape');
+  }
   await kc.close();
 
   step = 'AI draws: overlays and a generated level';

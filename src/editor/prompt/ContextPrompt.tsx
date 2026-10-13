@@ -76,7 +76,7 @@ export function ContextPrompt() {
   }, [key]);
 
   if (!ctx || !key) return null;
-  const { setInspectorOpen, selectEntities, setWorldContext, selectConnection, project } = useEditor.getState();
+  const { selectEntities, setWorldContext, selectConnection, project } = useEditor.getState();
   const scene = project.scenes.find((sc) => sc.id === ctx.sceneId);
   const nameOf = (id: string) => scene?.entities.find((e) => e.id === id)?.name ?? '?';
   const objectNameOf = (id: string) => {
@@ -126,7 +126,6 @@ export function ContextPrompt() {
                 ? 'Where may the camera go? "let it show a bit below the level", "no limits"…'
                 : undefined
           }
-          onDetails={() => setInspectorOpen(true)}
           onEscape={close}
           onClose={close}
         />

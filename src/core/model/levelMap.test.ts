@@ -26,15 +26,38 @@ describe('the level map for the AI', () => {
     expect(map.origin).toEqual({ col: -2, row: -9 });
     expect(map.rows.slice(4, 11)).toEqual([
       'r-5 ...........xc...', // the coin's ledge: a standing spot the player can't get to
-      'r-4 ...........##...',
+      'r-4 ...........ss...', // Stone: a second solid object gets its own letter
       'r-3 ......_k........', // the ledge the ladder leads to: reachable
-      'r-2 .....H##........',
+      'r-2 .....Hss........',
       'r-1 .....H..........',
       'r 0 .._P_H_^______..',
       'r 1 ..############..',
     ]);
     expect(map.ruler).toBe('    8901234567890123456'.slice(0, map.ruler.length));
-    expect(map.legend).toMatchObject({ P: 'player start: Player', '^': 'hazard (hurts): Hazard', k: 'key: Key', c: 'item to collect: Coin', H: expect.stringMatching(/^ladder/) });
+    // One character per object, with its library id: the most common solid (Platform) keeps "#".
+    const id = (name: string) => project.definitions.find((d) => d.name === name)!.id;
+    expect(map.legend).toMatchObject({
+      P: `player start: Player (${id('Player')})`,
+      '#': `solid: Platform (${id('Platform')})`,
+      s: `solid: Stone (${id('Stone')})`,
+      '^': `hazard (hurts): Hazard (${id('Hazard')})`,
+      k: `key: Key (${id('Key')})`,
+      c: `item to collect: Coin (${id('Coin')})`,
+      H: expect.stringMatching(/^ladder/),
+    });
+    expect(map.stacked).toBeUndefined();
     expect(map.legend._).toMatch(/can stand here and get here/);
+  });
+
+  it('says where two objects share a cell (one hiding the other)', () => {
+    const base = createProject(registry);
+    const sceneId = base.scenes[0].id;
+    const project = produce(base, (d) => {
+      const place = (name: string, x: number, y: number) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((q) => q.name === name)!, { x, y }));
+      for (let x = 16; x < 200; x += 32) place('Platform', x, 48);
+      place('Stone', 80, 48); // on top of the platform in col 2
+      place('Player', 48, 16);
+    });
+    expect(levelMap(project, sceneId, registry)!.stacked).toEqual(['2,1: Platform + Stone']);
   });
 });

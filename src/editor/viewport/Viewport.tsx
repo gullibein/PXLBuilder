@@ -193,6 +193,10 @@ export function Viewport() {
       drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
       const handlesAttr = selected.length ? selectionFrame(selected).handles.map((h) => `${h.kind[0]}${h.dir.x},${h.dir.y}@${h.at.x.toFixed(0)},${h.at.y.toFixed(0)}`).join(' ') : '';
       if ((canvas.dataset.handles ?? '') !== handlesAttr) canvas.dataset.handles = handlesAttr;
+      // The middle of the selection, in the level (for tests: where to right-click it).
+      const selBox = selected.length ? selectionFrame(selected).box : null;
+      const selAttr = selBox ? `${((selBox.minX + selBox.maxX) / 2).toFixed(0)},${((selBox.minY + selBox.maxY) / 2).toFixed(0)}` : '';
+      if ((canvas.dataset.selection ?? '') !== selAttr) canvas.dataset.selection = selAttr;
       if (state.flash && time < state.flash.until) drawFlash(ctx, state.flash.ids, byId, state.camera.zoom, (state.flash.until - time) / 2200);
       const flashAttr = state.flash && time < state.flash.until ? String(state.flash.ids.length) : '';
       if ((canvas.dataset.flash ?? '') !== flashAttr) canvas.dataset.flash = flashAttr;
@@ -745,7 +749,6 @@ export function Viewport() {
           const world = toWorld(e);
           const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
           if (hit && !state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
-          if (!hit && !hasCopiedObjects()) return;
           setMenu({ x: e.clientX, y: e.clientY, entityId: hit?.id ?? null, definitionId: hit?.definitionId ?? null, world });
         }}
       />
@@ -755,6 +758,16 @@ export function Viewport() {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            {
+              // The object's settings (or, on empty space, the level's): position, size, health, gravity…
+              label: 'Details…',
+              testId: 'ctx-details',
+              run: () => {
+                const s = useEditor.getState();
+                if (!menu.entityId) s.setWorldContext(menu.world);
+                s.setInspectorOpen(true);
+              },
+            },
             ...(menu.definitionId ? [{ label: 'Edit sprite', testId: 'menu-edit-sprite', run: () => editSpriteOf(menu.definitionId!) }] : []),
             ...(menu.entityId ? [{ label: 'Code', testId: 'menu-code', run: () => useEditor.getState().openCodeEditor({ definitionId: menu.definitionId, entityId: menu.entityId }) }] : []),
             ...(menu.entityId

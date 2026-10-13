@@ -20,8 +20,13 @@ export interface LevelMap {
   ruler: string;
   /** One line per row, top to bottom, each prefixed with its row number ("r12 "). */
   rows: string[];
-  /** What each character means (only those used), e.g. { "#": "solid: Platform, Stone" }. */
+  /**
+   * What each character means (only those used): one character per object, e.g. { "#": "solid: Steel Wall
+   * (def_…)", "d": "solid: Dirt (def_…)" }. The most common object of each kind keeps the kind's character.
+   */
   legend: Record<string, string>;
+  /** Cells where two different objects overlap (one hides the other): "col,row: Dirt + Steel Wall". */
+  stacked?: string[];
   /** Set when the level is larger than the map shows. */
   cropped?: string;
 }
@@ -79,8 +84,38 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
     const cc = Math.floor(p.x / LEVEL_CELL);
     // A short thing resting on a cell's bottom (spikes) belongs to that cell.
     const cr = Math.floor((p.y + h / 2 - 1) / LEVEL_CELL);
-    return { mark: markOf(r, e.name), name: e.name, cols: small ? [cc, cc] : [c0, c1], rows: small ? [cr, cr] : [r0, r1] };
+    const def = e.definitionId ? project.definitions.find((d) => d.id === e.definitionId) : undefined;
+    return { mark: markOf(r, e.name), key: def?.id ?? e.id, object: def?.name ?? e.name, isDef: !!def, cols: small ? [cc, cc] : [c0, c1], rows: small ? [cr, cr] : [r0, r1] };
   });
+  // One character per object: the kind's character (# solid, E enemy…) for the most common object of that kind, a
+  // letter of its name (or another free character) for each other one, so the map shows which object is where.
+  const charOf = new Map<string, string>();
+  {
+    const reserved = new Set(['.', '_', 'x', ' ', ...things.map((t) => t.mark.ch)]);
+    const used = new Set<string>();
+    const kinds = new Map<string, Map<string, { n: number; object: string }>>();
+    for (const t of things) {
+      const k = kinds.get(t.mark.ch) ?? new Map<string, { n: number; object: string }>();
+      const o = k.get(t.key) ?? { n: 0, object: t.object };
+      o.n++;
+      k.set(t.key, o);
+      kinds.set(t.mark.ch, k);
+    }
+    const pool = (name: string) => [
+      ...[...name.replace(/[^A-Za-z]/g, '')].flatMap((c) => [c.toLowerCase(), c.toUpperCase()]),
+      ...'abcdefghijklmnopqrstuvwyzABCFIJKLMNOQRUVWXYZ0123456789@$%&*+~?!;:<>{}|/'.split(''),
+    ];
+    for (const [ch, objects] of kinds) {
+      const order = [...objects.entries()].sort((a, b) => b[1].n - a[1].n);
+      charOf.set(order[0][0], ch);
+      used.add(ch);
+      for (const [key, { object }] of order.slice(1)) {
+        const c = pool(object).find((x) => !reserved.has(x) && !used.has(x)) ?? '?';
+        used.add(c);
+        charOf.set(key, c);
+      }
+    }
+  }
 
   let minC = Math.min(...things.map((t) => t.cols[0])) - MARGIN;
   let maxC = Math.max(...things.map((t) => t.cols[1])) + MARGIN;
@@ -102,19 +137,23 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
   }
   const width = maxC - minC + 1;
   const height = maxR - minR + 1;
-  const grid: Mark[][] = Array.from({ length: height }, () => Array.from({ length: width }, () => ({ ch: '.', rank: 99, what: '' })));
-  const legendNames = new Map<string, { what: string; names: Set<string> }>();
+  const grid: (Mark & { object?: string })[][] = Array.from({ length: height }, () => Array.from({ length: width }, () => ({ ch: '.', rank: 99, what: '' })));
+  const legendNames = new Map<string, string>();
+  const stacked: string[] = [];
   for (const t of things) {
+    const mark = { ...t.mark, ch: charOf.get(t.key) ?? t.mark.ch, object: t.object };
     for (let r = t.rows[0]; r <= t.rows[1]; r++) {
       for (let c = t.cols[0]; c <= t.cols[1]; c++) {
         const cell = grid[r - minR]?.[c - minC];
-        if (!cell || cell.rank <= t.mark.rank) continue;
-        grid[r - minR][c - minC] = t.mark;
+        if (!cell) continue;
+        // Two different objects in one cell: one hides the other; said, so it can be cleaned up.
+        if (cell.object && cell.ch !== mark.ch && stacked.length < 30) stacked.push(`${c},${r}: ${cell.object} + ${t.object}`);
+        // The more important kind shows; between equals, the one placed later (drawn on top, as the editor shows it).
+        if (cell.rank < t.mark.rank) continue;
+        grid[r - minR][c - minC] = mark;
       }
     }
-    const entry = legendNames.get(t.mark.ch) ?? { what: t.mark.what, names: new Set<string>() };
-    entry.names.add(t.name);
-    legendNames.set(t.mark.ch, entry);
+    legendNames.set(mark.ch, `${t.mark.what}: ${t.object}${t.isDef ? ` (${t.key})` : ' (only this one; see otherEntities)'}`);
   }
 
   // Standing spots: the free cell right above each surface. '_' the player reaches, 'x' it doesn't.
@@ -153,7 +192,7 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
     legend._ = 'empty, and the player can stand here and get here (on top of the cell below)';
     legend.x = 'empty standing spot on a surface the player can NOT get to';
   }
-  for (const [ch, { what, names }] of legendNames) legend[ch] = `${what}: ${[...names].slice(0, 6).join(', ')}`;
+  for (const [ch, text] of legendNames) legend[ch] = text;
   const ruler = `${' '.repeat(pad)} ${Array.from({ length: width }, (_, i) => String(((minC + i) % 10 + 10) % 10)).join('')}`;
-  return { origin: { col: minC, row: minR }, ruler, rows, legend, ...(cropped ? { cropped } : {}) };
+  return { origin: { col: minC, row: minR }, ruler, rows, legend, ...(stacked.length ? { stacked } : {}), ...(cropped ? { cropped } : {}) };
 }

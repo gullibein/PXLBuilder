@@ -447,3 +447,30 @@ describe("other objects' code goes to the AI", () => {
     expect(JSON.stringify(coin.scripts)).toContain('"handlers"');
   });
 });
+
+describe('the level, compactly', () => {
+  it('plain copies of an object placed many times are only on the map; the few of a kind and changed copies are listed', () => {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    let changed = '';
+    let player = '';
+    project = produce(project, (d) => {
+      const def = (n: string) => d.definitions.find((x) => x.name === n)!;
+      for (let i = 0; i < 10; i++) m.addEntity(d, sceneId, instantiateDefinition(def('Platform'), { x: i * 32 + 16, y: 48 }, i === 0 ? 'Platform' : `Platform ${i + 1}`));
+      const odd = instantiateDefinition(def('Platform'), { x: 368, y: 48 }, 'Crumbly ledge');
+      changed = odd.id;
+      m.addEntity(d, sceneId, odd);
+      const p = instantiateDefinition(def('Player'), { x: 48, y: 16 });
+      player = p.id;
+      m.addEntity(d, sceneId, p);
+      m.addEntity(d, sceneId, instantiateDefinition(def('Door'), { x: 200, y: 0 }));
+    });
+    const payload = buildAIPayload(project, { kind: 'level', sceneId, point: null }, registry);
+    expect(payload.otherEntities.map((e) => e.name).sort()).toEqual(['Crumbly ledge', 'Door', 'Player']);
+    expect(payload.otherEntities.find((e) => e.id === player)).toEqual({ id: player, name: 'Player', object: 'Player', x: 48, y: 16 });
+    expect(payload.otherEntities.some((e) => e.id === changed)).toBe(true);
+    expect(payload.otherCopies).toEqual({ Platform: 10 });
+    // And on the map, one character per object.
+    expect(payload.level.map!.rows.some((r) => r.includes('##########'))).toBe(true);
+  });
+});

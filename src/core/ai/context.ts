@@ -112,13 +112,12 @@ export interface LookImage {
 export interface EntityBrief {
   id: Id;
   name: string;
+  /** Its library object's name (its components, tags and scripts are the object's: see library). */
   object: string | null;
-  tags: string[];
   x: number;
   y: number;
-  components: string[];
-  /** Names of the behavior scripts it runs. */
-  scripts?: string[];
+  /** What this one has of its own (changed on it alone): components, tags, scripts. */
+  own?: { components?: string[]; tags?: string[]; scripts?: string[] };
 }
 
 /**
@@ -173,8 +172,14 @@ export interface AIPayload {
   targets: EntityDetail[];
   /** Where the user pointed in the level (world coordinates), if anywhere. */
   point: Vec2 | null;
-  /** All other entities in the level, briefly, so the user can refer to them by name. */
+  /**
+   * The other placed things that matter one by one (with ids, for changing that one): the few of a kind (the player,
+   * doors, a goal), and any changed on its own. Plain copies of objects placed many times (ground, walls, dirt,
+   * coins) are only on level.map, by cell (see otherCopies).
+   */
   otherEntities: EntityBrief[];
+  /** How many plain copies of each object are on the map but not listed one by one, e.g. { "Dirt": 212 }. */
+  otherCopies: Record<string, number>;
   /** Object library. */
   library: {
     id: Id;
@@ -202,7 +207,7 @@ export interface AIPayload {
   /** Sounds made so far (play them by name with play_sound; remake one with make_sound replaceId). */
   sounds: { id: Id; name: string; description: string; seconds: number }[];
   /** Other levels (project scope only lists their contents). */
-  otherLevels: { id: Id; name: string; entities?: EntityBrief[] }[];
+  otherLevels: { id: Id; name: string; map?: LevelMap | null; entities?: EntityBrief[]; otherCopies?: Record<string, number> }[];
   coordinateSystem: string;
   /** For debugging questions ("why…?"): what can't work as set up, and what happened the last time the level was played. */
   debug: {
@@ -219,6 +224,8 @@ export interface LastPlay {
 }
 
 const MAX_BRIEFS = 200;
+/** An object placed more often than this in a level is shown on the map only (its plain copies aren't listed). */
+const MANY_COPIES = 3;
 const MAX_LOGIC = 100;
 
 const SCOPE_NOTES: Record<AIContext['kind'], string> = {
@@ -300,23 +307,37 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     return { sprite: image(c.Sprite?.assetId), situations };
   };
 
-  const briefs = (s: Scene, exclude: Set<Id>): EntityBrief[] =>
-    s.entities
-      .filter((e) => !exclude.has(e.id))
-      .slice(0, MAX_BRIEFS)
-      .map((e) => {
-        const r = resolveEntity(project, e, registry);
-        return {
-          id: e.id,
-          name: e.name,
-          object: project.definitions.find((d) => d.id === e.definitionId)?.name ?? null,
-          tags: r.tags,
-          x: Math.round(r.transform.position.x),
-          y: Math.round(r.transform.position.y),
-          components: Object.keys(r.components),
-          ...(r.scripts.length ? { scripts: r.scripts.map((x) => x.name) } : {}),
-        };
-      });
+  /**
+   * The level's placed things worth listing one by one, briefly, and how many plain copies are left to the map: an
+   * object placed more than a few times (MANY_COPIES) is listed only for copies changed on their own, renamed, or
+   * named by the level's logic.
+   */
+  const briefs = (s: Scene, exclude: Set<Id>): { list: EntityBrief[]; copies: Record<string, number> } => {
+    const count = new Map<string, number>();
+    for (const e of s.entities) if (e.definitionId) count.set(e.definitionId, (count.get(e.definitionId) ?? 0) + 1);
+    const logic = JSON.stringify([s.relationships, s.rules]);
+    const list: EntityBrief[] = [];
+    const copies: Record<string, number> = {};
+    for (const e of s.entities) {
+      if (exclude.has(e.id)) continue;
+      const def = e.definitionId ? project.definitions.find((d) => d.id === e.definitionId) : undefined;
+      const own = {
+        ...(Object.keys(e.components ?? {}).length ? { components: Object.keys(e.components) } : {}),
+        ...(e.tags?.length ? { tags: e.tags } : {}),
+        ...(e.scripts?.length ? { scripts: e.scripts.map((x) => x.name) } : {}),
+      };
+      const plainName = !def || e.name === def.name || new RegExp(`^${def.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\d+$`).test(e.name);
+      const plainCopy = !!def && (count.get(def.id) ?? 0) > MANY_COPIES && !Object.keys(own).length && plainName && !logic.includes(e.id);
+      if (plainCopy) {
+        copies[def.name] = (copies[def.name] ?? 0) + 1;
+        continue;
+      }
+      if (list.length >= MAX_BRIEFS) continue;
+      list.push({ id: e.id, name: e.name, object: def?.name ?? null, x: Math.round(e.transform.position.x), y: Math.round(e.transform.position.y), ...(Object.keys(own).length ? { own } : {}) });
+    }
+    return { list, copies };
+  };
+  const others = briefs(scene, new Set(targetIds));
 
   return {
     scope: ctx.kind,
@@ -356,7 +377,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     point: ctx.kind === 'level' ? ctx.point : null,
-    otherEntities: briefs(scene, new Set(targetIds)),
+    otherEntities: others.list,
+    otherCopies: others.copies,
     library: project.definitions.map((d) => ({
       id: d.id,
       name: d.name,
@@ -384,7 +406,11 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       .map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(soundLength(a.synth!) * 100) / 100 })),
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
-      .map((s) => (ctx.kind === 'project' ? { id: s.id, name: s.name, entities: briefs(s, new Set()) } : { id: s.id, name: s.name })),
+      .map((s) => {
+        if (ctx.kind !== 'project') return { id: s.id, name: s.name };
+        const b = briefs(s, new Set());
+        return { id: s.id, name: s.name, map: levelMap(project, s.id, registry), entities: b.list, otherCopies: b.copies };
+      }),
     debug: debugPayload(project, scene, registry, targetIds, lastPlay ?? null),
     coordinateSystem: 'Pixels. x grows to the right, y grows DOWNWARD (so gravity y > 0 pulls down, and "above" means smaller y). Entity positions are centers.',
   };
