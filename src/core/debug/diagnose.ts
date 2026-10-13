@@ -146,6 +146,25 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
         add(`script-invalid:${p.definitionId ?? p.id}:${script.id}`, 'error', `${p.name}'s script "${script.name}" no longer checks out and is not run: ${checked.error}`, [p.id]);
         continue;
       }
+      // A script that steps the player itself while its Character Controller still walks it with the same keys:
+      // both move it (between steps the controller nudges it off its square, and a glide from there can cut through a wall).
+      const ctrlSpeed = Number(p.r.components.CharacterController?.speed ?? 0);
+      if (ctrlSpeed > 0) {
+        const text = JSON.stringify(script.handlers);
+        const readsMoveKeys = /key\((['"])(left|right|up|down)\1\)/.test(text);
+        let movesSelf = false;
+        walk(script.handlers.flatMap((h) => h.do), (st) => {
+          if ((st.do === 'glide_to' || st.do === 'position') && st.on === null) movesSelf = true;
+        });
+        if (readsMoveKeys && movesSelf) {
+          add(
+            `script-and-controller-move:${p.definitionId ?? p.id}:${script.id}`,
+            'warning',
+            `${p.name}'s script "${script.name}" moves it with the arrow keys itself, but its Character Controller also walks it with them (speed ${ctrlSpeed}): both move it, so it gets nudged off its square, and a glide from there can go straight through a wall. Set the Character Controller's speed to 0 (keep the controller: it is what makes ${p.name} the player).`,
+            [p.id],
+          );
+        }
+      }
       const dynamic = p.r.components.PhysicsBody?.bodyType === 'dynamic';
       const walks = has(p, 'CharacterController') || has(p, 'Patrol');
       walk(

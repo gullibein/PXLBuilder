@@ -1,0 +1,354 @@
+{
+ "name": "Grid Move",
+ "description": "Moves one square per step with a glide, pausing briefly on each square; digs dirt and pushes boulders sideways (a Boulder Dash player, from a real game).",
+ "enabled": true,
+ "vars": [
+  {
+   "name": "move_speed",
+   "value": 430
+  },
+  {
+   "name": "pause",
+   "value": 0.06
+  },
+  {
+   "name": "tx",
+   "value": 0
+  },
+  {
+   "name": "ty",
+   "value": 0
+  },
+  {
+   "name": "mx",
+   "value": 0
+  },
+  {
+   "name": "my",
+   "value": 0
+  },
+  {
+   "name": "go",
+   "value": false
+  },
+  {
+   "name": "lx",
+   "value": 0
+  },
+  {
+   "name": "ly",
+   "value": 0
+  },
+  {
+   "name": "px",
+   "value": 0
+  },
+  {
+   "name": "py",
+   "value": 0
+  },
+  {
+   "name": "hold",
+   "value": 0
+  },
+  {
+   "name": "gx",
+   "value": 0
+  },
+  {
+   "name": "gy",
+   "value": 0
+  },
+  {
+   "name": "freeze_time",
+   "value": 0.15
+  }
+ ],
+ "states": [
+  "idle",
+  "moving",
+  "rest",
+  "frozen",
+  "wait"
+ ],
+ "handlers": [
+  {
+   "when": {
+    "on": "tick"
+   },
+   "state": null,
+   "if": null,
+   "do": [
+    {
+     "do": "if",
+     "cond": "abs(self.x - px) > 40 or abs(self.y - py) > 40",
+     "then": [
+      {
+       "do": "set",
+       "var": "hold",
+       "value": "time + 0.5",
+       "on": null
+      }
+     ],
+     "else": []
+    },
+    {
+     "do": "if",
+     "cond": "time >= hold",
+     "then": [
+      {
+       "do": "set",
+       "var": "lx",
+       "value": "self.x",
+       "on": null
+      },
+      {
+       "do": "set",
+       "var": "ly",
+       "value": "self.y",
+       "on": null
+      }
+     ],
+     "else": []
+    },
+    {
+     "do": "set",
+     "var": "px",
+     "value": "self.x",
+     "on": null
+    },
+    {
+     "do": "set",
+     "var": "py",
+     "value": "self.y",
+     "on": null
+    }
+   ]
+  },
+  {
+   "when": {
+    "on": "tick"
+   },
+   "state": "idle",
+   "if": null,
+   "do": [
+    {
+     "do": "set",
+     "var": "mx",
+     "value": "(key('right') ? 1 : 0) - (key('left') ? 1 : 0)",
+     "on": null
+    },
+    {
+     "do": "set",
+     "var": "my",
+     "value": "(key('down') ? 1 : 0) - (key('up') ? 1 : 0)",
+     "on": null
+    },
+    {
+     "do": "if",
+     "cond": "mx != 0",
+     "then": [
+      {
+       "do": "set",
+       "var": "my",
+       "value": "0",
+       "on": null
+      }
+     ],
+     "else": []
+    },
+    {
+     "do": "set",
+     "var": "go",
+     "value": "false",
+     "on": null
+    },
+    {
+     "do": "if",
+     "cond": "mx != 0 or my != 0",
+     "then": [
+      {
+       "do": "set",
+       "var": "gx",
+       "value": "round((self.x - 16) / 32) * 32 + 16",
+       "on": null
+      },
+      {
+       "do": "set",
+       "var": "gy",
+       "value": "round((self.y - 16) / 32) * 32 + 16",
+       "on": null
+      },
+      {
+       "do": "set",
+       "var": "tx",
+       "value": "gx + mx * 32",
+       "on": null
+      },
+      {
+       "do": "set",
+       "var": "ty",
+       "value": "gy + my * 32",
+       "on": null
+      },
+      {
+       "do": "if",
+       "cond": "mx != 0",
+       "then": [
+        {
+         "do": "face",
+         "dir": "mx",
+         "on": null
+        }
+       ],
+       "else": []
+      },
+      {
+       "do": "if",
+       "cond": "thing_at(tx, ty, 'dirt') != null",
+       "then": [
+        {
+         "do": "remove",
+         "target": "thing_at(tx, ty, 'dirt')"
+        },
+        {
+         "do": "set",
+         "var": "go",
+         "value": "true",
+         "on": null
+        }
+       ],
+       "else": [
+        {
+         "do": "if",
+         "cond": "thing_at(tx, ty, 'boulder') != null",
+         "then": [
+          {
+           "do": "if",
+           "cond": "my == 0 and not solid_at(tx + mx * 32, ty) and thing_at(tx + mx * 32, ty) == null",
+           "then": [
+            {
+             "do": "glide_to",
+             "x": "tx + mx * 32",
+             "y": "ty",
+             "speed": "move_speed",
+             "on": "thing_at(tx, ty, 'boulder')"
+            },
+            {
+             "do": "set",
+             "var": "go",
+             "value": "true",
+             "on": null
+            }
+           ],
+           "else": []
+          }
+         ],
+         "else": [
+          {
+           "do": "if",
+           "cond": "not solid_at(tx, ty)",
+           "then": [
+            {
+             "do": "set",
+             "var": "go",
+             "value": "true",
+             "on": null
+            }
+           ],
+           "else": []
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "do": "if",
+       "cond": "go",
+       "then": [
+        {
+         "do": "glide_to",
+         "x": "tx",
+         "y": "ty",
+         "speed": "move_speed",
+         "on": null
+        },
+        {
+         "do": "state",
+         "name": "moving"
+        }
+       ],
+       "else": []
+      }
+     ],
+     "else": []
+    }
+   ]
+  },
+  {
+   "when": {
+    "on": "tick"
+   },
+   "state": "moving",
+   "if": "state_time >= 32 / move_speed or (abs(self.x - tx) < 1 and abs(self.y - ty) < 1)",
+   "do": [
+    {
+     "do": "position",
+     "x": "tx",
+     "y": "ty",
+     "on": null
+    },
+    {
+     "do": "state",
+     "name": "rest"
+    }
+   ]
+  },
+  {
+   "when": {
+    "on": "tick"
+   },
+   "state": "rest",
+   "if": "state_time >= pause",
+   "do": [
+    {
+     "do": "state",
+     "name": "idle"
+    }
+   ]
+  },
+  {
+   "when": {
+    "on": "start"
+   },
+   "state": null,
+   "if": null,
+   "do": [
+    {
+     "do": "set",
+     "var": "lx",
+     "value": "self.x",
+     "on": null
+    },
+    {
+     "do": "set",
+     "var": "ly",
+     "value": "self.y",
+     "on": null
+    },
+    {
+     "do": "set",
+     "var": "px",
+     "value": "self.x",
+     "on": null
+    },
+    {
+     "do": "set",
+     "var": "py",
+     "value": "self.y",
+     "on": null
+    }
+   ]
+  }
+ ]
+}
