@@ -29,6 +29,8 @@ export interface EditorLayout {
   mouseZoomSpeed: number;
   showGrid: boolean;
   snapToGrid: boolean;
+  /** Placing over objects already there keeps them (the new ones go on top) instead of replacing them. */
+  addOnTop: boolean;
   /** Outline what the camera shows when play starts, and its limits (on unless turned off). */
   showCameraOutlines: boolean;
   /** How many pixels tall Play draws the game before scaling it up to fill the screen (0: full sharpness). */
@@ -102,6 +104,13 @@ export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout
   },
   { key: 'showGrid', label: 'Grid', description: 'Show the dot grid on the level.', field: { kind: 'boolean', default: true } },
   { key: 'snapToGrid', label: 'Snap to grid', description: 'Snap objects to the grid when placing and moving them.', field: { kind: 'boolean', default: true } },
+  {
+    key: 'addOnTop',
+    label: 'Add on top',
+    description:
+      'Off (normal): an object placed where others already are (dropped, drawn, or a row stretched over them) replaces them. On: it goes on top and both stay. Floors drawn under everything are never replaced. Also in the tool bar.',
+    field: { kind: 'boolean', default: false },
+  },
   {
     key: 'showCameraOutlines',
     label: 'Camera outlines',

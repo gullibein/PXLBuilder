@@ -107,8 +107,6 @@ export interface EditorState {
   saveDialog: boolean;
   /** The Export game window (options, then the HTML file). */
   exportGameOpen: boolean;
-  /** New objects would cover ones already there: "Overwrite or Add?" (resolve(null): neither, nothing placed). */
-  overlapAsk: { placing: string; covered: string; count: number; resolve: (choice: 'overwrite' | 'add' | null) => void } | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -152,7 +150,6 @@ export interface EditorState {
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
-  setOverlapAsk(ask: EditorState['overlapAsk']): void;
   setExportGameOpen(open: boolean): void;
   setSaveDialog(open: boolean): void;
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
@@ -225,7 +222,6 @@ export const useEditor = create<EditorState>()((set, get) => {
     codeEditor: null,
     saveDialog: false,
     exportGameOpen: false,
-    overlapAsk: null,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -444,10 +440,6 @@ export const useEditor = create<EditorState>()((set, get) => {
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },
-    setOverlapAsk(overlapAsk) {
-      set({ overlapAsk });
-    },
-
     setExportGameOpen(exportGameOpen) {
       set({ exportGameOpen });
     },

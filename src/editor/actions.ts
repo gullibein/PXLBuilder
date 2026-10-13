@@ -56,27 +56,23 @@ export function coveredObjects(boxes: Rect[], ignore: ReadonlySet<Id> = new Set(
 }
 
 /**
- * Placing over objects already there: asks "Overwrite or Add?" first, then runs `place` with the objects to delete
- * along with it (overwrite) or none (add). Nothing is in the way: places at once. Neither chosen: nothing happens.
+ * Placing over objects already there: they are replaced (deleted along with the placing, one Undo step), unless
+ * "Add on top" is on (then the new ones go on top and both stay). Says in the console what was replaced.
  */
 export function placeOver(covered: ResolvedEntity[], placing: string, place: (overwriteIds: Id[]) => void): void {
-  if (!covered.length) return place([]);
+  const state = useEditor.getState();
+  if (!covered.length || state.layout.addOnTop) return place([]);
   const counts = new Map<string, number>();
   for (const e of covered) {
-    const name = e.definitionId ? (useEditor.getState().project.definitions.find((d) => d.id === e.definitionId)?.name ?? e.name) : e.name;
+    const name = e.definitionId ? (state.project.definitions.find((d) => d.id === e.definitionId)?.name ?? e.name) : e.name;
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   const names = [...counts.entries()].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
-  const state = useEditor.getState();
-  state.setOverlapAsk({
-    placing,
-    covered: names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0],
-    count: covered.length,
-    resolve: (choice) => {
-      useEditor.getState().setOverlapAsk(null);
-      if (choice) place(choice === 'overwrite' ? covered.map((e) => e.id) : []);
-    },
-  });
+  const before = state.project;
+  place(covered.map((e) => e.id));
+  if (useEditor.getState().project !== before) {
+    state.logMessage('info', `${placing} replaced ${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]} (turn on "Add on top" in the tool bar to keep both)`);
+  }
 }
 
 /** Repeats these objects at these offsets (dragging a side of the selection box): one undoable step; the selection and the copies selected after. */

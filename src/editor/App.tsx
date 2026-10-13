@@ -1,7 +1,6 @@
 import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
 import { ExportGameDialog } from './chrome/ExportGameDialog';
-import { OverlapDialog } from './chrome/OverlapDialog';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -99,7 +98,6 @@ export function App() {
         <CodeEditor />
         <SaveDialog />
         <ExportGameDialog />
-        <OverlapDialog />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -178,8 +176,7 @@ function useGlobalShortcuts() {
           input.focus();
         }
       } else if (e.key === 'Escape') {
-        if (state.overlapAsk) state.overlapAsk.resolve(null);
-        else if (state.dock) state.setDock(null);
+        if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
         else if (state.backgroundOpen) state.setBackgroundOpen(false);
         else if (state.logicOpen) state.setLogicOpen(false);

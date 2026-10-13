@@ -1478,42 +1478,41 @@ try {
       await page.getByTestId('undo').click();
       await check(async () => (await entities()) === n0 + 1, '(Undo)');
     }
-    // Placing over objects already there: "Overwrite" or "Add". A ladder above a column of platforms, stretched down over 3 of them.
+    // Placing over objects already there replaces them; with "Add on top" checked, both stay. A ladder above a column
+    // of platforms, stretched down over 3 of them.
     {
       const cx = (left + right) / 2;
-      const dialog = page.getByTestId('overlap-dialog');
       const undoTitle = async () => (await page.getByTestId('undo').getAttribute('title')) ?? '';
+      const addOnTop = page.getByTestId('tool-add-on-top');
+      await check(async () => (await addOnTop.getAttribute('aria-checked')) === 'false', 'the tool bar has an "Add on top" box, off by default');
       await clickWorld(cx, (top + bottom) / 2);
       await dragWorld([cx, bottom], [cx, bottom + 3 * 32 + 6]);
-      await check(async () => (await entities()) === n0 + 4 && !(await dialog.isVisible()), '(a column of 4 platforms: stretching over empty squares asks nothing)');
+      await check(async () => (await entities()) === n0 + 4, '(a column of 4 platforms)');
       await page.keyboard.press('Escape');
       await page.getByTestId('dock-library').click();
       const cb = await canvas.boundingBox();
       const above = await w2s(cx, top - 16);
       await page.dragAndDrop('[data-testid="definition-Ladder"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: above.x - cb.x, y: above.y - cb.y } });
-      await check(async () => (await entities()) === n0 + 5 && !(await dialog.isVisible()), 'a ladder dropped on the empty square above it: placed, nothing asked');
+      await check(async () => (await entities()) === n0 + 5 && !(await undoTitle()).includes('replacing'), '(a ladder on the empty square above it)');
       const hl = await handles();
       const stretchLadder = () => dragWorld([hl['s0,1'][0], hl['s0,1'][1]], [hl['s0,1'][0], hl['s0,1'][1] + 3 * 32 + 6]);
       await stretchLadder();
-      await check(async () => (await dialog.isVisible()) && (await dialog.innerText()).includes('Ladder would go over Platform ×3'), 'stretching the ladder down over 3 platforms asks: "Ladder would go over Platform ×3", Overwrite or Add');
-      await page.screenshot({ path: `${OUT}/12j-overwrite-or-add.png` });
-      await page.getByTestId('overlap-overwrite').click();
-      await check(async () => (await entities()) === n0 + 5 && (await undoTitle()).includes('replacing 3') && !(await dialog.isVisible()), 'Overwrite: the 3 platforms are replaced by ladder (4 ladders, 1 platform left), in one Undo step');
+      await check(async () => (await entities()) === n0 + 5 && (await undoTitle()).includes('replacing 3'), 'stretching the ladder down over 3 platforms replaces them (4 ladders, 1 platform left), in one Undo step');
       await page.getByTestId('undo').click();
       await check(async () => (await entities()) === n0 + 5, '(Undo: the platforms are back)');
+      await addOnTop.click();
+      await check(async () => (await addOnTop.getAttribute('aria-checked')) === 'true', 'checking "Add on top"');
       await clickWorld(cx, top - 16);
       await stretchLadder();
-      await dialog.waitFor();
-      await page.getByTestId('overlap-add').click();
-      await check(async () => (await entities()) === n0 + 8 && !(await undoTitle()).includes('replacing'), 'Add: the ladder goes over the platforms, which stay (3 more objects)');
+      await check(async () => (await entities()) === n0 + 8 && !(await undoTitle()).includes('replacing'), 'the ladder goes over the platforms and they stay (3 more objects)');
       await page.getByTestId('undo').click();
-      // Dropping onto a platform asks too; Esc places nothing.
+      await addOnTop.click();
+      // Dropping onto a platform replaces it too.
       await page.getByTestId('dock-library').click();
       const onPlatform = await w2s(cx, bottom + 2 * 32 + 16);
       await page.dragAndDrop('[data-testid="definition-Ladder"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: onPlatform.x - cb.x, y: onPlatform.y - cb.y } });
-      await check(async () => (await dialog.isVisible()) && (await dialog.innerText()).includes('Ladder would go over Platform'), 'dropping a ladder onto a platform asks the same');
-      await page.keyboard.press('Escape');
-      await check(async () => (await entities()) === n0 + 5 && !(await dialog.isVisible()), 'Esc: nothing is placed');
+      await check(async () => (await entities()) === n0 + 5 && (await undoTitle()).includes('Place Ladder, replacing 1'), 'dropping a ladder onto a platform replaces it');
+      await page.getByTestId('undo').click();
       await page.getByTestId('undo').click();
       await page.getByTestId('undo').click();
       await check(async () => (await entities()) === n0 + 1, '(Undo)');

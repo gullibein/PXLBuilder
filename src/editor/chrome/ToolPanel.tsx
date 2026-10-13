@@ -13,6 +13,7 @@ export function ToolPanel() {
   const brush = useEditor((s) => (s.tool.kind === 'brush' ? s.project.definitions.find((d) => d.id === (s.tool as { definitionId: string }).definitionId) : undefined));
   const wireframe = useEditor((s) => s.layout.wireframe);
   const altHeld = useEditor((s) => s.altHeld);
+  const addOnTop = useEditor((s) => s.layout.addOnTop);
   const eyedropper = tool.kind === 'eyedropper' || altHeld;
   const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
   return (
@@ -71,6 +72,20 @@ export function ToolPanel() {
           <Thumb def={brush} size={20} />
         </button>
       )}
+      <button
+        className={`tool${addOnTop ? ' on' : ''}`}
+        title={addOnTop ? 'Add on top is on: placing over objects keeps them, the new ones go on top. Click to replace them instead.' : 'Add on top is off: placing over objects replaces them. Click to keep them and add on top.'}
+        aria-label="Add on top"
+        role="checkbox"
+        aria-checked={addOnTop}
+        data-testid="tool-add-on-top"
+        onClick={() => setLayout({ addOnTop: !addOnTop })}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <rect x="2.5" y="6.5" width="9" height="9" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeDasharray={addOnTop ? undefined : '2 1.6'} />
+          <rect x="6.5" y="2.5" width="9" height="9" rx="1.2" fill={addOnTop ? 'currentColor' : 'none'} fillOpacity="0.35" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      </button>
       <span className="tool-sep" />
       <button
         className={`tool${backgroundOpen ? ' on' : ''}`}
