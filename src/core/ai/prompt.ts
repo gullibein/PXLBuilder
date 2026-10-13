@@ -21,13 +21,19 @@ ${JSON.stringify(z.toJSONSchema(aiResponseSchema))}`;
   return jsonInstructions;
 }
 
-export function userMessage(body: AIRequestBody): string {
+/** The request as two parts: the game's data (the same while the game doesn't change: cacheable) and the rest. */
+export function userMessageParts(body: AIRequestBody): { context: string; rest: string } {
   const history = body.history.length
     ? `Recent requests in this same context (oldest first; the project data above reflects their results):\n${body.history
         .map((h) => `- User: ${h.request}\n  You: ${h.reply}`)
         .join('\n')}\n\n`
     : '';
-  return `CONTEXT\n${JSON.stringify(body.context)}\n\n${history}REQUEST\n${body.request}`;
+  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${history}REQUEST\n${body.request}` };
+}
+
+export function userMessage(body: AIRequestBody): string {
+  const { context, rest } = userMessageParts(body);
+  return context + rest;
 }
 
 /** The JSON object in a plain-JSON reply (tolerates a ```json fence around it). */

@@ -68,7 +68,7 @@ describe('operations', () => {
               { component: 'PhysicsBody', propsJson: '{"gravityScale":0}' },
             ],
           },
-          { op: 'place_instance', sceneId, definitionRef: 'robot', x: 100, y: -100, name: null, ref: null },
+          { op: 'place_instance', sceneId, definitionRef: 'robot', x: 100, y: -100, name: null, ref: null, onTop: null },
         ],
         registry,
       );
@@ -215,7 +215,7 @@ describe('logic operations (the relationships proof of concept, without a model)
         d,
         [
           { op: 'create_definition', ref: 'flag', name: 'Flag', description: 'Goal', category: 'Environment', tags: ['goal'], components: [{ component: 'Collider', propsJson: '{"isTrigger":true}' }] },
-          { op: 'place_instance', sceneId, definitionRef: 'flag', x: 900, y: 0, name: 'Goal Flag', ref: 'goal' },
+          { op: 'place_instance', sceneId, definitionRef: 'flag', x: 900, y: 0, name: 'Goal Flag', ref: 'goal', onTop: null },
           {
             op: 'create_rule',
             sceneId,
@@ -254,12 +254,37 @@ describe('logic operations (the relationships proof of concept, without a model)
 });
 
 describe('drawing levels', () => {
+  it('one object per square: drawing or placing over other objects replaces them (onTop keeps both); the player is never drawn over', () => {
+    const { project, sceneId, def } = level();
+    const stone = def('Stone').id;
+    const at = (p: Project, col: number, row: number) => p.scenes[0].entities.filter((e) => Math.abs(e.transform.position.x - (col * 32 + 16)) < 16 && Math.abs(e.transform.position.y - (row * 32 + 16)) < 16).map((e) => p.definitions.find((d) => d.id === e.definitionId)?.name);
+    // Platforms in row 5, then stone drawn over two of them: those two are stone now, not both.
+    const p1 = apply(project, [
+      { op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 10, row: 5, width: 4, height: 1 }], onTop: null },
+      { op: 'draw_tiles', sceneId, definitionRef: stone, rects: [{ col: 11, row: 5, width: 2, height: 1 }], onTop: null },
+    ]);
+    expect([10, 11, 12, 13].map((c) => at(p1, c, 5))).toEqual([['Platform'], ['Stone'], ['Stone'], ['Platform']]);
+    // A door placed in that row replaces the stone it covers; with onTop the stone stays under it.
+    const p2 = apply(p1, [{ op: 'place_instance', sceneId, definitionRef: def('Coin').id, x: 11 * 32 + 16, y: 5 * 32 + 16, name: null, ref: null, onTop: null }]);
+    expect(at(p2, 11, 5)).toEqual(['Coin']);
+    const p3 = apply(p1, [{ op: 'place_instance', sceneId, definitionRef: def('Coin').id, x: 11 * 32 + 16, y: 5 * 32 + 16, name: null, ref: null, onTop: true }]);
+    expect(at(p3, 11, 5)).toEqual(['Stone', 'Coin']);
+    // Stone drawn over the player's square: that square is left out; the player stays.
+    const player = project.scenes[0].entities.find((e) => e.name === 'Player')!;
+    const [pc, pr] = [20, -4];
+    const onCell = apply(project, [{ op: 'set_transform', entityId: player.id, x: pc * 32 + 16, y: pr * 32 + 16, rotation: null, scaleX: null, scaleY: null }]);
+    const p4 = apply(onCell, [{ op: 'draw_tiles', sceneId, definitionRef: stone, rects: [{ col: pc - 1, row: pr, width: 3, height: 1 }], onTop: null }]);
+    expect(p4.scenes[0].entities.some((e) => e.id === player.id)).toBe(true);
+    expect(at(p4, pc, pr)).toEqual(['Player']);
+    expect(at(p4, pc - 1, pr)).toContain('Stone');
+  });
+
   it('draw_tiles fills rectangles of 32px cells, one copy per cell, without duplicates', () => {
     const { project, sceneId, def } = level();
     const platform = def('Platform').id;
     const before = project.scenes[0].entities.length;
     const p = apply(project, [
-      { op: 'draw_tiles', sceneId, definitionRef: platform, rects: [{ col: -2, row: 3, width: 5, height: 1 }, { col: 0, row: 3, width: 2, height: 2 }] },
+      { op: 'draw_tiles', sceneId, definitionRef: platform, rects: [{ col: -2, row: 3, width: 5, height: 1 }, { col: 0, row: 3, width: 2, height: 2 }], onTop: null },
     ]);
     const tiles = p.scenes[0].entities.filter((e) => e.definitionId === platform);
     // 5 in row 3, plus 2 new in row 4 (the two in row 3 already exist).
@@ -270,7 +295,7 @@ describe('drawing levels', () => {
 
   it('a shorter object rests on the bottom of its cell (spikes sit on the ground below)', () => {
     const { project, sceneId, def } = level();
-    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: 0, width: 1, height: 1 }] }]);
+    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: 0, width: 1, height: 1 }], onTop: null }]);
     const hazard = p.scenes[0].entities.at(-1)!;
     // Hazard is 32x16 (one cell): centered in cell 0 at x=16, bottom at y=32.
     expect(hazard.transform.position).toEqual({ x: 16, y: 24 });
@@ -280,34 +305,34 @@ describe('drawing levels', () => {
     const { project, sceneId, def } = level();
     const before = project.scenes[0].entities.length;
     // A 4-cell row of one-cell spikes: four copies, one per cell.
-    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: -1, width: 4, height: 1 }] }]);
+    const p = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Hazard').id, rects: [{ col: 0, row: -1, width: 4, height: 1 }], onTop: null }]);
     expect(p.scenes[0].entities.slice(before).map((e) => e.transform.position.x)).toEqual([16, 48, 80, 112]);
     // A 2-cell-wide object (a 64-wide block) every 2 cells.
     const wide = apply(project, [
       { op: 'create_definition', ref: 'w', name: 'Wide', description: '', category: 'Platforms', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":64,"height":32}' }] },
-      { op: 'draw_tiles', sceneId, definitionRef: 'w', rects: [{ col: 0, row: -1, width: 4, height: 1 }] },
+      { op: 'draw_tiles', sceneId, definitionRef: 'w', rects: [{ col: 0, row: -1, width: 4, height: 1 }], onTop: null },
     ]);
     expect(wide.scenes[0].entities.slice(before).map((e) => e.transform.position)).toEqual([{ x: 32, y: -16 }, { x: 96, y: -16 }]);
     // A door (one cell wide, two tall) drawn in one row stands on that row's bottom, not sunk into the ground.
-    const d = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Door').id, rects: [{ col: 3, row: -1, width: 1, height: 1 }] }]);
+    const d = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Door').id, rects: [{ col: 3, row: -1, width: 1, height: 1 }], onTop: null }]);
     expect(d.scenes[0].entities.at(-1)!.transform.position).toEqual({ x: 112, y: -32 });
   });
 
   it('something placed half into the ground is lifted onto it; something in the air stays', () => {
     const { project, sceneId, def } = level();
-    const ground = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 20, row: 0, width: 4, height: 1 }] }]);
+    const ground = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 20, row: 0, width: 4, height: 1 }], onTop: null }]);
     // The ground row's top is at y=0. A 64-tall door centered at y=-16 is sunk 16 px into it.
     const p = apply(ground, [
-      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 680, y: -16, name: null, ref: null },
-      { op: 'place_instance', sceneId, definitionRef: def('Coin').id, x: 720, y: -60, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 680, y: -16, name: null, ref: null, onTop: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Coin').id, x: 720, y: -60, name: null, ref: null, onTop: null },
     ]);
     const [door, coin] = p.scenes[0].entities.slice(-2);
     expect(door.transform.position).toEqual({ x: 680, y: -32 });
     expect(coin.transform.position).toEqual({ x: 720, y: -60 });
     // A door or spikes placed in the air drop onto the surface below (a coin may float).
     const dropped = apply(ground, [
-      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 690, y: -200, name: null, ref: null },
-      { op: 'place_instance', sceneId, definitionRef: def('Hazard').id, x: 720, y: -150, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Door').id, x: 690, y: -200, name: null, ref: null, onTop: null },
+      { op: 'place_instance', sceneId, definitionRef: def('Hazard').id, x: 720, y: -150, name: null, ref: null, onTop: null },
     ]);
     const [door2, spikes] = dropped.scenes[0].entities.slice(-2);
     expect(door2.transform.position.y).toBe(-32);
@@ -316,7 +341,7 @@ describe('drawing levels', () => {
 
   it('erase_area removes what is in the cells (optionally one object only), with its connections', () => {
     const { project, sceneId, def } = level();
-    const p1 = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 10, row: 0, width: 4, height: 1 }] }, { op: 'draw_tiles', sceneId, definitionRef: def('Stone').id, rects: [{ col: 10, row: 1, width: 4, height: 1 }] }]);
+    const p1 = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 10, row: 0, width: 4, height: 1 }], onTop: null }, { op: 'draw_tiles', sceneId, definitionRef: def('Stone').id, rects: [{ col: 10, row: 1, width: 4, height: 1 }], onTop: null }]);
     const p2 = apply(p1, [{ op: 'erase_area', sceneId, col: 10, row: 0, width: 2, height: 2, definitionRef: def('Stone').id }]);
     expect(p2.scenes[0].entities.length).toBe(p1.scenes[0].entities.length - 2);
     const p3 = apply(p1, [{ op: 'erase_area', sceneId, col: 10, row: 0, width: 4, height: 2, definitionRef: null }]);
@@ -325,7 +350,7 @@ describe('drawing levels', () => {
 
   it('refuses huge fills', () => {
     const { project, sceneId, def } = level();
-    expect(() => apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 0, row: 0, width: 100, height: 100 }] }])).toThrow(/too many/);
+    expect(() => apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 0, row: 0, width: 100, height: 100 }], onTop: null }])).toThrow(/too many/);
   });
 
   it('the AI is told the grid and what the player can reach', () => {
@@ -349,10 +374,10 @@ describe('create_level: the AI makes more levels', () => {
     const platform = project.definitions.find((d) => d.name === 'Platform')!.id;
     const ops = operationSchema.array().parse([
       { op: 'create_level', ref: 'L2', name: 'The Mines' },
-      { op: 'place_instance', sceneId: 'L2', definitionRef: player, x: 16, y: 16, name: null, ref: null },
-      { op: 'draw_tiles', sceneId: 'L2', definitionRef: platform, rects: [{ col: -2, row: 1, width: 6, height: 1 }] },
+      { op: 'place_instance', sceneId: 'L2', definitionRef: player, x: 16, y: 16, name: null, ref: null, onTop: null },
+      { op: 'draw_tiles', sceneId: 'L2', definitionRef: platform, rects: [{ col: -2, row: 1, width: 6, height: 1 }], onTop: null },
       { op: 'create_level', ref: 'L3', name: 'The Tower' },
-      { op: 'place_instance', sceneId: 'L3', definitionRef: player, x: 0, y: 0, name: null, ref: null },
+      { op: 'place_instance', sceneId: 'L3', definitionRef: player, x: 0, y: 0, name: null, ref: null, onTop: null },
     ]);
     const after = apply(project, ops);
     expect(after.scenes.map((s) => s.name)).toEqual([project.scenes[0].name, 'The Mines', 'The Tower']);

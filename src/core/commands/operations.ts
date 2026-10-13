@@ -17,7 +17,7 @@ import { generateId } from '../ids';
 import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
-import { getEntitySize } from '../model/geometry';
+import { getEntitySize, getWorldBounds, type Rect } from '../model/geometry';
 import * as m from '../model/mutations';
 import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
@@ -110,6 +110,7 @@ export const operationSchema = z.union([
     y: z.number(),
     name: z.string().nullable(),
     ref: z.string().nullable().describe('Temporary name for the placed entity, usable as an entity id in later relationships/rules in this list; null if not needed'),
+    onTop: z.boolean().nullable().describe('Where other objects already are: null/false replaces them (deletes what it covers, as placing in the editor does); true puts it on top and keeps them, only when both must really share the square'),
   }),
   z.object({
     op: z.literal('draw_sprite'),
@@ -142,6 +143,7 @@ export const operationSchema = z.union([
     rects: z
       .array(z.object({ col: z.number().int(), row: z.number().int(), width: z.number().int().min(1), height: z.number().int().min(1) }))
       .describe('Rectangles of 32px level cells to fill, one copy per cell (a row of ground: height 1)'),
+    onTop: z.boolean().nullable().describe('Where other objects already are: null/false replaces them (deletes what it covers, as placing in the editor does); true puts it on top and keeps them, only when both must really share the square'),
   }),
   z.object({
     op: z.literal('build_path'),
@@ -339,6 +341,32 @@ export function checkOperations(project: Project, ops: Operation[], registry: Co
  * cells, as the pen and dragging put them; an AI position in between is moved
  * to the nearest cell, so every piece can be dragged on the grid afterwards.
  */
+/** How much two boxes overlap, as a share of the smaller one (0: apart or only touching). */
+function overlapShare(a: Rect, b: Rect): number {
+  const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+  if (w <= 0 || h <= 0) return 0;
+  const area = (r: Rect) => Math.max(1, (r.maxX - r.minX) * (r.maxY - r.minY));
+  return (w * h) / Math.min(area(a), area(b));
+}
+
+/**
+ * What a new object placed in this level would cover, as the editor decides it: other objects sharing at least half a
+ * square with it. Floors (drawn under everything) never count, nor does anything when a floor is placed.
+ */
+function coveredBy(project: Project, sceneId: Id, entity: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry): { id: Id; isPlayer: boolean }[] {
+  const resolved = resolveEntity(project, entity, registry);
+  const under = (c: typeof resolved.components) => Number(c.Sprite?.layer ?? 0) < 0;
+  if (under(resolved.components)) return [];
+  const box = getWorldBounds(resolved);
+  return m
+    .getScene(project, sceneId)
+    .entities.map((e) => resolveEntity(project, e, registry))
+    .filter((e) => e.definitionId !== entity.definitionId || entity.definitionId === null)
+    .filter((e) => !under(e.components) && overlapShare(getWorldBounds(e), box) >= 0.5)
+    .map((e) => ({ id: e.id, isPlayer: !!e.components.CharacterController }));
+}
+
 function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
   if (def.metadata.placement !== 'tile') return p;
   const size = (def.components.Sprite as { width?: number; height?: number } | undefined) ?? {};
@@ -531,6 +559,14 @@ export function applyOperations(
         const defId = refs.get(op.definitionRef) ?? op.definitionRef;
         const def = m.getDefinition(project, defId);
         const entity = instantiateDefinition(def, onGrid(def, { x: op.x, y: op.y }), op.name ?? def.name);
+        // Over other objects: replaces them (as placing in the editor does), unless onTop. The player is never deleted.
+        if (!op.onTop) {
+          const gone = coveredBy(project, op.sceneId, entity, registry).filter((c) => !c.isPlayer).map((c) => c.id);
+          if (gone.length) {
+            m.removeEntities(project, op.sceneId, gone);
+            result.removedEntityIds.push(...gone);
+          }
+        }
         m.addEntity(project, op.sceneId, entity);
         if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);
@@ -627,6 +663,15 @@ export function applyOperations(
               if (taken.has(key)) continue;
               taken.add(key);
               const entity = instantiateDefinition(def, pos);
+              // Over other objects: replaces them, unless onTop; a cell with the player in it is left out (never drawn over).
+              if (!op.onTop) {
+                const covered = coveredBy(project, op.sceneId, entity, registry);
+                if (covered.some((c) => c.isPlayer)) continue;
+                if (covered.length) {
+                  m.removeEntities(project, op.sceneId, covered.map((c) => c.id));
+                  result.removedEntityIds.push(...covered.map((c) => c.id));
+                }
+              }
               m.addEntity(project, op.sceneId, entity);
               result.createdEntityIds.push(entity.id);
             }

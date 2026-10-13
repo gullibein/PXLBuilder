@@ -2403,11 +2403,15 @@ try {
     if (r.url().includes('/v1/models/')) return json(200, { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-01-01T00:00:00Z' });
     const sent = JSON.parse(r.postData());
     anthropicCalls.at(-1).effort = sent.output_config?.effort;
-    const text = sent.messages[0].content;
+    anthropicCalls.at(-1).model = sent.model;
+    anthropicCalls.at(-1).sent = sent;
+    // The game data and the request come as two blocks (the first cached).
+    const content = sent.messages[0].content;
+    const text = typeof content === 'string' ? content : content.map((b) => b.text).join('');
     const context = JSON.parse(text.split('\n')[1]);
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
     const out = stubModel({ context, request, history: [] });
-    return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 10 } });
+    return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 25000, cache_creation_input_tokens: 0 } });
   });
   await kp.goto(URL);
   await startPlatformer(kp);
@@ -2443,6 +2447,7 @@ try {
   await check(async () => (await dialog.getByTestId('ai-connection-status').innerText()).includes('sk-ant-…1234') && (await dialog.getByTestId('ai-connection-status').innerText()).includes('this session only'), 'the key is shown masked, kept for this session only (not remembered by default)');
   await check(async () => (await dialog.getByTestId('ai-key-input').inputValue()) === '' && (await dialog.getByTestId('ai-key-input').getAttribute('type')) === 'password', 'the key field is a password field and is cleared after connecting');
   await check(anthropicCalls.every((c) => c.browser === 'true'), 'calls go straight from the browser to the Anthropic API');
+  await check(async () => (await dialog.getByTestId('ai-model-claude-opus-5-5').getAttribute('aria-checked')) === 'true' && (await dialog.getByTestId('ai-model-hint').innerText()).includes('$4 per million tokens in, $20 out'), 'with a key, a model choice: Opus by default, with its price');
   await kp.keyboard.press('Escape');
 
   await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
@@ -2450,6 +2455,30 @@ try {
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'message' && (await kPrompt.getByTestId('prompt-result').innerText()).includes("There's no mushroom enemy"), 'the AI instructs the user when what they describe does not exist yet');
   await check(serverCalls === serverBefore && anthropicCalls.at(-1).key === VALID && anthropicCalls.at(-1).url.includes('/v1/messages'), 'prompts use the user key, not the server');
+  {
+    const sent = anthropicCalls.at(-1).sent;
+    await check(anthropicCalls.at(-1).model === 'claude-opus-5-5' && sent.system[0].cache_control?.ttl === '1h' && sent.messages[0].content[0].cache_control?.type === 'ephemeral', 'Opus by default; the system prompt is cached for an hour and the game data for the request');
+    // Each request's cost, from the token counts the API reported: Opus, 1,000 in + 25,000 from cache + 2,000 out = $0.054.
+    await kp.keyboard.press('Escape');
+    await kp.getByTestId('console-toggle').click();
+    await check(async () => (await kp.getByTestId('console').innerText()).includes('AI request: $0.054 (claude-opus-5-5: 26,000 tokens in (25,000 from cache) · 2,000 out)'), 'the console says what the request cost ($0.054), worked out from the reported tokens');
+    await kp.getByTestId('tray').getByRole('button', { name: 'Close' }).click();
+    // A cheaper model, chosen in AI connection, is the one asked.
+    await kp.getByTestId('main-menu').click();
+    await kp.getByTestId('menu-ai-connection').click();
+    await dialog.getByTestId('ai-model-claude-haiku-5-5').click();
+    await check(async () => (await dialog.getByTestId('ai-model-hint').innerText()).includes('$0.1 per million tokens in') && (await dialog.getByTestId('ai-spend').innerText()).includes('$0.054 this session (1 request)'), 'choosing Haiku shows its price, and what has been spent so far');
+    await kp.keyboard.press('Escape');
+    await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+    await kAsk('Make the player faster.');
+    await kPrompt.getByTestId('prompt-result').waitFor();
+    await check(async () => anthropicCalls.at(-1).model === 'claude-haiku-5-5', 'the next prompt asks Haiku');
+    await kp.keyboard.press('Escape');
+    await kp.getByTestId('main-menu').click();
+    await kp.getByTestId('menu-ai-connection').click();
+    await dialog.getByTestId('ai-model-claude-opus-5-5').click();
+    await kp.keyboard.press('Escape');
+  }
   await kp.keyboard.press('Escape');
   await kp.getByTestId('dock-create').click();
   const kCreate = kp.getByTestId('create-prompt');

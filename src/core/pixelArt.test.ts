@@ -148,8 +148,8 @@ describe('pixel-art sprites', () => {
     const coin = project.definitions.find((d) => d.name === 'Coin')!.id;
     const next = produce(project, (d) => {
       applyOperations(d, [
-        { op: 'place_instance', sceneId, definitionRef: stone, x: 100, y: -50, name: null, ref: 's' },
-        { op: 'place_instance', sceneId, definitionRef: coin, x: 100, y: -50, name: null, ref: null },
+        { op: 'place_instance', sceneId, definitionRef: stone, x: 100, y: -50, name: null, ref: 's', onTop: null },
+        { op: 'place_instance', sceneId, definitionRef: coin, x: 100, y: -50, name: null, ref: null, onTop: true },
       ], registry);
     });
     const [s, c] = next.scenes[0].entities;

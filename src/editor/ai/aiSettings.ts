@@ -3,6 +3,7 @@
  * fast. Saved in this browser (not in the game). Keys live in apiKey.ts.
  */
 import { useEffect, useState } from 'react';
+import { isClaudeModel, MODEL, type ClaudeModel } from '../../core/ai/claude';
 import type { AISpeed } from '../../core/ai/protocol';
 
 export type AIVendor = 'claude' | 'gemini';
@@ -10,6 +11,8 @@ export type AIVendor = 'claude' | 'gemini';
 export interface AISettings {
   vendor: AIVendor;
   speed: AISpeed;
+  /** The Claude model asked with your own Anthropic key (Opus unless you choose a cheaper one). */
+  claudeModel: ClaudeModel;
   /** The Gemini model to use (picked from the ones the key can use). */
   geminiModel: string;
   /** Asked instead when geminiModel is busy ('' = no backup). */
@@ -27,7 +30,7 @@ export const DEFAULT_GEMINI_BACKUP = 'gemini-3.5-flash';
 export const GEMINI_FLASH_MODELS = [DEFAULT_GEMINI_MODEL, 'gemini-3.7-flash', 'gemini-3.6-flash', DEFAULT_GEMINI_BACKUP, 'gemini-3.5-flash-lite'];
 
 const STORAGE_KEY = 'pxlbuilder.aiSettings';
-const DEFAULTS: AISettings = { vendor: 'claude', speed: 'best', geminiModel: DEFAULT_GEMINI_MODEL, geminiBackup: DEFAULT_GEMINI_BACKUP };
+const DEFAULTS: AISettings = { vendor: 'claude', speed: 'best', claudeModel: MODEL, geminiModel: DEFAULT_GEMINI_MODEL, geminiBackup: DEFAULT_GEMINI_BACKUP };
 const listeners = new Set<() => void>();
 
 function load(): AISettings {
@@ -36,6 +39,7 @@ function load(): AISettings {
     return {
       vendor: raw.vendor === 'gemini' ? 'gemini' : 'claude',
       speed: raw.speed === 'fast' ? 'fast' : 'best',
+      claudeModel: isClaudeModel(raw.claudeModel) ? raw.claudeModel : MODEL,
       geminiModel: typeof raw.geminiModel === 'string' && raw.geminiModel.trim() ? raw.geminiModel.trim() : DEFAULT_GEMINI_MODEL,
       geminiBackup: typeof raw.geminiBackup === 'string' ? raw.geminiBackup.trim() : DEFAULT_GEMINI_BACKUP,
     };

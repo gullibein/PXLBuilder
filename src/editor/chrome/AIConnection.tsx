@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { geminiKey, getApiKey, isKeyRemembered, maskKey, onApiKeyChange, setApiKey } from '../ai/apiKey';
 import { GEMINI_FLASH_MODELS, setAISettings, useAISettings } from '../ai/aiSettings';
+import { CLAUDE_MODELS, type ClaudeModel } from '../../core/ai/claude';
 import { testApiKey } from '../ai/browserProvider';
+import { dollars, resetSpendTotal, useSpend } from '../ai/spend';
 import { listGeminiModels } from '../ai/geminiProvider';
 import { claudeSample } from '../ai/sampleProvider';
 import { useEditor } from '../store';
@@ -188,8 +190,45 @@ function ClaudeSection() {
           {status.text}
         </p>
       )}
+      {key && <ClaudeModelChoice />}
       <p className="bg-hint">
         Your key stays in this browser and is sent only to Anthropic, never to PXLBuilder or anyone else. Requests are billed to your Anthropic account. Anyone using this browser profile can use a remembered key, so don't remember it on a shared computer. Get a key at console.anthropic.com.
+      </p>
+    </>
+  );
+}
+
+/** Hints for each model: what it is good for, next to its price. */
+const MODEL_HINTS: Record<ClaudeModel, string> = {
+  'claude-opus-5-5': 'The most capable: best at scripts, whole levels and "why…?" questions.',
+  'claude-sonnet-5-5': 'Half the price of Opus. Good at most requests; may need a second try on hard ones.',
+  'claude-haiku-5-5': 'About 40 times cheaper than Opus. Fine for small changes (colors, sizes, moving things, simple behaviors); more likely to get scripts and whole levels wrong.',
+};
+
+/** Which Claude model your key asks (and what that has cost so far). Opus unless you choose otherwise. */
+function ClaudeModelChoice() {
+  const { claudeModel } = useAISettings();
+  const spend = useSpend();
+  return (
+    <>
+      <span className="bg-label">Model</span>
+      <div className="seg" role="radiogroup" aria-label="Claude model">
+        {(Object.keys(CLAUDE_MODELS) as ClaudeModel[]).map((m) => (
+          <button key={m} role="radio" aria-checked={claudeModel === m} className={claudeModel === m ? 'on' : ''} data-testid={`ai-model-${m}`} onClick={() => setAISettings({ claudeModel: m })}>
+            {CLAUDE_MODELS[m].name.replace('Claude ', '')}
+          </button>
+        ))}
+      </div>
+      <p className="bg-hint" data-testid="ai-model-hint">
+        {MODEL_HINTS[claudeModel]} ${CLAUDE_MODELS[claudeModel].input} per million tokens in, ${CLAUDE_MODELS[claudeModel].output} out. Changes are checked before they're applied, whichever model answers.
+      </p>
+      <p className="bg-hint" data-testid="ai-spend">
+        Spent with your key: {dollars(spend.session.cost)} this session ({spend.session.requests} request{spend.session.requests === 1 ? '' : 's'}); {dollars(spend.total.cost)} in this browser since {new Date(spend.total.since).toLocaleDateString()} ({spend.total.requests}).{' '}
+        <button className="text-btn" data-testid="ai-spend-reset" onClick={resetSpendTotal}>
+          Reset
+        </button>
+        <br />
+        Worked out from the token counts Anthropic reports for each request (the console shows each one); your Anthropic Console has the exact bill.
       </p>
     </>
   );

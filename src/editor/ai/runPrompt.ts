@@ -77,7 +77,7 @@ async function currentProvider(): Promise<AIProvider> {
     return new GeminiProvider(gKey, settings.geminiModel, settings.geminiBackup || null, (note) => useEditor.getState().logMessage('info', note));
   }
   const key = getApiKey();
-  return key ? new BrowserClaudeProvider(key) : httpProvider;
+  return key ? new BrowserClaudeProvider(key, (message) => useEditor.getState().logMessage('info', message)) : httpProvider;
 }
 
 /** The plain editing command this prompt is, for this card (objects, the level; "delete" also for a connection). */

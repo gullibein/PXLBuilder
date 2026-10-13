@@ -104,7 +104,7 @@ describe('top-down levels', () => {
   it('things the AI places stay where they are put (no dropping onto the floor below)', () => {
     const l = room();
     const door = l.project.definitions.find((d) => d.components.Openable)!;
-    const op: Operation = { op: 'place_instance', sceneId: l.sceneId, definitionRef: door.id, x: 48, y: -48, name: null, ref: null };
+    const op: Operation = { op: 'place_instance', sceneId: l.sceneId, definitionRef: door.id, x: 48, y: -48, name: null, ref: null, onTop: null };
     const after = produce(l.project, (d) => void applyOperations(d, [op], registry));
     const placed = after.scenes[0].entities.find((e) => e.definitionId === door.id)!;
     expect(placed.transform.position.y).toBe(-48);

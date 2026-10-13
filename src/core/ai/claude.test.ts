@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { askClaude, MODEL, resetClaudeFeatures } from './claude';
+import { askClaude, MODEL, resetClaudeFeatures, usageCost } from './claude';
 import type { AIRequestBody } from './protocol';
 
 /** A client whose one call records its parameters and answers. */
@@ -105,5 +105,35 @@ describe('the Claude call', () => {
     expect(result).toMatchObject({ ok: false, status: 402 });
     expect(!result.ok && result.error).toMatch(/no credit left.*paid separately from a Claude subscription/);
     expect(calls).toBe(1);
+  });
+
+  it('the chosen model is asked; the system prompt is cached for an hour and the game data for the request', async () => {
+    const seen: Record<string, unknown>[] = [];
+    await askClaude(fakeClient(seen), body(), undefined, 'claude-haiku-5-5');
+    const p = seen[0] as { model: string; system: { cache_control: unknown }[]; messages: { content: { text: string; cache_control?: unknown }[] }[] };
+    expect(p.model).toBe('claude-haiku-5-5');
+    expect(p.system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    const [data, rest] = p.messages[0].content;
+    expect(data.text.startsWith('CONTEXT')).toBe(true);
+    expect(data.cache_control).toEqual({ type: 'ephemeral' });
+    expect(rest.text).toContain('REQUEST\nHello');
+    expect(rest).not.toHaveProperty('cache_control');
+  });
+
+  it("a request's cost comes from the API's token counts (cache writes and reads priced as Anthropic prices them)", async () => {
+    // Opus 5.5: $4 in, $20 out per million; an hour's cache write 2×, a 5-minute one 1.25×, a read 0.1×.
+    const u = usageCost('claude-opus-5-5', {
+      input_tokens: 1000,
+      output_tokens: 2000,
+      cache_read_input_tokens: 20000,
+      cache_creation_input_tokens: 30000,
+      cache_creation: { ephemeral_1h_input_tokens: 25000, ephemeral_5m_input_tokens: 5000 },
+    });
+    expect(u.cost).toBeCloseTo((1000 * 4 + 25000 * 8 + 5000 * 5 + 20000 * 0.4 + 2000 * 20) / 1e6, 10);
+    expect(usageCost('claude-haiku-5-5', { input_tokens: 1e6, output_tokens: 1e6 }).cost).toBeCloseTo(0.6, 10);
+    expect(usageCost('some-other-model', { input_tokens: 1, output_tokens: 1 }).cost).toBeNull();
+    // The answer carries it.
+    const client = { beta: { messages: { parse: async () => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', parsed_output: answer, usage: { input_tokens: 10, output_tokens: 10 } }) } } } as unknown as Anthropic;
+    expect((await askClaude(client, body())).usage?.cost).toBeCloseTo(240 / 1e6, 12);
   });
 });

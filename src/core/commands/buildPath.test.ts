@@ -72,7 +72,7 @@ describe('build_path: levels built as a route the player can follow', () => {
     const from = (start: { col: number; row: number }) => () => build(ground, [{ op: 'build_path', sceneId, start, direction: 'right', floor: 'Stone', ladder: null, steps: [{ do: 'run', cells: 2 }] }]);
     expect(from({ col: 4, row: -6 })).toThrow(/not a spot the player can get to/);
     expect(from({ col: 4, row: 0 })).not.toThrow(); // on the ground the player walks on
-    const blocked = build(ground, [{ op: 'place_instance', sceneId, definitionRef: ground.definitions.find((d) => d.name === 'Stone')!.id, x: 240, y: 16, name: null, ref: null }]);
+    const blocked = build(ground, [{ op: 'place_instance', sceneId, definitionRef: ground.definitions.find((d) => d.name === 'Stone')!.id, x: 240, y: 16, name: null, ref: null, onTop: null }]);
     expect(() => build(blocked, [{ op: 'build_path', sceneId, start: { col: 5, row: 0 }, direction: 'right', floor: 'Platform', ladder: null, steps: [{ do: 'run', cells: 3 }] }])).toThrow(/no room to stand|already taken/);
   });
 
@@ -95,7 +95,7 @@ describe('build_path: levels built as a route the player can follow', () => {
       { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'teleports_to', source: { kind: 'entity', id: 'down' }, target: { kind: 'entity', id: 'up' }, params: {}, conditions: [] }) },
       { op: 'create_relationship', sceneId, relationshipJson: JSON.stringify({ type: 'requires', source: { kind: 'entity', id: 'door' }, target: { kind: 'object', id: id('Key') }, params: {}, conditions: [] }) },
       // An enemy placed in the air lands on the floor below it.
-      { op: 'place_instance', sceneId, definitionRef: id('Enemy'), x: 400, y: -100, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: id('Enemy'), x: 400, y: -100, name: null, ref: null, onTop: null },
     ]);
     expect(reachabilityProblems(after, sceneId, registry)).toEqual([]);
     const map = levelMap(after, sceneId, registry)!.rows.join('\n');
