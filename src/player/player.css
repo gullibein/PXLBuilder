@@ -1,9 +1,5 @@
 /* The standalone game page: the game fills the window. */
 html, body, #root { margin: 0; height: 100%; background: #0d0b16; overflow: hidden; }
 #root { position: relative; }
-.player-start { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; border: none; background: radial-gradient(circle at 50% 40%, #2a2550, #0d0b16 70%); color: #fff; cursor: pointer; font-family: system-ui, sans-serif; }
-.player-title { font-size: clamp(28px, 6vw, 56px); font-weight: 800; letter-spacing: 0.02em; text-align: center; padding: 0 16px; }
-.player-hint { font-size: 18px; padding: 10px 22px; border-radius: 999px; background: #7b6cf6; }
-.player-keys { font-size: 13px; opacity: 0.7; text-align: center; padding: 0 16px; }
 .player-note { color: #fff; font: 16px system-ui, sans-serif; padding: 32px; max-width: 640px; margin: 0 auto; }
 .player-drop { position: fixed; inset: 12px; z-index: 50; display: grid; place-content: center; border: 3px dashed #7b6cf6; border-radius: 18px; background: rgba(13, 11, 22, 0.8); color: #fff; font: 700 22px system-ui, sans-serif; pointer-events: none; }

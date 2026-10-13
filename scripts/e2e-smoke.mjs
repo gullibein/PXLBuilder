@@ -1616,13 +1616,13 @@ try {
     const gameErrors = [];
     gp.on('pageerror', (e) => gameErrors.push(e.message));
     await gp.goto(`file://${file}`);
-    await check(async () => (await gp.getByTestId('player-start').innerText()).includes('Click to play'), 'opened in a browser, it shows the game\'s title and "Click to play"');
+    await gp.getByTestId('play-canvas').waitFor();
+    await check(async () => (await gp.locator('.hud-keys, .player-start').count()) === 0, 'opened in a browser, the game plays at once: no start screen, no key hints, only the game');
     // On a phone: on-screen buttons that play it.
     {
       const phone = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
       const ph = await phone.newPage();
       await ph.goto(`file://${file}`);
-      await ph.getByTestId('player-start').tap();
       const pcv = ph.getByTestId('play-canvas');
       await pcv.waitFor();
       await ph.waitForTimeout(500);
@@ -1642,7 +1642,6 @@ try {
       await ph.screenshot({ path: `${OUT}/12h-phone-controls.png` });
       await phone.close();
     }
-    await gp.getByTestId('player-start').click();
     const pc = gp.getByTestId('play-canvas');
     await pc.waitFor();
     await gp.waitForTimeout(500);
@@ -1669,8 +1668,6 @@ try {
     const projectFile = Object.keys(bundle.files).find((k) => k === 'project.json');
     bundle.files[projectFile].name = 'Dropped Game';
     const droppedText = JSON.stringify(bundle);
-    await dropFile(gp, 'body', 'dropped.pxlproj.json', droppedText);
-    await check(async () => (await gp.title()) === 'Dropped Game' && (await gp.getByTestId('play-canvas').count()) === 1, 'the standalone player plays a saved game dropped onto it');
     await gp.close();
     // The empty player: games are dropped onto it.
     await page.getByTestId('project-menu').click();

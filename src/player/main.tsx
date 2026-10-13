@@ -2,7 +2,7 @@
  * The standalone game player: an exported game's page. The game travels inside
  * the page (a JSON script element, the same bundle the editor saves); this
  * loads it and plays it full screen, from its first level, with the same
- * runtime and play screen as the editor's Play. Nothing else is needed: no
+ * runtime and play screen as the editor's Play, and nothing else on the page. Nothing else is needed: no
  * server, no editor, no internet.
  */
 import { StrictMode, useEffect, useState } from 'react';
@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { componentRegistry } from '../core/components/builtin';
 import { gameFromText, projectFromBundle } from '../core/serialization/serialize';
 import type { Project } from '../core/types';
+import { audio } from '../editor/audio/synth';
 import { PlayView } from '../editor/play/PlayView';
 import '../editor/editor.css';
 import './player.css';
@@ -24,22 +25,34 @@ function loadGame(): { project: Project } | { error: string } | null {
   }
 }
 
+/** The game inside this page (an exported game), or none (the game player, which games are dropped onto). */
+const embedded = !!document.getElementById('pxl-game')?.textContent;
+
 /** On-screen buttons on phones: chosen when the game was exported; the empty player always has them. */
 const touchControls = (() => {
   const el = document.getElementById('pxl-game');
   return !el?.textContent || el.dataset.touch === '1';
 })();
 
+// Browsers only let a page make sound after the first key or tap: the game's sounds start then.
+const unlockSound = () => {
+  audio();
+  window.removeEventListener('pointerdown', unlockSound);
+  window.removeEventListener('keydown', unlockSound);
+};
+window.addEventListener('pointerdown', unlockSound);
+window.addEventListener('keydown', unlockSound);
+
 function Player() {
   const [game, setGame] = useState(loadGame);
-  // A click (or key) first: browsers only allow sound after one, and the game gets the keyboard.
-  const [started, setStarted] = useState(false);
   // Each game dropped in starts afresh (a new play screen).
   const [run, setRun] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // A saved game (.pxlproj.json) or an exported game page (.html) dropped anywhere on the page: play that one.
+  // The game player (no game inside): a saved game (.pxlproj.json) or an exported game page (.html) dropped
+  // anywhere on the page plays. An exported game is only its game.
   useEffect(() => {
+    if (embedded) return;
     const over = (e: DragEvent) => {
       if (!e.dataTransfer?.types.includes('Files')) return;
       e.preventDefault();
@@ -56,12 +69,10 @@ function Player() {
       try {
         const { project } = gameFromText(await file.text(), componentRegistry);
         setGame({ project });
-        setStarted(true);
         setRun((n) => n + 1);
         document.title = project.name;
       } catch (err) {
         setGame({ error: `${file.name} isn't a game this player can run: ${(err as Error).message}` });
-        setStarted(false);
       }
     };
     window.addEventListener('dragover', over);
@@ -84,21 +95,9 @@ function Player() {
     );
   }
   const { project } = game;
-  if (!started) {
-    return (
-      <>
-        <button className="player-start" data-testid="player-start" autoFocus onClick={() => setStarted(true)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setStarted(true)}>
-          <span className="player-title">{project.name}</span>
-          <span className="player-hint">Click to play</span>
-          <span className="player-keys">Arrows or WASD move · Space jumps · E uses · R restarts</span>
-        </button>
-        {dropHint}
-      </>
-    );
-  }
   return (
     <>
-      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => 0} stopHint="drop another game to play it" touchControls={touchControls} />
+      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => 0} keyHints={false} touchControls={touchControls} />
       {dropHint}
     </>
   );

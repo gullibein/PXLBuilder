@@ -39,6 +39,8 @@ export interface PlayViewProps {
   onEnd?: (report: PlayReport, project: Project) => void;
   /** The key hints' last part ("Esc stops" in the editor). */
   stopHint?: string;
+  /** The key hints under the game (the editor's Play); an exported game shows only the game. */
+  keyHints?: boolean;
   /** On-screen buttons for phones and tablets (move, jump, use, shoot), shown on touch screens. */
   touchControls?: boolean;
 }
@@ -252,7 +254,7 @@ export function PlayView(props: PlayViewProps) {
         </div>
       )}
       {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} />}
-      <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts{props.stopHint ? ` · ${props.stopHint}` : ''}</div>
+      {props.keyHints !== false && <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
     </div>
   );
 }
