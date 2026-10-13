@@ -13,6 +13,7 @@ import type { ComponentRegistry } from '../components/registry';
 import { itemNameOf } from '../graph/graph';
 import { resolveRef } from '../logic/refs';
 import { relationshipRegistry } from '../logic/vocabulary';
+import { getWorldBounds } from '../model/geometry';
 import { reachabilityProblems } from '../model/reachability';
 import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import { checkScript, type Stmt } from '../script/language';
@@ -177,6 +178,40 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
         true,
       );
     }
+  }
+
+  // ---- solid things on top of each other (a block hidden under a wall): what is underneath can't be seen, but
+  // scripts still find it there (thing_at), so a player that digs or collects it walks into the wall.
+  const solids = placed.filter((p) => {
+    const c = p.r.components.Collider;
+    return c && !c.isTrigger && Number(p.r.components.Sprite?.layer ?? 0) >= 0;
+  });
+  const stacked = new Map<string, { names: [string, string]; ids: Id[] }>();
+  for (let i = 0; i < solids.length; i++) {
+    const a = getWorldBounds(solids[i].r);
+    for (let j = i + 1; j < solids.length; j++) {
+      const b = getWorldBounds(solids[j].r);
+      const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+      const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+      if (w <= 0 || h <= 0) continue;
+      const smaller = Math.max(1, Math.min((a.maxX - a.minX) * (a.maxY - a.minY), (b.maxX - b.minX) * (b.maxY - b.minY)));
+      if ((w * h) / smaller < 0.5) continue;
+      const names = [objectName(project, solids[i]), objectName(project, solids[j])].sort() as [string, string];
+      const k = names.join('|');
+      const entry = stacked.get(k) ?? { names, ids: [] };
+      entry.ids.push(solids[i].id, solids[j].id);
+      stacked.set(k, entry);
+    }
+  }
+  for (const [k, { names, ids }] of stacked) {
+    const places = ids.length / 2;
+    const what = names[0] === names[1] ? `Two ${names[0]}s are` : `${names[0]} and ${names[1]} are`;
+    add(
+      `stacked:${k}`,
+      'warning',
+      `${what} on the same square${places > 1 ? ` (${places} places)` : ''}: the one underneath can't be seen, but it is still there in play (it blocks, and scripts find it with thing_at), so e.g. a player that digs or collects it walks into the other one. Delete the extra one (select them to see where).`,
+      [...new Set(ids)],
+    );
   }
 
   // ---- things nobody can see (no Sprite at all; a Sprite with visible off is deliberate)

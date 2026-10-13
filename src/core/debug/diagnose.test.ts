@@ -73,7 +73,7 @@ describe('the problem checker', () => {
   it('a "switch" without a Switch component, controlling something that is not Openable', () => {
     const problems = check((b) => {
       const stone = b.place('Stone');
-      const other = b.place('Stone', { x: 64, y: 0 });
+      const other = b.place('Stone', { x: 64, y: -32 });
       logic.addRelationship(b.d, b.sceneId, { type: 'controls', source: { kind: 'entity', id: stone }, target: { kind: 'entity', id: other }, params: { action: 'open' }, conditions: [] });
     });
     expect(keys(problems)).toEqual(['controls-no-switch', 'controls-not-openable']);
@@ -84,7 +84,7 @@ describe('the problem checker', () => {
       const e = b.place('Enemy');
       m.setEntityTags(b.d, b.sceneId, e, []);
       m.setDefinitionTags(b.d, b.def('Enemy'), ['robot']);
-      const stone = b.place('Stone', { x: 64, y: 0 });
+      const stone = b.place('Stone', { x: 64, y: -32 });
       logic.addRelationship(b.d, b.sceneId, { type: 'damages', source: { kind: 'tag', tag: 'player' }, target: { kind: 'entity', id: stone }, params: {}, conditions: [] });
     });
     expect(keys(problems)).toEqual(['damages-no-health', 'damage-unaccepted']);
@@ -162,5 +162,29 @@ describe('the problem checker', () => {
       m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((q) => q.name === 'Player')!, { x: 0, y: 16 }));
     });
     expect(diagnoseLevel(project, sceneId, registry)).toMatchObject([{ key: 'no-goal', severity: 'note' }]);
+  });
+});
+
+describe('solid things on the same square', () => {
+  it('a block hidden under a wall is named, once, with how many places', () => {
+    const ps = check(({ place }) => {
+      place('Stone', { x: 160, y: 16 });
+      place('Crate', { x: 160, y: 16 });
+      place('Stone', { x: 192, y: 16 });
+      place('Crate', { x: 192, y: 16 });
+    });
+    const stacked = ps.filter((p) => p.key.startsWith('stacked:'));
+    expect(stacked).toHaveLength(1);
+    expect(stacked[0].text).toMatch(/^Crate and Stone are on the same square \(2 places\)/);
+    expect(stacked[0].entityIds).toHaveLength(4);
+  });
+
+  it('side by side, or a pickup (no solid box) on a block, is fine', () => {
+    const ps = check(({ place }) => {
+      place('Stone', { x: 160, y: 16 });
+      place('Crate', { x: 192, y: 16 });
+      place('Coin', { x: 160, y: 16 });
+    });
+    expect(keys(ps)).not.toContain('stacked');
   });
 });

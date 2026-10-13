@@ -6,7 +6,7 @@ import { componentRegistry } from '../core/components/builtin';
 import type { Rect } from '../core/model/geometry';
 import { duplicateEntities, moveEntities, removeEntities, setEntityComponentField, setEntityTransform } from '../core/model/mutations';
 import { resolveEntity } from '../core/model/resolve';
-import type { Vec2 } from '../core/types';
+import type { Id, Vec2 } from '../core/types';
 import { resolveSceneEntities } from './selectors';
 import { useEditor } from './store';
 
@@ -31,16 +31,72 @@ export function duplicateSelection(): void {
   if (ok) selectEntities(created);
 }
 
+/** How much two boxes overlap, as a share of the smaller one (0: apart or only touching, 1: one covers the other). */
+function overlapShare(a: Rect, b: Rect): number {
+  const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+  if (w <= 0 || h <= 0) return 0;
+  const area = (r: Rect) => Math.max(1, (r.maxX - r.minX) * (r.maxY - r.minY));
+  return (w * h) / Math.min(area(a), area(b));
+}
+
+/** Drawn under everything (a floor painted on the level): meant to have things on it, so it never counts as in the way. */
+export function isUnderlay(components: ResolvedEntity['components']): boolean {
+  return Number(components.Sprite?.layer ?? 0) < 0;
+}
+
+/**
+ * The placed objects in this level that new ones at these boxes would cover (sharing at least half a square, not just
+ * an edge). Floors (drawn under everything) don't count, and nothing does when what is placed is a floor.
+ */
+export function coveredObjects(boxes: Rect[], ignore: ReadonlySet<Id> = new Set(), placingUnderlay = false): ResolvedEntity[] {
+  if (placingUnderlay) return [];
+  const { project, activeSceneId } = useEditor.getState();
+  return resolveSceneEntities(project, activeSceneId).filter((e) => !ignore.has(e.id) && !isUnderlay(e.components) && boxes.some((b) => overlapShare(getWorldBounds(e), b) >= 0.5));
+}
+
+/**
+ * Placing over objects already there: asks "Overwrite or Add?" first, then runs `place` with the objects to delete
+ * along with it (overwrite) or none (add). Nothing is in the way: places at once. Neither chosen: nothing happens.
+ */
+export function placeOver(covered: ResolvedEntity[], placing: string, place: (overwriteIds: Id[]) => void): void {
+  if (!covered.length) return place([]);
+  const counts = new Map<string, number>();
+  for (const e of covered) {
+    const name = e.definitionId ? (useEditor.getState().project.definitions.find((d) => d.id === e.definitionId)?.name ?? e.name) : e.name;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const names = [...counts.entries()].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
+  const state = useEditor.getState();
+  state.setOverlapAsk({
+    placing,
+    covered: names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0],
+    count: covered.length,
+    resolve: (choice) => {
+      useEditor.getState().setOverlapAsk(null);
+      if (choice) place(choice === 'overwrite' ? covered.map((e) => e.id) : []);
+    },
+  });
+}
+
 /** Repeats these objects at these offsets (dragging a side of the selection box): one undoable step; the selection and the copies selected after. */
 export function extendSelection(ids: string[], offsets: Vec2[], selection: string[] = ids): void {
-  const { activeSceneId, edit, selectEntities } = useEditor.getState();
+  const { project, activeSceneId } = useEditor.getState();
   if (!ids.length || !offsets.length) return;
-  const created: string[] = [];
   const n = ids.length * offsets.length;
-  const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})`, (p) => {
-    for (const o of offsets) created.push(...duplicateEntities(p, activeSceneId, ids, o));
+  // Where the copies will be: over anything else there, ask first.
+  const originals = resolveSceneEntities(project, activeSceneId).filter((e) => ids.includes(e.id));
+  const boxes = offsets.flatMap((o) => originals.map((e) => getWorldBounds(e)).map((b) => ({ minX: b.minX + o.x, maxX: b.maxX + o.x, minY: b.minY + o.y, maxY: b.maxY + o.y })));
+  const what = originals.length === 1 ? (project.definitions.find((d) => d.id === originals[0].definitionId)?.name ?? originals[0].name) : 'the copies';
+  placeOver(coveredObjects(boxes, new Set([...ids, ...selection]), originals.every((e) => isUnderlay(e.components))), what, (overwrite) => {
+    const { edit, selectEntities } = useEditor.getState();
+    const created: string[] = [];
+    const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})${overwrite.length ? `, replacing ${overwrite.length}` : ''}`, (p) => {
+      if (overwrite.length) removeEntities(p, activeSceneId, overwrite);
+      for (const o of offsets) created.push(...duplicateEntities(p, activeSceneId, ids, o));
+    });
+    if (ok) selectEntities([...new Set([...selection, ...created])]);
   });
-  if (ok) selectEntities([...new Set([...selection, ...created])]);
 }
 
 /** Takes objects away from one side of the selection (dragging a side of its box inward): one undoable step; the rest stays selected. */

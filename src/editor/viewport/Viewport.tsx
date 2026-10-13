@@ -12,7 +12,7 @@ import { relationshipLabel } from '../../core/logic/describe';
 import { ContextMenu, editSpriteOf } from '../chrome/Dock';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommands';
 import { openProjectFile } from '../persistence';
-import { connectSwitch, deleteSelection, extendSelection, resizeEntity, shortenSelection } from '../actions';
+import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
@@ -772,24 +772,30 @@ export function Viewport() {
   );
 }
 
-/** Places an instance of a definition in the active scene at a world point and selects it. */
-export function placeDefinition(definitionId: Id, world: Vec2): Id | null {
+/** Places an instance of a definition in the active scene at a world point and selects it (asking first if it covers something). */
+export function placeDefinition(definitionId: Id, world: Vec2): void {
   const state = useEditor.getState();
   const def = state.project.definitions.find((d) => d.id === definitionId);
-  if (!def) return null;
+  if (!def) return;
   const pos = snapPosition(world, brushPreview(def.id), state.project.settings.gridSize, state.layout.snapToGrid);
   const scene = getActiveScene(state);
   const count = scene.entities.filter((e) => e.definitionId === def.id).length;
   const entity = instantiateDefinition(def, pos, count === 0 ? def.name : `${def.name} ${count + 1}`);
-  if (!state.edit(`Place ${def.name}`, (p) => addEntity(p, scene.id, entity))) return null;
-  state.selectEntities([entity.id]);
-  return entity.id;
+  const resolved = resolveEntity(state.project, entity, componentRegistry);
+  placeOver(coveredObjects([getWorldBounds(resolved)], new Set(), isUnderlay(resolved.components)), def.name, (overwrite) => {
+    const s = useEditor.getState();
+    const ok = s.edit(overwrite.length ? `Place ${def.name}, replacing ${overwrite.length}` : `Place ${def.name}`, (p) => {
+      if (overwrite.length) removeEntities(p, scene.id, overwrite);
+      addEntity(p, scene.id, entity);
+    });
+    if (ok) s.selectEntities([entity.id]);
+  });
 }
 
 /**
  * Commits a brush stroke as one undoable step: one copy per visited cell that
  * doesn't already hold this object (paint), or removes the copies in those
- * cells (erase).
+ * cells (erase). Cells with other objects in them: "Overwrite or Add?" first.
  */
 function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
   const state = useEditor.getState();
@@ -813,14 +819,23 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
   if (!free.length) return;
   let n = scene.entities.filter((e) => e.definitionId === def.id).length;
   const created = free.map((c) => instantiateDefinition(def, cellCenter(c, cell), n++ === 0 ? def.name : `${def.name} ${n}`));
-  const ok = state.edit(created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`, (p) => {
-    for (const e of created) addEntity(p, scene.id, e);
+  const boxes = created.map((e) => getWorldBounds(resolveEntity(state.project, e, componentRegistry)));
+  // (Copies of this same object were skipped above: drawing over them adds nothing.)
+  const covered = coveredObjects(boxes, new Set(), isUnderlay(preview.components)).filter((e) => e.definitionId !== def.id);
+  const once = state.tool.kind === 'brush' && state.tool.once;
+  placeOver(covered, def.name, (overwrite) => {
+    const s = useEditor.getState();
+    const label = `${created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`}${overwrite.length ? `, replacing ${overwrite.length}` : ''}`;
+    const ok = s.edit(label, (p) => {
+      if (overwrite.length) removeEntities(p, scene.id, overwrite);
+      for (const e of created) addEntity(p, scene.id, e);
+    });
+    // Picked in the Objects panel (not with the Draw tool): back to selecting, the last one placed selected.
+    if (ok && once) {
+      s.setTool({ kind: 'select' });
+      s.selectEntities([created[created.length - 1].id]);
+    }
   });
-  // Picked in the Objects panel (not with the Draw tool): back to selecting, the last one placed selected.
-  if (ok && state.tool.kind === 'brush' && state.tool.once) {
-    state.setTool({ kind: 'select' });
-    state.selectEntities([created[created.length - 1].id]);
-  }
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
