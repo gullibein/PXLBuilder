@@ -59,6 +59,13 @@ function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
   const t = body.context.targets;
+  if (req.includes('what does the coin do')) {
+    // Other objects' code isn't sent up front: ask for the Coin's, then answer from it.
+    const coin = body.context.library.find((d) => d.name === 'Coin');
+    if (!body.code) return { kind: 'need_code', message: "I need to read the Coin's code.", changes: [], operations: [], needCode: [coin.id] };
+    const got = body.code.find((c) => c.id === coin.id);
+    return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.scriptsInFull ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
+  }
   if (req.includes('locked door test room')) {
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
     const sceneId = body.context.level.id;
@@ -490,6 +497,19 @@ try {
   await page.getByTestId('undo').click();
   await check(async () => (await entityCount()) === 8, 'each stroke is one undo step');
   await page.getByTestId('redo').click();
+  // Drawing with something else (a coin), the right button still erases the platform tile under it.
+  const n7 = await entityCount();
+  await page.mouse.click(single.x, single.y);
+  await check(async () => (await entityCount()) === n7 + 1, '(a platform tile there again)');
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('definition-Coin').click();
+  await page.mouse.click(single.x, single.y, { button: 'right' });
+  await check(async () => (await entityCount()) === n7 && (await page.getByTestId('undo').getAttribute('title')).includes('Erase 1 object'), 'drawing with a coin, right-click erases the platform tile there (any object, whatever is drawn with)');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('tool-pen').click();
+  await page.getByTestId('dock-library').click();
+  await page.getByTestId('definition-Platform').click();
+  await page.keyboard.press('Escape');
   await page.getByTestId('tool-select').click();
   await check(async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true', 'the arrow tool puts the pen away');
   await page.getByTestId('tool-pen').click();
@@ -506,7 +526,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(l1.x, l1.y, { steps: 4 });
   await page.mouse.up();
-  await check(async () => (await entityCount()) === 7 + 3, 'dragging down with the pen draws a 3-segment ladder');
+  await check(async () => (await entityCount()) === 7 + 3, `dragging down with the pen draws a 3-segment ladder`);
   await page.screenshot({ path: `${OUT}/0-drawn-tiles.png` });
   await page.getByTestId('undo').click();
   await page.getByTestId('tool-select').click();
@@ -1529,6 +1549,18 @@ try {
     await page.keyboard.press('Escape');
   }
 
+  step = "other objects' code on request";
+  {
+    await page.getByTestId('global-prompt-toggle').click();
+    const gp = page.getByTestId('global-prompt');
+    const before = aiRequests.length;
+    await gp.getByTestId('prompt-input').fill('What does the coin do?');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await gp.getByTestId('prompt-result').innerText()).includes("I read the Coin's code: 0 script(s), sent when I asked"), "the AI asks for an object's code it needs, gets it, and answers (one prompt, two requests)");
+    await check(aiRequests.length === before + 2 && !aiRequests[before].code && aiRequests[before + 1].code?.[0]?.name === 'Coin', '(the first request without the code, the second with it)');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'more levels';
   {
     const levelsBefore = await page.evaluate(() => 0);
@@ -2410,7 +2442,8 @@ try {
     const text = typeof content === 'string' ? content : content.map((b) => b.text).join('');
     const context = JSON.parse(text.split('\n')[1]);
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
-    const out = stubModel({ context, request, history: [] });
+    // (The real API's strict format always has every field: needCode is null unless the model asks for code.)
+    const out = { needCode: null, ...stubModel({ context, request, history: [] }) };
     return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 25000, cache_creation_input_tokens: 0 } });
   });
   await kp.goto(URL);

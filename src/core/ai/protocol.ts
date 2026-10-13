@@ -21,17 +21,20 @@ export interface AIRequestBody {
   speed?: AISpeed;
   /** Recent requests in the same context (conversational memory; not authoritative). */
   history: AIExchange[];
+  /** Other objects' code the AI asked for (kind "need_code"), sent with the request asked again. */
+  code?: { id: string; name: string; scripts: unknown[] }[];
 }
 
 export const aiResponseSchema = z.object({
   kind: z
-    .enum(['apply', 'preview', 'clarify', 'answer', 'unsupported'])
+    .enum(['apply', 'preview', 'clarify', 'answer', 'unsupported', 'need_code'])
     .describe(
-      'apply: small, explicit change. preview: larger or interpretive change. Both are applied at once as one undoable step. clarify: request too ambiguous - ask one short question, no operations. answer: a question about the game - answer it, no operations. unsupported: the engine cannot do this yet.',
+      'apply: small, explicit change. preview: larger or interpretive change. Both are applied at once as one undoable step. clarify: request too ambiguous - ask one short question, no operations. answer: a question about the game - answer it, no operations. unsupported: the engine cannot do this yet. need_code: you need the code of other objects (not sent) to answer well: list their library ids in needCode, no operations; the same request comes back at once with that code.',
     ),
   message: z.string().describe('One or two short sentences for the user (an explanation of why something happened may take up to four). Plain language, no engine jargon, no ids.'),
   changes: z.array(z.string()).describe('One short line per change, in plain language, e.g. "Player: 3 hearts". Empty when there are no operations.'),
   operations: z.array(operationSchema),
+  needCode: z.array(z.string()).nullable().describe('need_code only: the library ids of the objects whose scripts you need; null otherwise'),
 });
 
 export type AIResponse = z.infer<typeof aiResponseSchema>;
@@ -49,10 +52,11 @@ const OPERATION_SHAPES = new Map<string, Record<string, z.ZodType>>(
  */
 export function fillMissingNulls(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
+  if (!('needCode' in raw)) raw = { ...raw, needCode: null };
   const ops = (raw as { operations?: unknown }).operations;
   if (!Array.isArray(ops)) return raw;
   return {
-    ...raw,
+    ...(raw as object),
     operations: ops.map((op) => {
       if (!op || typeof op !== 'object') return op;
       const shape = OPERATION_SHAPES.get(String((op as { op?: unknown }).op));

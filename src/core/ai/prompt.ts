@@ -28,7 +28,11 @@ export function userMessageParts(body: AIRequestBody): { context: string; rest: 
         .map((h) => `- User: ${h.request}\n  You: ${h.reply}`)
         .join('\n')}\n\n`
     : '';
-  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${history}REQUEST\n${body.request}` };
+  // Code the AI asked for comes after the (cached) game data, so asking again reuses the cache.
+  const code = body.code?.length
+    ? `CODE YOU ASKED FOR (the full scripts of these library objects; use their ids and script ids as given):\n${JSON.stringify(body.code)}\n\n`
+    : '';
+  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${code}${history}REQUEST\n${body.request}` };
 }
 
 export function userMessage(body: AIRequestBody): string {

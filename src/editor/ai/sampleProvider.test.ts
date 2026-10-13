@@ -11,7 +11,7 @@ const body: AIRequestBody = { context: { scope: 'level' } as never, request: 'Ma
 describe('Claude through claude.ai (sample)', () => {
   it('sends the instructions, the reply format and the request; checks the answer', async () => {
     let seen: { input: string; options: unknown } | null = null;
-    const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [] };
+    const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null };
     const provider = new SampleAIProvider(
       fake((input, options) => {
         seen = { input, options };
@@ -38,7 +38,7 @@ describe('Claude through claude.ai (sample)', () => {
     const provider = new SampleAIProvider(
       fake((_input, options) => {
         seen.push(options);
-        return { kind: 'answer', message: 'Hi', changes: [], operations: [] };
+        return { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null };
       }),
     );
     await provider.respond({ ...body, speed: 'fast' });
@@ -48,14 +48,14 @@ describe('Claude through claude.ai (sample)', () => {
   });
 
   it('reads an answer with words or a code fence around the JSON; says when an answer was cut off or unreadable', async () => {
-    const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [] };
+    const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [], needCode: null };
     expect(await new SampleAIProvider(fake(() => answer, (s) => `Hér er svarið:\n\`\`\`json\n${s}\n\`\`\``)).respond(body)).toEqual(answer);
     expect(await new SampleAIProvider(fake(() => answer, (s) => `${s}\nVona að þetta hjálpi!`)).respond(body)).toEqual(answer);
     await expect(new SampleAIProvider(fake(() => answer, (s) => s.slice(0, 20), true)).respond(body)).rejects.toThrow(/too long and got cut off/);
     await expect(new SampleAIProvider(fake(() => answer, () => 'Ég get það ekki.')).respond(body)).rejects.toThrow(/wasn't in the form the app reads/);
   });
   it('an unreadable answer is logged and asked for once more, with the exact problem; a fixed one is used', async () => {
-    const good = { kind: 'apply', message: 'Pilla', changes: [], operations: [] };
+    const good = { kind: 'apply', message: 'Pilla', changes: [], operations: [], needCode: null };
     const inputs: unknown[] = [];
     const notes: string[] = [];
     // First a drawing with a quote as a palette key (breaks the JSON), then the corrected answer.
@@ -77,7 +77,7 @@ describe('Claude through claude.ai (sample)', () => {
   });
 
   it('reads JSON with a trailing comma, or after a sentence that has braces in it', async () => {
-    const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [] };
+    const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [], needCode: null };
     const reply = (text: string) => new SampleAIProvider(async () => ({ text, truncated: false })).respond(body);
     expect(await reply('{"kind":"answer","message":"Halló","changes":[],"operations":[],}')).toEqual(answer);
     expect(await reply(`Ég breytti {smá}:\n${JSON.stringify(answer)}`)).toEqual(answer);

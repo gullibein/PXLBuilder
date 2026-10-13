@@ -186,9 +186,8 @@ export interface AIPayload {
     /** Its size in pixels, and how many 32 px level cells it takes (a 32×64 door: 1×2). */
     size: { w: number; h: number; cells: { w: number; h: number } };
     /**
-     * Behavior scripts every copy runs. scriptsInFull true: the whole code (as targets' scripts are), so how this
-     * object behaves (falls, hurts, gets collected…) can be read and changed. False: only id, name and description
-     * (a very big game: the objects most related to the targets come in full first).
+     * Behavior scripts every copy runs. scriptsInFull true (the selected things' own objects): the whole code. False:
+     * only each script's id, name and description; the AI asks for the code it needs ("need_code").
      */
     scripts: ({ id: Id; name: string; description: string } | BehaviorScript)[];
     scriptsInFull: boolean;
@@ -402,39 +401,22 @@ function debugPayload(project: Project, scene: Scene, registry: ComponentRegistr
   return { problems, lastPlay: { ...summarizePlay(lastPlay.report, focus, players), note } };
 }
 
-/** How much script code (characters of JSON) the library may carry in full. */
-const LIBRARY_SCRIPT_BUDGET = 60_000;
-
 /**
- * The library objects whose scripts go to the AI in full: every one when they fit (most games), else the ones
- * that have to do with the targets first (their own objects, objects their code names or that name them: by id,
- * name or tag, or joined to them by the level's logic), then the most used, while they fit.
+ * The library objects whose scripts go to the AI in full: only the selected things' own objects. The others come as
+ * their scripts' names and one-line descriptions; the AI asks for any it needs (kind "need_code", see codeFor), so a
+ * request doesn't pay for code it doesn't read.
  */
 function scriptsInFull(project: Project, scene: Scene, targetIds: Id[]): Set<Id> {
-  const withScripts = project.definitions.filter((d) => d.scripts?.length);
-  const size = new Map(withScripts.map((d) => [d.id, JSON.stringify(d.scripts).length]));
-  const total = [...size.values()].reduce((a, b) => a + b, 0);
-  if (total <= LIBRARY_SCRIPT_BUDGET) return new Set(withScripts.map((d) => d.id));
-  const targets = targetIds.map((id) => scene.entities.find((e) => e.id === id)).filter((e): e is NonNullable<typeof e> => !!e);
-  const targetDefs = new Set(targets.map((e) => e.definitionId).filter((x): x is Id => !!x));
-  const words = (d: { id: Id; name: string; tags: string[] }) => [d.id, d.name, ...d.tags].filter((w) => w.length > 1);
-  const targetWords = [...targetDefs].flatMap((id) => {
-    const d = project.definitions.find((x) => x.id === id);
-    return d ? words(d) : [];
-  });
-  const targetCode = JSON.stringify([...targets.map((e) => e.scripts ?? []), ...[...targetDefs].map((id) => project.definitions.find((d) => d.id === id)?.scripts ?? [])]);
-  const logic = JSON.stringify([scene.relationships, scene.rules]);
-  const related = (d: (typeof withScripts)[number]) =>
-    targetDefs.has(d.id) || words(d).some((w) => targetCode.includes(w)) || targetWords.some((w) => JSON.stringify(d.scripts).includes(w)) || (logic.includes(d.id) && targetWords.some((w) => logic.includes(w)));
-  const uses = (id: Id) => project.scenes.reduce((n, s) => n + s.entities.filter((e) => e.definitionId === id).length, 0);
-  const order = [...withScripts].sort((a, b) => Number(related(b)) - Number(related(a)) || uses(b.id) - uses(a.id));
-  const out = new Set<Id>();
-  let used = 0;
-  for (const d of order) {
-    const n = size.get(d.id)!;
-    if (!targetDefs.has(d.id) && used + n > LIBRARY_SCRIPT_BUDGET) continue;
-    out.add(d.id);
-    used += n;
+  const defs = targetIds.map((id) => scene.entities.find((e) => e.id === id)?.definitionId).filter((x): x is Id => !!x);
+  return new Set(defs.filter((id) => project.definitions.find((d) => d.id === id)?.scripts?.length));
+}
+
+/** The full scripts of these library objects (by id or name), for a "need_code" answer. Unknown ones are left out. */
+export function codeFor(project: Project, ids: string[]): { id: Id; name: string; scripts: BehaviorScript[] }[] {
+  const out: { id: Id; name: string; scripts: BehaviorScript[] }[] = [];
+  for (const want of ids) {
+    const d = project.definitions.find((x) => x.id === want) ?? project.definitions.find((x) => x.name.toLowerCase() === want.trim().toLowerCase());
+    if (d && !out.some((o) => o.id === d.id)) out.push({ id: d.id, name: d.name, scripts: d.scripts ?? [] });
   }
   return out;
 }

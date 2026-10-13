@@ -4,8 +4,8 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { buildAIPayload, contextKey, type AIContext } from '../../core/ai/context';
-import { AIUnavailableError, type AIResponse } from '../../core/ai/protocol';
+import { buildAIPayload, codeFor, contextKey, type AIContext } from '../../core/ai/context';
+import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
 import { chatHistory } from './aiLog';
@@ -112,7 +112,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     trace?.('note', `Done by the app itself (no AI): ${quick.kind}`);
     return quick.kind === 'connection-delete' ? deleteConnection(ctx) : runQuickCommand(ctx, quick);
   }
-  const body = {
+  const body: AIRequestBody = {
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random),
     request,
     // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
@@ -124,6 +124,22 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   try {
     const provider = await currentProvider();
     response = await provider.respond(body, signal, trace);
+    // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
+    // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
+    for (let round = 0; round < 2 && response.kind === 'need_code'; round++) {
+      const sent = new Set((body.code ?? []).map((c) => c.id));
+      const fresh = codeFor(useEditor.getState().project, response.needCode ?? []).filter((c) => !sent.has(c.id));
+      if (!fresh.length) break;
+      const names = fresh.map((c) => c.name).join(', ');
+      trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
+      state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
+      body.code = [...(body.code ?? []), ...fresh];
+      response = await provider.respond(body, signal, trace);
+    }
+    if (response.kind === 'need_code') {
+      // It asked for code that isn't there (or kept asking): say so rather than leave the request hanging.
+      response = { ...response, kind: 'answer', operations: [], message: response.message || "The AI couldn't find the code it needed. Try selecting the object it's about and asking there." };
+    }
     // A game change that wouldn't apply (a script with a typo, a wrong id), or a level the player can't get through,
     // goes back to the AI once, with the exact problem.
     const gameOps = (r: AIResponse) => r.operations.length > 0 && !r.operations.some(isEditorOperation);

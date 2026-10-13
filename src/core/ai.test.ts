@@ -1,7 +1,8 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from './ai/capabilities';
-import { buildAIPayload, contextFromSelection, contextKey } from './ai/context';
+import { buildAIPayload, codeFor, contextFromSelection, contextKey } from './ai/context';
+import { userMessageParts } from './ai/prompt';
 import { aiResponseSchema } from './ai/protocol';
 import { EMPTY_HISTORY, record, redo, undo } from './commands/history';
 import { applyOperations, operationSchema, type Operation } from './commands/operations';
@@ -103,7 +104,7 @@ describe('operations', () => {
   it('schema accepts the documented shapes', () => {
     expect(operationSchema.safeParse({ op: 'set_transform', entityId: 'e', x: 1, y: null, rotation: null, scaleX: null, scaleY: null }).success).toBe(true);
     expect(operationSchema.safeParse({ op: 'teleport', id: 'e' }).success).toBe(false);
-    expect(aiResponseSchema.safeParse({ kind: 'apply', message: 'ok', changes: [], operations: [] }).success).toBe(true);
+    expect(aiResponseSchema.safeParse({ kind: 'apply', message: 'ok', changes: [], operations: [], needCode: null }).success).toBe(true);
   });
 });
 
@@ -415,7 +416,34 @@ describe("other objects' code goes to the AI", () => {
     });
     const payload = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [mole] }, registry);
     const diamond = payload.library.find((d) => d.name === 'Diamond')!;
-    expect(diamond.scriptsInFull).toBe(true);
-    expect(JSON.stringify(diamond.scripts)).toContain('solid_at(self.x, self.y + 32)');
+    // Not sent up front (it costs on every request): the script's name and description are, and the AI asks for the
+    // code when it needs it (kind "need_code"), getting the full scripts back.
+    expect(diamond.scriptsInFull).toBe(false);
+    expect(diamond.scripts).toEqual([{ id: expect.any(String), name: 'Fall', description: 'Falls when nothing is under it.' }]);
+    const code = codeFor(project, [diamond.id, 'Mole', 'nothing such']);
+    expect(code.map((c) => c.name)).toEqual(['Diamond', 'Mole']);
+    expect(JSON.stringify(code[0].scripts)).toContain('solid_at(self.x, self.y + 32)');
+    // It goes after the game data (which stays the same, so it is read from the cache) and before the request.
+    const { context, rest } = userMessageParts({ context: payload, request: 'Why?', history: [], code });
+    expect(context).not.toContain('solid_at');
+    expect(rest.indexOf('CODE YOU ASKED FOR')).toBeLessThan(rest.indexOf('REQUEST'));
+    expect(rest).toContain('solid_at(self.x, self.y + 32)');
+  });
+
+  it("the selected thing's own object keeps its code in full", async () => {
+    const { setScript } = await import('./script/mutations');
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    let id = '';
+    project = produce(project, (d) => {
+      const coin = d.definitions.find((x) => x.name === 'Coin')!;
+      setScript(d, { target: 'definition', id: coin.id }, { name: 'Spin', description: 'Spins.', handlers: [{ when: { on: 'tick' }, if: null, do: [{ do: 'velocity', x: '1', y: null }] }] });
+      const e = instantiateDefinition(coin, { x: 0, y: 0 });
+      id = e.id;
+      m.addEntity(d, sceneId, e);
+    });
+    const coin = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [id] }, registry).library.find((d) => d.name === 'Coin')!;
+    expect(coin.scriptsInFull).toBe(true);
+    expect(JSON.stringify(coin.scripts)).toContain('"handlers"');
   });
 });

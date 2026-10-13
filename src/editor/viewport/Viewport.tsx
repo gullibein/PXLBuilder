@@ -811,8 +811,20 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
     occupied.set(key, [...(occupied.get(key) ?? []), e.id]);
   }
   if (stroke.erase) {
-    const ids = [...stroke.cells.keys()].flatMap((k) => occupied.get(k) ?? []);
-    if (ids.length) state.edit(`Erase ${ids.length} ${def.name}`, (p) => removeEntities(p, scene.id, ids));
+    // The right button erases whatever is there, whatever is being drawn with: in each cell of the stroke, the
+    // objects under its middle; a floor (drawn under everything) only once nothing else is left on it.
+    const all = resolveSceneEntities(state.project, scene.id);
+    const ids = new Set<Id>();
+    for (const c of stroke.cells.values()) {
+      const p = cellCenter(c, cell);
+      const here = all.filter((e) => {
+        const b = getWorldBounds(e);
+        return p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+      });
+      const onTop = here.filter((e) => !isUnderlay(e.components));
+      for (const e of onTop.length ? onTop : here) ids.add(e.id);
+    }
+    if (ids.size) state.edit(ids.size === 1 ? 'Erase 1 object' : `Erase ${ids.size} objects`, (p) => removeEntities(p, scene.id, [...ids]));
     return;
   }
   const free = [...stroke.cells.entries()].filter(([k]) => !occupied.has(k)).map(([, c]) => c);

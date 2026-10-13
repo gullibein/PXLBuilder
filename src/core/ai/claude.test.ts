@@ -7,7 +7,7 @@ import type { AIRequestBody } from './protocol';
 function fakeClient(seen: Record<string, unknown>[]): Anthropic {
   const parse = async (params: Record<string, unknown>) => {
     seen.push(params);
-    return { stop_reason: 'end_turn', parsed_output: { kind: 'answer', message: 'Hi', changes: [], operations: [] } };
+    return { stop_reason: 'end_turn', parsed_output: { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null } };
   };
   return { beta: { messages: { parse } } } as unknown as Anthropic;
 }
@@ -39,7 +39,7 @@ describe('the Claude call', () => {
   });
 
   const rejected = (message: string) => new Anthropic.BadRequestError(400, { type: 'error', error: { type: 'invalid_request_error', message } }, undefined, new Headers());
-  const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [] };
+  const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null };
 
   it('an account without the fallback beta: asks again without it, and from then on', async () => {
     const seen: Record<string, unknown>[] = [];
