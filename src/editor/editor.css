@@ -27,6 +27,8 @@
   --warn-dark: #f2a65a;
   --danger: #ef6f6c;
   --font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* The game's own text in Play (banners, messages): a console font, part of the app (no internet needed). */
+  --font-console: 'Press Start 2P', ui-monospace, monospace;
   --font-data: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --radius: 16px;
   --shadow: 0 12px 36px rgba(10, 8, 40, 0.35);
@@ -428,8 +430,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .hud-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.72); color: #fff; font: 600 13px var(--font-ui); }
 .hud-hearts { color: #ff6b81; letter-spacing: 1px; font-size: 15px; }
 .hud-hearts .empty { color: rgba(255, 255, 255, 0.25); }
-.hud-banner { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); padding: 16px 30px; border-radius: 18px; background: rgba(15, 12, 30, 0.86); color: #ffe08f; font: 800 30px var(--font-ui); letter-spacing: 0.02em; text-align: center; pointer-events: none; z-index: 6; animation: pop-in 180ms ease-out; max-width: calc(100% - 32px); }
-.hud-message { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 12px 22px; border-radius: 14px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 700 20px var(--font-ui); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); }
+/* Centered without a transform, so the pop-in (which animates transform) doesn't shift it. In the console font. */
+.hud-banner { position: absolute; left: 0; right: 0; top: 38%; width: fit-content; margin: 0 auto; padding: 18px 28px; border-radius: 6px; background: rgba(15, 12, 30, 0.86); color: #ffe08f; font: 22px/1.4 var(--font-console); text-align: center; pointer-events: none; z-index: 6; animation: pop-in 180ms ease-out; max-width: calc(100% - 32px); box-sizing: border-box; }
+.hud-message { position: absolute; left: 0; right: 0; top: 22%; width: fit-content; margin: 0 auto; padding: 14px 20px; border-radius: 6px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 14px/1.5 var(--font-console); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); box-sizing: border-box; }
 .hud-keys { position: absolute; right: 16px; bottom: 16px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.6); color: rgba(255, 255, 255, 0.8); font: 12px var(--font-ui); pointer-events: none; z-index: 5; }
 
 /* ---------------------------------------------------------------- editor layout (editor settings) */

@@ -187,7 +187,7 @@ function useGlobalShortcuts() {
         else if (state.saveDialog) state.setSaveDialog(false);
         else if (state.exportGameOpen) state.setExportGameOpen(false);
         else if (state.spritesFor) state.openSprites(null);
-        else if (state.tool.kind === 'brush') state.setTool({ kind: 'select' });
+        else if (state.tool.kind !== 'select') state.setTool({ kind: 'select' });
         else {
           state.selectEntities([]);
           state.setWorldContext(false);
@@ -198,6 +198,10 @@ function useGlobalShortcuts() {
         state.setTool({ kind: 'select' });
       } else if (key === 'b' && !mod) {
         state.usePen();
+      } else if (key === 'm' && !mod) {
+        state.setTool({ kind: 'marquee' });
+      } else if (key === 'e' && !mod) {
+        state.setTool({ kind: 'eyedropper' });
       } else if (key === 'f' && !mod) {
         frameView();
       } else if (key === 'w' && !mod) {

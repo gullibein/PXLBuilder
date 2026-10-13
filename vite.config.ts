@@ -21,8 +21,8 @@ export default defineConfig(({ command, mode, isPreview }) => ({
   base: command === 'build' || isPreview ? '/PXLBuilder/' : '/',
   // Loads .env / .env.local without a VITE_ prefix filter; values stay on the server and are never exposed to the client bundle.
   plugins: [react(), aiPlugin(loadEnv(mode, process.cwd(), ''))],
-  // `--mode single-file` builds one script (no lazy chunks), for hosting the app as a single page.
-  build: mode === 'single-file' ? { rollupOptions: { output: { inlineDynamicImports: true } } } : {},
+  // `--mode single-file` builds one script (no lazy chunks, files such as fonts inside it), for hosting the app as a single page.
+  build: mode === 'single-file' ? { assetsInlineLimit: 100_000, rollupOptions: { output: { inlineDynamicImports: true } } } : {},
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',

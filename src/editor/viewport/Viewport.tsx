@@ -175,7 +175,7 @@ export function Viewport() {
       if ((canvas.dataset.cameraFrame ?? '') !== frameAttr) canvas.dataset.cameraFrame = frameAttr;
       const outlineAttr = `${hoverOutlineRef.current ?? ''}|${state.cameraOutline ?? ''}`;
       if (canvas.dataset.cameraOutline !== outlineAttr) canvas.dataset.cameraOutline = outlineAttr;
-      if (state.tool.kind === 'brush') drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
+      if (state.tool.kind === 'brush' && !state.altHeld) drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
       if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
@@ -370,11 +370,31 @@ export function Viewport() {
         if (dragRef.current?.kind !== 'pan' && canvasRef.current) canvasRef.current.style.cursor = '';
       }
     };
+    // Alt held: the eyedropper (let go, the tool is back). Its default (the browser's menu bar) is kept from taking the keys.
+    const altDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt' || isTextInput(e.target)) return;
+      e.preventDefault();
+      useEditor.getState().setAltHeld(true);
+      if (!dragRef.current && canvasRef.current) canvasRef.current.style.cursor = EYEDROPPER_CURSOR;
+    };
+    const altUp = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt') return;
+      e.preventDefault();
+      useEditor.getState().setAltHeld(false);
+      if (!dragRef.current && canvasRef.current) canvasRef.current.style.cursor = '';
+    };
+    const blur = () => useEditor.getState().setAltHeld(false);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('keydown', altDown);
+    window.addEventListener('keyup', altUp);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('keydown', altDown);
+      window.removeEventListener('keyup', altUp);
+      window.removeEventListener('blur', blur);
     };
   }, []);
 
@@ -410,6 +430,13 @@ export function Viewport() {
     if (state.dock) state.setDock(null);
     // Working on the level closes the whole-level/game card (its prompt carries on; dots on ✦ show it).
     if (state.globalPrompt.open) state.setGlobalPrompt(false);
+    if (ev.button === 0 && !spaceDownRef.current && (state.tool.kind === 'eyedropper' || ev.altKey)) {
+      // The eyedropper: the clicked object's kind, to place or draw with (as if picked in the Objects panel).
+      const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev));
+      if (hit?.definitionId && state.project.definitions.some((d) => d.id === hit.definitionId)) state.pickUp(hit.definitionId);
+      else if (hit) state.logMessage('warn', `${hit.name} is one of a kind (not from the Objects panel): there's nothing to draw it with.`);
+      return;
+    }
     if (ev.button === 1 || (ev.button === 0 && spaceDownRef.current)) {
       ev.preventDefault();
       dragRef.current = { kind: 'pan', startScreen: { x: ev.clientX, y: ev.clientY }, startCamera: { ...state.camera }, moved: false };
@@ -420,6 +447,10 @@ export function Viewport() {
       if (!preview) return;
       const cell = cellAt(toWorld(ev), cellSize(getEntitySize(preview), state.project.settings.gridSize));
       dragRef.current = { kind: 'paint', definitionId: state.tool.definitionId, erase: ev.button === 2, start: cell, last: cell, cells: new Map([[cellKey(cell), cell]]) };
+    } else if (ev.button === 0 && state.tool.kind === 'marquee') {
+      const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+      const world = toWorld(ev);
+      dragRef.current = { kind: 'marquee', startWorld: world, currentWorld: world, additive, baseSelection: additive ? state.selectedEntityIds : [], moved: false };
     } else if (ev.button === 0) {
       const world = toWorld(ev);
       const entities = resolveSceneEntities(state.project, state.activeSceneId);
@@ -498,6 +529,17 @@ export function Viewport() {
     const state = useEditor.getState();
     pointerWorldRef.current = toWorld(ev);
     if (!drag) {
+      if (state.tool.kind === 'eyedropper' || state.altHeld || ev.altKey) {
+        // What a click would pick up glows.
+        hoverRef.current = spaceDownRef.current ? null : (pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))?.id ?? null);
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : EYEDROPPER_CURSOR;
+        return;
+      }
+      if (state.tool.kind === 'marquee') {
+        hoverRef.current = null;
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : 'crosshair';
+        return;
+      }
       if (state.tool.kind === 'brush') {
         hoverRef.current = null;
         canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : 'crosshair';
@@ -594,7 +636,7 @@ export function Viewport() {
     useEditor.getState().setObjectDrag(false);
     if (canvasRef.current?.hasPointerCapture(ev.pointerId)) canvasRef.current.releasePointerCapture(ev.pointerId);
     const state = useEditor.getState();
-    canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : state.tool.kind === 'brush' ? 'crosshair' : 'default';
+    canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : state.tool.kind === 'eyedropper' || state.altHeld ? EYEDROPPER_CURSOR : state.tool.kind === 'brush' || state.tool.kind === 'marquee' ? 'crosshair' : 'default';
     if (drag?.kind === 'paint') {
       commitStroke(drag);
       return;
@@ -625,6 +667,11 @@ export function Viewport() {
     if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
       const label = drag.ids.length === 1 ? 'Move' : `Move ${drag.ids.length} objects`;
       state.edit(label, (p) => moveEntities(p, state.activeSceneId, drag.ids, drag.delta));
+    } else if (drag?.kind === 'marquee' && !drag.moved && state.tool.kind === 'marquee' && pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))) {
+      // The marquee tool: a click on an object selects it (Shift adds it, or takes it out).
+      const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))!;
+      const base = drag.baseSelection;
+      state.selectEntities(drag.additive ? (base.includes(hit.id) ? base.filter((id) => id !== hit.id) : [...base, hit.id]) : [hit.id]);
     } else if (drag?.kind === 'marquee' && !drag.moved && !drag.additive) {
       // A plain click on empty space clears the context: clean canvas, no prompt.
       state.selectEntities([]);
@@ -960,6 +1007,11 @@ function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: numbe
 
 /** A player-controlled character (what the camera outline waits for). */
 const hasPlayer = (e: ResolvedEntity) => !!e.components.CharacterController;
+
+/** The eyedropper's pointer: its tip (bottom left) is the point that picks. */
+const EYEDROPPER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path d="M2 18l1-4 8-8 3 3-8 8z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 5l2-2a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1 0 3l-2 2z" fill="#000"/></svg>',
+)}") 2 18, crosshair`;
 
 /** The selection's box (exactly around it) and its handles; corners only for one unturned object. */
 function selectionFrame(selected: ResolvedEntity[]): { box: Rect; handles: Handle[] } {

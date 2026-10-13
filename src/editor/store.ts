@@ -40,12 +40,15 @@ export interface EditOptions {
 
 export type DockPanel = 'library' | 'create' | null;
 
-/** Select (click, drag, box-select) or brush (draw copies of a library object onto the level). */
 /**
+ * Select (click, drag, box-select), marquee (a drag always draws a selection box, even starting on an object),
+ * eyedropper (click an object on the level: draw with its kind, as if picked in the Objects panel) or brush (draw
+ * copies of a library object onto the level).
+ *
  * `once`: picked in the Objects panel while selecting. After placing it (one click or one line) the editor goes
  * back to selecting, with what was just placed selected. Without it (the Draw tool chosen first) drawing goes on.
  */
-export type Tool = { kind: 'select' } | { kind: 'brush'; definitionId: Id; once?: boolean };
+export type Tool = { kind: 'select' } | { kind: 'marquee' } | { kind: 'eyedropper' } | { kind: 'brush'; definitionId: Id; once?: boolean };
 export type TrayTab = 'history' | 'console' | 'debug';
 
 export interface EditorState {
@@ -94,6 +97,8 @@ export interface EditorState {
   trashHot: boolean;
   /** Objects are being moved, stretched or resized on the level right now (the prompt card steps aside meanwhile). */
   objectDrag: boolean;
+  /** Alt is held: the eyedropper, whatever the tool (let go, the tool is back). */
+  altHeld: boolean;
   /** The "Export sprites" window: these pictures (null: all of the game's), named after `name`. */
   spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The Code Editor: the behavior code of a library object, or of one placed thing (and its object). */
@@ -150,6 +155,9 @@ export interface EditorState {
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
   setObjectDrag(dragging: boolean): void;
+  setAltHeld(held: boolean): void;
+  /** The eyedropper: draw with this object's kind, as if picked in the Objects panel (one placing or line). */
+  pickUp(definitionId: Id): void;
   setTrashHot(hot: boolean): void;
   flashEntities(ids: Id[]): void;
   openSprites(definitionId: Id | null): void;
@@ -209,6 +217,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     spriteEditor: null,
     trashHot: false,
     objectDrag: false,
+    altHeld: false,
     spriteExport: null,
     codeEditor: null,
     saveDialog: false,
@@ -449,6 +458,14 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setObjectDrag(objectDrag) {
       if (get().objectDrag !== objectDrag) set({ objectDrag });
+    },
+
+    setAltHeld(altHeld) {
+      if (get().altHeld !== altHeld) set({ altHeld });
+    },
+
+    pickUp(definitionId) {
+      get().setTool({ kind: 'brush', definitionId, once: true });
     },
 
     setTrashHot(trashHot) {

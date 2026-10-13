@@ -1437,6 +1437,47 @@ try {
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await check(async () => (await entities()) === n0 + 1, 'each drag is one Undo');
+    // The eyedropper: a click on the tile picks up its kind; the next click places one, then back to selecting.
+    {
+      const pressed = async (id) => (await page.getByTestId(id).getAttribute('aria-pressed')) === 'true';
+      const cy = (top + bottom) / 2;
+      await page.getByTestId('tool-eyedropper').click();
+      await check(async () => await pressed('tool-eyedropper'), 'the tool bar has an eyedropper');
+      await clickWorld((left + right) / 2, cy);
+      await check(async () => (await pressed('tool-pen')) && (await page.getByTestId('tool-brush-pick').count()) === 1 && (await entities()) === n0 + 1, 'clicking the platform with it picks up Platform to draw with (nothing placed yet)');
+      await clickWorld(right + 96 + 16, cy);
+      await check(async () => (await entities()) === n0 + 2 && (await pressed('tool-select')), 'the next click places a platform there, and the editor is back to selecting (as when picked in the Objects panel)');
+      await page.getByTestId('undo').click();
+      // Holding Alt: the eyedropper, whatever the tool.
+      await page.keyboard.down('Alt');
+      await check(async () => await pressed('tool-eyedropper'), 'holding Alt switches to the eyedropper');
+      await page.mouse.click(...Object.values(await w2s((left + right) / 2, cy)));
+      await page.keyboard.up('Alt');
+      await check(async () => (await pressed('tool-pen')) && !(await pressed('tool-eyedropper')), 'Alt+click picks up the platform; letting go of Alt, it is ready to draw');
+      await dragWorld([right + 96 + 16, cy], [right + 96 + 16 + 64, cy]);
+      await check(async () => (await entities()) === n0 + 4 && (await pressed('tool-select')), 'and a drag draws a line of 3 with it');
+      await page.getByTestId('undo').click();
+      await check(async () => (await entities()) === n0 + 1, '(Undo)');
+    }
+    // The marquee tool: a box from on top of an object selects (it doesn't move anything).
+    {
+      await clickWorld((left + right) / 2, (top + bottom) / 2);
+      await dragWorld([right, (top + bottom) / 2], [right + 2 * 32 + 6, (top + bottom) / 2]);
+      await check(async () => (await entities()) === n0 + 3, '(a row of 3 platforms)');
+      await page.keyboard.press('Escape');
+      await page.getByTestId('tool-marquee').click();
+      await dragWorld([(left + right) / 2, (top + bottom) / 2], [right + 32 + 16, bottom - 4]);
+      const hm = await handles();
+      await check(hm['s-1,0']?.[0] === left && hm['s1,0']?.[0] === right + 64 && (await entities()) === n0 + 3 && (await prompts.getAttribute('data-context')) === 'group', 'the marquee tool: a box dragged from on top of a platform selects all 3 (nothing moves)');
+      await page.keyboard.press('Escape');
+      await page.getByTestId('tool-select').click();
+      await dragWorld([left - 20, top - 20], [right + 32 + 16, bottom - 4]);
+      const hs = await handles();
+      await check(hs['s-1,0']?.[0] === left && hs['s1,0']?.[0] === right + 64 && (await prompts.getAttribute('data-context')) === 'group', 'the arrow still box-selects when the drag starts on empty space');
+      await page.keyboard.press('Escape');
+      await page.getByTestId('undo').click();
+      await check(async () => (await entities()) === n0 + 1, '(Undo)');
+    }
     // A corner resizes one object (the opposite corner stays).
     await clickWorld((left + right) / 2, (top + bottom) / 2);
     await dragWorld([right, bottom], [right + 64, bottom + 1]);
@@ -1470,10 +1511,22 @@ try {
     const playCanvas = page.getByTestId('play-canvas');
     await page.keyboard.down('ArrowRight');
     await page.getByTestId('hud-banner').waitFor({ timeout: 10000 });
+    // Where the banner is at once and a moment later: in the middle both times (it doesn't slide in from the side).
+    const mid = async () => {
+      const b = await page.getByTestId('hud-banner').boundingBox();
+      const v = await page.locator('.play-view').boundingBox();
+      return Math.round(b.x + b.width / 2 - (v.x + v.width / 2));
+    };
+    const off1 = await mid();
     const at1 = await playCanvas.getAttribute('data-player');
     await page.waitForTimeout(400);
     const at2 = await playCanvas.getAttribute('data-player');
     await page.keyboard.up('ArrowRight');
+    const off2 = await mid();
+    const bannerFont = await page.getByTestId('hud-banner').evaluate((el) => getComputedStyle(el).fontFamily + '|' + document.fonts.check("22px 'Press Start 2P'"));
+    await page.screenshot({ path: `${OUT}/12i-level-complete.png` });
+    await check(Math.abs(off1) <= 1 && Math.abs(off2) <= 1, `"Level complete!" is in the middle from the start (${off1}, then ${off2} px off the middle)`);
+    await check(bannerFont.startsWith('"Press Start 2P"') && bannerFont.endsWith('|true'), `and in a console font, built in (${bannerFont})`);
     await check(async () => (await page.getByTestId('hud-banner').innerText()).includes('Level complete!') && at1 === at2, 'reaching the goal: "Level complete!" shows and the game stands still (the player can\'t be moved on)');
     await check(async () => (await playCanvas.getAttribute('data-level')) === 'The Tower', 'then the next level starts');
     await page.getByTestId('play').click();

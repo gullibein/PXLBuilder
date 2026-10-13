@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+// The console font of the game's text (banners, messages), built in: an exported game needs no internet.
+import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
@@ -45,6 +47,15 @@ export interface PlayViewProps {
   touchControls?: boolean;
 }
 
+let consoleFont: FontFace | null = null;
+/** The console font, added to the page once and loaded now, so "Level complete!" shows in it at once. */
+function loadConsoleFont(): void {
+  if (consoleFont || typeof FontFace === 'undefined') return;
+  consoleFont = new FontFace('Press Start 2P', `url(${consoleFontUrl})`);
+  document.fonts.add(consoleFont);
+  consoleFont.load().catch(() => undefined);
+}
+
 /** A touch screen (phones, tablets): where the on-screen buttons are shown. */
 export function isTouchScreen(): boolean {
   return typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
@@ -59,6 +70,7 @@ export function PlayView(props: PlayViewProps) {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const { project, startSceneId: activeSceneId } = props;
+    loadConsoleFont();
     const images = imageLookup(project);
     const looks = new LookCache(project, componentRegistry);
     // Sounds the game plays (made by the synthesizer from their recipes). Started now: Play was just clicked.

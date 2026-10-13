@@ -1,7 +1,7 @@
 import { useEditor } from '../store';
 import { Thumb } from './Dock';
 
-/** Left tool panel: Select (arrow), Draw (pen), the level background, and the level's logic. */
+/** Left tool panel: Select (arrow), Marquee (box select), Eyedropper (pick up an object to draw with), Draw (pen), the level background, and the level's logic. */
 export function ToolPanel() {
   const tool = useEditor((s) => s.tool);
   const backgroundOpen = useEditor((s) => s.backgroundOpen);
@@ -12,11 +12,13 @@ export function ToolPanel() {
   });
   const brush = useEditor((s) => (s.tool.kind === 'brush' ? s.project.definitions.find((d) => d.id === (s.tool as { definitionId: string }).definitionId) : undefined));
   const wireframe = useEditor((s) => s.layout.wireframe);
+  const altHeld = useEditor((s) => s.altHeld);
+  const eyedropper = tool.kind === 'eyedropper' || altHeld;
   const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
   return (
     <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel">
       <button
-        className={`tool${tool.kind === 'select' ? ' on' : ''}`}
+        className={`tool${tool.kind === 'select' && !altHeld ? ' on' : ''}`}
         title="Select and move (V)"
         aria-label="Select"
         aria-pressed={tool.kind === 'select'}
@@ -28,7 +30,32 @@ export function ToolPanel() {
         </svg>
       </button>
       <button
-        className={`tool${tool.kind === 'brush' ? ' on' : ''}`}
+        className={`tool${tool.kind === 'marquee' && !altHeld ? ' on' : ''}`}
+        title="Box select: drag a box around objects to select them, also starting on an object (M). Shift adds."
+        aria-label="Box select"
+        aria-pressed={tool.kind === 'marquee'}
+        data-testid="tool-marquee"
+        onClick={() => setTool({ kind: 'marquee' })}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="13" height="13" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.6 2" />
+        </svg>
+      </button>
+      <button
+        className={`tool${eyedropper ? ' on' : ''}`}
+        title="Eyedropper: click an object on the level to place or draw more of it (E, or hold Alt)"
+        aria-label="Eyedropper"
+        aria-pressed={eyedropper}
+        data-testid="tool-eyedropper"
+        onClick={() => setTool({ kind: 'eyedropper' })}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path d="M2.5 15.5l.8-3.2 6.5-6.5 2.4 2.4-6.5 6.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M9 4.4l1.8-1.8a1.9 1.9 0 0 1 2.7 0l1.9 1.9a1.9 1.9 0 0 1 0 2.7L13.6 9z" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        className={`tool${tool.kind === 'brush' && !altHeld ? ' on' : ''}`}
         title="Draw with an object (B)"
         aria-label="Draw"
         aria-pressed={tool.kind === 'brush'}
