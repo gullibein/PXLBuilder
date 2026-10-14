@@ -5,7 +5,7 @@
  * runner's self-test mode, which reports whether the game came up. Skipped anywhere else.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { produce } from 'immer';
@@ -68,9 +68,9 @@ describe.runIf(!!target)('desktop export on a real machine', () => {
     } else {
       const zip = windowsZip(name, html, new Uint8Array(readFileSync(`${runners}/windows/Game.exe`)));
       writeFileSync(zipPath, zip);
-      // Opened with Windows' own tar (which reads zips), as Explorer's "Extract all" does.
-      run('cmd', ['/c', 'mkdir', out]);
-      expect(run('tar', ['-xf', zipPath, '-C', out]).status).toBe(0);
+      // Opened with Windows' own tar.exe (it reads zips; not Git's tar, which a bash step finds first).
+      mkdirSync(out);
+      expect(run(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zipPath, '-C', out]).status).toBe(0);
       const r = run(join(out, n, `${n}.exe`), [], { PXL_SELFTEST: result });
       expect(r.status).toBe(0);
     }
