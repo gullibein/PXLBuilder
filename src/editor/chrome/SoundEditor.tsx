@@ -390,19 +390,34 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
     setDraft(null);
   };
 
-  const onKey = (e: React.KeyboardEvent) => {
-    if ((e.target as HTMLElement).tagName === 'INPUT') return;
-    if (e.key === ' ') {
+  // Space plays (or stops) wherever the focus is in the editor (a button, the drawing, the menu…), except while
+  // typing the name. Caught before anything else gets it, so it never presses a focused button instead.
+  const toggle = useRef(() => undefined as void);
+  toggle.current = () => (playing ? stop() : play());
+  useEffect(() => {
+    const onSpace = (e: KeyboardEvent) => {
+      if (e.key !== ' ') return;
+      if ((e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"]')) return;
       e.preventDefault();
-      if (playing) stop();
-      else play();
-    }
-  };
+      e.stopPropagation();
+      if (!e.repeat) toggle.current();
+    };
+    const swallow = (e: KeyboardEvent) => {
+      // (A focused button would otherwise click on the key's release.)
+      if (e.key === ' ' && !(e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"]')) e.preventDefault();
+    };
+    window.addEventListener('keydown', onSpace, true);
+    window.addEventListener('keyup', swallow, true);
+    return () => {
+      window.removeEventListener('keydown', onSpace, true);
+      window.removeEventListener('keyup', swallow, true);
+    };
+  }, []);
 
   const info = hover !== null ? notes[hover] : null;
   const count = audibleNotes({ type: 'steps', speed: sound.speed, notes });
   return (
-    <div className="se-body" tabIndex={-1} onKeyDown={onKey} data-testid="sound-editor-body">
+    <div className="se-body" tabIndex={-1} data-testid="sound-editor-body">
       <header className="bg-head">
         <span className="sound-title">
           Sound

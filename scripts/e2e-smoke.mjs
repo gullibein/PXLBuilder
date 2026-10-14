@@ -892,6 +892,16 @@ try {
     await page.getByTestId('sound-smoother').click();
     await page.getByTestId('sound-smoother').click();
     await check(async () => (await page.getByTestId('sound-smooth').innerText()) === '2', 'Smooth softens the sound (0–7)');
+    // Space plays wherever the focus is (here on the Speed + button, which it must not press), and stops again.
+    await page.getByTestId('sound-slower').focus();
+    await page.keyboard.press(' ');
+    await check(async () => (await page.getByTestId('sound-editor-play').innerText()).includes('Stop') && (await page.getByTestId('sound-speed').innerText()) === '13', 'Space plays the sound wherever the focus is (without pressing the focused button)');
+    await page.keyboard.press(' ');
+    await check(async () => (await page.getByTestId('sound-editor-play').innerText()).includes('Play'), 'and Space again stops it');
+    // In the name field a space is just a space.
+    await page.getByTestId('sound-name').fill('');
+    await page.getByTestId('sound-name').pressSequentially('Big Rise');
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Big Rise' && (await page.getByTestId('sound-editor-play').innerText()).includes('Play'), 'typing a space in the name field types a space (it does not play)');
     await page.getByTestId('sound-name').fill('Rise');
     await page.getByTestId('sound-name').press('Enter');
     await page.getByTestId('sound-editor-play').click();
