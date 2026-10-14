@@ -102,8 +102,45 @@ describe('the Claude call', () => {
     } as unknown as Anthropic;
     await askClaude(client, body(), undefined, 'claude-haiku-5-5', (n) => notes.push(n));
     await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
-    expect(used).toEqual(['parse:claude-haiku-5-5', 'create:claude-haiku-5-5', 'parse:claude-sonnet-5-5']);
-    expect(notes[0]).toMatch(/Claude Haiku 5\.5 did not take the strict reply format \(output_config\.format: the schema is too complex/);
+    // Full format, then its compact form (both refused), then the reply tool; Sonnet keeps the full format.
+    expect(used).toEqual(['parse:claude-haiku-5-5', 'parse:claude-haiku-5-5', 'create:claude-haiku-5-5', 'parse:claude-sonnet-5-5']);
+    expect(notes[0]).toMatch(/Claude Haiku 5\.5 did not take the full strict reply format \(output_config\.format: the schema is too complex/);
+    expect(notes[1]).toMatch(/did not take the compact strict reply format either/);
+  });
+
+  it('a model refusing the full strict format (too many union types) gets its compact form; the answer is read back to the full form', async () => {
+    const notes: string[] = [];
+    const formats: unknown[] = [];
+    const systems: string[] = [];
+    const compactAnswer = {
+      kind: 'apply',
+      message: 'Placed',
+      changes: ['a coin'],
+      operations: [{ op: 'place_instance', sceneId: 's1', definitionRef: 'def_1', x: 3, y: 4, name: '', ref: '' }],
+      starter: '',
+    };
+    const client = {
+      beta: {
+        messages: {
+          parse: async (params: { output_config: { format: { schema?: Record<string, unknown> } }; system: { text: string }[] }) => {
+            formats.push(params.output_config.format);
+            systems.push(params.system[0].text);
+            if (formats.length === 1) throw rejected('Schemas contains too many parameters with union types (29 parameters with type arrays or anyOf). This exceeds the limit of 16');
+            return { stop_reason: 'end_turn', parsed_output: compactAnswer };
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    const result = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
+    expect(result).toMatchObject({ ok: true, response: { kind: 'apply', needCode: null, starter: null } });
+    const op = (result as { response: { operations: Record<string, unknown>[] } }).response.operations[0];
+    expect(op).toMatchObject({ op: 'place_instance', name: null, ref: null, onTop: null });
+    expect(notes[0]).toMatch(/Claude Sonnet 5\.5 did not take the full strict reply format .*compact form/);
+    expect(systems[1]).toContain('REPLY FORMAT NOTE');
+    // From then on, straight to the compact form.
+    await askClaude(client, body(), undefined, 'claude-sonnet-5-5');
+    expect(formats).toHaveLength(3);
+    expect(JSON.stringify(formats[2])).toEqual(JSON.stringify(formats[1]));
   });
 
   it('an unreadable answer (format in the prompt) is asked for again with the problem; what came back goes to the console', async () => {

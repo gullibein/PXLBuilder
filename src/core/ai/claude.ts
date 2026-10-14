@@ -6,6 +6,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
+import { betaJSONSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/beta/json-schema';
+import { compactSchema, expandReply } from './compactSchema';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { parseJsonReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
@@ -64,12 +66,12 @@ export type ClaudeNote = (message: string) => void;
  * a structured-output schema. Either is then left out and the same request
  * sent again, so the AI keeps working; answers are validated the same way.
  */
-const accepted = { fallbacks: new Set<string>(), noSchema: new Set<string>() };
+const accepted = { fallbacks: new Set<string>(), format: new Map<string, 'compact' | 'tool'>() };
 
 /** For tests: assume everything is accepted again. */
 export function resetClaudeFeatures(): void {
   accepted.fallbacks.clear();
-  accepted.noSchema.clear();
+  accepted.format.clear();
 }
 
 /** Asks Claude for structured operations. Never throws for API problems: they come back as plain-language errors. */
@@ -89,10 +91,17 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
           note(`${CLAUDE_MODELS[model].name} did not take the refusal fallback (${why}); asking without it.`);
           continue;
         }
-        // (Per model: one model refusing the strict reply format says nothing about the others.)
-        if (!accepted.noSchema.has(model) && /output_config|format|schema|grammar/i.test(why)) {
-          accepted.noSchema.add(model);
-          note(`${CLAUDE_MODELS[model].name} did not take the strict reply format (${why}); asking with the format in the instructions instead, for the rest of this visit.`);
+        // (Per model: one model refusing the strict reply format says nothing about the others.) Refused, the
+        // compact strict format is tried (it fits much smaller limits, e.g. Sonnet's); refused too, the reply tool.
+        const level = accepted.format.get(model);
+        if (level !== 'tool' && /output_config|format|schema|grammar|union|optional parameters|too complex/i.test(why)) {
+          const next = level === 'compact' ? 'tool' : 'compact';
+          accepted.format.set(model, next);
+          note(
+            next === 'compact'
+              ? `${CLAUDE_MODELS[model].name} did not take the full strict reply format (${why}); using its compact form instead, for the rest of this visit.`
+              : `${CLAUDE_MODELS[model].name} did not take the compact strict reply format either (${why}); asking it to answer with a reply tool instead, for the rest of this visit.`,
+          );
           continue;
         }
       }
@@ -132,7 +141,32 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };
 
-  if (!accepted.noSchema.has(model)) {
+  const level = accepted.format.get(model);
+  if (level === 'compact') {
+    systemPrompt ??= buildSystemPrompt(componentRegistry);
+    const response = await client.beta.messages.parse(
+      {
+        ...common,
+        output_config: { effort, format: betaJSONSchemaOutputFormat(compactFormat() as Parameters<typeof betaJSONSchemaOutputFormat>[0]) },
+        system: cachedSystem(systemPrompt + COMPACT_NOTE),
+      },
+      { signal },
+    );
+    const usage = used(response);
+    const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
+    if (response.stop_reason === 'refusal') return withUsage(declined);
+    if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
+      note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
+      return withUsage(incomplete);
+    }
+    const parsed = aiResponseSchema.safeParse(fillMissingNulls(expandReply(response.parsed_output, fullFormat())));
+    if (!parsed.success) {
+      note(`${CLAUDE_MODELS[model].name}'s answer (compact format) did not read back into the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
+    }
+    return withUsage({ ok: true, response: parsed.data });
+  }
+  if (!level) {
     systemPrompt ??= buildSystemPrompt(componentRegistry);
     const response = await client.beta.messages.parse(
       {
@@ -203,6 +237,24 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   }
   return withUsage({ ok: true, response: parsed.data });
 }
+
+let fullFormatSchema: Record<string, unknown> | null = null;
+/** The reply format as JSON Schema. */
+function fullFormat(): Record<string, unknown> {
+  fullFormatSchema ??= z.toJSONSchema(aiResponseSchema) as Record<string, unknown>;
+  return fullFormatSchema;
+}
+let compactFormatSchema: Record<string, unknown> | null = null;
+/** Its compact form (core/ai/compactSchema.ts), for models whose strict format allows fewer null-or-value fields. */
+function compactFormat(): Record<string, unknown> {
+  compactFormatSchema ??= compactSchema(fullFormat());
+  return compactFormatSchema;
+}
+
+const COMPACT_NOTE = `
+
+REPLY FORMAT NOTE
+In this reply format, a field that this guide says may be null is written differently: a text field is "" (an empty string) for none, and any other field (a number, true/false, a list, an object) is left out for none. needCode is left out unless kind is need_code; starter is "" unless kind is switch_starter.`;
 
 const REPLY_TOOL_NOTE = `
 
