@@ -1,0 +1,16 @@
+# The Windows game runner: a window with the system's WebView2 (Microsoft Edge) showing game.html from beside the exe.
+cmake_minimum_required(VERSION 3.16)
+project(pxl_runner LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+# The C++ runtime is linked in, so players need no Visual C++ redistributable.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+include(FetchContent)
+FetchContent_Declare(webview GIT_REPOSITORY https://github.com/webview/webview GIT_TAG 0.12.0)
+set(WEBVIEW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_INSTALL_TARGETS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(webview)
+add_executable(Game WIN32 main.cpp)
+target_link_libraries(Game PRIVATE webview::core_static)

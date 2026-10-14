@@ -1,0 +1,70 @@
+# Builds the desktop game runners on real Windows and macOS machines and saves them in runner/dist, where the
+# editor's build picks them up (the "Export for Windows / macOS" downloads put a game into a copy of one).
+name: Desktop runners
+
+on:
+  push:
+    branches: ['main', 'claude/trusting-carson-2kvonz']
+    paths: ['runner/src/**', '.github/workflows/desktop-runners.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-runners-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app bundle
+        run: bash runner/src/macos/build.sh "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-macos
+          path: ${{ runner.temp }}/out
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the exe
+        shell: bash
+        run: |
+          cmake -S runner/src/windows -B build -A x64
+          cmake --build build --config Release
+          mkdir -p "$RUNNER_TEMP/out"
+          cp build/Release/Game.exe "$RUNNER_TEMP/out/Game.exe"
+          ls -la "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-windows
+          path: ${{ runner.temp }}/out
+
+  save:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: runner-macos
+          path: runner/dist/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: runner-windows
+          path: runner/dist/windows
+      - name: Commit the built runners
+        run: |
+          echo "${{ github.sha }}" > runner/dist/SOURCE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runner/dist
+          if git diff --cached --quiet; then echo "No change"; exit 0; fi
+          git commit -m "Desktop runners built from ${{ github.sha }}"
+          for i in 1 2 3 4; do git push && break; git pull --rebase; done
