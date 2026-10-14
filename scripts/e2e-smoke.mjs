@@ -172,6 +172,18 @@ function stubModel(body) {
     const stone = body.context.library.find((d) => d.name === 'Stone').id;
     return { kind: 'apply', message: 'Built a stone far to the right.', changes: ['Stone at x 3000'], operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: stone, x: 3008, y: 16, name: null, ref: null }] };
   }
+  if (req.includes('quack twice')) {
+    // A small change to an existing script: only that part (edit_script), not the whole script again.
+    const player = body.context.library.find((d) => d.name === 'Player');
+    const quack = body.context.targets.flatMap((t) => t.scripts?.object ?? []).find((sc) => sc.name === 'Quack');
+    const scriptId = quack?.id;
+    return {
+      kind: 'apply',
+      message: 'The player quacks twice now.',
+      changes: ['Player: a second quack'],
+      operations: [{ op: 'edit_script', target: 'definition', id: player.id, scriptId, editsJson: JSON.stringify([{ at: 'handlers.0.do.1', action: 'insert', value: { do: 'play_sound', sound: 'Quack' }, was: '' }]) }],
+    };
+  }
   if (req.includes('quacks like a duck')) {
     const player = body.context.library.find((d) => d.name === 'Player').id;
     const quack = { type: 'steps', speed: 6, notes: [[22, 2, 6, 0], [20, 2, 5, 1], [18, 2, 3, 5], [0, 0, 0, 0], [21, 2, 5, 0], [17, 2, 3, 5]] };
@@ -821,6 +833,10 @@ try {
   await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await prompts.getByTestId('play-sound').innerText()).includes('Quack'), 'the AI makes a sound: the card has a ▶ button to hear it');
   await prompts.getByTestId('play-sound').click();
   await page.keyboard.press('Escape');
+  await clickWorld(-256, 0);
+  await ask('Make the player quack twice at the start.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.targets.some((t) => t.scripts?.object?.some((sc) => sc.name === 'Quack')), 'a small change to a script is made with edit_script (just that part)');
+  await page.keyboard.press('Escape');
   await page.getByTestId('dock-sounds').click();
   await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'the Sounds tab (next to Objects) lists the sounds, to play them again');
   await check(async () => {
@@ -845,9 +861,10 @@ try {
   }
   await page.getByTestId('dock-sounds').click();
   await page.getByTestId('play').click();
-  await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 1, 'in play, the script plays the sound');
+  await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 2, 'in play, the script plays the sound (twice, as edited)');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
   await page.getByTestId('undo').click();
 
   step = 'copy the console';

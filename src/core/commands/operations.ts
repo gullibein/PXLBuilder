@@ -238,6 +238,17 @@ export const operationSchema = z.union([
     scriptJson: z.string().describe('The whole behavior script as JSON (see "Behavior scripts"). Same "id" as an existing script of that owner replaces it; a new id (or none) adds one'),
   }),
   z.object({
+    op: z.literal('edit_script'),
+    target,
+    id: z.string().describe('The script owner: object definition id (definition) or entity id (instance)'),
+    scriptId: z.string().describe('The id of the script to change'),
+    editsJson: z
+      .string()
+      .describe(
+        'The changes as a JSON list, made in order: [{"at":"handlers.2.do.0","action":"replace","value":{…},"was":"play_sound"}]. at: keys and list positions from the script top, by dots (handlers.N, handlers.N.do.M, handlers.N.if, vars…). action: replace (what is there), insert (before position N in a list; N = its length adds at the end), remove. was (optional, recommended): text that must appear in the JSON of what is there now. Later positions in the same list shift after an insert or remove, so list edits are best made from the last position to the first',
+      ),
+  }),
+  z.object({
     op: z.literal('remove_script'),
     target,
     id: z.string(),
@@ -733,6 +744,14 @@ export function applyOperations(
       case 'set_camera':
         m.setCameraSettings(project, op.sceneId, parseProps(op.cameraJson, 'Camera settings'));
         break;
+      case 'edit_script': {
+        const owner = { target: op.target, id: op.target === 'definition' ? (refs.get(op.id) ?? op.id) : (entityRefs.get(op.id) ?? op.id) };
+        const parsed = substituteRefs(parseJson(op.editsJson, 'Script edits'), entityRefs, refs) as unknown;
+        // (A single edit, or {"edits": […]}, is taken as the list it means.)
+        const edits = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { edits?: unknown }).edits) ? (parsed as { edits: unknown[] }).edits : [parsed];
+        scripts.editScript(project, owner, op.scriptId, edits as scripts.ScriptEdit[]);
+        break;
+      }
       case 'set_script':
       case 'remove_script':
       case 'set_script_enabled': {

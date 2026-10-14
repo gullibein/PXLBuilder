@@ -17,7 +17,7 @@ import type { Id, Project } from '../types';
 import { applyOperations, type ApplyResult, type Operation } from './operations';
 
 /** Operations that change what an object is (components, scripts, sprites, tags). */
-const OBJECT_OPS = new Set<Operation['op']>(['set_component_field', 'add_component', 'remove_component', 'set_tags', 'draw_sprite', 'set_script', 'remove_script', 'set_script_enabled']);
+const OBJECT_OPS = new Set<Operation['op']>(['set_component_field', 'add_component', 'remove_component', 'set_tags', 'draw_sprite', 'set_script', 'edit_script', 'remove_script', 'set_script_enabled']);
 
 export interface ObjectChoice {
   /** The library object the change is about. */
@@ -64,6 +64,8 @@ export function objectChoiceFor(project: Project, ops: Operation[], selectedIds:
 function aimAt(project: Project, ops: Operation[], fromDefinition: Id, toDefinition: Id): Operation[] {
   return ops.map((op) => {
     if (!OBJECT_OPS.has(op.op) || !('target' in op)) return op;
+    // (Editing one copy's own script: that script is on the copy, not on the object.)
+    if (op.op === 'edit_script' && op.target === 'instance') return op;
     const o = op as Operation & { target: 'instance' | 'definition'; id: Id };
     const about = o.target === 'definition' ? o.id : entityById(project, o.id)?.definitionId;
     return about === fromDefinition ? ({ ...o, target: 'definition', id: toDefinition } as Operation) : op;
