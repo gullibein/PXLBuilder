@@ -286,3 +286,5 @@
 .sound-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--danger, #e5484d); border-radius: 10px; }
 .sound-confirm > span { flex: 1 1 14em; }
 .danger-btn { border: none; padding: 5px 14px; border-radius: 8px; background: var(--danger, #e5484d); color: #fff; font-weight: 700; }
+.sound-empty { display: grid; justify-items: start; gap: 10px; padding: 12px 0 4px; }
+.sound-empty p { margin: 0; }

@@ -848,10 +848,12 @@ try {
     const editor = page.getByTestId('sound-editor');
     const cv = page.getByTestId('sound-canvas');
     const notesNow = async () => JSON.parse((await cv.getAttribute('data-notes')) ?? '[]');
-    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0, 'the ♪ at the top opens the sound editor on a new, silent sound');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-empty').isVisible()), 'the ♪ at the top opens the sound editor; with no sounds yet it says so and offers + New sound');
     await page.getByTestId('sound-editor-close').click();
-    await check(async () => (await soundCount()) === before, 'closed without drawing, it adds nothing to the game');
+    await check(async () => (await soundCount()) === before, 'opening it makes no sound by itself');
     await page.getByTestId('sound-editor-toggle').click();
+    await page.getByTestId('sound-empty-new').click();
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0 && (await page.getByTestId('sound-delete').isVisible()), '+ New sound makes a new, silent sound (its trash right next to its name)');
     // Draw: the square wave at volume 5; a sweep over notes 1–4 rising from C4 to C5 (measured once the dialog's opening zoom is over).
     await page.waitForTimeout(300);
     const box = await cv.boundingBox();
@@ -867,7 +869,6 @@ try {
     }
     await page.mouse.up();
     await check(async () => JSON.stringify(await notesNow()) === JSON.stringify([[24, 3, 5, 0], [28, 3, 5, 0], [31, 3, 5, 0], [36, 3, 5, 0]]), 'dragging over the notes draws them: pitch where the pointer is, with the chosen wave and volume');
-    await check(async () => (await page.getByTestId('sound-pick').inputValue()) !== 'new', '(with its first notes it became one of the game\'s sounds)');
     // Volume strip: note 4 down to 2; effect row: fade out on note 4.
     const volY = box.y + ((64 * 4 + 10 + 8 * 7 - 2 * 7) / H) * box.height;
     await page.mouse.click(pt(3, 0).x, volY);
@@ -911,10 +912,10 @@ try {
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('dock-sounds').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
-    // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, delete, volume on, volume off, effect, volume, and the first notes (which made it).
+    // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, delete, volume on, volume off, effect, volume, the first notes, and New sound.
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
-    for (let i = 0; i < 11; i++) await page.getByTestId('undo').click();
+    for (let i = 0; i < 12; i++) await page.getByTestId('undo').click();
     await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
     // The trash at the top deletes the sound, after asking.
     await page.getByTestId('redo').click();
@@ -929,10 +930,14 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo brings a deleted sound back');
     await page.getByTestId('undo').click();
-    // + New sound in the Sounds tab opens the editor on a new sound too.
+    // + New sound in the Sounds tab makes one and opens it too; the ♪ then opens the sound last edited.
     await page.getByTestId('sound-new').click();
-    await check(async () => (await page.getByTestId('sound-pick').inputValue()) === 'new', '+ New sound in the Sounds tab opens a new sound in the editor');
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await page.getByTestId('sound-delete').isVisible()), '+ New sound in the Sounds tab makes a new sound and opens it');
     await page.getByTestId('sound-editor-close').click();
+    await page.getByTestId('sound-editor-toggle').click();
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1', 'the ♪ opens the sound last edited');
+    await page.getByTestId('sound-editor-close').click();
+    await page.getByTestId('undo').click();
     if (await page.getByTestId('sounds-panel').count()) await page.getByTestId('dock-sounds').click();
   }
 

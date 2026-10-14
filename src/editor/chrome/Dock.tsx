@@ -1,5 +1,6 @@
 import { PlayButton } from './TopBar';
 import { NoteIcon } from './NoteIcon';
+import { openNewSound } from '../sounds';
 import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
 import { playSound } from '../audio/synth';
@@ -314,7 +315,7 @@ function SoundsPanel() {
         ))}
         {sounds.length === 0 && <p className="muted small">No sounds yet.</p>}
       </div>
-      <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => useEditor.getState().setSoundEditor('new')}>
+      <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => void openNewSound()}>
         + New sound
       </button>
       <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>

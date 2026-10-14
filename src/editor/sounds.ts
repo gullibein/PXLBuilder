@@ -1,6 +1,6 @@
 /** Changes to the game's sounds from the sound editor and the Sounds list (each one undoable). */
 import { soundDataUrl } from '../core/audio/sound';
-import type { StepSound } from '../core/audio/steps';
+import { emptySteps, type StepSound } from '../core/audio/steps';
 import { generateId } from '../core/ids';
 import type { Id } from '../core/types';
 import { useEditor } from './store';
@@ -72,4 +72,11 @@ function renameIn(node: unknown, old: string, next: string): void {
   const o = node as Record<string, unknown>;
   if (o.do === 'play_sound' && typeof o.sound === 'string' && o.sound.toLowerCase() === old.toLowerCase()) o.sound = next;
   for (const v of Object.values(o)) if (v && typeof v === 'object') renameIn(v, old, next);
+}
+
+/** + New sound: a new, silent sound in the game (one undo step), open in the sound editor. */
+export function openNewSound(): Id {
+  const id = addSound(newSoundName(), emptySteps());
+  useEditor.getState().setSoundEditor(id);
+  return id;
 }

@@ -5,9 +5,9 @@
  * user can take turns on the same sound.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { emptySteps, isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
+import { isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
 import { playSound, type Playing } from '../audio/synth';
-import { addSound, newSoundName, renameSound, soundNameProblem, updateSound } from '../sounds';
+import { openNewSound, renameSound, updateSound } from '../sounds';
 import { useEditor } from '../store';
 
 export const WAVE_COLORS = ['#29adff', '#00e436', '#ff004d', '#ffa300', '#ffec27', '#ff77a8', '#c2c3c7', '#a78bfa'];
@@ -31,75 +31,73 @@ const H = FX_TOP + FX_H;
 
 type Area = 'pitch' | 'volume' | 'effect';
 
+/** The sound last open in the editor (the ♪ at the top opens it again). */
+let lastSound: string | null = null;
+
 export function SoundEditor() {
   const target = useEditor((s) => s.soundEditor);
-  const asset = useEditor((s) => (s.soundEditor && s.soundEditor !== 'new' ? s.project.assets.find((a) => a.id === s.soundEditor && a.kind === 'sound') : undefined));
   const assets = useEditor((s) => s.project.assets);
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   // What is drawn with, kept while switching between sounds.
   const pens = useState({ wave: 3, volume: 5, effect: 0 });
-  // A new sound before anything is drawn: here only (added to the game with its first notes).
-  const [fresh, setFresh] = useState<{ name: string; sound: StepSound } | null>(null);
+  // 'open' (the ♪): the sound last edited, else the game's first sound, else none yet.
+  const shownId = target === 'open' ? ((sounds.find((a) => a.id === lastSound) ?? sounds[0])?.id ?? null) : target;
+  const asset = shownId ? sounds.find((a) => a.id === shownId) : undefined;
   const close = () => useEditor.getState().setSoundEditor(null);
   useEffect(() => {
-    if (target === 'new') setFresh({ name: newSoundName(), sound: emptySteps() });
     // The sound was deleted (or undone away): nothing to edit.
-    else if (target && !asset) close();
+    if (target && target !== 'open' && !asset) close();
   }, [target, asset === undefined]);
-  if (!target || (target !== 'new' && !asset) || (target === 'new' && !fresh)) return null;
+  if (asset) lastSound = asset.id;
+  if (!target) return null;
   const picker = (
     <select
       className="sound-pick"
       aria-label="Sound"
       data-testid="sound-pick"
-      value={target}
-      onChange={(e) => useEditor.getState().setSoundEditor(e.target.value)}
+      value={asset?.id ?? ''}
+      onChange={(e) => (e.target.value === '+new' ? openNewSound() : useEditor.getState().setSoundEditor(e.target.value))}
     >
-      {target === 'new' && <option value="new">{fresh!.name} (new)</option>}
+      {!asset && <option value="">No sounds yet</option>}
       {sounds.map((a) => (
         <option key={a.id} value={a.id}>
           {a.name}
           {isStepSound(a.synth) ? '' : ' (older)'}
         </option>
       ))}
-      {target !== 'new' && <option value="new">+ New sound</option>}
+      <option value="+new">+ New sound</option>
     </select>
   );
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <section className="dialog sound-editor" role="dialog" aria-label="Sound editor" data-testid="sound-editor">
-        {target === 'new' ? (
+        {!asset ? (
+          <>
+            <header className="bg-head">
+              <span className="sound-title">Sound {picker}</span>
+              <CloseButton onClose={close} />
+            </header>
+            <div className="sound-empty" data-testid="sound-empty">
+              <p>This game has no sounds yet.</p>
+              <button className="primary-btn" data-testid="sound-empty-new" onClick={openNewSound}>
+                + New sound
+              </button>
+              <p className="muted small">Or ask the AI for one on anything ("the duck quacks when the player touches it") and fine-tune it here.</p>
+            </div>
+          </>
+        ) : isStepSound(asset.synth) ? (
           <Editor
-            key="new"
+            key={asset.id}
             pens={pens}
             picker={picker}
-            name={fresh!.name}
-            sound={fresh!.sound}
-            onChange={(sound) => {
-              // Something to hear: now it is one of the game's sounds.
-              if (audibleNotes(sound)) useEditor.getState().setSoundEditor(addSound(fresh!.name, sound));
-              else setFresh({ ...fresh!, sound });
-            }}
-            onRename={(name) => {
-              const problem = soundNameProblem(name);
-              if (!problem) setFresh({ ...fresh!, name: name.trim() });
-              return problem;
-            }}
-            onClose={close}
-          />
-        ) : isStepSound(asset!.synth) ? (
-          <Editor
-            key={asset!.id}
-            pens={pens}
-            picker={picker}
-            name={asset!.name}
-            sound={asset!.synth}
-            onChange={(sound, label) => updateSound(asset!.id, sound, `Sound ${asset!.name}: ${label}`)}
-            onRename={(name) => renameSound(asset!.id, name)}
+            name={asset.name}
+            sound={asset.synth}
+            onChange={(sound, label) => updateSound(asset.id, sound, `Sound ${asset.name}: ${label}`)}
+            onRename={(name) => renameSound(asset.id, name)}
             onDelete={() => {
               const { edit, setSoundEditor } = useEditor.getState();
               setSoundEditor(null);
-              edit(`Delete sound ${asset!.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== asset!.id)));
+              edit(`Delete sound ${asset.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== asset.id)));
             }}
             onClose={close}
           />
@@ -110,7 +108,7 @@ export function SoundEditor() {
               <CloseButton onClose={close} />
             </header>
             <p className="muted" data-testid="sound-old">
-              This sound was made before the sound editor: it plays, but it can't be edited note by note. Ask the AI to "remake the {asset!.name} sound", then open it here again.
+              This sound was made before the sound editor: it plays, but it can't be edited note by note. Ask the AI to "remake the {asset.name} sound", then open it here again.
             </p>
           </>
         )}
@@ -164,8 +162,8 @@ interface EditorProps {
   onChange: (sound: StepSound, label: string) => void;
   /** Returns what is wrong with the name, or null. */
   onRename: (name: string) => string | null;
-  /** Deletes the sound (after asking); missing for a new sound not yet in the game. */
-  onDelete?: () => void;
+  /** Deletes the sound (after asking). */
+  onDelete: () => void;
   onClose: () => void;
 }
 
@@ -434,18 +432,16 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
               e.stopPropagation();
             }}
           />
-          {onDelete && (
-            <button className="icon-btn" aria-label="Delete sound" title="Delete this sound" data-testid="sound-delete" onClick={() => setConfirming(true)}>
-              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          )}
+          <button className="icon-btn" aria-label="Delete sound" title="Delete this sound" data-testid="sound-delete" onClick={() => setConfirming(true)}>
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </span>
         <CloseButton onClose={onClose} />
       </header>
       {nameError && <p className="error small">{nameError}</p>}
-      {confirming && onDelete && (
+      {confirming && (
         <div className="sound-confirm" role="alertdialog" aria-label="Delete sound?" data-testid="sound-delete-confirm">
           <span>
             <b>Delete sound?</b> <span className="muted small">“{name}” goes from the game (scripts that play it report it missing). Undo brings it back.</span>

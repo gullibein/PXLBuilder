@@ -60,7 +60,7 @@ export function TopBar() {
           {/* The whole-level, whole-game and editor prompts (the level's own card shares the level's). */}
           <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} below />
         </button>
-        <button className="icon-btn note-btn" title="Sound editor: make a new sound" aria-label="Sound editor" data-testid="sound-editor-toggle" onClick={() => useEditor.getState().setSoundEditor('new')}>
+        <button className="icon-btn note-btn" title="Sound editor" aria-label="Sound editor" data-testid="sound-editor-toggle" onClick={() => useEditor.getState().setSoundEditor('open')}>
           <NoteIcon size={16} />
         </button>
         <MainMenu />
