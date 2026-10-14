@@ -12,6 +12,9 @@ import { useEditor } from '../store';
 
 export const WAVE_COLORS = ['#29adff', '#00e436', '#ff004d', '#ffa300', '#ffec27', '#ff77a8', '#c2c3c7', '#a78bfa'];
 const EFFECT_MARKS = ['·', '⟋', '∿', '↘', '◁', '▷'];
+/** An empty note: nothing to hear, nothing kept. */
+const EMPTY_NOTE: StepNote = [24, 0, 0, 0];
+const isEmpty = (n: StepNote) => n.join() === EMPTY_NOTE.join();
 
 // The drawing's layout (in canvas pixels; the canvas scales to the dialog's width).
 const COL = 18;
@@ -93,6 +96,11 @@ export function SoundEditor() {
             sound={asset!.synth}
             onChange={(sound, label) => updateSound(asset!.id, sound, `Sound ${asset!.name}: ${label}`)}
             onRename={(name) => renameSound(asset!.id, name)}
+            onDelete={() => {
+              const { edit, setSoundEditor } = useEditor.getState();
+              setSoundEditor(null);
+              edit(`Delete sound ${asset!.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== asset!.id)));
+            }}
             onClose={close}
           />
         ) : (
@@ -156,10 +164,13 @@ interface EditorProps {
   onChange: (sound: StepSound, label: string) => void;
   /** Returns what is wrong with the name, or null. */
   onRename: (name: string) => string | null;
+  /** Deletes the sound (after asking); missing for a new sound not yet in the game. */
+  onDelete?: () => void;
   onClose: () => void;
 }
 
-function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onClose }: EditorProps) {
+function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onDelete, onClose }: EditorProps) {
+  const [confirming, setConfirming] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const { wave, volume, effect } = pen;
   const setWave = (w: number) => setPen({ ...pen, wave: w });
@@ -285,9 +296,9 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         ctx.fillRect(x, top, COL - 4, ROW);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x, top, COL - 4, 1);
-      } else {
-        // A silent note keeps its pitch and wave (raise its volume to hear it again): a faint outline there.
-        ctx.strokeStyle = '#3a4258';
+      } else if (!isEmpty(notes[i])) {
+        // Turned off (volume 0) but kept: its pitch and wave are still there (raise its volume to hear it again).
+        ctx.strokeStyle = '#4a5370';
         ctx.strokeRect(x + 0.5, top + 0.5, COL - 5, ROW - 1);
       }
       // Volume.
@@ -319,7 +330,8 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
   const paint = (list: StepNote[], col: number, row: number, area: Area, erase: boolean) => {
     const n = [...list[col]] as StepNote;
     if (area === 'pitch') {
-      if (erase) n[2] = 0;
+      // Deleted outright: back to an empty note (nothing kept). (The volume strip only turns a note off.)
+      if (erase) n.splice(0, 4, ...EMPTY_NOTE);
       else {
         n[0] = row;
         n[1] = wave;
@@ -407,10 +419,30 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
               e.stopPropagation();
             }}
           />
+          {onDelete && (
+            <button className="icon-btn" aria-label="Delete sound" title="Delete this sound" data-testid="sound-delete" onClick={() => setConfirming(true)}>
+              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
         </span>
         <CloseButton onClose={onClose} />
       </header>
       {nameError && <p className="error small">{nameError}</p>}
+      {confirming && onDelete && (
+        <div className="sound-confirm" role="alertdialog" aria-label="Delete sound?" data-testid="sound-delete-confirm">
+          <span>
+            <b>Delete sound?</b> <span className="muted small">“{name}” goes from the game (scripts that play it report it missing). Undo brings it back.</span>
+          </span>
+          <button className="chip-btn" data-testid="sound-delete-cancel" onClick={() => setConfirming(false)} autoFocus>
+            Cancel
+          </button>
+          <button className="danger-btn" data-testid="sound-delete-yes" onClick={onDelete}>
+            Delete
+          </button>
+        </div>
+      )}
       <div className="sound-tools">
         <button className="primary-btn sound-play" data-testid="sound-editor-play" onClick={() => (playing ? stop() : play())} disabled={!count && !playing} title="Play (Space)">
           {playing ? '■ Stop' : '▶ Play'}
@@ -498,9 +530,9 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         onContextMenu={(e) => e.preventDefault()}
       />
       <p className="sound-info small" data-testid="sound-info">
-        {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : `Note ${hover! + 1}: silent (keeps ${pitchName(info[0])} · ${STEP_WAVES[info[1]]}: give it a volume to hear it again)`) : ' '}
+        {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : isEmpty(info) ? `Note ${hover! + 1}: empty` : `Note ${hover! + 1}: off (keeps ${pitchName(info[0])} · ${STEP_WAVES[info[1]]}: give it a volume to hear it again)`) : ' '}
       </p>
-      <p className="muted small sound-help">Draw notes in the top part (right-click or Alt silences them), their volume in the middle strip, and the chosen effect in the bottom row. Double-click a wave, volume or effect (or right-click it → All notes) to put it on every note. Space plays; Ctrl+Z undoes.</p>
+      <p className="muted small sound-help">Draw notes in the top part (right-click or Alt deletes them), their volume in the middle strip (right-click turns a note off but keeps it), and the chosen effect in the bottom row. Double-click a wave, volume or effect (or right-click it → All notes) to put it on every note. Space plays; Ctrl+Z undoes.</p>
     </div>
   );
 }

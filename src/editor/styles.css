@@ -283,3 +283,6 @@
 .sound-new { margin: 8px 0 0; }
 .dock-panel.sounds { display: grid; gap: 6px; align-content: start; }
 .dock-panel.sounds .sound-new { justify-self: start; margin: 0; }
+.sound-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--danger, #e5484d); border-radius: 10px; }
+.sound-confirm > span { flex: 1 1 14em; }
+.danger-btn { border: none; padding: 5px 14px; border-radius: 8px; background: var(--danger, #e5484d); color: #fff; font-weight: 700; }

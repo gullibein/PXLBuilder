@@ -875,8 +875,12 @@ try {
     const fxY = box.y + ((64 * 4 + 10 + 8 * 7 + 10 + 9) / H) * box.height;
     await page.mouse.click(pt(3, 0).x, fxY);
     await check(async () => JSON.stringify((await notesNow())[3]) === JSON.stringify([36, 3, 2, 5]), 'the middle strip sets a note\'s volume and the bottom row its effect');
+    // Right-click in the volume strip turns a note off but keeps it; right-click in the note area deletes it outright.
+    await page.mouse.click(pt(2, 0).x, volY, { button: 'right' });
+    await check(async () => JSON.stringify((await notesNow())[2]) === JSON.stringify([31, 3, 0, 0]), 'right-click in the volume strip turns a note off (it keeps its pitch and wave)');
+    await page.mouse.click(pt(2, 0).x, volY);
     await page.mouse.click(pt(1, 28).x, pt(1, 28).y, { button: 'right' });
-    await check(async () => (await notesNow())[1][2] === 0, 'right-click silences a note');
+    await check(async () => JSON.stringify((await notesNow())[1]) === JSON.stringify([24, 0, 0, 0]), 'right-click in the note area deletes a note outright (back to an empty C4 note)');
     await page.getByTestId('sound-slower').click();
     await check(async () => (await page.getByTestId('sound-speed').innerText()) === '13', 'speed can be changed');
     // A wave on every note at once: double-click it. A volume: right-click → All notes. (Silent notes stay silent.)
@@ -897,11 +901,24 @@ try {
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('dock-sounds').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
-    // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, silence, effect, volume, and the first notes (which made it).
+    // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, delete, volume on, volume off, effect, volume, and the first notes (which made it).
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
-    for (let i = 0; i < 9; i++) await page.getByTestId('undo').click();
+    for (let i = 0; i < 11; i++) await page.getByTestId('undo').click();
     await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
+    // The trash at the top deletes the sound, after asking.
+    await page.getByTestId('redo').click();
+    await page.getByTestId('sound-edit').first().click();
+    await page.getByTestId('sound-delete').click();
+    await check(async () => (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'the trash next to the name asks "Delete sound?" first');
+    await page.getByTestId('sound-delete-cancel').click();
+    await check(async () => (await page.getByTestId('sound-delete-confirm').count()) === 0 && (await page.getByTestId('sound-editor').isVisible()), 'Cancel keeps it');
+    await page.getByTestId('sound-delete').click();
+    await page.getByTestId('sound-delete-yes').click();
+    await check(async () => (await page.getByTestId('sound-editor').count()) === 0 && !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Delete removes the sound and closes the editor');
+    await page.getByTestId('undo').click();
+    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo brings a deleted sound back');
+    await page.getByTestId('undo').click();
     // + New sound in the Sounds tab opens the editor on a new sound too.
     await page.getByTestId('sound-new').click();
     await check(async () => (await page.getByTestId('sound-pick').inputValue()) === 'new', '+ New sound in the Sounds tab opens a new sound in the editor');
