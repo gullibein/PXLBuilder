@@ -82,7 +82,7 @@ function stubModel(body) {
     const coin = body.context.library.find((d) => d.name === 'Coin');
     if (!body.code) return { kind: 'need_code', message: "I need to read the Coin's code.", changes: [], operations: [], needCode: [coin.id] };
     const got = body.code.find((c) => c.id === coin.id);
-    return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.scriptsInFull ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
+    return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
   }
   if (req.includes('locked door test room')) {
     const lib = (name) => body.context.library.find((d) => d.name === name).id;

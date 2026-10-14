@@ -188,16 +188,16 @@ export interface AIPayload {
     tags: string[];
     components: string[];
     placedCount: number;
-    /** Its size in pixels, and how many 32 px level cells it takes (a 32×64 door: 1×2). */
-    size: { w: number; h: number; cells: { w: number; h: number } };
+    /** Its size in pixels and the 32 px level cells it takes: "32x64 px, 1x2 cells" (a door). */
+    size: string;
     /**
-     * Behavior scripts every copy runs. scriptsInFull true (the selected things' own objects): the whole code. False:
-     * only each script's id, name and description; the AI asks for the code it needs ("need_code").
+     * Behavior scripts every copy runs: id, name and the first sentence of the description. The code itself is in
+     * targets[].scripts for the selected things' own objects (codeInTargets); the AI asks for any other ("need_code").
      */
-    scripts: ({ id: Id; name: string; description: string } | BehaviorScript)[];
-    scriptsInFull: boolean;
-    /** Sprites collected for this object: image asset id + cell number (for sprite sheets). */
-    sprites: { assetId: Id; image: string; frame: number; sheet: boolean }[];
+    scripts: { id: Id; name: string; description: string }[];
+    codeInTargets?: true;
+    /** Sprites collected for this object (left out when none): image asset id, its name, the cell (sprite sheets). */
+    sprites?: { assetId: Id; image: string; frame: number; sheet?: true }[];
   }[];
   /** The level's relationships and rules: in words, plus their data (for editing or removing by id). */
   logic: {
@@ -388,14 +388,18 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       placedCount: placed(d.id),
       size: (() => {
         const s = getEntitySize(resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry));
-        return { w: s.x, h: s.y, cells: { w: Math.max(1, Math.round(s.x / LEVEL_CELL)), h: Math.max(1, Math.round(s.y / LEVEL_CELL)) } };
+        return `${s.x}x${s.y} px, ${Math.max(1, Math.round(s.x / LEVEL_CELL))}x${Math.max(1, Math.round(s.y / LEVEL_CELL))} cells`;
       })(),
-      scripts: fullScripts.has(d.id) ? (d.scripts ?? []) : (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: x.description })),
-      scriptsInFull: fullScripts.has(d.id),
-      sprites: getDefinitionSprites(d).map((r) => {
-        const a = project.assets.find((x) => x.id === r.assetId);
-        return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, sheet: a?.kind === 'spritesheet' };
-      }),
+      // (The selected things' own scripts are in targets in full: not twice.)
+      scripts: (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: firstSentence(x.description) })),
+      ...(fullScripts.has(d.id) ? { codeInTargets: true as const } : {}),
+      ...(() => {
+        const sprites = getDefinitionSprites(d).map((r) => {
+          const a = project.assets.find((x) => x.id === r.assetId);
+          return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, ...(a?.kind === 'spritesheet' ? { sheet: true as const } : {}) };
+        });
+        return sprites.length ? { sprites } : {};
+      })(),
     })),
     logic: {
       relationships: scene.relationships.slice(0, MAX_LOGIC).map((r: Relationship) => ({ id: r.id, text: describeRelationship(project, scene, r), type: r.type, source: r.source, target: r.target, params: r.params, conditions: r.conditions })),
@@ -425,6 +429,12 @@ function debugPayload(project: Project, scene: Scene, registry: ComponentRegistr
     ? 'The game was changed after this play, so it shows the game as it was then; things may already be different.'
     : 'Nothing was changed since this play: it shows the game as it is now.';
   return { problems, lastPlay: { ...summarizePlay(lastPlay.report, focus, players), note } };
+}
+
+/** A script's description, short: its first sentence (at most about 120 characters). */
+function firstSentence(text: string): string {
+  const first = /^.*?[.!?](\s|$)/.exec(text.trim())?.[0].trim() ?? text.trim();
+  return first.length <= 120 ? first : `${first.slice(0, 117).replace(/\s+\S*$/, '')}…`;
 }
 
 /**

@@ -418,7 +418,7 @@ describe("other objects' code goes to the AI", () => {
     const diamond = payload.library.find((d) => d.name === 'Diamond')!;
     // Not sent up front (it costs on every request): the script's name and description are, and the AI asks for the
     // code when it needs it (kind "need_code"), getting the full scripts back.
-    expect(diamond.scriptsInFull).toBe(false);
+    expect(diamond.codeInTargets).toBeUndefined();
     expect(diamond.scripts).toEqual([{ id: expect.any(String), name: 'Fall', description: 'Falls when nothing is under it.' }]);
     const code = codeFor(project, [diamond.id, 'Mole', 'nothing such']);
     expect(code.map((c) => c.name)).toEqual(['Diamond', 'Mole']);
@@ -430,7 +430,7 @@ describe("other objects' code goes to the AI", () => {
     expect(rest).toContain('solid_at(self.x, self.y + 32)');
   });
 
-  it("the selected thing's own object keeps its code in full", async () => {
+  it("the selected thing's code comes in full once (in targets), not again in the object list", async () => {
     const { setScript } = await import('./script/mutations');
     let project = createProject(registry);
     const sceneId = project.scenes[0].id;
@@ -442,9 +442,15 @@ describe("other objects' code goes to the AI", () => {
       id = e.id;
       m.addEntity(d, sceneId, e);
     });
-    const coin = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [id] }, registry).library.find((d) => d.name === 'Coin')!;
-    expect(coin.scriptsInFull).toBe(true);
-    expect(JSON.stringify(coin.scripts)).toContain('"handlers"');
+    const payload = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [id] }, registry);
+    const coin = payload.library.find((d) => d.name === 'Coin')!;
+    expect(coin.codeInTargets).toBe(true);
+    expect(coin.scripts).toEqual([{ id: expect.any(String), name: 'Spin', description: 'Spins.' }]);
+    expect(JSON.stringify(payload.targets[0].scripts)).toContain('"handlers"');
+    // Short entries: the size as one line, no empty sprite lists.
+    expect(coin.size).toMatch(/^\d+x\d+ px, 1x1 cells$/);
+    const ladder = payload.library.find((d) => d.name === 'Ladder')!;
+    expect(ladder).not.toHaveProperty('codeInTargets');
   });
 });
 
