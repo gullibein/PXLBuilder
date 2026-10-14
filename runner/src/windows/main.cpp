@@ -3,6 +3,7 @@
 // started, writes what it found to that file and quits (for the build's own test).
 #include "webview/webview.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
