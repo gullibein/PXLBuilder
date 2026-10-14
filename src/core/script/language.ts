@@ -50,7 +50,9 @@ export type Stmt =
   | { do: 'gravity'; scale: string; on: string | null }
   | { do: 'speed_factor'; value: string; on: string | null }
   | { do: 'shoot'; dx: string; dy: string; speed: string; damage: string; range: string; object: string | null }
-  | { do: 'spawn'; object: string; x: string; y: string }
+  | { do: 'spawn'; object: string; x: string; y: string; tag: string | null }
+  | { do: 'move_group'; tag: string; dx: string; dy: string }
+  | { do: 'turn_group'; tag: string; x: string; y: string; dir: string }
   | { do: 'remove'; target: string | null }
   | { do: 'damage'; target: string; amount: string }
   | { do: 'heal'; target: string; amount: string }
@@ -205,6 +207,24 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   pressed: { args: 'key', min: 1, max: 1, doc: 'the key was pressed this step' },
   solid_at: { args: 'x, y', min: 2, max: 2, doc: 'a wall/floor (or a Pushable thing) is at that point (for ledge and wall checks, and whether a grid square is free)' },
   thing_at: { args: 'x, y, tag?', min: 2, max: 3, doc: 'the living entity (not self) at that point, optionally only one with the tag, or null: what is on a grid square (thing_at(self.x + 32, self.y, "enemy"), thing_at(x, y, "barrel"))' },
+  fits: {
+    args: 'tag, dx, dy, block?',
+    min: 3,
+    max: 4,
+    doc: 'every living entity with the tag could move by dx, dy: no wall there, and (with block) no other entity with the block tag there. fits("active", 0, 32, "locked"): the falling piece can drop one square',
+  },
+  fits_turned: {
+    args: 'tag, x, y, dir, block?',
+    min: 4,
+    max: 5,
+    doc: 'the same for a quarter turn of the group around x, y (dir 1 clockwise, -1 the other way): fits_turned("active", pivot_x, pivot_y, 1, "locked")',
+  },
+  count_in: {
+    args: 'tag, x1, y1, x2, y2',
+    min: 5,
+    max: 5,
+    doc: 'how many living entities with the tag have their middle inside the box x1..x2, y1..y2: a full row is count_in("locked", left, row_y - 1, right, row_y + 1) == columns',
+  },
   can_see: { args: 'e', min: 1, max: 1, doc: 'no wall between self and e' },
   touching: { args: 'tag, e?', min: 1, max: 2, doc: 'self (or e) overlaps a living entity with the tag right now: touching("water"), touching("water", other)' },
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
@@ -238,7 +258,15 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   gravity: { example: '{"do":"gravity","scale":"0.3","on":"other"}', doc: 'change a gravity scale (0 = floats, 1 = normal); it stays until changed again (or it respawns)' },
   speed_factor: { example: '{"do":"speed_factor","value":"0.4","on":"other"}', doc: 'scale how fast it walks/runs: 1 normal, 0.4 slow (water, mud), 1.5 fast; works on the player (whose own running speed is otherwise fixed) and on patrollers; stays until changed (or it respawns)' },
   shoot: { example: '{"do":"shoot","dx":"self.facing","dy":"0","speed":"260","damage":"1","range":"400","object":null}', doc: 'fire a shot in direction (dx, dy) (normalized). It hurts like this entity (same tags + "projectile") through normal damage rules, never its shooter, and vanishes on hits and walls. object: a library object id to fire, or null for a small built-in shot' },
-  spawn: { example: '{"do":"spawn","object":"<library object id>","x":"self.x","y":"self.y - 40"}', doc: 'create a copy of a library object' },
+  spawn: { example: '{"do":"spawn","object":"<library object id>","x":"self.x","y":"self.y - 40","tag":null}', doc: 'create a copy of a library object; tag: a tag it gets at once (null: none), e.g. "active" for the blocks of a falling piece, to move them together with move_group' },
+  move_group: {
+    example: '{"do":"move_group","tag":"active","dx":"-32","dy":"0"}',
+    doc: 'move every living entity with the tag by dx, dy at once (a piece of several blocks moves as one); check first with fits(tag, dx, dy, "locked") so it never moves into walls or other blocks',
+  },
+  turn_group: {
+    example: '{"do":"turn_group","tag":"active","x":"pivot_x","y":"pivot_y","dir":"1"}',
+    doc: 'turn every living entity with the tag a quarter turn around the point x, y (dir 1 clockwise, -1 the other way): a falling piece rotates; check first with fits_turned(tag, x, y, dir, "locked")',
+  },
   remove: { example: '{"do":"remove","target":null}', doc: 'take it out of play (null = self)' },
   damage: { example: '{"do":"damage","target":"other","amount":"1"}', doc: 'take health (always hurts, with knock back; respects invincibility after a hit)' },
   heal: { example: '{"do":"heal","target":"self","amount":"1"}', doc: 'give health, up to the maximum' },
@@ -318,7 +346,9 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
       range: expr.default('480'),
       object: z.string().min(1).nullable().default(null),
     }),
-    z.object({ do: z.literal('spawn'), object: z.string().min(1), x: expr, y: expr }),
+    z.object({ do: z.literal('spawn'), object: z.string().min(1), x: expr, y: expr, tag: z.string().min(1).nullable().default(null) }),
+    z.object({ do: z.literal('move_group'), tag: z.string().min(1), dx: expr.default('0'), dy: expr.default('0') }),
+    z.object({ do: z.literal('turn_group'), tag: z.string().min(1), x: expr, y: expr, dir: expr.default('1') }),
     z.object({ do: z.literal('remove'), target: nexpr }),
     z.object({ do: z.literal('damage'), target: expr, amount: expr.default('1') }),
     z.object({ do: z.literal('heal'), target: expr, amount: expr.default('1') }),
@@ -437,6 +467,10 @@ export function exprSlots(s: Stmt): string[] {
       return [s.dx, s.dy, s.speed, s.damage, s.range];
     case 'spawn':
       return [s.x, s.y];
+    case 'move_group':
+      return [s.dx, s.dy];
+    case 'turn_group':
+      return [s.x, s.y, s.dir];
     case 'remove':
     case 'respawn':
       return s.target ? [s.target] : [];

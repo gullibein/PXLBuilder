@@ -633,6 +633,11 @@ export class Runtime {
     if (e.body !== 'dynamic') this.solidsDirty = true;
   }
 
+  /** Whether it blocks movement (a wall, floor, closed door…), for scripts' group checks. */
+  solidFor(e: RuntimeEntity): boolean {
+    return this.isSolid(e);
+  }
+
   private isSolid(e: RuntimeEntity): boolean {
     // A goal is reached, never bumped into: it never blocks (a top-down exit is won by standing on it).
     return e.alive && !e.open && !!e.collider && !e.collider.trigger && !e.base.components.Goal;

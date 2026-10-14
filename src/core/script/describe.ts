@@ -95,7 +95,11 @@ function stmtLines(s: Stmt, indent: string): string[] {
     case 'shoot':
       return one(`shoot ${s.object ? 'object ' : ''}toward ${x(s.dx)}, ${x(s.dy)} at ${x(s.speed)} (damage ${x(s.damage)}, range ${x(s.range)})`);
     case 'spawn':
-      return one(`spawn object at ${x(s.x)}, ${x(s.y)}`);
+      return one(`spawn object at ${x(s.x)}, ${x(s.y)}${s.tag ? ` tagged "${s.tag}"` : ''}`);
+    case 'move_group':
+      return one(`move everything tagged "${s.tag}" by ${x(s.dx)}, ${x(s.dy)}`);
+    case 'turn_group':
+      return one(`turn everything tagged "${s.tag}" a quarter turn ${x(s.dir)} around ${x(s.x)}, ${x(s.y)}`);
     case 'remove':
       return one(`remove ${s.target ? x(s.target) : 'self'}`);
     case 'damage':

@@ -336,7 +336,30 @@ export class ScriptSystem {
       }
       case 'spawn': {
         const made = this.rt.spawn(s.object, { x: n(s.x), y: n(s.y) });
+        if (made && s.tag) setTag(made, s.tag, true);
         if (made) gp.emit('spawned', made, e);
+        break;
+      }
+      case 'move_group': {
+        const dx = n(s.dx);
+        const dy = n(s.dy);
+        for (const o of this.group(s.tag)) {
+          o.x += dx;
+          o.y += dy;
+        }
+        this.rt.markSolidsDirty();
+        break;
+      }
+      case 'turn_group': {
+        const cx = n(s.x);
+        const cy = n(s.y);
+        const dir = n(s.dir) < 0 ? -1 : 1;
+        for (const o of this.group(s.tag)) {
+          const p = turned(o.x, o.y, cx, cy, dir);
+          o.x = p.x;
+          o.y = p.y;
+        }
+        this.rt.markSolidsDirty();
         break;
       }
       case 'remove': {
@@ -634,6 +657,35 @@ export class ScriptSystem {
     return best;
   }
 
+  /** The living entities with the tag (a group moved or turned together). */
+  private group(tag: string): RuntimeEntity[] {
+    return this.rt.entities.filter((o) => o.alive && o.tags.includes(tag)).slice(0, MAX_EACH);
+  }
+
+  /**
+   * Whether the group with this tag could be where `to` puts each member: no solid thing (outside the group) and,
+   * with `block`, no other living entity with that tag at any member's new middle.
+   */
+  private groupFits(tag: string, to: (o: RuntimeEntity) => { x: number; y: number }, block: string | null): boolean {
+    const members = this.group(tag);
+    if (!members.length) return false;
+    const inGroup = new Set(members);
+    const others = this.rt.entities.filter((o) => o.alive && !inGroup.has(o));
+    for (const m of members) {
+      const p = to(m);
+      for (const o of others) {
+        if (!this.rt.solidFor(o) && !(block !== null && o.tags.includes(block))) continue;
+        const b = this.rt.boxOf(o);
+        const hw = b ? b.hw : (Number(o.base.components.Sprite?.width) || 0) / 2;
+        const hh = b ? b.hh : (Number(o.base.components.Sprite?.height) || 0) / 2;
+        const bx = b ? b.x : o.x;
+        const by = b ? b.y : o.y;
+        if (Math.abs(p.x - bx) < hw && Math.abs(p.y - by) < hh) return false;
+      }
+    }
+    return true;
+  }
+
   private solidAt(x: number, y: number): boolean {
     return this.rt.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh);
   }
@@ -696,6 +748,22 @@ export class ScriptSystem {
         return this.nearest(self, show(v[0]));
       case 'count':
         return this.rt.entities.filter((o) => o.alive && o.tags.includes(show(v[0]))).length;
+      case 'fits': {
+        const dx = n(1);
+        const dy = n(2);
+        return this.groupFits(show(v[0]), (o) => ({ x: o.x + dx, y: o.y + dy }), v.length > 3 && v[3] !== null ? show(v[3]) : null);
+      }
+      case 'fits_turned': {
+        const cx = n(1);
+        const cy = n(2);
+        const dir = n(3) < 0 ? -1 : 1;
+        return this.groupFits(show(v[0]), (o) => turned(o.x, o.y, cx, cy, dir), v.length > 4 && v[4] !== null ? show(v[4]) : null);
+      }
+      case 'count_in': {
+        const [x1, x2] = [Math.min(n(1), n(3)), Math.max(n(1), n(3))];
+        const [y1, y2] = [Math.min(n(2), n(4)), Math.max(n(2), n(4))];
+        return this.rt.entities.filter((o) => o.alive && o.tags.includes(show(v[0])) && o.x >= x1 && o.x <= x2 && o.y >= y1 && o.y <= y2).length;
+      }
       case 'exists': {
         const a = asEntity(v[0]);
         return !!a && a.alive;
@@ -871,4 +939,11 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.name;
   }
   return 0;
+}
+
+/** A point turned a quarter around (cx, cy): dir 1 clockwise on screen (right goes down), -1 the other way. */
+function turned(x: number, y: number, cx: number, cy: number, dir: 1 | -1): { x: number; y: number } {
+  const dx = x - cx;
+  const dy = y - cy;
+  return dir === 1 ? { x: cx - dy, y: cy + dx } : { x: cx + dy, y: cy - dx };
 }
