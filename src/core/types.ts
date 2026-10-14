@@ -4,7 +4,7 @@
  * from and writes to these structures; nothing here depends on React or the DOM.
  */
 
-import type { SoundRecipe } from './audio/sound';
+import type { GameSound } from './audio/sound';
 import type { CameraSettings } from './model/camera';
 import type { BehaviorScript } from './script/language';
 
@@ -213,7 +213,7 @@ export interface AssetRecord {
   /** Plays as an animation: these cells of the sheet (numbered from 1), at `fps` frames per second, over and over. */
   animation?: SpriteAnimation;
   /** The recipe, for sounds made by the synthesizer (by the AI): played with the browser's audio, no file needed. */
-  synth?: SoundRecipe;
+  synth?: GameSound;
   /** What it is, in plain words ("a duck's quack"), for sounds. */
   description?: string;
 }

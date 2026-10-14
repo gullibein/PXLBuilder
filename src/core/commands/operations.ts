@@ -12,7 +12,8 @@ import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { createAnimatedPixelArtAsset, createDefinition, createLevelFor, instantiateDefinition, MAX_FRAMES } from '../model/factory';
 import { buildPath } from './buildPath';
-import { parseSoundRecipe, soundDataUrl } from '../audio/sound';
+import { soundDataUrl } from '../audio/sound';
+import { parseSteps } from '../audio/steps';
 import { generateId } from '../ids';
 import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
@@ -133,7 +134,7 @@ export const operationSchema = z.union([
     op: z.literal('make_sound'),
     name: z.string().describe('Short name scripts play it by, e.g. "Quack", "Boing" (unique among sounds)'),
     description: z.string().describe('What it sounds like, in plain words'),
-    soundJson: z.string().describe('The sound recipe as JSON: {"volume":0.8,"layers":[…]} (see "Sounds")'),
+    soundJson: z.string().describe('The sound as JSON: {"type":"steps","speed":8,"notes":[[pitch,wave,volume,effect],…]} (see "Sounds")'),
     replaceId: z.string().nullable().describe('An existing sound asset id to remake (keeps its name unless a new one is given, so scripts playing it keep working); null for a new sound'),
   }),
   z.object({
@@ -573,14 +574,14 @@ export function applyOperations(
         break;
       }
       case 'make_sound': {
-        const parsed = parseSoundRecipe(op.soundJson);
+        const parsed = parseSteps(op.soundJson);
         if ('error' in parsed) throw new m.ModelError(parsed.error);
         const name = op.name.trim() || 'Sound';
         if (op.replaceId) {
           const old = project.assets.find((a) => a.id === op.replaceId && a.kind === 'sound');
           if (!old) throw new m.ModelError(`There is no sound "${op.replaceId}" to remake`);
-          old.synth = parsed.recipe;
-          old.data = soundDataUrl(parsed.recipe);
+          old.synth = parsed.sound;
+          old.data = soundDataUrl(parsed.sound);
           old.name = name;
           old.description = op.description;
           result.createdAssetIds.push(old.id);
@@ -589,7 +590,7 @@ export function applyOperations(
             throw new m.ModelError(`There is already a sound called "${name}": remake it with replaceId, or give the new one another name`);
           }
           const id = generateId('snd');
-          m.addAsset(project, { id, name, kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(parsed.recipe), width: 0, height: 0, synth: parsed.recipe, description: op.description });
+          m.addAsset(project, { id, name, kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(parsed.sound), width: 0, height: 0, synth: parsed.sound, description: op.description });
           result.createdAssetIds.push(id);
         }
         break;

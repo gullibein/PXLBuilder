@@ -1,6 +1,7 @@
 import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
 import { ExportGameDialog } from './chrome/ExportGameDialog';
+import { SoundEditor } from './chrome/SoundEditor';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -98,6 +99,7 @@ export function App() {
         <CodeEditor />
         <SaveDialog />
         <ExportGameDialog />
+        <SoundEditor />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -175,7 +177,8 @@ function useGlobalShortcuts() {
         state.setPromptOpen(true);
         requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
       } else if (e.key === 'Escape') {
-        if (state.dock) state.setDock(null);
+        if (state.soundEditor) state.setSoundEditor(null);
+        else if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
         else if (state.backgroundOpen) state.setBackgroundOpen(false);
         else if (state.logicOpen) state.setLogicOpen(false);

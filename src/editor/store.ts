@@ -112,6 +112,8 @@ export interface EditorState {
   saveDialog: boolean;
   /** The Export game window (options, then the HTML file). */
   exportGameOpen: boolean;
+  /** The sound editor, open on this sound (an asset id). */
+  soundEditor: Id | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -156,6 +158,7 @@ export interface EditorState {
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
   setExportGameOpen(open: boolean): void;
+  setSoundEditor(id: Id | null): void;
   setSaveDialog(open: boolean): void;
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
@@ -229,6 +232,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     codeEditor: null,
     saveDialog: false,
     exportGameOpen: false,
+    soundEditor: null,
     flash: null,
     mode: 'edit',
     lastPlay: null,
@@ -451,6 +455,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     setExportGameOpen(exportGameOpen) {
       set({ exportGameOpen });
+    },
+    setSoundEditor(soundEditor) {
+      set({ soundEditor });
     },
 
     setSaveDialog(saveDialog) {

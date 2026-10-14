@@ -174,7 +174,7 @@ function stubModel(body) {
   }
   if (req.includes('quacks like a duck')) {
     const player = body.context.library.find((d) => d.name === 'Player').id;
-    const quack = { volume: 0.8, layers: [{ wave: 'sawtooth', start: 0, length: 0.16, pitch: [[0, 330], [0.16, 240]], volume: 0.6, attack: 0.005, release: 0.05, vibrato: { rate: 30, depth: 0.06 }, filter: { type: 'bandpass', freq: 1100, q: 4 } }] };
+    const quack = { type: 'steps', speed: 6, notes: [[22, 2, 6, 0], [20, 2, 5, 1], [18, 2, 3, 5], [0, 0, 0, 0], [21, 2, 5, 0], [17, 2, 3, 5]] };
     const script = { name: 'Quack', description: 'Quacks when the level starts.', handlers: [{ when: { on: 'start' }, do: [{ do: 'play_sound', sound: 'Quack' }] }] };
     return {
       kind: 'apply',
@@ -553,6 +553,7 @@ try {
   await page.getByTestId('undo').click();
   await check(async () => (await entityCount()) === 8, 'each stroke is one undo step');
   await page.getByTestId('redo').click();
+  await check(async () => (await entityCount()) === 7, '(Redo erases it again)');
   // Drawing with something else (a coin), the right button still erases the platform tile under it.
   const n7 = await entityCount();
   await page.getByTestId('tool-pen').click();
@@ -823,12 +824,72 @@ try {
   await page.getByTestId('dock-library').click();
   await page.getByTestId('category-sounds').click();
   await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'Objects lists the sounds, to play them again');
+  {
+    // The AI's sound opens in the sound editor, note by note.
+    await page.getByTestId('sound-edit').first().click();
+    const editor = page.getByTestId('sound-editor');
+    const notesNow = async () => JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]');
+    await check(async () => (await editor.isVisible()) && JSON.stringify(await notesNow()) === JSON.stringify([[22, 2, 6, 0], [20, 2, 5, 1], [18, 2, 3, 5], [0, 0, 0, 0], [21, 2, 5, 0], [17, 2, 3, 5]]), "✎ opens the AI's sound in the sound editor, its notes as bars");
+    await page.screenshot({ path: `${OUT}/5e-sound-editor.png` });
+    await page.getByTestId('sound-editor-close').click();
+  }
   await page.getByTestId('dock-library').click();
   await page.getByTestId('play').click();
   await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 1, 'in play, the script plays the sound');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
   await page.getByTestId('undo').click();
+
+  step = 'sound editor';
+  {
+    await page.getByTestId('dock-library').click();
+    await page.getByTestId('category-sounds').click();
+    await page.getByTestId('sound-new').click();
+    const editor = page.getByTestId('sound-editor');
+    const cv = page.getByTestId('sound-canvas');
+    const notesNow = async () => JSON.parse((await cv.getAttribute('data-notes')) ?? '[]');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0, '+ New sound opens the sound editor on a new, silent sound');
+    // Draw: the square wave at volume 5; a sweep over notes 1–4 rising from C4 to C5 (measured once the dialog's opening zoom is over).
+    await page.waitForTimeout(300);
+    const box = await cv.boundingBox();
+    const H = 64 * 4 + 10 + 8 * 7 + 10 + 18;
+    const pt = (col, pitch) => ({ x: box.x + ((col + 0.5) / 32) * box.width, y: box.y + ((64 * 4 - (pitch + 0.5) * 4) / H) * box.height });
+    await page.getByTestId('sound-wave-3').click();
+    let p0 = pt(0, 24);
+    await page.mouse.move(p0.x, p0.y);
+    await page.mouse.down();
+    for (const [c, p] of [[1, 28], [2, 31], [3, 36]]) {
+      const q = pt(c, p);
+      await page.mouse.move(q.x, q.y);
+    }
+    await page.mouse.up();
+    await check(async () => JSON.stringify(await notesNow()) === JSON.stringify([[24, 3, 5, 0], [28, 3, 5, 0], [31, 3, 5, 0], [36, 3, 5, 0]]), 'dragging over the notes draws them: pitch where the pointer is, with the chosen wave and volume');
+    // Volume strip: note 4 down to 2; effect row: fade out on note 4.
+    const volY = box.y + ((64 * 4 + 10 + 8 * 7 - 2 * 7) / H) * box.height;
+    await page.mouse.click(pt(3, 0).x, volY);
+    await page.getByTestId('sound-effect-5').click();
+    const fxY = box.y + ((64 * 4 + 10 + 8 * 7 + 10 + 9) / H) * box.height;
+    await page.mouse.click(pt(3, 0).x, fxY);
+    await check(async () => JSON.stringify((await notesNow())[3]) === JSON.stringify([36, 3, 2, 5]), 'the middle strip sets a note\'s volume and the bottom row its effect');
+    // Right-click silences a note.
+    await page.mouse.click(pt(1, 28).x, pt(1, 28).y, { button: 'right' });
+    await check(async () => (await notesNow())[1][2] === 0, 'right-click silences a note');
+    await page.getByTestId('sound-slower').click();
+    await check(async () => (await page.getByTestId('sound-speed').innerText()) === '13', 'speed can be changed');
+    await page.getByTestId('sound-name').fill('Rise');
+    await page.getByTestId('sound-name').press('Enter');
+    await page.getByTestId('sound-editor-play').click();
+    await check(async () => (await page.getByTestId('sound-editor-play').innerText()).includes('Stop'), 'Play plays the sound (the button turns into Stop)');
+    await page.getByTestId('sound-editor-close').click();
+    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the list');
+    // Every change is one undo step: rename, speed, silence, effect, volume, draw, new.
+    await page.getByTestId('undo').click();
+    await page.getByTestId('undo').click();
+    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
+    for (let i = 0; i < 5; i++) await page.getByTestId('undo').click();
+    await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
+    await page.getByTestId('dock-library').click();
+  }
 
   step = 'golden test 7: create with AI';
   await page.getByTestId('dock-create').click();

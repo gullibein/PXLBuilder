@@ -7,6 +7,7 @@
  * filter dipping in pitch, a spring a sine sliding up with fast vibrato.
  */
 import { z } from 'zod';
+import { isStepSound, stepSeconds, stepSoundSchema, type StepSound } from './steps';
 
 export const WAVES = ['sine', 'square', 'triangle', 'sawtooth', 'noise'] as const;
 export const FILTERS = ['lowpass', 'highpass', 'bandpass'] as const;
@@ -48,9 +49,17 @@ export const soundRecipeSchema = z.object({
 export type SoundLayer = z.infer<typeof soundLayerSchema>;
 export type SoundRecipe = z.infer<typeof soundRecipeSchema>;
 
+/**
+ * A game's sound: a step sound (32 notes, editable in the sound editor; what the AI makes now) or a recipe (sounds
+ * made before the sound editor; they still play).
+ */
+export type GameSound = StepSound | SoundRecipe;
+export const gameSoundSchema = z.union([stepSoundSchema, soundRecipeSchema]);
+
 /** How long the sound lasts (seconds). */
-export function soundLength(recipe: SoundRecipe): number {
-  return Math.max(...recipe.layers.map((l) => l.start + l.length));
+export function soundLength(sound: GameSound): number {
+  if (isStepSound(sound)) return stepSeconds(sound);
+  return Math.max(...sound.layers.map((l) => l.start + l.length));
 }
 
 /** Parses a recipe from the AI (JSON text or an object); returns it with defaults filled in, or an error naming what is wrong. */
@@ -75,7 +84,7 @@ export function parseSoundRecipe(raw: unknown): { recipe: SoundRecipe } | { erro
   return { recipe };
 }
 
-/** The recipe as a data URL (the asset's file contents, saved with the project). */
-export function soundDataUrl(recipe: SoundRecipe): string {
-  return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(recipe))}`;
+/** The sound as a data URL (the asset's file contents, saved with the project). */
+export function soundDataUrl(sound: GameSound): string {
+  return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(sound))}`;
 }

@@ -1,0 +1,378 @@
+/**
+ * The sound editor (like PICO-8's): a sound's 32 notes as bars. Draw the pitch with the mouse (or a finger), the
+ * volume in the strip below, and an effect per note in the bottom row; pick the wave, volume and effect to draw
+ * with, and the speed. Space plays. Every finished stroke is one undoable change to the game, so the AI and the
+ * user can take turns on the same sound.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { isStepSound, MAX_NOTES, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
+import { playSound, type Playing } from '../audio/synth';
+import { renameSound, updateSound } from '../sounds';
+import { useEditor } from '../store';
+
+export const WAVE_COLORS = ['#29adff', '#00e436', '#ff004d', '#ffa300', '#ffec27', '#ff77a8', '#c2c3c7', '#a78bfa'];
+const EFFECT_MARKS = ['·', '⟋', '∿', '↘', '◁', '▷'];
+
+// The drawing's layout (in canvas pixels; the canvas scales to the dialog's width).
+const COL = 18;
+const ROW = 4;
+const PITCH_H = PITCHES * ROW;
+const GAP = 10;
+const VOL_TOP = PITCH_H + GAP;
+const VOL_ROW = 7;
+const VOL_H = (MAX_VOLUME + 1) * VOL_ROW;
+const FX_TOP = VOL_TOP + VOL_H + GAP;
+const FX_H = 18;
+const W = MAX_NOTES * COL;
+const H = FX_TOP + FX_H;
+
+type Area = 'pitch' | 'volume' | 'effect';
+
+export function SoundEditor() {
+  const id = useEditor((s) => s.soundEditor);
+  const asset = useEditor((s) => (s.soundEditor ? s.project.assets.find((a) => a.id === s.soundEditor && a.kind === 'sound') : undefined));
+  const close = () => useEditor.getState().setSoundEditor(null);
+  useEffect(() => {
+    // The sound was deleted (or undone away): nothing to edit.
+    if (id && !asset) close();
+  }, [id, asset]);
+  if (!id || !asset) return null;
+  return (
+    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <section className="dialog sound-editor" role="dialog" aria-label="Sound editor" data-testid="sound-editor">
+        {isStepSound(asset.synth) ? (
+          <Editor key={asset.id} id={asset.id} name={asset.name} sound={asset.synth} onClose={close} />
+        ) : (
+          <>
+            <header className="bg-head">
+              <span>Sound · {asset.name}</span>
+              <CloseButton onClose={close} />
+            </header>
+            <p className="muted" data-testid="sound-old">
+              This sound was made before the sound editor: it plays, but it can't be edited note by note. Ask the AI to "remake the {asset.name} sound", then open it here again.
+            </p>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button className="icon-btn" aria-label="Close" data-testid="sound-editor-close" onClick={onClose}>
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
+/** A tiny picture of a wave, for its button. */
+function WaveIcon({ wave }: { wave: number }) {
+  const points: string[] = [];
+  for (let i = 0; i <= 32; i++) {
+    const t = (i / 32) * 2;
+    const ph = t % 1;
+    const tri = ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph;
+    const y =
+      wave === 0 ? tri
+      : wave === 1 ? (ph < 0.875 ? (ph / 0.875) * 2 - 1 : 1 - ((ph - 0.875) / 0.125) * 2)
+      : wave === 2 ? 2 * ph - 1
+      : wave === 3 ? (ph < 0.5 ? 0.8 : -0.8)
+      : wave === 4 ? (ph < 0.3125 ? 0.8 : -0.8)
+      : wave === 5 ? (tri + (((ph * 2) % 1) < 0.5 ? 4 * ((ph * 2) % 1) - 1 : 3 - 4 * ((ph * 2) % 1)) * 0.6) * 0.65
+      : wave === 6 ? Math.sin(i * 12.9898) * 0.9
+      : (tri + Math.sin(i * 0.35)) * 0.5;
+    points.push(`${(i / 32) * 22 + 1},${8 - y * 6}`);
+  }
+  return (
+    <svg width="24" height="16" viewBox="0 0 24 16" aria-hidden="true">
+      <polyline points={points.join(' ')} fill="none" stroke={WAVE_COLORS[wave]} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Editor({ id, name, sound, onClose }: { id: string; name: string; sound: StepSound; onClose: () => void }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [wave, setWave] = useState(3);
+  const [volume, setVolume] = useState(5);
+  const [effect, setEffect] = useState(0);
+  const [title, setTitle] = useState(name);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [playing, setPlaying] = useState<{ handle: Playing; sound: StepSound } | null>(null);
+  const [head, setHead] = useState<number | null>(null);
+  /** The notes while a stroke is being drawn (committed as one change when it ends). */
+  const [draft, setDraft] = useState<StepNote[] | null>(null);
+  const stroke = useRef<{ area: Area; erase: boolean; last: { col: number; row: number } | null; notes: StepNote[]; previewed: string } | null>(null);
+  const notes = useMemo(() => draft ?? fullNotes(sound), [draft, sound]);
+
+  useEffect(() => setTitle(name), [name]);
+
+  const commit = (next: StepNote[], label: string) => updateSound(id, { type: 'steps', speed: sound.speed, notes: next }, label);
+  const setSpeed = (speed: number) => {
+    const s = Math.max(1, Math.min(MAX_SPEED, Math.round(speed) || 1));
+    if (s !== sound.speed) updateSound(id, { ...sound, notes: fullNotes(sound), speed: s }, `Sound ${name}: speed ${s}`);
+  };
+
+  const stop = () => {
+    playing?.handle.stop();
+    setPlaying(null);
+    setHead(null);
+  };
+  const play = () => {
+    stop();
+    const current: StepSound = { type: 'steps', speed: sound.speed, notes };
+    if (!audibleNotes(current)) return;
+    const handle = playSound(current);
+    if (handle) setPlaying({ handle, sound: current });
+  };
+  // The playhead follows the sound; it stops at its end.
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const started = performance.now();
+    const length = stepSeconds(playing.sound);
+    const tick = () => {
+      const t = (performance.now() - started) / 1000;
+      if (t >= length) {
+        setPlaying(null);
+        setHead(null);
+        return;
+      }
+      setHead(Math.floor(t / (playing.sound.speed * TICK_SECONDS)));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing]);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  useEffect(() => () => playingRef.current?.handle.stop(), []);
+
+  // Drawing the notes.
+  useEffect(() => {
+    const c = canvas.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#10131c';
+    ctx.fillRect(0, 0, W, PITCH_H);
+    ctx.fillRect(0, VOL_TOP, W, VOL_H);
+    ctx.fillRect(0, FX_TOP, W, FX_H);
+    // Octave lines (each C), and every 4th note a little brighter.
+    for (let p = 0; p < PITCHES; p += 12) {
+      ctx.fillStyle = '#232a3a';
+      ctx.fillRect(0, PITCH_H - (p + 1) * ROW + ROW - 1, W, 1);
+    }
+    for (let i = 0; i < MAX_NOTES; i++) {
+      if (i % 4 === 0) {
+        ctx.fillStyle = '#1a2030';
+        ctx.fillRect(i * COL, 0, 1, H);
+      }
+      if (i === head || i === hover) {
+        ctx.fillStyle = i === head ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)';
+        ctx.fillRect(i * COL, 0, COL, PITCH_H);
+      }
+      const [p, w, v, e] = notes[i];
+      const x = i * COL + 2;
+      const top = PITCH_H - (p + 1) * ROW;
+      if (v > 0) {
+        ctx.fillStyle = WAVE_COLORS[w];
+        ctx.globalAlpha = 0.35 + (0.65 * v) / MAX_VOLUME;
+        ctx.fillRect(x, top + ROW, COL - 4, PITCH_H - top - ROW);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(x, top, COL - 4, ROW);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x, top, COL - 4, 1);
+      } else {
+        ctx.fillStyle = '#3a4258';
+        ctx.fillRect(x + (COL - 4) / 2 - 1, top + 1, 2, 2);
+      }
+      // Volume.
+      ctx.fillStyle = v > 0 ? WAVE_COLORS[w] : '#2a3142';
+      for (let k = 0; k < v; k++) ctx.fillRect(x, VOL_TOP + VOL_H - (k + 1) * VOL_ROW + 1, COL - 4, VOL_ROW - 2);
+      // Effect.
+      ctx.fillStyle = e ? '#e8ecf4' : '#3a4258';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(EFFECT_MARKS[e], i * COL + COL / 2, FX_TOP + FX_H / 2 + 1);
+    }
+    c.dataset.notes = JSON.stringify(notes.slice(0, audibleNotes({ type: 'steps', speed: 1, notes })));
+  }, [notes, head, hover]);
+
+  /** Where a pointer is: which note, which area, and the row in it. */
+  const at = (e: { clientX: number; clientY: number }) => {
+    const c = canvas.current!;
+    const r = c.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    const y = ((e.clientY - r.top) / r.height) * H;
+    const col = Math.max(0, Math.min(MAX_NOTES - 1, Math.floor(x / COL)));
+    if (y < VOL_TOP - GAP / 2) return { col, area: 'pitch' as Area, row: Math.max(0, Math.min(PITCHES - 1, Math.floor((PITCH_H - y) / ROW))) };
+    if (y < FX_TOP - GAP / 2) return { col, area: 'volume' as Area, row: Math.max(0, Math.min(MAX_VOLUME, Math.round((VOL_TOP + VOL_H - y) / VOL_ROW))) };
+    return { col, area: 'effect' as Area, row: 0 };
+  };
+
+  /** Applies the stroke to one note. */
+  const paint = (list: StepNote[], col: number, row: number, area: Area, erase: boolean) => {
+    const n = [...list[col]] as StepNote;
+    if (area === 'pitch') {
+      if (erase) n[2] = 0;
+      else {
+        n[0] = row;
+        n[1] = wave;
+        if (n[2] === 0) {
+          n[2] = volume;
+          n[3] = effect;
+        }
+      }
+    } else if (area === 'volume') n[2] = erase ? 0 : row;
+    else n[3] = erase ? 0 : effect;
+    list[col] = n;
+  };
+
+  const preview = (n: StepNote) => {
+    if (n[2] > 0) playSound({ type: 'steps', speed: 10, notes: [[n[0], n[1], n[2], 0]] }, { volume: 0.8 });
+  };
+
+  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    canvas.current!.setPointerCapture(e.pointerId);
+    const p = at(e);
+    const list = notes.map((n) => [...n] as StepNote);
+    stroke.current = { area: p.area, erase: e.button === 2 || e.altKey, last: null, notes: list, previewed: '' };
+    onMove(e);
+  };
+
+  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = at(e);
+    setHover(p.col);
+    const s = stroke.current;
+    if (!s) return;
+    // Every note the pointer passed over since the last move (a quick sweep leaves no gaps), rows in between.
+    const from = s.last ?? { col: p.col, row: p.row };
+    const steps = Math.abs(p.col - from.col);
+    for (let k = 0; k <= steps; k++) {
+      const col = from.col + Math.sign(p.col - from.col) * k;
+      const row = steps ? Math.round(from.row + ((p.row - from.row) * k) / steps) : p.row;
+      paint(s.notes, col, row, s.area, s.erase);
+    }
+    s.last = { col: p.col, row: p.row };
+    const n = s.notes[p.col];
+    const key = `${p.col}:${n.join(',')}`;
+    if (s.area !== 'effect' && key !== s.previewed) {
+      s.previewed = key;
+      preview(n);
+    }
+    setDraft([...s.notes]);
+  };
+
+  const onUp = () => {
+    const s = stroke.current;
+    stroke.current = null;
+    if (!s) return;
+    const changed = s.notes.some((n, i) => n.join() !== fullNotes(sound)[i].join());
+    if (changed) commit(s.notes, `Sound ${name}: ${s.area === 'pitch' ? (s.erase ? 'silence notes' : 'draw notes') : s.area}`);
+    setDraft(null);
+  };
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (playing) stop();
+      else play();
+    }
+  };
+
+  const info = hover !== null ? notes[hover] : null;
+  const count = audibleNotes({ type: 'steps', speed: sound.speed, notes });
+  return (
+    <div className="se-body" tabIndex={-1} onKeyDown={onKey} data-testid="sound-editor-body">
+      <header className="bg-head">
+        <span className="sound-title">
+          Sound
+          <input
+            className="sound-name"
+            value={title}
+            aria-label="Sound name"
+            data-testid="sound-name"
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => setNameError(renameSound(id, title))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              e.stopPropagation();
+            }}
+          />
+        </span>
+        <CloseButton onClose={onClose} />
+      </header>
+      {nameError && <p className="error small">{nameError}</p>}
+      <div className="sound-tools">
+        <button className="primary-btn sound-play" data-testid="sound-editor-play" onClick={() => (playing ? stop() : play())} disabled={!count && !playing} title="Play (Space)">
+          {playing ? '■ Stop' : '▶ Play'}
+        </button>
+        <span className="sound-speed">
+          Speed
+          <button className="chip-btn" aria-label="Faster" data-testid="sound-faster" onClick={() => setSpeed(sound.speed - 1)} disabled={sound.speed <= 1}>
+            −
+          </button>
+          <span className="n" data-testid="sound-speed">
+            {sound.speed}
+          </span>
+          <button className="chip-btn" aria-label="Slower" data-testid="sound-slower" onClick={() => setSpeed(sound.speed + 1)} disabled={sound.speed >= MAX_SPEED}>
+            +
+          </button>
+        </span>
+        <span className="muted small">
+          {count} note{count === 1 ? '' : 's'} · {stepSeconds({ type: 'steps', speed: sound.speed, notes }).toFixed(2)} s
+        </span>
+      </div>
+      <div className="sound-pens">
+        <span className="pen-label">Wave</span>
+        <span className="pen-group" role="radiogroup" aria-label="Wave">
+          {STEP_WAVES.map((w, i) => (
+            <button key={w} role="radio" aria-checked={wave === i} className={`pen${wave === i ? ' on' : ''}`} title={w} aria-label={w} data-testid={`sound-wave-${i}`} onClick={() => setWave(i)}>
+              <WaveIcon wave={i} />
+            </button>
+          ))}
+        </span>
+        <span className="pen-label">Volume</span>
+        <span className="pen-group" role="radiogroup" aria-label="Volume">
+          {Array.from({ length: MAX_VOLUME }, (_, k) => k + 1).map((v) => (
+            <button key={v} role="radio" aria-checked={volume === v} className={`pen small-pen${volume === v ? ' on' : ''}`} data-testid={`sound-volume-${v}`} onClick={() => setVolume(v)}>
+              {v}
+            </button>
+          ))}
+        </span>
+        <span className="pen-label">Effect</span>
+        <span className="pen-group" role="radiogroup" aria-label="Effect">
+          {STEP_EFFECTS.map((fx, i) => (
+            <button key={fx} role="radio" aria-checked={effect === i} className={`pen small-pen${effect === i ? ' on' : ''}`} title={fx} aria-label={fx} data-testid={`sound-effect-${i}`} onClick={() => setEffect(i)}>
+              {EFFECT_MARKS[i]}
+            </button>
+          ))}
+        </span>
+      </div>
+      <canvas
+        ref={canvas}
+        className="sound-canvas"
+        width={W}
+        height={H}
+        data-testid="sound-canvas"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onPointerLeave={() => !stroke.current && setHover(null)}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+      <p className="sound-info small" data-testid="sound-info">
+        {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : `Note ${hover! + 1}: silent`) : ' '}
+      </p>
+      <p className="muted small sound-help">Draw notes in the top part (right-click or Alt silences them), their volume in the middle strip, and the chosen effect in the bottom row. Space plays; Ctrl+Z undoes.</p>
+    </div>
+  );
+}

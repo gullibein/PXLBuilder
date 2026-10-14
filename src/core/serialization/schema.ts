@@ -1,4 +1,4 @@
-import { soundRecipeSchema } from '../audio/sound';
+import { gameSoundSchema } from '../audio/sound';
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
 import { cameraSchema } from '../model/camera';
@@ -74,7 +74,7 @@ export const assetSchema = z.object({
     .optional(),
   pixelArt: z.object({ palette: z.array(z.object({ key: z.string(), color: z.string() })), rows: z.array(z.string()), frames: z.array(z.array(z.string())).optional() }).optional(),
   animation: z.object({ frames: z.array(z.number().int().positive()).min(1), fps: z.number().positive() }).optional(),
-  synth: soundRecipeSchema.optional(),
+  synth: gameSoundSchema.optional(),
   description: z.string().optional(),
 });
 

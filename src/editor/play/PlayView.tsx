@@ -4,7 +4,7 @@ import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-lati
 import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
-import { audio, playRecipe } from '../audio/synth';
+import { audio, playSound } from '../audio/synth';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
@@ -195,7 +195,7 @@ export function PlayView(props: PlayViewProps) {
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       for (const s of runtime.soundQueue.splice(0)) {
         const recipe = sounds.get(s.assetId);
-        if (recipe) playRecipe(recipe, { volume: s.volume, pitch: s.pitch });
+        if (recipe) playSound(recipe, { volume: s.volume, pitch: s.pitch });
       }
       canvas.dataset.sounds = String(runtime.soundsPlayed);
       const flash = runtime.cam.flash();

@@ -913,7 +913,7 @@ describe('behavior scripts', () => {
   });
 
   it('play_sound (script) and the play_sound rule action queue the sound for the play view, with volume and pitch', () => {
-    const recipe = JSON.stringify({ layers: [{ wave: 'square', length: 0.1, pitch: [[0, 440]] }] });
+    const recipe = JSON.stringify({ type: 'steps', speed: 8, notes: [[30, 3, 5, 1]] });
     const { rt, input, p } = level((b) => {
       applyOperations(b.d, [{ op: 'make_sound', name: 'Boing', description: 'a spring', soundJson: recipe, replaceId: null }], registry);
       script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'key', key: 'jump', edge: 'pressed' }, do: [{ do: 'play_sound', sound: 'boing', volume: '0.5', pitch: '2' }] }] });

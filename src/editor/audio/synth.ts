@@ -1,10 +1,12 @@
 /**
- * Plays sound recipes (core/audio/sound.ts) with the browser's Web Audio:
+ * Plays the game's sounds with the browser's Web Audio. Step sounds (core/audio/steps.ts) are turned into
+ * samples and played as they are. Older recipes (core/audio/sound.ts):
  * one oscillator (or noise) per layer, its pitch sliding through the
  * layer's points, an optional wobble and filter, faded in and out. Made on
  * the spot each time, so nothing is downloaded and no files are needed.
  */
-import type { SoundRecipe } from '../../core/audio/sound';
+import type { GameSound, SoundRecipe } from '../../core/audio/sound';
+import { isStepSound, renderSteps, type StepSound } from '../../core/audio/steps';
 
 let shared: AudioContext | null = null;
 
@@ -95,4 +97,51 @@ export function playRecipe(recipe: SoundRecipe, opts: { volume?: number; pitch?:
     source.start(start);
     source.stop(end + 0.05);
   }
+}
+
+/** Step sounds as audio, made once per sound (sounds are never changed in place: an edit makes a new one). */
+const rendered = new WeakMap<StepSound, AudioBuffer>();
+function stepBuffer(sound: StepSound, ac: AudioContext): AudioBuffer {
+  let buffer = rendered.get(sound);
+  if (!buffer || buffer.sampleRate !== ac.sampleRate) {
+    const samples = renderSteps(sound, ac.sampleRate);
+    buffer = ac.createBuffer(1, Math.max(1, samples.length), ac.sampleRate);
+    buffer.getChannelData(0).set(samples);
+    rendered.set(sound, buffer);
+  }
+  return buffer;
+}
+
+export interface Playing {
+  /** When it started (the audio clock, seconds). */
+  startedAt: number;
+  stop(): void;
+}
+
+/** Plays a game sound now. `pitch` 1 = as made (2 = an octave up); `volume` 0..1. */
+export function playSound(sound: GameSound, opts: { volume?: number; pitch?: number } = {}, ac: AudioContext | null = audio()): Playing | null {
+  if (!ac) return null;
+  if (!isStepSound(sound)) {
+    playRecipe(sound, opts, ac);
+    return { startedAt: ac.currentTime, stop: () => undefined };
+  }
+  const source = ac.createBufferSource();
+  source.buffer = stepBuffer(sound, ac);
+  source.playbackRate.value = opts.pitch ?? 1;
+  const gain = ac.createGain();
+  gain.gain.value = opts.volume ?? 1;
+  source.connect(gain);
+  gain.connect(ac.destination);
+  const startedAt = ac.currentTime + 0.01;
+  source.start(startedAt);
+  return {
+    startedAt,
+    stop: () => {
+      try {
+        source.stop();
+      } catch {
+        // already ended
+      }
+    },
+  };
 }

@@ -6,7 +6,7 @@ import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } f
 import { chatEntries, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { useEditor } from '../store';
-import { playRecipe } from '../audio/synth';
+import { playSound } from '../audio/synth';
 
 type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
 
@@ -319,9 +319,14 @@ function MadeSounds({ ids }: { ids: string[] }) {
   return (
     <p className="made-sounds">
       {sounds.map((a) => (
-        <button key={a.id} className="sound-btn" data-testid="play-sound" title={a.description ?? `Play ${a.name}`} onClick={() => playRecipe(a.synth!)}>
-          ▶ {a.name}
-        </button>
+        <span key={a.id} className="made-sound">
+          <button className="sound-btn" data-testid="play-sound" title={a.description ?? `Play ${a.name}`} onClick={() => playSound(a.synth!)}>
+            ▶ {a.name}
+          </button>
+          <button className="icon-btn" data-testid="edit-sound" aria-label={`Edit ${a.name}`} title="Edit it in the sound editor" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
+            ✎
+          </button>
+        </span>
       ))}
     </p>
   );

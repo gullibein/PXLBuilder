@@ -7,6 +7,7 @@
  * The model never receives the raw project file.
  */
 import { soundLength } from '../audio/sound';
+import { audibleNotes, isStepSound, type StepSound } from '../audio/steps';
 import type { ComponentRegistry } from '../components/registry';
 import { diagnoseLevel, type Problem } from '../debug/diagnose';
 import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
@@ -212,7 +213,8 @@ export interface AIPayload {
     rules: { id: Id; text: string; name: string; enabled: boolean; when: Rule['when']; conditions: Condition[]; actions: RuleAction[] }[];
   };
   /** Sounds made so far (play them by name with play_sound; remake one with make_sound replaceId). */
-  sounds: { id: Id; name: string; description: string; seconds: number }[];
+  /** The game's sounds; step sounds with their notes (`sound`), to remake one starting from what it is now. */
+  sounds: { id: Id; name: string; description: string; seconds: number; sound?: StepSound }[];
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; map?: LevelMap | null; entities?: EntityBrief[]; otherCopies?: Record<string, number> }[];
   coordinateSystem: string;
@@ -414,7 +416,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     },
     sounds: project.assets
       .filter((a) => a.kind === 'sound' && a.synth)
-      .map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(soundLength(a.synth!) * 100) / 100 })),
+      .map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(soundLength(a.synth!) * 100) / 100, ...(isStepSound(a.synth) ? { sound: { ...a.synth, notes: a.synth.notes.slice(0, audibleNotes(a.synth)) } } : {}) })),
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => {

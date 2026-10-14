@@ -1,7 +1,8 @@
 import { PlayButton } from './TopBar';
 import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
-import { playRecipe } from '../audio/synth';
+import { playSound } from '../audio/synth';
+import { newSound } from '../sounds';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
@@ -269,22 +270,23 @@ function ObjectsPanel() {
             <span className="n">{c === 'All' ? definitions.length : definitions.filter((d) => categoryOf(d) === c).length}</span>
           </button>
         ))}
-        {sounds.length > 0 && (
-          <button role="tab" aria-selected={category === 'Sounds'} className={`category${category === 'Sounds' ? ' on' : ''}`} data-testid="category-sounds" onClick={() => setCategory('Sounds')}>
-            Sounds
-            <span className="n">{sounds.length}</span>
-          </button>
-        )}
+        <button role="tab" aria-selected={category === 'Sounds'} className={`category${category === 'Sounds' ? ' on' : ''}`} data-testid="category-sounds" onClick={() => setCategory('Sounds')}>
+          Sounds
+          <span className="n">{sounds.length}</span>
+        </button>
       </nav>
       {category === 'Sounds' ? (
         <div className="objects-main">
           <div className="sound-list" data-testid="sound-list">
             {sounds.map((a) => (
               <div key={a.id} className="sound-row">
-                <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playRecipe(a.synth!)}>
+                <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playSound(a.synth!)}>
                   ▶ {a.name}
                 </button>
                 <span className="muted small">{a.description}</span>
+                <button className="icon-btn" aria-label={`Edit ${a.name}`} title="Edit this sound in the sound editor" data-testid="sound-edit" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
+                  ✎
+                </button>
                 <button
                   className="icon-btn"
                   aria-label={`Delete ${a.name}`}
@@ -296,7 +298,10 @@ function ObjectsPanel() {
               </div>
             ))}
           </div>
-          <p className="panel-hint">Sounds the AI made. Ask for one on anything: "the duck quacks when the player touches it".</p>
+          <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => useEditor.getState().setSoundEditor(newSound())}>
+            + New sound
+          </button>
+          <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>
         </div>
       ) : (
         <div className="objects-main">
