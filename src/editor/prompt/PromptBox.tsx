@@ -221,6 +221,7 @@ export function PromptBox(props: PromptBoxProps) {
                 renderApplied={props.renderApplied}
                 selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []}
                 onExpand={() => setExpanded(true)}
+                onRetry={() => runner.state.phase === 'done' && runner.submit(runner.state.request)}
               />
             )}
           </div>
@@ -369,6 +370,8 @@ function Outcome(props: {
   full?: boolean;
   /** Opens the dialog with everything. */
   onExpand?: () => void;
+  /** Sends the same request again (after a failure). */
+  onRetry?: () => void;
 }) {
   const { outcome } = props;
   const list = (changes: string[], className: string) => {
@@ -448,6 +451,11 @@ function Outcome(props: {
       return (
         <div className="prompt-result note warn" data-testid="prompt-result" data-status="error">
           <p className="result-message">{outcome.message}</p>
+          {props.onRetry && (
+            <button className="text-btn retry-btn" data-testid="result-retry" title="Send the same request again" onClick={props.onRetry}>
+              ↻ Try again
+            </button>
+          )}
         </div>
       );
   }

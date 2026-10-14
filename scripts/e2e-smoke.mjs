@@ -2104,6 +2104,14 @@ try {
   await ask('Give the player a jetpack.');
   await check(async () => (await result.getAttribute('data-status')) === 'error', 'without an API key the real endpoint answers with an error');
   await check(async () => /not connected/i.test(await result.innerText()), 'the prompt says plainly that AI is not connected');
+  {
+    // Sent again with one click once the AI answers (here: the stand-in back on).
+    const before = aiRequests.length;
+    await page.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await result.getByTestId('result-retry').click();
+    await check(async () => aiRequests.length === before + 1 && aiRequests.at(-1).request === 'Give the player a jetpack.' && (await result.getAttribute('data-status')) !== 'error', 'a failed request has Try again: one click sends the same request again');
+    await page.unroute('**/api/ai');
+  }
 
   step = 'reset objects / new project';
   await page.keyboard.press('Escape');

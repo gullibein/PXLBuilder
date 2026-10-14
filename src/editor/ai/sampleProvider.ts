@@ -38,9 +38,28 @@ const MESSAGES: Record<string, string> = {
   rate_limited: 'Too many AI requests right now (or your Claude usage limit was reached). Try again in a little while.',
   session_expired: 'Your claude.ai session expired. Sign in again and reload.',
   refused: 'Claude declined this request.',
-  invalid_json: "The AI's answer could not be read. Try again, or ask for less at once.",
+  invalid_json: "claude.ai couldn't get an answer from the AI this time (it was asked 3 times). Try again in a moment.",
   prompt_too_large: 'This level is too big to send in one request. Try asking about a selected part.',
 };
+
+/**
+ * Failures that come straight back from claude.ai, not from the AI (the request is refused within a moment, and the
+ * same request goes through when sent again): asked again by itself, a couple of times, before the user hears of it.
+ */
+const PASSING = new Set(['invalid_json', 'internal_error', 'network_error', 'unavailable', 'overloaded', 'timeout', 'unknown']);
+const RETRY_WAIT_MS = [700, 1500];
+
+/** Waits, unless the request is stopped meanwhile. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(t);
+      reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+    });
+  });
+}
 
 export class SampleAIProvider implements AIProvider {
   /** `log`: hears about answers that couldn't be read (with the start of what came back), for the console. */
@@ -52,17 +71,26 @@ export class SampleAIProvider implements AIProvider {
   private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<{ text: string; truncated: boolean }> {
     const size = typeof input === 'string' ? input.length : input.reduce((n, t) => n + t.content.length, 0);
     trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}`);
-    try {
-      // Every request is new work: no replay of an earlier answer.
-      // Fast: claude.ai's quicker model tier.
-      const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
-      trace?.('reply', `${answer.truncated ? '[cut off by the length limit] ' : ''}${answer.text}`);
-      return answer;
-    } catch (e) {
-      const err = e as SampleError;
-      trace?.('error', `${err?.code ?? 'unknown'}: ${err?.message ?? ''}${(e as { text?: string }).text ? `\nPartial answer: ${(e as { text?: string }).text}` : ''}`);
-      if (err?.code === 'cancelled') throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
-      throw new AIUnavailableError(MESSAGES[err?.code] ?? `The AI request failed (${err?.code ?? 'unknown'}). Try again.`);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        // Every request is new work: no replay of an earlier answer.
+        // Fast: claude.ai's quicker model tier.
+        const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+        trace?.('reply', `${answer.truncated ? '[cut off by the length limit] ' : ''}${answer.text}`);
+        return answer;
+      } catch (e) {
+        const err = e as SampleError;
+        const code = err?.code ?? 'unknown';
+        trace?.('error', `${code}: ${err?.message ?? ''}${(e as { text?: string }).text ? `\nPartial answer: ${(e as { text?: string }).text}` : ''}`);
+        if (code === 'cancelled' || signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+        if (PASSING.has(code) && attempt < RETRY_WAIT_MS.length) {
+          trace?.('retry', `claude.ai turned the request down (${code}); sending it again`);
+          this.log?.(`claude.ai turned the AI request down (${code}); sending it again.`);
+          await pause(RETRY_WAIT_MS[attempt], signal);
+          continue;
+        }
+        throw new AIUnavailableError(MESSAGES[code] ?? `The AI request failed (${code}). Try again.`);
+      }
     }
   }
 

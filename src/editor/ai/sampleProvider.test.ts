@@ -82,4 +82,38 @@ describe('Claude through claude.ai (sample)', () => {
     expect(await reply('{"kind":"answer","message":"Halló","changes":[],"operations":[],}')).toEqual(answer);
     expect(await reply(`Ég breytti {smá}:\n${JSON.stringify(answer)}`)).toEqual(answer);
   });
+
+  it('a request claude.ai turns down at once (invalid_json) is sent again by itself; only a third failure reaches the user', async () => {
+    const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null, starter: null };
+    let calls = 0;
+    const notes: string[] = [];
+    const flaky = new SampleAIProvider(
+      async () => {
+        calls++;
+        if (calls === 1) throw { code: 'invalid_json', message: '' };
+        return { text: JSON.stringify(answer), truncated: false };
+      },
+      (n) => notes.push(n),
+    );
+    expect(await flaky.respond(body)).toEqual(answer);
+    expect(calls).toBe(2);
+    expect(notes[0]).toMatch(/sending it again/);
+
+    let tries = 0;
+    const down = new SampleAIProvider(async () => {
+      tries++;
+      throw { code: 'invalid_json', message: '' };
+    });
+    await expect(down.respond(body)).rejects.toThrow(/asked 3 times/);
+    expect(tries).toBe(3);
+
+    // Not passing failures (no permission, usage limit): told at once, not asked again.
+    let once = 0;
+    const limited = new SampleAIProvider(async () => {
+      once++;
+      throw { code: 'rate_limited', message: '' };
+    });
+    await expect(limited.respond(body)).rejects.toThrow(/Too many AI requests/);
+    expect(once).toBe(1);
+  }, 10000);
 });
