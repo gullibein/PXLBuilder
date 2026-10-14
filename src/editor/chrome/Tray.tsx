@@ -202,10 +202,43 @@ function Exchange({ entry, undone }: { entry: AILogEntry; undone: boolean }) {
   );
 }
 
+/** The console as plain text: the app's version, then one line per message (time, kind, message). */
+function consoleText(log: { time: number; level: string; message: string }[]): string {
+  return [`PXLBuilder ${__PXL_VERSION__}`, ...log.map((e) => `${time(e.time)} ${e.level === 'info' ? '' : `[${e.level}] `}${e.message}`)].join('\n');
+}
+
+/** Copies text: the clipboard API, else the older way; false where the page may not. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 function ConsoleList() {
   const log = useEditor((s) => s.log);
   const clearLog = useEditor((s) => s.clearLog);
   const endRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
+  const copy = async () => {
+    const ok = await copyText(consoleText(useEditor.getState().log));
+    setCopied(ok ? 'yes' : 'no');
+    if (ok) setTimeout(() => setCopied((c) => (c === 'yes' ? null : c)), 2000);
+  };
   // Keep the newest message visible by scrolling only the tray itself. (scrollIntoView would also
   // scroll every ancestor, including a page embedding the editor, shoving the whole app out of view.)
   useEffect(() => {
@@ -222,9 +255,20 @@ function ConsoleList() {
         </div>
       ))}
       {log.length > 0 && (
-        <button className="text-btn" onClick={clearLog}>
-          Clear
-        </button>
+        <div className="console-actions">
+          <button className="text-btn" data-testid="console-copy" title="Copy the whole console as text (with the app's version), to paste where it helps" onClick={copy}>
+            {copied === 'yes' ? 'Copied ✓' : 'Copy'}
+          </button>
+          <button className="text-btn" onClick={clearLog}>
+            Clear
+          </button>
+        </div>
+      )}
+      {copied === 'no' && (
+        <div className="console-copy-box">
+          <p className="muted small">The browser didn't allow copying here: select the text below (Ctrl+A in it) and copy it yourself.</p>
+          <textarea readOnly value={consoleText(log)} data-testid="console-copy-text" onFocus={(e) => e.currentTarget.select()} />
+        </div>
       )}
       <div ref={endRef} />
     </div>

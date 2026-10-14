@@ -82,6 +82,60 @@ describe('the Claude call', () => {
     expect(params.system[0].text).toContain('REPLY FORMAT');
   });
 
+  it('a model refusing the strict format says so in the console, and only that model asks without it', async () => {
+    const notes: string[] = [];
+    const used: string[] = [];
+    const client = {
+      beta: {
+        messages: {
+          parse: async (params: { model: string }) => {
+            used.push(`parse:${params.model}`);
+            if (params.model === 'claude-haiku-5-5') throw rejected('output_config.format: the schema is too complex');
+            return { stop_reason: 'end_turn', parsed_output: answer };
+          },
+          create: async (params: { model: string }) => {
+            used.push(`create:${params.model}`);
+            return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }] };
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    await askClaude(client, body(), undefined, 'claude-haiku-5-5', (n) => notes.push(n));
+    await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
+    expect(used).toEqual(['parse:claude-haiku-5-5', 'create:claude-haiku-5-5', 'parse:claude-sonnet-5-5']);
+    expect(notes[0]).toMatch(/Claude Haiku 5\.5 did not take the strict reply format \(output_config\.format: the schema is too complex/);
+  });
+
+  it('an unreadable answer (format in the prompt) is asked for again with the problem; what came back goes to the console', async () => {
+    const notes: string[] = [];
+    const sent: { messages: { role: string; content: unknown }[] }[] = [];
+    let replies = ['Sure! Here it is: {"kind": "answer", "message": "Hi" "changes": []}', JSON.stringify(answer)];
+    const client = {
+      beta: {
+        messages: {
+          parse: async () => {
+            throw rejected('output_config.format: the schema is too complex');
+          },
+          create: async (params: { messages: { role: string; content: unknown }[] }) => {
+            sent.push(params);
+            return { stop_reason: 'end_turn', content: [{ type: 'text', text: replies.shift() }], usage: { input_tokens: 100, output_tokens: 10 } };
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    const result = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
+    expect(result).toMatchObject({ ok: true, response: answer, usage: { inputTokens: 200, outputTokens: 20 } });
+    expect(sent).toHaveLength(2);
+    expect(sent[1].messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(String(sent[1].messages[2].content)).toMatch(/not valid JSON/);
+    expect(notes.some((n) => /couldn't be read .*It began: Sure! Here it is/.test(n))).toBe(true);
+    // Unreadable twice: a plain error, and the console has both beginnings.
+    replies = ['oops', 'still oops'];
+    const again = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
+    expect(again).toMatchObject({ ok: false, error: expect.stringMatching(/could not be read \(twice/) });
+    expect(notes.at(-1)).toMatch(/Still not readable.*It began: still oops/);
+  });
+
   it('other rejections are reported, not retried', async () => {
     let calls = 0;
     const client = { beta: { messages: { parse: async () => { calls++; throw rejected('messages: text content blocks must be non-empty'); } } } } as unknown as Anthropic;

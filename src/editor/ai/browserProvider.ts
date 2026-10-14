@@ -20,12 +20,17 @@ export class BrowserClaudeProvider implements AIProvider {
   constructor(
     private readonly apiKey: string,
     private readonly onSpend?: (message: string) => void,
+    /** Hears what went wrong along the way (a reply format refused, an unreadable answer and how it began). */
+    private readonly onNote?: (message: string) => void,
   ) {}
 
   async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
     const model = getAISettings().claudeModel;
     trace?.('sent', `Claude with your Anthropic key (${CLAUDE_MODELS[model].name}${body.speed === 'fast' ? ', fast' : ''})`);
-    const result = await askClaude(client(this.apiKey), body, signal, model);
+    const result = await askClaude(client(this.apiKey), body, signal, model, (note) => {
+      trace?.('note', note);
+      this.onNote?.(note);
+    });
     if (result.usage) {
       // What it cost, from the API's own token counts: in the trace, and in the console (with the running totals).
       const spent = recordSpend(result.usage);

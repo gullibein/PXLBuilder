@@ -850,6 +850,17 @@ try {
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
   await page.getByTestId('undo').click();
 
+  step = 'copy the console';
+  {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.getByTestId('console-toggle').click();
+    await page.getByTestId('console-copy').click();
+    await check(async () => (await page.getByTestId('console-copy').innerText()).includes('Copied'), 'Console → Copy copies it');
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    await check(text.startsWith('PXLBuilder ') && text.split('\n').length > 2, 'as text: the app version, then a line per message');
+    await page.getByTestId('tray-close').click();
+  }
+
   step = 'tabs close from the bars';
   for (const [tab, panel] of [
     ['dock-library', 'library-panel'],

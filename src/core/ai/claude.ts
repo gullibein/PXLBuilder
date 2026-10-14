@@ -53,6 +53,9 @@ let systemPrompt: string | null = null;
 
 export type ClaudeResult = ({ ok: true; response: AIResponse } | { ok: false; status: number; error: string; kind: 'auth' | 'rate' | 'other' }) & { usage?: ClaudeUsage };
 
+/** What happened along the way that the user (or a bug report) should be able to see: told to the console. */
+export type ClaudeNote = (message: string) => void;
+
 /**
  * What this account's API key accepts, learned from rejected requests (kept
  * while the app runs): the server-side refusal fallback is a beta feature an
@@ -60,32 +63,35 @@ export type ClaudeResult = ({ ok: true; response: AIResponse } | { ok: false; st
  * a structured-output schema. Either is then left out and the same request
  * sent again, so the AI keeps working; answers are validated the same way.
  */
-const accepted = { fallbacks: new Set<string>(), schema: true };
+const accepted = { fallbacks: new Set<string>(), noSchema: new Set<string>() };
 
 /** For tests: assume everything is accepted again. */
 export function resetClaudeFeatures(): void {
   accepted.fallbacks.clear();
-  accepted.schema = true;
+  accepted.noSchema.clear();
 }
 
 /** Asks Claude for structured operations. Never throws for API problems: they come back as plain-language errors. */
-export async function askClaude(client: Anthropic, body: AIRequestBody, signal?: AbortSignal, model: ClaudeModel = MODEL): Promise<ClaudeResult> {
+export async function askClaude(client: Anthropic, body: AIRequestBody, signal?: AbortSignal, model: ClaudeModel = MODEL, note: ClaudeNote = () => undefined): Promise<ClaudeResult> {
   if (typeof body?.request !== 'string' || !body.request.trim() || typeof body.context !== 'object') {
     return { ok: false, status: 400, error: 'Missing request or context', kind: 'other' };
   }
   for (;;) {
     try {
-      return await callClaude(client, body, model, signal);
+      return await callClaude(client, body, model, signal, note);
     } catch (e) {
       if (e instanceof Anthropic.BadRequestError) {
         const why = apiErrorText(e);
         // (Per model: a model with no fallback, such as Haiku, refuses the parameter; the others keep it.)
         if (!accepted.fallbacks.has(model) && /fallback|beta/i.test(why)) {
           accepted.fallbacks.add(model);
+          note(`${CLAUDE_MODELS[model].name} did not take the refusal fallback (${why}); asking without it.`);
           continue;
         }
-        if (accepted.schema && /output_config|format|schema|grammar/i.test(why)) {
-          accepted.schema = false;
+        // (Per model: one model refusing the strict reply format says nothing about the others.)
+        if (!accepted.noSchema.has(model) && /output_config|format|schema|grammar/i.test(why)) {
+          accepted.noSchema.add(model);
+          note(`${CLAUDE_MODELS[model].name} did not take the strict reply format (${why}); asking with the format in the instructions instead, for the rest of this visit.`);
           continue;
         }
       }
@@ -94,7 +100,7 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
   }
 }
 
-async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal?: AbortSignal): Promise<ClaudeResult> {
+async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal: AbortSignal | undefined, note: ClaudeNote): Promise<ClaudeResult> {
   // Fast: the same model thinking less (the biggest part of the wait).
   const effort = body.speed === 'fast' ? ('low' as const) : ('medium' as const);
   // The game's data is its own block, cached: a second request with the same game (the answer sent back to be fixed,
@@ -125,7 +131,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };
 
-  if (accepted.schema) {
+  if (!accepted.noSchema.has(model)) {
     systemPrompt ??= buildSystemPrompt(componentRegistry);
     const response = await client.beta.messages.parse(
       {
@@ -138,33 +144,61 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     const usage = used(response);
     const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
     if (response.stop_reason === 'refusal') return withUsage(declined);
-    if (response.stop_reason === 'max_tokens' || !response.parsed_output) return withUsage(incomplete);
+    if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
+      note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
+      return withUsage(incomplete);
+    }
     return withUsage({ ok: true, response: response.parsed_output });
   }
 
   // The reply format spelled out in the prompt instead (as for claude.ai and Gemini), checked the same way.
-  const response = await client.beta.messages.create(
-    {
-      ...common,
-      output_config: { effort },
-      system: cachedSystem(systemPromptWithReplyFormat()),
-    },
-    { signal },
-  );
-  const usage = used(response);
+  const system = cachedSystem(systemPromptWithReplyFormat());
+  const ask = (messages: typeof common.messages | (typeof common.messages[number] | { role: 'assistant' | 'user'; content: string })[]) =>
+    client.beta.messages.create({ ...common, messages: messages as typeof common.messages, output_config: { effort }, system }, { signal });
+  let response = await ask(common.messages);
+  let usage = used(response);
   const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
   if (response.stop_reason === 'refusal') return withUsage(declined);
-  if (response.stop_reason === 'max_tokens') return withUsage(incomplete);
-  const text = response.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  const cutOff = () => {
+    note(`${CLAUDE_MODELS[model].name}'s answer reached the length limit (${common.max_tokens} tokens). It began: ${replyText(response).slice(0, 600)}`);
+    return withUsage(incomplete);
+  };
+  if (response.stop_reason === 'max_tokens') return cutOff();
+  let text = replyText(response);
   let raw: unknown;
   try {
     raw = parseJsonReply(text);
-  } catch {
-    return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read. Try again, or ask for less at once.", kind: 'other' });
+  } catch (e) {
+    // Not readable: said in the console (with what came back), and asked once more for it as valid JSON.
+    const problem = (e as Error).message;
+    note(`${CLAUDE_MODELS[model].name}'s answer couldn't be read (${problem}); asking it to send it again. It began: ${text.slice(0, 600)}`);
+    response = await ask([
+      ...common.messages,
+      { role: 'assistant', content: text },
+      { role: 'user', content: `That answer is not valid JSON (${problem}), so the app couldn't read it and nothing was changed. Send the same answer again as ONE valid JSON object in the reply format, with nothing before or after it. In strings, escape quotes (\\") and backslashes (\\\\).` },
+    ]);
+    const more = used(response);
+    if (usage && more) usage = { ...more, inputTokens: usage.inputTokens + more.inputTokens, cacheReadTokens: usage.cacheReadTokens + more.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens + more.cacheWriteTokens, outputTokens: usage.outputTokens + more.outputTokens, cost: usage.cost !== null && more.cost !== null ? usage.cost + more.cost : null };
+    if (response.stop_reason === 'max_tokens') return cutOff();
+    text = replyText(response);
+    try {
+      raw = parseJsonReply(text);
+    } catch (e2) {
+      note(`Still not readable (${(e2 as Error).message}). It began: ${text.slice(0, 600)}`);
+      return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read (twice; the Console shows what came back). Try again, or ask for less at once.", kind: 'other' });
+    }
   }
   const parsed = aiResponseSchema.safeParse(fillMissingNulls(raw));
-  if (!parsed.success) return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
+  if (!parsed.success) {
+    note(`${CLAUDE_MODELS[model].name}'s answer was read, but not in the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+    return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
+  }
   return withUsage({ ok: true, response: parsed.data });
+}
+
+/** The text of a reply (its text blocks). */
+function replyText(response: { content: { type: string; text?: string }[] }): string {
+  return response.content.map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('');
 }
 
 function failure(e: unknown): ClaudeResult {
