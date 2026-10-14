@@ -4,6 +4,7 @@
  * scripts/build-player.mjs) with the game inside, as the same bundle Save writes.
  */
 import { gamePageFrom } from '../core/export/gamePage';
+import { makeZip } from '../core/export/zip';
 import type { Project } from '../core/types';
 import { offerFile, slugify } from './persistence';
 
@@ -24,6 +25,12 @@ export function gamePage(project: Project, options: { touchControls?: boolean } 
 export async function exportGame(project: Project, options: { touchControls?: boolean } = {}): Promise<'saved' | 'declined' | 'failed'> {
   const name = `${slugify(project.name) || 'game'}.html`;
   return offerFile(name, new Blob([gamePage(project, options)], { type: 'text/html' }));
+}
+
+/** For itch.io: a zip with the game's page as index.html, the form itch.io takes HTML games in. */
+export async function exportItch(project: Project, options: { touchControls?: boolean } = {}): Promise<'saved' | 'declined' | 'failed'> {
+  const zip = makeZip([{ path: 'index.html', data: new TextEncoder().encode(gamePage(project, options)) }]);
+  return offerFile(`${slugify(project.name) || 'game'}-itch.zip`, new Blob([zip as BlobPart], { type: 'application/zip' }));
 }
 
 /** The player page with no game in it: games (saved or exported) are dropped onto it to play them. */

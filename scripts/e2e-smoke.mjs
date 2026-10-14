@@ -1869,6 +1869,20 @@ try {
     }
   }
 
+  step = 'export game for itch.io';
+  {
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-export-game').click();
+    await page.getByTestId('export-target-itch').check();
+    await check(async () => (await page.getByTestId('itch-guide').isVisible()) && /Kind of project/.test(await page.getByTestId('itch-guide').innerText()), 'Export game → itch.io shows how to put it on itch.io, step by step');
+    await page.getByTestId('export-game-dialog').screenshot({ path: `${OUT}/export-itch.png` });
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-game-confirm').click()]);
+    const file = `${process.cwd()}/${OUT}/exported-itch.zip`;
+    await dl.saveAs(file);
+    const inside = execSync(`python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(z.namelist()); print('pxl-game' in z.read('index.html').decode())" "${file}"`, { encoding: 'utf8' });
+    await check(dl.suggestedFilename().endsWith('-itch.zip') && inside.includes("['index.html']") && inside.includes('True'), 'it saves a zip with the game as index.html (the form itch.io takes)');
+  }
+
   step = 'export game as a web page';
   {
     await page.getByTestId('project-menu').click();
