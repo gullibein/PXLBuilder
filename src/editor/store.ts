@@ -38,7 +38,7 @@ export interface EditOptions {
   coalesceKey?: string;
 }
 
-export type DockPanel = 'library' | 'create' | null;
+export type DockPanel = 'library' | 'create' | 'sounds' | null;
 
 /**
  * Select (click, drag, box-select), marquee (a drag always draws a selection box, even starting on an object),
@@ -112,8 +112,8 @@ export interface EditorState {
   saveDialog: boolean;
   /** The Export game window (options, then the HTML file). */
   exportGameOpen: boolean;
-  /** The sound editor, open on this sound (an asset id). */
-  soundEditor: Id | null;
+  /** The sound editor, open on this sound (an asset id), or on a new one ('new': added once something is drawn). */
+  soundEditor: Id | 'new' | null;
   /** The level's Logic card (connections and rules) is open. */
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
@@ -158,7 +158,7 @@ export interface EditorState {
   setGameChooser(mode: 'first' | 'new' | null): void;
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
   setExportGameOpen(open: boolean): void;
-  setSoundEditor(id: Id | null): void;
+  setSoundEditor(id: Id | 'new' | null): void;
   setSaveDialog(open: boolean): void;
   openCodeEditor(target: { definitionId: Id | null; entityId: Id | null } | null): void;
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;

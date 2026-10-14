@@ -7,6 +7,7 @@ import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/
 import { frameView } from '../actions';
 import { canExportGame, exportPlayer } from '../gameExport';
 import { openProjectFile, PROJECT_FILE_EXTENSION } from '../persistence';
+import { NoteIcon } from './NoteIcon';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
 
@@ -58,6 +59,9 @@ export function TopBar() {
           ✦
           {/* The whole-level, whole-game and editor prompts (the level's own card shares the level's). */}
           <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} below />
+        </button>
+        <button className="icon-btn note-btn" title="Sound editor: make a new sound" aria-label="Sound editor" data-testid="sound-editor-toggle" onClick={() => useEditor.getState().setSoundEditor('new')}>
+          <NoteIcon size={16} />
         </button>
         <MainMenu />
       </div>

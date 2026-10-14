@@ -1,20 +1,31 @@
 /** Changes to the game's sounds from the sound editor and the Sounds list (each one undoable). */
 import { soundDataUrl } from '../core/audio/sound';
-import { emptySteps, type StepSound } from '../core/audio/steps';
+import type { StepSound } from '../core/audio/steps';
 import { generateId } from '../core/ids';
 import type { Id } from '../core/types';
 import { useEditor } from './store';
 
-/** A new silent sound, "Sound 1", "Sound 2"…; returns its id. */
-export function newSound(): Id {
-  const { project, edit } = useEditor.getState();
-  const taken = new Set(project.assets.filter((a) => a.kind === 'sound').map((a) => a.name.toLowerCase()));
+/** A free name for a new sound: "Sound 1", "Sound 2"… */
+export function newSoundName(): string {
+  const taken = new Set(useEditor.getState().project.assets.filter((a) => a.kind === 'sound').map((a) => a.name.toLowerCase()));
   let n = 1;
   while (taken.has(`sound ${n}`)) n++;
+  return `Sound ${n}`;
+}
+
+/** Whether a name is free for a sound (other than this one); the problem if not. */
+export function soundNameProblem(name: string, except: Id | null = null): string | null {
+  const clean = name.trim();
+  if (!clean) return 'A sound needs a name';
+  const taken = useEditor.getState().project.assets.some((a) => a.kind === 'sound' && a.id !== except && a.name.toLowerCase() === clean.toLowerCase());
+  return taken ? `There is already a sound called "${clean}"` : null;
+}
+
+/** Adds a sound made in the sound editor (one undo step); returns its id. */
+export function addSound(name: string, sound: StepSound): Id {
   const id = generateId('snd');
-  const sound = emptySteps();
-  edit(`New sound`, (p) => {
-    p.assets.push({ id, name: `Sound ${n}`, kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(sound), width: 0, height: 0, synth: sound, description: 'Made in the sound editor' });
+  useEditor.getState().edit(`New sound ${name}`, (p) => {
+    p.assets.push({ id, name: name.trim(), kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(sound), width: 0, height: 0, synth: sound, description: 'Made in the sound editor' });
   });
   return id;
 }
@@ -33,8 +44,8 @@ export function updateSound(id: Id, sound: StepSound, label: string): void {
 export function renameSound(id: Id, name: string): string | null {
   const { project, edit } = useEditor.getState();
   const clean = name.trim();
-  if (!clean) return 'A sound needs a name';
-  if (project.assets.some((a) => a.kind === 'sound' && a.id !== id && a.name.toLowerCase() === clean.toLowerCase())) return `There is already a sound called "${clean}"`;
+  const problem = soundNameProblem(clean, id);
+  if (problem) return problem;
   const a = project.assets.find((x) => x.id === id);
   if (!a || a.name === clean) return null;
   const old = a.name;

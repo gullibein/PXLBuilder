@@ -821,9 +821,8 @@ try {
   await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await prompts.getByTestId('play-sound').innerText()).includes('Quack'), 'the AI makes a sound: the card has a ▶ button to hear it');
   await prompts.getByTestId('play-sound').click();
   await page.keyboard.press('Escape');
-  await page.getByTestId('dock-library').click();
-  await page.getByTestId('category-sounds').click();
-  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'Objects lists the sounds, to play them again');
+  await page.getByTestId('dock-sounds').click();
+  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'the Sounds tab (next to Objects) lists the sounds, to play them again');
   {
     // The AI's sound opens in the sound editor, note by note.
     await page.getByTestId('sound-edit').first().click();
@@ -833,7 +832,7 @@ try {
     await page.screenshot({ path: `${OUT}/5e-sound-editor.png` });
     await page.getByTestId('sound-editor-close').click();
   }
-  await page.getByTestId('dock-library').click();
+  await page.getByTestId('dock-sounds').click();
   await page.getByTestId('play').click();
   await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 1, 'in play, the script plays the sound');
   await page.keyboard.press('Escape');
@@ -842,20 +841,24 @@ try {
 
   step = 'sound editor';
   {
-    await page.getByTestId('dock-library').click();
-    await page.getByTestId('category-sounds').click();
-    await page.getByTestId('sound-new').click();
+    // The note at the top opens the sound editor on a new sound; nothing is added to the game until a note is drawn.
+    const soundCount = async () => (await page.getByTestId('dock-sounds').click(), (await page.getByTestId('sound-list').getByTestId('sound-play').count()) + (await page.getByTestId('dock-sounds').click(), 0));
+    const before = await soundCount();
+    await page.getByTestId('sound-editor-toggle').click();
     const editor = page.getByTestId('sound-editor');
     const cv = page.getByTestId('sound-canvas');
     const notesNow = async () => JSON.parse((await cv.getAttribute('data-notes')) ?? '[]');
-    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0, '+ New sound opens the sound editor on a new, silent sound');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0, 'the ♪ at the top opens the sound editor on a new, silent sound');
+    await page.getByTestId('sound-editor-close').click();
+    await check(async () => (await soundCount()) === before, 'closed without drawing, it adds nothing to the game');
+    await page.getByTestId('sound-editor-toggle').click();
     // Draw: the square wave at volume 5; a sweep over notes 1–4 rising from C4 to C5 (measured once the dialog's opening zoom is over).
     await page.waitForTimeout(300);
     const box = await cv.boundingBox();
     const H = 64 * 4 + 10 + 8 * 7 + 10 + 18;
     const pt = (col, pitch) => ({ x: box.x + ((col + 0.5) / 32) * box.width, y: box.y + ((64 * 4 - (pitch + 0.5) * 4) / H) * box.height });
     await page.getByTestId('sound-wave-3').click();
-    let p0 = pt(0, 24);
+    const p0 = pt(0, 24);
     await page.mouse.move(p0.x, p0.y);
     await page.mouse.down();
     for (const [c, p] of [[1, 28], [2, 31], [3, 36]]) {
@@ -864,6 +867,7 @@ try {
     }
     await page.mouse.up();
     await check(async () => JSON.stringify(await notesNow()) === JSON.stringify([[24, 3, 5, 0], [28, 3, 5, 0], [31, 3, 5, 0], [36, 3, 5, 0]]), 'dragging over the notes draws them: pitch where the pointer is, with the chosen wave and volume');
+    await check(async () => (await page.getByTestId('sound-pick').inputValue()) !== 'new', '(with its first notes it became one of the game\'s sounds)');
     // Volume strip: note 4 down to 2; effect row: fade out on note 4.
     const volY = box.y + ((64 * 4 + 10 + 8 * 7 - 2 * 7) / H) * box.height;
     await page.mouse.click(pt(3, 0).x, volY);
@@ -871,7 +875,6 @@ try {
     const fxY = box.y + ((64 * 4 + 10 + 8 * 7 + 10 + 9) / H) * box.height;
     await page.mouse.click(pt(3, 0).x, fxY);
     await check(async () => JSON.stringify((await notesNow())[3]) === JSON.stringify([36, 3, 2, 5]), 'the middle strip sets a note\'s volume and the bottom row its effect');
-    // Right-click silences a note.
     await page.mouse.click(pt(1, 28).x, pt(1, 28).y, { button: 'right' });
     await check(async () => (await notesNow())[1][2] === 0, 'right-click silences a note');
     await page.getByTestId('sound-slower').click();
@@ -880,15 +883,21 @@ try {
     await page.getByTestId('sound-name').press('Enter');
     await page.getByTestId('sound-editor-play').click();
     await check(async () => (await page.getByTestId('sound-editor-play').innerText()).includes('Stop'), 'Play plays the sound (the button turns into Stop)');
+    // The picker switches to another sound (and keeps the chosen pens).
+    await check(async () => (await page.getByTestId('sound-pick').locator('option').allInnerTexts()).some((t) => t.includes('Rise')), 'the picker at the top lists the game\'s sounds');
     await page.getByTestId('sound-editor-close').click();
-    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the list');
-    // Every change is one undo step: rename, speed, silence, effect, volume, draw, new.
-    await page.getByTestId('undo').click();
+    await page.getByTestId('dock-sounds').click();
+    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
+    // Every change is one undo step: rename, speed, silence, effect, volume, and the first notes (which made it).
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
     for (let i = 0; i < 5; i++) await page.getByTestId('undo').click();
     await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
-    await page.getByTestId('dock-library').click();
+    // + New sound in the Sounds tab opens the editor on a new sound too.
+    await page.getByTestId('sound-new').click();
+    await check(async () => (await page.getByTestId('sound-pick').inputValue()) === 'new', '+ New sound in the Sounds tab opens a new sound in the editor');
+    await page.getByTestId('sound-editor-close').click();
+    if (await page.getByTestId('sounds-panel').count()) await page.getByTestId('dock-sounds').click();
   }
 
   step = 'golden test 7: create with AI';

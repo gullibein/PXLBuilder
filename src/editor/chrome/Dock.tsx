@@ -1,8 +1,8 @@
 import { PlayButton } from './TopBar';
+import { NoteIcon } from './NoteIcon';
 import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
 import { playSound } from '../audio/synth';
-import { newSound } from '../sounds';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
@@ -30,6 +30,7 @@ export function Dock() {
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
       {dock === 'library' && <ObjectsPanel />}
+      {dock === 'sounds' && <SoundsPanel />}
       <nav className="dock" aria-label="Create and objects">
         <button className={`dock-btn primary job-anchor${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -38,11 +39,15 @@ export function Dock() {
           Create
           <JobDots keys={['create']} open={dock === 'create'} />
         </button>
-        <button className={`dock-btn${dock === 'library' ? ' on' : ''}`} data-testid="dock-library" onClick={() => setDock(dock === 'library' ? null : 'library')}>
+        <button className={`dock-btn${dock === 'library' ? ' on' : ''}`} title="Objects" aria-label="Objects" data-testid="dock-library" onClick={() => setDock(dock === 'library' ? null : 'library')}>
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M8 1.8 13.5 5v6L8 14.2 2.5 11V5z M2.5 5 8 8.2 13.5 5 M8 8.2v6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
           </svg>
-          Objects
+          <span className="dock-label">Objects</span>
+        </button>
+        <button className={`dock-btn${dock === 'sounds' ? ' on' : ''}`} title="Sounds" aria-label="Sounds" data-testid="dock-sounds" onClick={() => setDock(dock === 'sounds' ? null : 'sounds')}>
+          <NoteIcon />
+          <span className="dock-label">Sounds</span>
         </button>
         <TrashButton />
         {playHere && <PlayButton />}
@@ -234,8 +239,6 @@ const GROUPS_KEY = 'pxlbuilder.objectGroups';
 
 function ObjectsPanel() {
   const definitions = useEditor((s) => s.project.definitions);
-  const assets = useEditor((s) => s.project.assets);
-  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   const [category, setCategory] = useState<string>('All');
   // The groups can be hidden (they take room a phone doesn't have); remembered in this browser.
   const [groupsShown, setGroupsShown] = useState(() => {
@@ -270,49 +273,51 @@ function ObjectsPanel() {
             <span className="n">{c === 'All' ? definitions.length : definitions.filter((d) => categoryOf(d) === c).length}</span>
           </button>
         ))}
-        <button role="tab" aria-selected={category === 'Sounds'} className={`category${category === 'Sounds' ? ' on' : ''}`} data-testid="category-sounds" onClick={() => setCategory('Sounds')}>
-          Sounds
-          <span className="n">{sounds.length}</span>
-        </button>
       </nav>
-      {category === 'Sounds' ? (
-        <div className="objects-main">
-          <div className="sound-list" data-testid="sound-list">
-            {sounds.map((a) => (
-              <div key={a.id} className="sound-row">
-                <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playSound(a.synth!)}>
-                  ▶ {a.name}
-                </button>
-                <span className="muted small">{a.description}</span>
-                <button className="icon-btn" aria-label={`Edit ${a.name}`} title="Edit this sound in the sound editor" data-testid="sound-edit" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
-                  ✎
-                </button>
-                <button
-                  className="icon-btn"
-                  aria-label={`Delete ${a.name}`}
-                  title="Delete this sound (scripts that play it report it missing)"
-                  onClick={() => useEditor.getState().edit(`Delete sound ${a.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== a.id)))}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => useEditor.getState().setSoundEditor(newSound())}>
-            + New sound
-          </button>
-          <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>
+      <div className="objects-main">
+        <div className="tiles" data-testid="object-library">
+          {shown.map((d) => (
+            <ObjectTile key={d.id} def={d} />
+          ))}
         </div>
-      ) : (
-        <div className="objects-main">
-          <div className="tiles" data-testid="object-library">
-            {shown.map((d) => (
-              <ObjectTile key={d.id} def={d} />
-            ))}
+        <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
+      </div>
+    </section>
+  );
+}
+
+/** The game's sounds: hear them, edit them in the sound editor, make new ones. */
+function SoundsPanel() {
+  const assets = useEditor((s) => s.project.assets);
+  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
+  return (
+    <section className="dock-panel sounds" data-testid="sounds-panel" aria-label="Sounds">
+      <div className="sound-list" data-testid="sound-list">
+        {sounds.map((a) => (
+          <div key={a.id} className="sound-row">
+            <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playSound(a.synth!)}>
+              ▶ {a.name}
+            </button>
+            <span className="muted small">{a.description}</span>
+            <button className="icon-btn" aria-label={`Edit ${a.name}`} title="Edit this sound in the sound editor" data-testid="sound-edit" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
+              ✎
+            </button>
+            <button
+              className="icon-btn"
+              aria-label={`Delete ${a.name}`}
+              title="Delete this sound (scripts that play it report it missing)"
+              onClick={() => useEditor.getState().edit(`Delete sound ${a.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== a.id)))}
+            >
+              ×
+            </button>
           </div>
-          <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
-        </div>
-      )}
+        ))}
+        {sounds.length === 0 && <p className="muted small">No sounds yet.</p>}
+      </div>
+      <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => useEditor.getState().setSoundEditor('new')}>
+        + New sound
+      </button>
+      <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>
     </section>
   );
 }

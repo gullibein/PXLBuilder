@@ -515,6 +515,11 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 @container stage (max-width: 600px) {
   .tray-chips { bottom: 72px; }
 }
+/* Narrower: Objects and Sounds in the bottom bar become icons (their names show on hover). */
+@container stage (max-width: 820px) {
+  .dock-btn .dock-label { display: none; }
+  .dock-btn:not(.primary) { padding: 0 10px; }
+}
 
 /* A small window: the top bar gives up the game name and some padding so everything stays on screen. */
 @media (max-width: 760px) {

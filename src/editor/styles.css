@@ -263,6 +263,7 @@
 .sound-editor { width: min(720px, calc(100% - 24px)); scrollbar-gutter: stable; }
 .sound-editor .se-body { outline: none; display: grid; gap: 8px; }
 .sound-title { display: flex; align-items: center; gap: 8px; }
+.sound-pick { font: inherit; font-weight: 700; max-width: 12em; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: inherit; }
 .sound-name { font: inherit; font-weight: 700; width: 14em; max-width: 50vw; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: inherit; }
 .sound-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .sound-speed { display: inline-flex; align-items: center; gap: 4px; }
@@ -278,3 +279,5 @@
 .sound-help { margin: 0; }
 .made-sound { display: inline-flex; align-items: center; gap: 2px; }
 .sound-new { margin: 8px 0 0; }
+.dock-panel.sounds { display: grid; gap: 6px; align-content: start; }
+.dock-panel.sounds .sound-new { justify-self: start; margin: 0; }

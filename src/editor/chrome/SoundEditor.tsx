@@ -5,9 +5,9 @@
  * user can take turns on the same sound.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isStepSound, MAX_NOTES, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
+import { emptySteps, isStepSound, MAX_NOTES, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
 import { playSound, type Playing } from '../audio/synth';
-import { renameSound, updateSound } from '../sounds';
+import { addSound, newSoundName, renameSound, soundNameProblem, updateSound } from '../sounds';
 import { useEditor } from '../store';
 
 export const WAVE_COLORS = ['#29adff', '#00e436', '#ff004d', '#ffa300', '#ffec27', '#ff77a8', '#c2c3c7', '#a78bfa'];
@@ -29,27 +29,79 @@ const H = FX_TOP + FX_H;
 type Area = 'pitch' | 'volume' | 'effect';
 
 export function SoundEditor() {
-  const id = useEditor((s) => s.soundEditor);
-  const asset = useEditor((s) => (s.soundEditor ? s.project.assets.find((a) => a.id === s.soundEditor && a.kind === 'sound') : undefined));
+  const target = useEditor((s) => s.soundEditor);
+  const asset = useEditor((s) => (s.soundEditor && s.soundEditor !== 'new' ? s.project.assets.find((a) => a.id === s.soundEditor && a.kind === 'sound') : undefined));
+  const assets = useEditor((s) => s.project.assets);
+  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
+  // What is drawn with, kept while switching between sounds.
+  const pens = useState({ wave: 3, volume: 5, effect: 0 });
+  // A new sound before anything is drawn: here only (added to the game with its first notes).
+  const [fresh, setFresh] = useState<{ name: string; sound: StepSound } | null>(null);
   const close = () => useEditor.getState().setSoundEditor(null);
   useEffect(() => {
+    if (target === 'new') setFresh({ name: newSoundName(), sound: emptySteps() });
     // The sound was deleted (or undone away): nothing to edit.
-    if (id && !asset) close();
-  }, [id, asset]);
-  if (!id || !asset) return null;
+    else if (target && !asset) close();
+  }, [target, asset === undefined]);
+  if (!target || (target !== 'new' && !asset) || (target === 'new' && !fresh)) return null;
+  const picker = (
+    <select
+      className="sound-pick"
+      aria-label="Sound"
+      data-testid="sound-pick"
+      value={target}
+      onChange={(e) => useEditor.getState().setSoundEditor(e.target.value)}
+    >
+      {target === 'new' && <option value="new">{fresh!.name} (new)</option>}
+      {sounds.map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.name}
+        </option>
+      ))}
+      {target !== 'new' && <option value="new">+ New sound</option>}
+    </select>
+  );
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <section className="dialog sound-editor" role="dialog" aria-label="Sound editor" data-testid="sound-editor">
-        {isStepSound(asset.synth) ? (
-          <Editor key={asset.id} id={asset.id} name={asset.name} sound={asset.synth} onClose={close} />
+        {target === 'new' ? (
+          <Editor
+            key="new"
+            pens={pens}
+            picker={picker}
+            name={fresh!.name}
+            sound={fresh!.sound}
+            onChange={(sound) => {
+              // Something to hear: now it is one of the game's sounds.
+              if (audibleNotes(sound)) useEditor.getState().setSoundEditor(addSound(fresh!.name, sound));
+              else setFresh({ ...fresh!, sound });
+            }}
+            onRename={(name) => {
+              const problem = soundNameProblem(name);
+              if (!problem) setFresh({ ...fresh!, name: name.trim() });
+              return problem;
+            }}
+            onClose={close}
+          />
+        ) : isStepSound(asset!.synth) ? (
+          <Editor
+            key={asset!.id}
+            pens={pens}
+            picker={picker}
+            name={asset!.name}
+            sound={asset!.synth}
+            onChange={(sound, label) => updateSound(asset!.id, sound, `Sound ${asset!.name}: ${label}`)}
+            onRename={(name) => renameSound(asset!.id, name)}
+            onClose={close}
+          />
         ) : (
           <>
             <header className="bg-head">
-              <span>Sound · {asset.name}</span>
+              <span className="sound-title">Sound {picker}</span>
               <CloseButton onClose={close} />
             </header>
             <p className="muted" data-testid="sound-old">
-              This sound was made before the sound editor: it plays, but it can't be edited note by note. Ask the AI to "remake the {asset.name} sound", then open it here again.
+              This sound was made before the sound editor: it plays, but it can't be edited note by note. Ask the AI to "remake the {asset!.name} sound", then open it here again.
             </p>
           </>
         )}
@@ -93,11 +145,25 @@ function WaveIcon({ wave }: { wave: number }) {
   );
 }
 
-function Editor({ id, name, sound, onClose }: { id: string; name: string; sound: StepSound; onClose: () => void }) {
+interface EditorProps {
+  pens: [{ wave: number; volume: number; effect: number }, (p: { wave: number; volume: number; effect: number }) => void];
+  /** Which sound (to switch to another, or start a new one). */
+  picker: React.ReactNode;
+  name: string;
+  sound: StepSound;
+  /** The notes or speed changed (one finished stroke). */
+  onChange: (sound: StepSound, label: string) => void;
+  /** Returns what is wrong with the name, or null. */
+  onRename: (name: string) => string | null;
+  onClose: () => void;
+}
+
+function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onClose }: EditorProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [wave, setWave] = useState(3);
-  const [volume, setVolume] = useState(5);
-  const [effect, setEffect] = useState(0);
+  const { wave, volume, effect } = pen;
+  const setWave = (w: number) => setPen({ ...pen, wave: w });
+  const setVolume = (v: number) => setPen({ ...pen, volume: v });
+  const setEffect = (e: number) => setPen({ ...pen, effect: e });
   const [title, setTitle] = useState(name);
   const [nameError, setNameError] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -110,10 +176,10 @@ function Editor({ id, name, sound, onClose }: { id: string; name: string; sound:
 
   useEffect(() => setTitle(name), [name]);
 
-  const commit = (next: StepNote[], label: string) => updateSound(id, { type: 'steps', speed: sound.speed, notes: next }, label);
+  const commit = (next: StepNote[], label: string) => onChange({ type: 'steps', speed: sound.speed, notes: next }, label);
   const setSpeed = (speed: number) => {
     const s = Math.max(1, Math.min(MAX_SPEED, Math.round(speed) || 1));
-    if (s !== sound.speed) updateSound(id, { ...sound, notes: fullNotes(sound), speed: s }, `Sound ${name}: speed ${s}`);
+    if (s !== sound.speed) onChange({ ...sound, notes: fullNotes(sound), speed: s }, `speed ${s}`);
   };
 
   const stop = () => {
@@ -274,7 +340,7 @@ function Editor({ id, name, sound, onClose }: { id: string; name: string; sound:
     stroke.current = null;
     if (!s) return;
     const changed = s.notes.some((n, i) => n.join() !== fullNotes(sound)[i].join());
-    if (changed) commit(s.notes, `Sound ${name}: ${s.area === 'pitch' ? (s.erase ? 'silence notes' : 'draw notes') : s.area}`);
+    if (changed) commit(s.notes, s.area === 'pitch' ? (s.erase ? 'silence notes' : 'draw notes') : s.area);
     setDraft(null);
   };
 
@@ -294,13 +360,14 @@ function Editor({ id, name, sound, onClose }: { id: string; name: string; sound:
       <header className="bg-head">
         <span className="sound-title">
           Sound
+          {picker}
           <input
             className="sound-name"
             value={title}
             aria-label="Sound name"
             data-testid="sound-name"
             onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => setNameError(renameSound(id, title))}
+            onBlur={() => setNameError(onRename(title))}
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
               e.stopPropagation();
