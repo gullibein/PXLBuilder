@@ -55,6 +55,17 @@ let diagnostics = null;
 /** Where a change to what a thing is goes: its library object (the AI is told so), or the thing itself when it has none. */
 const own = (target) => (target.object?.id ? { target: 'definition', id: target.object.id } : { target: 'instance', id: target.id });
 
+/**
+ * The prompt card opens on a double-click (or Enter on the selection): if it isn't open yet for what is selected,
+ * open it the keyboard way before typing into it.
+ */
+async function openCard(pg, card) {
+  if ((await card.count()) > 0) return;
+  await pg.getByTestId('viewport-canvas').focus();
+  await pg.keyboard.press('Enter');
+  await card.waitFor({ timeout: 5000 });
+}
+
 /** Opens Details the way a user does on this page: right-click the selected object (or empty level) → Details…. */
 async function openDetailsOn(pg) {
   const canvas = pg.getByTestId('viewport-canvas');
@@ -447,6 +458,7 @@ try {
   const prompts = page.getByTestId('context-prompt');
   const promptInput = prompts.getByTestId('prompt-input');
   const ask = async (text) => {
+    await openCard(page, prompts);
     await promptInput.click();
     await promptInput.fill(text);
     await promptInput.press('Enter');
@@ -462,7 +474,16 @@ try {
     const p = { x: box.x + center.x + (wx - cx) * zoom, y: box.y + center.y + (wy - cy) * zoom };
     // page.mouse.click ignores `modifiers`, so hold them on the keyboard.
     for (const k of opts.modifiers ?? []) await page.keyboard.down(k);
-    await page.mouse.click(p.x, p.y);
+    // On an object, a double-click: it selects it and opens its prompt card (a single click only selects). Empty
+    // space gets a single click (a double-click there opens the level's card).
+    // (Hovering it first: the pointer becomes a hand over an object, a connection or a camera outline.)
+    let onObject = false;
+    if (!opts.single && !(opts.modifiers ?? []).length) {
+      await page.mouse.move(p.x, p.y);
+      onObject = (await page.getByTestId('viewport-canvas').evaluate((c) => c.style.cursor)) === 'pointer';
+    }
+    if (onObject) await page.mouse.dblclick(p.x, p.y);
+    else await page.mouse.click(p.x, p.y);
     for (const k of opts.modifiers ?? []) await page.keyboard.up(k);
   };
   const emptySpot = toScreen(420, 260);
@@ -498,8 +519,8 @@ try {
   await page.mouse.up();
   await check(async () => (await entityCount()) === 1 + 6, 'one drag draws a continuous row of 6 tiles (no gaps even with a fast stroke)');
   await check(
-    async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true' && (await prompts.getAttribute('data-context')) === 'entity' && Number((await page.getByTestId('viewport-canvas').getAttribute('data-handles')).match(/s1,0@(-?[\d.]+)/)[1]) > -110,
-    'picked from the Objects panel: after the line is drawn it is back to the Select tool, with the last tile drawn (the right end) selected',
+    async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true' && (await prompts.count()) === 0 && Number((await page.getByTestId('viewport-canvas').getAttribute('data-handles')).match(/s1,0@(-?[\d.]+)/)[1]) > -110,
+    'picked from the Objects panel: after the line is drawn it is back to the Select tool, with the last tile drawn (the right end) selected (no prompt card: that opens on a double-click)',
   );
   // With the Draw tool on, drawing goes on after a stroke.
   await page.getByTestId('tool-pen').click();
@@ -555,7 +576,12 @@ try {
   step = 'move one tile';
   const tile = toScreen(-112, 48);
   await page.mouse.click(tile.x, tile.y);
-  await check(async () => (await prompts.count()) === 1, 'clicking a drawn tile selects just that tile');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0, 'clicking a drawn tile selects just that tile (no prompt card: a single click only selects)');
+  await page.mouse.dblclick(tile.x, tile.y);
+  await check(async () => (await prompts.count()) === 1 && (await prompts.isVisible()), `double-clicking it opens its AI prompt card (${await prompts.count()} card, visible ${await prompts.isVisible().catch(() => '?')}, context ${await canvas.getAttribute('data-context')}, events ${(await diagnostics()).split('\n').slice(-6).join(' / ')})`);
+  await page.mouse.click(emptySpot.x, emptySpot.y);
+  await check(async () => (await prompts.count()) === 0, '(a click on empty space closes it)');
+  await page.mouse.click(tile.x, tile.y);
   await page.mouse.move(tile.x, tile.y);
   await page.mouse.down();
   await page.mouse.move(tile.x + 20, tile.y - 50, { steps: 5 });
@@ -577,7 +603,7 @@ try {
   step = 'golden test 1: player';
   await clickWorld(-256, 0);
   await check(async () => (await prompts.count()) === 1, 'clicking the Player shows exactly one prompt');
-  await check(async () => (await prompts.getAttribute('data-context')) === 'entity', 'the prompt is bound to the selected entity');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'entity', 'the prompt is bound to the selected entity');
   await check(async () => (await page.evaluate(() => document.activeElement?.tagName)) !== 'TEXTAREA', 'the first click selects without stealing focus');
   await check(async () => (await promptInput.getAttribute('placeholder')) === 'Type a command…', 'the prompt is a plain input with a minimal placeholder');
   const player = toScreen(-256, 0);
@@ -709,7 +735,7 @@ try {
 
   step = 'relationship context';
   await clickWorld(224, -16, { modifiers: ['Shift'] });
-  await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'two selected objects give one relationship prompt');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'pair', 'two selected objects give one relationship prompt');
   await ask('Make the key open the door.');
   await check(async () => (await result.count()) === 1, 'the relationship request gets an answer');
   const pairReq = aiRequests.at(-1);
@@ -723,9 +749,9 @@ try {
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 6 });
   await page.mouse.up();
-  await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'box-selecting the two enemies gives one shared prompt');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'pair', 'box-selecting the two enemies gives one shared prompt');
   await clickWorld(-256, 0, { modifiers: ['Shift'] });
-  await check(async () => (await prompts.getAttribute('data-context')) === 'group' && (await prompts.count()) === 1, 'three selected objects still give one shared prompt');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'group' && (await prompts.count()) === 0, 'three selected objects are one group (its prompt card opens on a double-click, not by selecting)');
   await ask('Make these enemies move faster.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a multi-object change is applied at once too');
   await check(async () => (await result.locator('.changes li').count()) === 3, 'the result lists one line per affected object');
@@ -735,7 +761,7 @@ try {
 
   step = 'golden test 5: world';
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
-  await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'double-clicking empty space makes the level the context');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'level', 'double-clicking empty space makes the level the context');
   await page.screenshot({ path: `${OUT}/5b-world-context.png` });
   await ask('Make gravity 30% weaker.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'world change applied');
@@ -1187,7 +1213,7 @@ try {
 
   step = 'top-down';
   await page.mouse.dblclick(emptySpot.x, emptySpot.y);
-  await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'the level is the context');
+  await check(async () => (await canvas.getAttribute('data-context')) === 'level', 'the level is the context');
   await ask('Make it a top-down game, like Zelda.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'making the game top-down is applied');
   await check(aiRequests.at(-1).context.level.view === 'side' && aiRequests.at(-1).context.level.playerReach !== null, 'the AI was told the level was seen from the side (with the jump limits)');
@@ -1341,14 +1367,22 @@ try {
     const playerAt = { x: box.x + center.x + (-256 - cx) * cz, y: box.y + center.y + (0 - cy) * cz };
     await touch('pointerdown', 1, playerAt);
     await touch('pointerup', 1, playerAt);
-    await check(async () => (await prompts.count()) === 1 && (await entities()) === n0, 'with a brush chosen, tapping a placed object selects it (instead of drawing)');
+    await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0 && (await entities()) === n0, 'with a brush chosen, tapping a placed object selects it (instead of drawing; no card: a double tap opens it)');
     // A double tap on empty space opens the level's prompt.
     await page.keyboard.press('Escape');
     await touch('pointerdown', 1, emptySpot);
     await touch('pointerup', 1, emptySpot);
     await touch('pointerdown', 1, emptySpot);
     await touch('pointerup', 1, emptySpot);
-    await check(async () => (await prompts.getAttribute('data-context')) === 'level', 'a double tap on empty space opens the level prompt');
+    await check(async () => (await canvas.getAttribute('data-context')) === 'level' && (await prompts.isVisible()), 'a double tap on empty space opens the level prompt');
+    await page.keyboard.press('Escape');
+    // A long press (half a second, finger still) opens the menu, as the right button does.
+    await touch('pointerdown', 1, playerAt);
+    await page.waitForTimeout(700);
+    await check(async () => (await page.getByTestId('object-menu').isVisible()) && (await page.getByTestId('object-menu').innerText()).includes('Ask AI…') && (await canvas.getAttribute('data-context')) === 'entity', 'a long press on an object opens its menu (Ask AI…, Details…) and selects it');
+    await touch('pointerup', 1, playerAt);
+    await page.getByTestId('ctx-ask-ai').click();
+    await check(async () => await prompts.isVisible(), '…and Ask AI… there opens its prompt card');
     await page.keyboard.press('Escape');
   }
 
@@ -1369,6 +1403,9 @@ try {
     const playerAt = { x: box.x + center.x + (-256 - cx) * cz, y: box.y + center.y + (0 - cy) * cz };
     const t = await trash.boundingBox();
     const trashAt = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+    // (Its prompt card open first: a double-click.)
+    await page.mouse.dblclick(playerAt.x, playerAt.y);
+    await prompts.waitFor();
     await page.mouse.move(playerAt.x, playerAt.y);
     await page.mouse.down();
     await page.mouse.move(trashAt.x, trashAt.y, { steps: 8 });
@@ -1442,7 +1479,7 @@ try {
     await check(right - left === 32 && bottom - top === 32 && h['c1,1'][0] === right && h['c1,1'][1] === bottom && h['s1,0'][1] === (top + bottom) / 2, 'the selection box fits a 32×32 tile exactly: 32×32, corner points at its corners, side points in the middle of its sides');
     // Drag the right side point three tiles out: three copies in a line, all selected.
     await dragWorld([right, (top + bottom) / 2], [right + 3 * 32 + 6, (top + bottom) / 2]);
-    await check(async () => (await entities()) === n0 + 4 && (await prompts.getAttribute('data-context')) === 'group', "dragging the box's right side point out 3 tiles makes 3 copies in a line (all selected)");
+    await check(async () => (await entities()) === n0 + 4 && (await canvas.getAttribute('data-context')) === 'group', "dragging the box's right side point out 3 tiles makes 3 copies in a line (all selected)");
     const h2 = await handles();
     await page.screenshot({ path: `${OUT}/12d-selection-handles.png`, clip: await (async () => { const a = await w2s(h2['s-1,0'][0] - 60, h2['s0,-1'][1] - 60); return { x: a.x, y: a.y, width: 300, height: 160 }; })() });
     await check(h2['s1,0'][0] - h2['s-1,0'][0] === 128 && h2['s0,1'][1] - h2['s0,-1'][1] === 32, 'the line is 4 tiles long with no gaps (the box around it is 128×32)');
@@ -1457,6 +1494,12 @@ try {
     await dragWorld([h5['s1,0'][0], h5['s1,0'][1]], [h5['s1,0'][0] + 32 + 6, h5['s1,0'][1]]);
     await check(async () => (await entities()) === n0 + 20, 'pulling its right point out one tile adds one column of 4');
     // Pushing the top point down one row takes the top row away (5 tiles); the prompt card is out of the way meanwhile.
+    // Selected (by the drags), the card closed: the ✦ above the selection opens it.
+    if ((await prompts.count()) === 0) {
+      await check(async () => await page.getByTestId('ai-star').isVisible(), 'with objects selected and no card open, an AI ✦ shows above the selection');
+      await page.getByTestId('ai-star').click();
+      await check(async () => (await prompts.isVisible()) && (await page.getByTestId('ai-star').count()) === 0, 'clicking the ✦ opens the AI prompt card for the selection');
+    }
     const h6 = await handles();
     {
       const a = await w2s(h6['s0,-1'][0], h6['s0,-1'][1]);
@@ -1509,12 +1552,12 @@ try {
       await page.getByTestId('tool-marquee').click();
       await dragWorld([(left + right) / 2, (top + bottom) / 2], [right + 32 + 16, bottom - 4]);
       const hm = await handles();
-      await check(hm['s-1,0']?.[0] === left && hm['s1,0']?.[0] === right + 64 && (await entities()) === n0 + 3 && (await prompts.getAttribute('data-context')) === 'group', 'the marquee tool: a box dragged from on top of a platform selects all 3 (nothing moves)');
+      await check(hm['s-1,0']?.[0] === left && hm['s1,0']?.[0] === right + 64 && (await entities()) === n0 + 3 && (await canvas.getAttribute('data-context')) === 'group', 'the marquee tool: a box dragged from on top of a platform selects all 3 (nothing moves)');
       await page.keyboard.press('Escape');
       await page.getByTestId('tool-select').click();
       await dragWorld([left - 20, top - 20], [right + 32 + 16, bottom - 4]);
       const hs = await handles();
-      await check(hs['s-1,0']?.[0] === left && hs['s1,0']?.[0] === right + 64 && (await prompts.getAttribute('data-context')) === 'group', 'the arrow still box-selects when the drag starts on empty space');
+      await check(hs['s-1,0']?.[0] === left && hs['s1,0']?.[0] === right + 64 && (await canvas.getAttribute('data-context')) === 'group', 'the arrow still box-selects when the drag starts on empty space');
       await page.keyboard.press('Escape');
       await page.getByTestId('undo').click();
       await check(async () => (await entities()) === n0 + 1, '(Undo)');
@@ -1681,8 +1724,11 @@ try {
     };
     await rightClick(-256, 0);
     const menu = page.getByTestId('object-menu');
-    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Details… Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Details…, Edit sprite, Code, Copy, Cut, Delete');
-    await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', '(and it is selected)');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Ask AI…, Details…, Edit sprite, Code, Copy, Cut, Delete');
+    await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0, '(and it is selected; no card yet)');
+    await page.getByTestId('ctx-ask-ai').click();
+    await check(async () => (await prompts.isVisible()) && (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', 'Ask AI… opens its AI prompt card');
+    await rightClick(-256, 0);
     await page.getByTestId('menu-edit-sprite').click();
     await check(async () => (await page.getByTestId('sprite-editor').isVisible()) && (await page.getByTestId('se-canvas').getAttribute('data-pixels')).replace(/[./]/g, '').length > 20, 'Edit sprite opens the sprite editor on its picture');
     await page.getByTestId('se-close').click();
@@ -1713,7 +1759,7 @@ try {
     await rightClick(-256, 0);
     await page.getByTestId('menu-copy').click();
     await rightClick(150, -220);
-    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Details… Paste here', 'right-clicking empty space after copying offers Details… (the level’s) and Paste here');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Paste here', 'right-clicking empty space after copying offers Ask AI…, Details… (the level’s) and Paste here');
     await page.getByTestId('menu-paste').click();
     await check(async () => (await entities()) === n0 + 1, 'Paste here places the copy');
     await page.getByTestId('undo').click();
@@ -1856,7 +1902,7 @@ try {
     await clickWorld(-256, 0);
     await ask('duplicate it 2 times to the right');
     await check(async () => (await entities()) === n0 + 2, '"duplicate it 2 times to the right" makes two copies side by side');
-    await check(async () => (await prompts.getAttribute('data-context')) === 'pair', 'the copies are selected');
+    await check(async () => (await canvas.getAttribute('data-context')) === 'pair', 'the copies are selected');
     await ask('move them up 2');
     await check(async () => (await said()).includes('Moved 2 objects 2 squares up'), '"move them up 2" moves the selection two squares');
     await ask('copy');
@@ -1865,7 +1911,7 @@ try {
     await check(async () => (await entities()) === n0, '"delete" deletes the selected objects');
     await clickWorld(-256, 0);
     await ask('paste');
-    await check(async () => (await entities()) === n0 + 2 && (await prompts.getAttribute('data-context')) === 'pair', '"paste" places the copied objects again (selected)');
+    await check(async () => (await entities()) === n0 + 2 && (await canvas.getAttribute('data-context')) === 'pair', '"paste" places the copied objects again (selected)');
     await ask('rename to Twin');
     await check(async () => (await said()).includes('Renamed 2 objects Twin'), '"rename to Twin" renames them');
     await ask('undo');
@@ -1908,7 +1954,9 @@ try {
     await page.mouse.move(edge.x, edge.y);
     await check(async () => (await canvas.getAttribute('data-camera-outline')) === 'start|', 'hovering the camera outline highlights it');
     await page.mouse.click(edge.x, edge.y);
-    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.getAttribute('data-context')) === 'level' && (await prompts.innerText()).includes('Camera at start'), 'clicking it selects it and opens the card to ask about the camera');
+    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await canvas.getAttribute('data-context')) === 'level' && (await prompts.count()) === 0, 'clicking it selects it (it glows)');
+    await page.mouse.dblclick(edge.x, edge.y);
+    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.innerText()).includes('Camera at start'), 'double-clicking it opens the card to ask about the camera');
     await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
     await page.keyboard.press('Escape');
     await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'Esc lets go of it');
@@ -2181,6 +2229,7 @@ try {
   };
   const lPrompt = lp.getByTestId('context-prompt');
   const lAsk = async (text, where = lPrompt) => {
+    if (where === lPrompt) await openCard(lp, lPrompt);
     const input = where.getByTestId('prompt-input');
     await input.click();
     await input.fill(text);
@@ -2206,7 +2255,7 @@ try {
 
   await lClick(-64, 16);
   await lClick(64, 0, true);
-  await check(async () => (await lPrompt.getAttribute('data-context')) === 'pair', 'switch + door gives one relationship prompt');
+  await check(async () => (await lp.getByTestId('viewport-canvas').getAttribute('data-context')) === 'pair', 'switch + door gives one relationship prompt');
   await lAsk('Make this switch open this door.');
   await check(async () => (await lPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"make this switch open this door" creates a connection');
   await check(async () => (await lp.getByTestId('tool-logic').innerText()) === '1', 'the Logic button counts it');
@@ -2308,6 +2357,7 @@ try {
   await cp2.dragAndDrop('[data-testid="definition-Player"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: cBox.width / 2, y: cBox.height / 2 - 150 } });
   await cp2.mouse.click(cBox.x + cBox.width / 2, cBox.y + cBox.height / 2 - 150);
   const cPrompt = cp2.getByTestId('context-prompt');
+  await openCard(cp2, cPrompt);
   await cPrompt.getByTestId('prompt-input').fill('Give the player five hearts.');
   await cPrompt.getByTestId('prompt-input').press('Enter');
   await changeObject(cPrompt);
@@ -2343,6 +2393,7 @@ try {
   };
   const sw_sPrompt = swp.getByTestId('context-prompt');
   const sw_sAsk = async (text) => {
+    await openCard(swp, sw_sPrompt);
     const input = sw_sPrompt.getByTestId('prompt-input');
     await input.click();
     await input.fill(text);
@@ -2368,7 +2419,9 @@ try {
   await swp.mouse.move(sw_sAt(64, 0).x, sw_sAt(64, 0).y, { steps: 4 });
   await swp.mouse.up();
   await check(async () => (await sw_sCanvas.getAttribute('data-connection')) !== '' && (await sw_sCanvas.getAttribute('data-links')) === '1', "dragging the switch's red connector onto the door connects them");
-  await check(async () => (await sw_sPrompt.getAttribute('data-context')) === 'connection' && (await sw_sPrompt.getByTestId('connection-header').innerText()).replace(/\s+/g, ' ').includes('Switch → Door opens'), 'the new connection is selected, with its prompt: "Switch → Door", it opens');
+  await check(async () => (await swp.getByTestId('viewport-canvas').getAttribute('data-context')) === 'connection' && (await swp.getByTestId('ai-star').isVisible()), 'the new connection is selected, with the AI ✦ by it');
+  await swp.getByTestId('ai-star').click();
+  await check(async () => (await sw_sPrompt.getByTestId('connection-header').innerText()).replace(/\s+/g, ' ').includes('Switch → Door opens'), 'the ✦ opens its prompt: "Switch → Door", it opens');
   await swp.screenshot({ path: `${OUT}/23-connection-selected.png` });
   await swp.mouse.click(sw_sAt(300, -250).x, sw_sAt(300, -250).y);
   await check(async () => (await sw_sPrompt.count()) === 0 && (await sw_sCanvas.getAttribute('data-links')) === '1', 'clicking away deselects; the connection line stays on the level');
@@ -2388,7 +2441,7 @@ try {
   await check(async () => ((await sw_sCanvas.getAttribute('data-hover-link')) ?? '') !== '', 'hovering near the arrow lights it up a little');
   await swp.screenshot({ path: `${OUT}/23b-connection-hover.png` });
   await swp.mouse.click(sw_near.x, sw_near.y);
-  await check(async () => (await sw_sPrompt.getAttribute('data-context')) === 'connection', 'clicking the line selects the connection');
+  await check(async () => (await swp.getByTestId('viewport-canvas').getAttribute('data-context')) === 'connection', 'clicking the line selects the connection');
   await swp.screenshot({ path: `${OUT}/23c-connection-clicked.png` });
   await sw_sAsk('The switch moves the door three squares upwards.');
   await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await sw_sPrompt.getByTestId('connection-header').innerText()).includes('moves'), 'describing it changes what the connection does (now it moves the door)');
@@ -2476,6 +2529,7 @@ try {
   const kAt = (wx, wy) => ({ x: kBox.x + kBox.width / 2 + wx, y: kBox.y + kBox.height / 2 + wy });
   const kPrompt = kp.getByTestId('context-prompt');
   const kAsk = async (text) => {
+    await openCard(kp, kPrompt);
     const input = kPrompt.getByTestId('prompt-input');
     await input.click();
     await input.fill(text);
@@ -2678,6 +2732,7 @@ try {
   const gAt = (wx, wy) => ({ x: gBox.x + gBox.width / 2 + wx, y: gBox.y + gBox.height / 2 + wy });
   const gPrompt = gp.getByTestId('context-prompt');
   const gAsk = async (text) => {
+    await openCard(gp, gPrompt);
     const input = gPrompt.getByTestId('prompt-input');
     await input.click();
     await input.fill(text);
@@ -2703,7 +2758,7 @@ try {
 
   const empty = gAt(300, -200);
   await gp.mouse.dblclick(empty.x, empty.y);
-  await check(async () => (await gPrompt.getAttribute('data-context')) === 'level', 'double-clicking empty space gives the level prompt');
+  await check(async () => (await gp.getByTestId('viewport-canvas').getAttribute('data-context')) === 'level', 'double-clicking empty space gives the level prompt');
   const before = Number(await gCanvas.getAttribute('data-entities'));
   await gAsk('Generate a hard level with spikes, enemies and teleporters.');
   await check(async () => (await gPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'level generation is applied at once (Undo takes it back)');

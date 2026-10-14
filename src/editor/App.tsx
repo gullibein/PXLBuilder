@@ -169,12 +169,11 @@ function useGlobalShortcuts() {
         e.preventDefault();
         selectAll();
       } else if (e.key === 'Enter') {
-        // Selecting doesn't steal focus; Enter moves into the prompt when you're ready to type.
-        const input = document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea');
-        if (input) {
-          e.preventDefault();
-          input.focus();
-        }
+        // Enter opens the prompt card for what is selected (as a double-click does) and moves into it.
+        if (!state.selectedEntityIds.length && !state.worldContext && !state.selectedConnectionId) return;
+        e.preventDefault();
+        state.setPromptOpen(true);
+        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
       } else if (e.key === 'Escape') {
         if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);

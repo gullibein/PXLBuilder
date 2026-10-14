@@ -23,6 +23,8 @@ export function ContextPrompt() {
   const cameraOutline = useEditor((s) => s.cameraOutline);
   // Out of the way while objects are moved, stretched or resized; back when they're let go.
   const objectDrag = useEditor((s) => s.objectDrag);
+  // Only once asked for: a double-click (or double-tap, or Enter) opens it.
+  const promptOpen = useEditor((s) => s.promptOpen);
   const ctx = useMemo(
     () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId }),
     [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId],
@@ -33,7 +35,8 @@ export function ContextPrompt() {
   const dotRef = useRef<SVGCircleElement>(null);
 
   useEffect(() => {
-    if (!key) return;
+    // (Also when the card opens for a context selected earlier: it is placed then, not when it was selected.)
+    if (!key || !promptOpen) return;
     let lastAnchor: Parameters<Parameters<typeof subscribeAnchor>[0]>[0] = null;
     const position = () => {
       const wrap = wrapRef.current;
@@ -73,9 +76,16 @@ export function ContextPrompt() {
       unsubscribe();
       ro.disconnect();
     };
-  }, [key]);
+  }, [key, promptOpen]);
 
   if (!ctx || !key) return null;
+  // Selected, card closed: the ✦ above the selection opens it.
+  if (!promptOpen)
+    return objectDrag ? null : (
+      <div className="context-layer">
+        <AIStar anchorKey={key} />
+      </div>
+    );
   const { selectEntities, setWorldContext, selectConnection, project } = useEditor.getState();
   const scene = project.scenes.find((sc) => sc.id === ctx.sceneId);
   const nameOf = (id: string) => scene?.entities.find((e) => e.id === id)?.name ?? '?';
@@ -157,3 +167,47 @@ function ConnectionHeader({ sceneId, relationshipId }: { sceneId: string; relati
     </span>
   );
 }
+
+/**
+ * The ✦ above whatever is selected (an object, a group, a connection, the level) while its AI prompt card is
+ * closed: clicking or tapping it opens the card. It follows the selection as the card does (the viewport's anchor).
+ */
+function AIStar({ anchorKey }: { anchorKey: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(
+    () =>
+      subscribeAnchor((a) => {
+        const el = ref.current;
+        if (!el) return;
+        if (!a || !a.visible || a.key !== anchorKey) {
+          el.style.visibility = 'hidden';
+          return;
+        }
+        // Centered over the selection, just above it (below it when there's no room above).
+        const x = (a.rect.minX + a.rect.maxX) / 2;
+        const above = a.rect.minY - 36;
+        const y = above < CHROME_INSETS.top ? a.rect.maxY + 6 : above;
+        el.style.transform = `translate(${Math.round(x - 12)}px, ${Math.round(y)}px)`;
+        el.style.visibility = 'visible';
+      }),
+    [anchorKey],
+  );
+  return (
+    <button
+      ref={ref}
+      className="ai-star"
+      style={{ visibility: 'hidden' }}
+      title="Ask the AI about this (or double-click it)"
+      aria-label="Ask the AI about the selection"
+      data-testid="ai-star"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={() => {
+        useEditor.getState().setPromptOpen(true);
+        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
+      }}
+    >
+      ✦
+    </button>
+  );
+}
+

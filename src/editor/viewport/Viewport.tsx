@@ -81,6 +81,7 @@ export function Viewport() {
    * it into a two-finger gesture (pan with both, pinch to zoom) and cancels
    * whatever the first finger started, until all fingers are lifted.
    */
+  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; start: { clientX: number; clientY: number }; touch: boolean }>({ timer: null, start: { clientX: 0, clientY: 0 }, touch: false });
   const touchRef = useRef<{ points: Map<number, Vec2>; gesture: { mid: Vec2; dist: number; camera: Camera } | null; lastTap: { at: number; x: number; y: number } | null }>({ points: new Map(), gesture: null, lastTap: null });
   const hoverRef = useRef<Id | null>(null);
   /** The connection (arrow) under the pointer, if any. */
@@ -197,6 +198,9 @@ export function Viewport() {
       const selBox = selected.length ? selectionFrame(selected).box : null;
       const selAttr = selBox ? `${((selBox.minX + selBox.maxX) / 2).toFixed(0)},${((selBox.minY + selBox.maxY) / 2).toFixed(0)}` : '';
       if ((canvas.dataset.selection ?? '') !== selAttr) canvas.dataset.selection = selAttr;
+      // What is selected, as the AI would get it (entity, pair, group, level…), card open or not (for tests).
+      const ctxAttr = getSelectionContext(state)?.kind ?? '';
+      if ((canvas.dataset.context ?? '') !== ctxAttr) canvas.dataset.context = ctxAttr;
       if (state.flash && time < state.flash.until) drawFlash(ctx, state.flash.ids, byId, state.camera.zoom, (state.flash.until - time) / 2200);
       const flashAttr = state.flash && time < state.flash.until ? String(state.flash.ids.length) : '';
       if ((canvas.dataset.flash ?? '') !== flashAttr) canvas.dataset.flash = flashAttr;
@@ -411,16 +415,48 @@ export function Viewport() {
     touchRef.current.gesture = { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), camera: { ...useEditor.getState().camera } };
   };
 
+  /** The object's menu (or, on empty space, the level's) where the pointer is. */
+  const openMenuAt = (p: { clientX: number; clientY: number }) => {
+    const state = useEditor.getState();
+    if (state.tool.kind === 'brush') return;
+    const world = toWorld(p);
+    const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
+    if (hit && !state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
+    setMenu({ x: p.clientX, y: p.clientY, entityId: hit?.id ?? null, definitionId: hit?.definitionId ?? null, world });
+  };
+
+  const cancelLongPress = () => {
+    const lp = longPressRef.current;
+    if (lp.timer) clearTimeout(lp.timer);
+    lp.timer = null;
+  };
+
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
     canvas.focus();
     const state = useEditor.getState();
+    longPressRef.current.touch = ev.pointerType === 'touch';
+    cancelLongPress();
+    if (ev.pointerType === 'touch' && touchRef.current.points.size === 0 && state.tool.kind !== 'brush') {
+      // A long press (a finger held still for half a second) opens the menu, as the right button does.
+      const at = { clientX: ev.clientX, clientY: ev.clientY };
+      longPressRef.current.start = at;
+      longPressRef.current.timer = setTimeout(() => {
+        longPressRef.current.timer = null;
+        const drag = dragRef.current;
+        if (drag?.kind === 'marquee') useEditor.getState().selectEntities(drag.baseSelection);
+        dragRef.current = null;
+        useEditor.getState().setObjectDrag(false);
+        openMenuAt(at);
+      }, 500);
+    }
     if (ev.pointerType === 'touch') {
       const touch = touchRef.current;
       touch.points.set(ev.pointerId, localPoint(canvas, ev));
       capture(canvas, ev.pointerId);
       if (touch.points.size >= 2 || touch.gesture) {
-        // A second finger: this is a pan/zoom, not a drawing or a drag. What the first finger began is dropped.
+        // A second finger: this is a pan/zoom, not a drawing or a drag (or a long press). What the first finger began is dropped.
+        cancelLongPress();
         const drag = dragRef.current;
         if (drag?.kind === 'marquee') state.selectEntities(drag.baseSelection);
         dragRef.current = null;
@@ -486,12 +522,15 @@ export function Viewport() {
       const scene = getActiveScene(state);
       const line = hit ? null : connectionAt(state.project, scene, new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       if (line && !additive) {
+        // A single click selects it; the prompt card opens on a double-click.
+        if (state.selectedConnectionId !== line) state.setPromptOpen(false);
         state.selectConnection(line);
         return;
       }
-      // A camera outline: select it (it glows) and ask about the camera in the level's card.
+      // A camera outline: select it (it glows); a double-click asks about the camera in the level's card.
       const outline = hit || additive || !state.layout.showCameraOutlines || !entities.some(hasPlayer) ? null : outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom);
       if (outline) {
+        if (state.cameraOutline !== outline) state.setPromptOpen(false);
         state.selectCameraOutline(outline, world);
         return;
       }
@@ -499,11 +538,15 @@ export function Viewport() {
         let selection = state.selectedEntityIds;
         if (additive) selection = selection.includes(hit.id) ? selection.filter((id) => id !== hit.id) : [...selection, hit.id];
         else if (!selection.includes(hit.id)) selection = [hit.id];
+        // Selecting something else closes the prompt card (a double-click opens one); pressing on what is already
+        // selected (to move it) keeps it.
+        if (selection.length !== state.selectedEntityIds.length || selection.some((id) => !state.selectedEntityIds.includes(id))) state.setPromptOpen(false);
         state.selectEntities(selection);
         if (selection.includes(hit.id)) {
           dragRef.current = { kind: 'move', startWorld: world, anchor: hit.transform.position, anchorId: hit.id, ids: selection, delta: { x: 0, y: 0 } };
         }
       } else {
+        if (!additive) state.setPromptOpen(false);
         dragRef.current = { kind: 'marquee', startWorld: world, currentWorld: world, additive, baseSelection: additive ? state.selectedEntityIds : [], moved: false };
       }
     } else {
@@ -514,6 +557,9 @@ export function Viewport() {
 
   const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const touch = touchRef.current;
+    // The finger moved: a drag, not a long press.
+    const lp = longPressRef.current;
+    if (lp.timer && Math.hypot(ev.clientX - lp.start.clientX, ev.clientY - lp.start.clientY) > 8) cancelLongPress();
     if (ev.pointerType === 'touch' && touch.points.has(ev.pointerId)) {
       touch.points.set(ev.pointerId, localPoint(canvasRef.current!, ev));
       const g = touch.gesture;
@@ -626,6 +672,7 @@ export function Viewport() {
 
   const onPointerUp = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const touch = touchRef.current;
+    cancelLongPress();
     if (ev.pointerType === 'touch') {
       touch.points.delete(ev.pointerId);
       if (touch.gesture) {
@@ -671,6 +718,14 @@ export function Viewport() {
     if (drag?.kind === 'move' && (drag.delta.x !== 0 || drag.delta.y !== 0)) {
       const label = drag.ids.length === 1 ? 'Move' : `Move ${drag.ids.length} objects`;
       state.edit(label, (p) => moveEntities(p, state.activeSceneId, drag.ids, drag.delta));
+    } else if (drag?.kind === 'move' && ev.pointerType === 'touch' && ev.type === 'pointerup') {
+      // Double-tap on an object: its prompt card (as a double-click does; touch screens don't always send one).
+      const p = localPoint(canvasRef.current!, ev);
+      const last = touch.lastTap;
+      if (last && ev.timeStamp - last.at < 350 && Math.hypot(p.x - last.x, p.y - last.y) < 24) {
+        touch.lastTap = null;
+        state.setPromptOpen(true);
+      } else touch.lastTap = { at: ev.timeStamp, x: p.x, y: p.y };
     } else if (drag?.kind === 'marquee' && !drag.moved && state.tool.kind === 'marquee' && pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))) {
       // The marquee tool: a click on an object selects it (Shift adds it, or takes it out).
       const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))!;
@@ -688,16 +743,33 @@ export function Viewport() {
         if (last && ev.timeStamp - last.at < 350 && Math.hypot(p.x - last.x, p.y - last.y) < 24) {
           touch.lastTap = null;
           state.setWorldContext(toWorld(ev));
+          state.setPromptOpen(true);
         } else touch.lastTap = { at: ev.timeStamp, x: p.x, y: p.y };
       }
     }
   };
 
+  /**
+   * A double-click opens the AI prompt card: for the object (or the selected group it belongs to), a connection, the
+   * camera outline, or (on empty space) the level.
+   */
   const onDoubleClick = (ev: React.MouseEvent<HTMLCanvasElement>) => {
     const state = useEditor.getState();
-    if (state.tool.kind === 'brush') return;
+    if (state.tool.kind === 'brush' || state.tool.kind === 'eyedropper') return;
     const world = toWorld(ev);
-    if (!pick(resolveSceneEntities(state.project, state.activeSceneId), world)) state.setWorldContext(world);
+    const entities = resolveSceneEntities(state.project, state.activeSceneId);
+    const hit = pick(entities, world);
+    if (hit) {
+      if (!state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
+    } else {
+      const scene = getActiveScene(state);
+      const line = connectionAt(state.project, scene, new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
+      const outline = !line && state.layout.showCameraOutlines && entities.some(hasPlayer) ? outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom) : null;
+      if (line) state.selectConnection(line);
+      else if (outline) state.selectCameraOutline(outline, world);
+      else state.setWorldContext(world);
+    }
+    state.setPromptOpen(true);
   };
 
   const onDragOver = (ev: React.DragEvent) => {
@@ -742,14 +814,11 @@ export function Viewport() {
         onDoubleClick={onDoubleClick}
         onMouseDown={(e) => e.button === 1 && e.preventDefault() /* no autoscroll on middle-drag */}
         onContextMenu={(e) => {
-          // While drawing, the right button erases; otherwise it's the object's menu.
+          // While drawing, the right button erases; otherwise it's the object's menu. (On a touch screen the menu
+          // comes from a long press, timed here, not from the browser's own long-press menu.)
           e.preventDefault();
-          const state = useEditor.getState();
-          if (state.tool.kind === 'brush') return;
-          const world = toWorld(e);
-          const hit = pick(resolveSceneEntities(state.project, state.activeSceneId), world);
-          if (hit && !state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
-          setMenu({ x: e.clientX, y: e.clientY, entityId: hit?.id ?? null, definitionId: hit?.definitionId ?? null, world });
+          if (longPressRef.current.touch) return;
+          openMenuAt(e);
         }}
       />
       {menu && (
@@ -758,6 +827,17 @@ export function Viewport() {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            {
+              // The AI prompt card for it (or, on empty space, for the level), as a double-click opens it.
+              label: 'Ask AI…',
+              testId: 'ctx-ask-ai',
+              run: () => {
+                const s = useEditor.getState();
+                if (!menu.entityId) s.setWorldContext(menu.world);
+                s.setPromptOpen(true);
+                requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
+              },
+            },
             {
               // The object's settings (or, on empty space, the level's): position, size, health, gravity…
               label: 'Details…',

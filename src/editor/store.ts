@@ -99,6 +99,11 @@ export interface EditorState {
   objectDrag: boolean;
   /** Alt is held: the eyedropper, whatever the tool (let go, the tool is back). */
   altHeld: boolean;
+  /**
+   * The AI prompt card is open: only after a double-click (or double-tap, or Enter) on an object, a group, a
+   * connection or empty level. A single click elsewhere closes it; the app's own selection changes keep it.
+   */
+  promptOpen: boolean;
   /** The "Export sprites" window: these pictures (null: all of the game's), named after `name`. */
   spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The Code Editor: the behavior code of a library object, or of one placed thing (and its object). */
@@ -156,6 +161,7 @@ export interface EditorState {
   openSpriteExport(target: { assets: AssetRecord[] | null; name: string } | null): void;
   setObjectDrag(dragging: boolean): void;
   setAltHeld(held: boolean): void;
+  setPromptOpen(open: boolean): void;
   /** The eyedropper: draw with this object's kind, as if picked in the Objects panel (one placing or line). */
   pickUp(definitionId: Id): void;
   setTrashHot(hot: boolean): void;
@@ -218,6 +224,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     trashHot: false,
     objectDrag: false,
     altHeld: false,
+    promptOpen: false,
     spriteExport: null,
     codeEditor: null,
     saveDialog: false,
@@ -331,6 +338,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         backgroundOpen: unique.length ? false : get().backgroundOpen,
         spritesFor: unique.length ? null : get().spritesFor,
         logicOpen: unique.length ? false : get().logicOpen,
+        // Nothing left to ask about: the card is closed (a later selection doesn't bring it back by itself).
+        promptOpen: unique.length || get().worldContext || get().selectedConnectionId ? get().promptOpen : false,
       });
     },
 
@@ -339,7 +348,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setWorldContext(point) {
-      if (point === false) set({ worldContext: null, cameraOutline: null });
+      if (point === false) set({ worldContext: null, cameraOutline: null, promptOpen: get().selectedEntityIds.length || get().selectedConnectionId ? get().promptOpen : false });
       else set({ worldContext: { point }, cameraOutline: null, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
@@ -458,6 +467,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setObjectDrag(objectDrag) {
       if (get().objectDrag !== objectDrag) set({ objectDrag });
+    },
+
+    setPromptOpen(promptOpen) {
+      if (get().promptOpen !== promptOpen) set({ promptOpen });
     },
 
     setAltHeld(altHeld) {

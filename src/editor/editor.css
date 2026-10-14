@@ -689,3 +689,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .touch-btn.small { width: 62px; height: 62px; border-radius: 50%; }
 /* With the buttons on screen, the keyboard hints aren't needed. */
 .touch-controls ~ .hud-keys { display: none; }
+
+/* The ✦ above the selection: opens its AI prompt card. */
+.ai-star { position: absolute; left: 0; top: 0; z-index: 15; pointer-events: auto; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--accent-hi); font: 13px/1 var(--font-ui); box-shadow: var(--shadow); cursor: pointer; animation: pop-in 140ms ease-out; }
+.ai-star:hover { background: var(--accent); color: #fff; }
