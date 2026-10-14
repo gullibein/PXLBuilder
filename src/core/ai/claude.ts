@@ -4,6 +4,7 @@
  * same model, system prompt, structured output and error meanings.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
@@ -151,10 +152,15 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     return withUsage({ ok: true, response: response.parsed_output });
   }
 
-  // The reply format spelled out in the prompt instead (as for claude.ai and Gemini), checked the same way.
-  const system = cachedSystem(systemPromptWithReplyFormat());
-  const ask = (messages: typeof common.messages | (typeof common.messages[number] | { role: 'assistant' | 'user'; content: string })[]) =>
-    client.beta.messages.create({ ...common, messages: messages as typeof common.messages, output_config: { effort }, system }, { signal });
+  // Without the strict format: Claude is offered a "reply" tool whose input is the reply format (it can't be forced
+  // to call it on current models, so it is asked to), and a plain JSON answer is read too. A reply that starts writing
+  // tool calls as text (a known failure of these models) is stopped there instead of running to the length limit.
+  const system = cachedSystem(systemPromptWithReplyFormat() + REPLY_TOOL_NOTE);
+  const ask = (messages: typeof common.messages | (typeof common.messages[number] | { role: 'assistant' | 'user'; content: unknown })[]) =>
+    client.beta.messages.create(
+      { ...common, messages: messages as typeof common.messages, output_config: { effort }, system, tools: [replyTool()], tool_choice: { type: 'auto' }, stop_sequences: FAKE_TOOL_CALL },
+      { signal },
+    );
   let response = await ask(common.messages);
   let usage = used(response);
   const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
@@ -164,25 +170,27 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     return withUsage(incomplete);
   };
   if (response.stop_reason === 'max_tokens') return cutOff();
+  if (response.stop_reason === 'stop_sequence') note(`${CLAUDE_MODELS[model].name} began writing a tool call as text; stopped it there.`);
   let text = replyText(response);
   let raw: unknown;
   try {
-    raw = parseJsonReply(text);
+    raw = toolReply(response) ?? parseJsonReply(text);
   } catch (e) {
     // Not readable: said in the console (with what came back), and asked once more for it as valid JSON.
     const problem = (e as Error).message;
     note(`${CLAUDE_MODELS[model].name}'s answer couldn't be read (${problem}); asking it to send it again. It began: ${text.slice(0, 600)}`);
     response = await ask([
       ...common.messages,
-      { role: 'assistant', content: text },
-      { role: 'user', content: `That answer is not valid JSON (${problem}), so the app couldn't read it and nothing was changed. Send the same answer again as ONE valid JSON object in the reply format, with nothing before or after it. In strings, escape quotes (\\") and backslashes (\\\\).` },
+      { role: 'assistant', content: text.trim() || '(no answer)' },
+      { role: 'user', content: `That answer could not be read (${problem}), so nothing was changed. Send the whole answer again by calling the reply tool once, with the reply object as its input. Do not write tool calls or XML tags as text.` },
     ]);
     const more = used(response);
     if (usage && more) usage = { ...more, inputTokens: usage.inputTokens + more.inputTokens, cacheReadTokens: usage.cacheReadTokens + more.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens + more.cacheWriteTokens, outputTokens: usage.outputTokens + more.outputTokens, cost: usage.cost !== null && more.cost !== null ? usage.cost + more.cost : null };
     if (response.stop_reason === 'max_tokens') return cutOff();
+    if (response.stop_reason === 'stop_sequence') note(`${CLAUDE_MODELS[model].name} began writing a tool call as text again; stopped it there.`);
     text = replyText(response);
     try {
-      raw = parseJsonReply(text);
+      raw = toolReply(response) ?? parseJsonReply(text);
     } catch (e2) {
       note(`Still not readable (${(e2 as Error).message}). It began: ${text.slice(0, 600)}`);
       return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read (twice; the Console shows what came back). Try again, or ask for less at once.", kind: 'other' });
@@ -194,6 +202,30 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
   }
   return withUsage({ ok: true, response: parsed.data });
+}
+
+const REPLY_TOOL_NOTE = `
+
+HOW TO ANSWER
+Call the reply tool exactly once, with the whole reply object (the REPLY FORMAT above) as its input. Write no other text, and never write tool calls or XML tags as text.`;
+
+/** A reply written as tool-call markup in the text: stopped at its start (the model is asked again). */
+const FAKE_TOOL_CALL = ['<invoke', '<function_calls'];
+
+let replyToolDef: { name: string; description: string; input_schema: { type: 'object'; [k: string]: unknown } } | null = null;
+/** The reply format as a tool (its input is checked here, against the same schema, so it needs no strict mode). */
+function replyTool() {
+  if (!replyToolDef) {
+    const { $schema: _schema, ...schema } = z.toJSONSchema(aiResponseSchema) as Record<string, unknown>;
+    replyToolDef = { name: 'reply', description: 'Send your answer to the app: the whole reply object, once.', input_schema: { ...schema, type: 'object' } };
+  }
+  return replyToolDef;
+}
+
+/** The reply tool's input, if the answer called it. */
+function toolReply(response: { content: { type: string; name?: string; input?: unknown }[] }): unknown | null {
+  const call = response.content.find((b) => b.type === 'tool_use' && b.name === 'reply');
+  return call ? call.input : null;
 }
 
 /** The text of a reply (its text blocks). */

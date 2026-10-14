@@ -136,6 +136,41 @@ describe('the Claude call', () => {
     expect(notes.at(-1)).toMatch(/Still not readable.*It began: still oops/);
   });
 
+  it('without the strict format: a reply tool is offered (not forced), its input is the answer; a reply that writes tool calls as text is stopped and asked again', async () => {
+    const notes: string[] = [];
+    const sent: Record<string, unknown>[] = [];
+    let replies: unknown[] = [
+      { stop_reason: 'stop_sequence', content: [{ type: 'text', text: 'I need to see the code first.\n\n' }] },
+      { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Here it is.' }, { type: 'tool_use', id: 't1', name: 'reply', input: answer }] },
+    ];
+    const client = {
+      beta: {
+        messages: {
+          parse: async () => {
+            throw rejected('output_config.format: the schema is too complex');
+          },
+          create: async (params: Record<string, unknown>) => {
+            sent.push(params);
+            return replies.shift();
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    expect(await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n))).toMatchObject({ ok: true, response: answer });
+    const first = sent[0] as { tools: { name: string; input_schema: { type: string; properties: Record<string, unknown> } }[]; tool_choice: unknown; stop_sequences: string[]; system: { text: string }[] };
+    expect(first.tools.map((t) => t.name)).toEqual(['reply']);
+    expect(first.tools[0].input_schema.type).toBe('object');
+    expect(Object.keys(first.tools[0].input_schema.properties)).toEqual(expect.arrayContaining(['kind', 'message', 'operations']));
+    expect(first.tool_choice).toEqual({ type: 'auto' });
+    expect(first.stop_sequences).toEqual(['<invoke', '<function_calls']);
+    expect(first.system.map((b) => b.text).join('')).toMatch(/Call the reply tool exactly once/);
+    expect(notes.some((n) => /began writing a tool call as text/.test(n))).toBe(true);
+    expect(String((sent[1] as { messages: { content: unknown }[] }).messages.at(-1)!.content)).toMatch(/calling the reply tool/);
+    // A plain JSON answer (no tool call) is still read.
+    replies = [{ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }] }];
+    expect(await askClaude(client, body(), undefined, 'claude-sonnet-5-5')).toMatchObject({ ok: true, response: answer });
+  });
+
   it('other rejections are reported, not retried', async () => {
     let calls = 0;
     const client = { beta: { messages: { parse: async () => { calls++; throw rejected('messages: text content blocks must be non-empty'); } } } } as unknown as Anthropic;
