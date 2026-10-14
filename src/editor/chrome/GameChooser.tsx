@@ -3,6 +3,7 @@ import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } 
 import { createStarterAssets } from '../../core/model/factory';
 import { createTopDownStarterAssets } from '../../core/model/topDownStarters';
 import type { GameType } from '../../core/types';
+import { startJob } from '../ai/jobs';
 import { startNewGame } from '../persistence';
 import { useEditor } from '../store';
 
@@ -11,15 +12,28 @@ import { useEditor } from '../store';
  * ⋯ → New project. One click makes a new game of that kind (its starter
  * objects, gravity or none) and drops the user into the editor. It only
  * chooses the start: the game can still be changed into anything later.
+ * Or the user just says what game they want: it starts as a platformer, and
+ * the AI builds it, first moving it to another starter if that fits better.
  */
 export function GameChooser() {
   const mode = useEditor((s) => s.gameChooser);
   const close = useEditor((s) => s.setGameChooser);
   const [res, setRes] = useState<SpriteResolution>(DEFAULT_SPRITE_RESOLUTION);
+  const [idea, setIdea] = useState('');
   if (!mode) return null;
   const pick = (type: GameType) => {
     startNewGame(type, mode === 'first', res);
     close(null);
+  };
+  const describe = () => {
+    const request = idea.trim();
+    if (!request) return;
+    startNewGame('platformer', mode === 'first', res);
+    close(null);
+    setIdea('');
+    const { activeSceneId, setGlobalPrompt } = useEditor.getState();
+    setGlobalPrompt(true, 'project');
+    startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true });
   };
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close(null)}>
@@ -32,6 +46,33 @@ export function GameChooser() {
             </svg>
           </button>
         </header>
+        <form
+          className="game-idea"
+          onSubmit={(e) => {
+            e.preventDefault();
+            describe();
+          }}
+        >
+          <textarea
+            value={idea}
+            rows={2}
+            autoFocus
+            placeholder="Tell the AI what game you want, e.g. “a Boulder Dash game: dig through dirt, collect diamonds, dodge falling rocks”"
+            aria-label="Describe the game you want"
+            data-testid="game-idea"
+            onChange={(e) => setIdea(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                describe();
+              }
+            }}
+          />
+          <button type="submit" className="btn-primary" disabled={!idea.trim()} data-testid="game-idea-go">
+            Make it
+          </button>
+        </form>
+        <p className="muted small game-or">The AI picks the best starting point and builds it. Or start from one yourself:</p>
         <div className="game-grid">
           <button className="style-card game-card" data-testid="game-platformer" onClick={() => pick('platformer')}>
             <PlatformerPreview />

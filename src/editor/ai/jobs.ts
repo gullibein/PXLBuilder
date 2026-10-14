@@ -9,7 +9,7 @@
 import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
-import { runPrompt, type PromptOutcome } from './runPrompt';
+import { runPrompt, type PromptOptions, type PromptOutcome } from './runPrompt';
 import { logExchange, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
@@ -47,7 +47,7 @@ function put(key: string, job: PromptJob | null): void {
 }
 
 /** Starts a prompt for a context (the finished ones before it stay in the card's chat, from the log). One at a time per context. */
-export function startJob(ctx: AIContext, request: string): void {
+export function startJob(ctx: AIContext, request: string, options: PromptOptions = {}): void {
   const key = contextKey(ctx);
   if (useJobs.getState().jobs[key]?.phase === 'working') return;
   const controller = new AbortController();
@@ -65,7 +65,7 @@ export function startJob(ctx: AIContext, request: string): void {
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };
-  runPrompt(ctx, request, controller.signal, trace.add).then(
+  runPrompt(ctx, request, controller.signal, trace.add, options).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });

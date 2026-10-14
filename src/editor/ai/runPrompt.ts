@@ -26,7 +26,8 @@ import { useEditor } from '../store';
 import { parseQuickCommand, QUICK_COMMAND_HELP, type QuickCommand } from '../../core/commands/quickCommands';
 import { runQuickCommand } from '../quickCommands';
 import { removeRelationship } from '../../core/logic/mutations';
-import type { Id, Project } from '../../core/types';
+import type { GameType, Id, Project } from '../../core/types';
+import { switchStarter } from '../persistence';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
 export interface ObjectChange {
@@ -104,7 +105,18 @@ export function labelFor(request: string): string {
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
 }
 
-export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn): Promise<PromptOutcome> {
+/** The starters a new game can be made from, for the AI to choose (context.newGame). */
+const STARTERS: { id: GameType; is: string }[] = [
+  { id: 'platformer', is: 'seen from the side, with gravity: player that runs, jumps and climbs, ground, platforms, ladders, enemies, spikes, crates, a goal (Mario-like games)' },
+  { id: 'topdown', is: 'seen from above, no gravity: player that walks in every direction, floor, walls, doors, wandering enemies, hazards, a goal (Zelda, Rogue, Boulder Dash, mazes, grid and board puzzles)' },
+];
+
+export interface PromptOptions {
+  /** The first request of a game just made in the New game window: the AI may move it to a better starter first. */
+  newGame?: boolean;
+}
+
+export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn, options: PromptOptions = {}): Promise<PromptOutcome> {
   const state = useEditor.getState();
   // Plain editing commands ("delete", "duplicate 3 times to the right", "paste"…) are done by the app itself, at once.
   const quick = quickCommandFor(ctx, request);
@@ -121,11 +133,26 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // What the editor's settings are: fixed, so it goes with the (cached) instructions; the context has their values.
     reference: editorReference(),
   };
+  const starterNow = (): GameType => useEditor.getState().project.settings.gameType ?? 'platformer';
+  if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
     response = await provider.respond(body, signal, trace);
+    // A new game the AI would rather build on another starter: made over from that one, and the same request asked again (once).
+    if (response.kind === 'switch_starter') {
+      const to = response.starter;
+      if (options.newGame && to && to !== starterNow()) {
+        trace?.('note', `The AI chose the ${to} starter; asking again on it`);
+        switchStarter(to);
+        const now = useEditor.getState();
+        body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
+        body.context.newGame = { current: starterNow(), starters: STARTERS };
+        response = await provider.respond(body, signal, trace);
+      }
+      if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };
+    }
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
     for (let round = 0; round < 2 && response.kind === 'need_code'; round++) {

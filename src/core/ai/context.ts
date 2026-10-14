@@ -136,6 +136,11 @@ export interface EditorSettingsPayload {
 
 export interface AIPayload {
   scope: AIContext['kind'];
+  /**
+   * Only on the first request of a brand-new game (typed in the New game window): the starter the game was made
+   * from (current) and the other starters there are. Build on current if it suits the request, else switch_starter.
+   */
+  newGame?: { current: string; starters: { id: string; is: string }[] };
   /** The connection the user selected (scope "connection"): in words and as data. */
   connection?: { id: Id; text: string; type: string; source: EntityRef; target: EntityRef; params: Record<string, unknown>; conditions: Condition[] };
   /** The editor's adjustable settings and overlays, with their current values (editor changes are possible from any scope). */

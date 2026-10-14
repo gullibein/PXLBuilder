@@ -115,13 +115,36 @@ async function writeAutosave(project: Project): Promise<void> {
  * need to ask "are you sure?".
  */
 export function startNewGame(gameType: GameType, first = false, spriteResolution: SpriteResolution = DEFAULT_SPRITE_RESOLUTION): void {
-  const project = produce(createProject(componentRegistry, 'Untitled Game', gameType), (p) => {
-    if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
-  });
+  const project = starterProject(gameType, spriteResolution);
   const kind = gameType === 'topdown' ? 'top-down game' : 'platformer';
   if (first) useEditor.getState().loadProject(project);
   else useEditor.getState().replaceProject('New project', project);
   useEditor.getState().logMessage('info', `Started a new ${kind}`);
+}
+
+/** A new game from a starter, at a sprite size. */
+function starterProject(gameType: GameType, spriteResolution: SpriteResolution): Project {
+  return produce(createProject(componentRegistry, 'Untitled Game', gameType), (p) => {
+    if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
+  });
+}
+
+/**
+ * Makes the brand-new game over from another starter (the AI found it a better start for what the user asked):
+ * same game, level ids, name and sprite size, so the prompt building it carries on.
+ */
+export function switchStarter(gameType: GameType): void {
+  const now = useEditor.getState().project;
+  const fresh = starterProject(gameType, now.settings.spriteResolution ?? DEFAULT_SPRITE_RESOLUTION);
+  const sceneId = now.startSceneId;
+  const project = produce(fresh, (p) => {
+    p.id = now.id;
+    p.name = now.name;
+    p.scenes[0].id = sceneId;
+    p.startSceneId = sceneId;
+  });
+  useEditor.getState().replaceProject(gameType === 'topdown' ? 'Top-down starter' : 'Platformer starter', project);
+  useEditor.getState().logMessage('info', `Switched the new game to the ${gameType === 'topdown' ? 'top-down' : 'platformer'} starter`);
 }
 
 /**

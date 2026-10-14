@@ -95,6 +95,21 @@ function stubModel(body) {
     const got = body.code.find((c) => c.id === coin.id);
     return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
   }
+  if (req.includes('dig for diamonds')) {
+    // A new game told in words: the platformer starter doesn't fit, so the top-down one, then built on it.
+    if (body.context.newGame?.current === 'platformer') return { kind: 'switch_starter', message: 'Seen from above suits this better.', changes: [], operations: [], needCode: null, starter: 'topdown' };
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const sceneId = body.context.level.id;
+    return {
+      kind: 'preview',
+      message: `Built it on the ${body.context.newGame?.current} starter.`,
+      changes: ['A player and a wall'],
+      operations: [
+        { op: 'place_instance', sceneId, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId, definitionRef: lib('Wall'), x: 48, y: 16, name: null, ref: null },
+      ],
+    };
+  }
   if (req.includes('locked door test room')) {
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
     const sceneId = body.context.level.id;
@@ -2145,6 +2160,25 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('undo').click();
   await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, 'Undo brings back the game from before');
+  // (The AI is answered by the stand-in again for this.)
+  await page.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+  await page.getByTestId('project-menu').click();
+  await page.getByTestId('menu-new').click();
+  await check(async () => (await page.getByTestId('game-idea-go').isDisabled()) === true, 'New game has a field to tell the AI what game you want (Make it waits for words)');
+  await page.getByTestId('game-idea').fill('A cave game where you dig for diamonds');
+  await page.getByTestId('game-idea').press('Enter');
+  await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'telling it goes straight to the editor, the Whole game card working on it');
+  await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+  await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
+  await check(async () => (await canvas.getAttribute('data-entities')) === '2', '(what it built is on the level)');
+  await openLibrary();
+  await check(async () => (await page.getByTestId('definition-Wall').count()) === 1 && (await page.getByTestId('definition-Ladder').count()) === 0, 'the game has the top-down objects');
+  await page.keyboard.press('Escape');
+  {
+    const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
+    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 2, 'the starters were described with the first request (one more only because it switched)');
+  }
+  await page.unroute('**/api/ai');
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await page.getByTestId('new-sprite-size-8').click();
@@ -2167,6 +2201,7 @@ try {
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Flying Robot').count()) === 0 && (await page.getByTestId('definition-Ladder').count()) === 1, 'with only the built-in objects, as they ship');
   await page.keyboard.press('Escape');
+
 
   step = 'old autosave upgrade';
   const old = await browser.newContext({ viewport: { width: 1400, height: 860 } });
@@ -2518,8 +2553,8 @@ try {
     const text = typeof content === 'string' ? content : content.map((b) => b.text).join('');
     const context = JSON.parse(text.split('\n')[1]);
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
-    // (The real API's strict format always has every field: needCode is null unless the model asks for code.)
-    const out = { needCode: null, ...stubModel({ context, request, history: [] }) };
+    // (The real API's strict format always has every field: needCode and starter are null unless used.)
+    const out = { needCode: null, starter: null, ...stubModel({ context, request, history: [] }) };
     return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 25000, cache_creation_input_tokens: 0 } });
   });
   await kp.goto(URL);

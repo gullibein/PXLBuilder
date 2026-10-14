@@ -104,7 +104,7 @@ describe('operations', () => {
   it('schema accepts the documented shapes', () => {
     expect(operationSchema.safeParse({ op: 'set_transform', entityId: 'e', x: 1, y: null, rotation: null, scaleX: null, scaleY: null }).success).toBe(true);
     expect(operationSchema.safeParse({ op: 'teleport', id: 'e' }).success).toBe(false);
-    expect(aiResponseSchema.safeParse({ kind: 'apply', message: 'ok', changes: [], operations: [], needCode: null }).success).toBe(true);
+    expect(aiResponseSchema.safeParse({ kind: 'apply', message: 'ok', changes: [], operations: [], needCode: null, starter: null }).success).toBe(true);
   });
 });
 

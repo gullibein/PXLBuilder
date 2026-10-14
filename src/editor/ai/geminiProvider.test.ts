@@ -3,7 +3,7 @@ import type { AIRequestBody } from '../../core/ai/protocol';
 import { GeminiProvider, listGeminiModels, parseJsonReply, resetGeminiBusy } from './geminiProvider';
 
 const body = (speed?: 'best' | 'fast'): AIRequestBody => ({ context: { scope: 'level' } as never, request: 'Make gravity weaker', history: [], ...(speed ? { speed } : {}) });
-const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null };
+const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null, starter: null };
 
 /** Replaces fetch with a list of canned replies; returns the calls made. */
 function fakeFetch(...replies: { status: number; json: unknown }[]) {

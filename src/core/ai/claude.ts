@@ -122,7 +122,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     { type: 'text' as const, text: body.reference ?? text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } },
   ];
   const used = (r: { model?: string; usage?: Parameters<typeof usageCost>[1] }) => (r.usage ? usageCost(r.model ?? model, r.usage) : undefined);
-  const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null } };
+  const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };
 
   if (accepted.schema) {
