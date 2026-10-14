@@ -437,8 +437,8 @@ saved and shown like any other edit.
 - **Running** (`runtime/scripts.ts`): each entity runs its own copy.
   start/tick/every/key handlers run before physics; event and signal
   handlers run from the gameplay event queue (so the runaway cap covers
-  them). No open loops; a budget per handler run (2000 operations) and per
-  step stops runaway scripts. Problems while running are reported once per
+  them). No open loops; a budget per handler run (50,000 statements) and per
+  step (150,000) stops runaway scripts. Problems while running are reported once per
   script (`runtime.scripts.errors`, event `script_error`) and the game goes
   on; a stored script that no longer checks out is reported and not run.
   Static things a script moves become kinematic; `glide_to` suspends gravity.

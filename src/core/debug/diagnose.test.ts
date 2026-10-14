@@ -112,6 +112,18 @@ describe('the problem checker', () => {
     expect(keys(diagnoseLevel(project, sceneId, registry))).toEqual(['no-player', 'uncollectable']);
   });
 
+  it('no player needed when a script reads the keys (a falling-block puzzle)', () => {
+    const base = createProject(registry);
+    const sceneId = base.scenes[0].id;
+    const project = produce(base, (d) => {
+      d.scenes[0].entities = [];
+      const board = instantiateDefinition(d.definitions.find((x) => x.name === 'Coin')!, { x: 0, y: 0 });
+      m.addEntity(d, sceneId, board);
+      setScript(d, { target: 'instance', id: board.id }, { name: 'Board', description: 'Moves the piece.', vars: [{ name: 'x', value: 0 }], handlers: [{ when: { on: 'key', key: 'left', edge: 'pressed' }, if: null, do: [{ do: 'set', var: 'x', value: '1' }] }] });
+    });
+    expect(keys(diagnoseLevel(project, sceneId, registry))).not.toContain('no-player');
+  });
+
   it('a water script that slows itself instead of what touches it', () => {
     const problems = check((b) => {
       const w = b.place('Stone');

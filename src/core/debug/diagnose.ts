@@ -36,6 +36,12 @@ interface Placed {
 }
 
 
+/** A script that reacts to the keys (a key handler, or key()/pressed() in an expression). */
+function readsKeys(script: BehaviorScript): boolean {
+  const text = JSON.stringify(script.handlers);
+  return text.includes('"on":"key"') || /\b(key|pressed)\(/.test(text);
+}
+
 export function diagnoseLevel(project: Project, sceneId: Id, registry: ComponentRegistry): Problem[] {
   const scene = project.scenes.find((s) => s.id === sceneId);
   if (!scene) return [];
@@ -69,7 +75,9 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
 
   // ---- the player
   const players = placed.filter((p) => has(p, 'CharacterController'));
-  if (placed.length && !players.length) add('no-player', 'warning', 'There is no player in this level (nothing has a Character Controller), so nothing can be controlled in play. Each level needs its own copy: place the Player object here, on solid ground at the start.', []);
+  // A game played through its scripts (a falling-block puzzle, a board game: keys read by a script) needs no player.
+  const scriptControlled = placed.some((p) => p.r.scripts.some(readsKeys));
+  if (placed.length && !players.length && !scriptControlled) add('no-player', 'warning', 'There is no player in this level (nothing has a Character Controller), so nothing can be controlled in play. Each level needs its own copy: place the Player object here, on solid ground at the start.', []);
 
   // ---- what gives which items
   const itemsGiven = new Set<string>();

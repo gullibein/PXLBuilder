@@ -243,7 +243,7 @@ export interface StatementInfo {
 export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   set: { example: '{"do":"set","var":"hits","value":"hits + 1"}', doc: 'set a variable of this script; with "on": an expression for another entity, set its variable of that name' },
   if: { example: '{"do":"if","cond":"dist(player) < 100","then":[…],"else":[…]}', doc: 'choose' },
-  each: { example: '{"do":"each","tag":"enemy","then":[{"do":"damage","target":"it","amount":"1"}]}', doc: 'run "then" for every living entity with the tag, as "it" (at most 200)' },
+  each: { example: '{"do":"each","tag":"enemy","then":[{"do":"damage","target":"it","amount":"1"}]}', doc: 'run "then" for every living entity with the tag, as "it" (at most 2000)' },
   velocity: { example: '{"do":"velocity","x":"-80","y":null}', doc: 'set speed in px/s; null keeps that axis. Things with gravity keep falling; set y only to fly or launch' },
   push: { example: '{"do":"push","x":"0","y":"-200","on":"other"}', doc: 'add to speed, divided by its PhysicsBody mass (here: bounce whoever touched it upward; mass 2 goes half as fast)' },
   move_toward: { example: '{"do":"move_toward","target":"player","speed":"90"}', doc: 'head for an entity: walkers (with gravity) only sideways, flyers (gravity 0) straight at it; sets facing' },
@@ -284,7 +284,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   add_component: { example: '{"do":"add_component","component":"Climbable","on":null}', doc: 'give it a component (default values; then set_field to tune it): becomes climbable, stompable, collectible, a patroller…' },
   remove_component: { example: '{"do":"remove_component","component":"Damage","on":"other"}', doc: 'take a component away (it stops hurting, stops being solid without Collider, …)' },
   tag: { example: '{"do":"tag","tag":"enemy","add":true,"on":null}', doc: 'add (add true) or remove (add false) a tag (tags decide what hurts what, what a stomp or a door needs, who is "player"…)' },
-  repeat: { example: '{"do":"repeat","times":"self.max_health","then":[…]}', doc: 'run "then" N times (at most 200); inside, "i" counts 0, 1, 2…' },
+  repeat: { example: '{"do":"repeat","times":"self.max_health","then":[…]}', doc: 'run "then" N times (at most 2000); inside, "i" counts 0, 1, 2…' },
   draw: {
     example: '{"do":"draw","id":"heart{i}","shape":"sprite","anchor":"top_left","x":"16 + i * 40","y":"16","w":"32","h":"32","text":null,"size":null,"color":"#ff4d6d","object":"<library object id>","alpha":null}',
     doc: 'draw on the screen, on top of the game, until erased or drawn again with the same id ("{expression}" parts in id and text are filled in, so "heart{i}" makes one per repeat). shape: text (text, size = font px, color), rect / circle (w, h, color), sprite (a library object\'s look, w × h). anchor: where x, y count from (a screen corner, side or the center; x grows right, y down; the drawing lines up with that corner, e.g. "top_right" with x "-16" sits 16 px from the right edge), or "world" for level coordinates (moves with the camera: labels over things). alpha: 0..1 (null = 1). Use it for health bars, hearts, scores, timers, labels',

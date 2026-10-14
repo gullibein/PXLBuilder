@@ -172,6 +172,24 @@ describe('a falling-block puzzle from scripts (group statements)', () => {
     // Row 19 is gone; the block from row 18 is in row 19 now.
     expect(g.cells('locked')).toEqual(['0,19']);
   });
+
+  it('clearing four rows of a nearly full board is done in one go (the game carries on)', () => {
+    // Columns 0..8 filled from row 4 down: 144 settled blocks; a standing I piece in column 9 clears rows 16..19.
+    const preset = [];
+    for (let col = 0; col < 9; col++) for (let row = 4; row < 20; row++) preset.push({ col, row });
+    const g = game(preset);
+    g.rt.update(1 / 60, new InputState());
+    g.tap('up');
+    for (let i = 0; i < 6; i++) g.tap('right');
+    expect(g.cols('active')).toEqual([9]);
+    g.wait(2.5);
+    expect(g.rt.scripts.errors).toEqual([]);
+    expect(getVar(g.board, 'cleared')).toBe(4);
+    // What was above dropped four rows: column 0 (where no new piece lands) is now rows 8..19; and play goes on.
+    expect(g.cells('locked').filter((c) => c.startsWith('0,'))).toHaveLength(12);
+    expect(g.cells('locked').filter((c) => c.startsWith('9,'))).toHaveLength(0);
+    expect(g.cells('active')).toHaveLength(4);
+  });
 });
 
 function getVar(e: { scripts: { vars: Map<string, unknown> }[] } | unknown, name: string): unknown {

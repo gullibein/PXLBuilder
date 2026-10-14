@@ -39,9 +39,15 @@ export interface ScriptError {
   message: string;
 }
 
-const RUN_BUDGET = 2000;
-const STEP_BUDGET = 60000;
-const MAX_EACH = 200;
+/**
+ * Statements one handler run, and all scripts in one step, may do: only there to stop a runaway script. A
+ * statement takes well under a microsecond, so even the step budget is a few dozen milliseconds, while real games
+ * (a falling-block board clearing rows: each row × each block) stay far below it.
+ */
+const RUN_BUDGET = 50_000;
+const STEP_BUDGET = 150_000;
+/** Most things one "each" goes through (and times a "repeat" runs). */
+const MAX_EACH = 2000;
 const MAX_STATE_CHAIN = 10;
 const MAX_ERRORS = 30;
 
@@ -239,7 +245,11 @@ export class ScriptSystem {
         this.exec(truthy(this.eval(s.cond, ctx)) ? s.then : s.else, ctx, chain);
         break;
       case 'each': {
-        const all = this.rt.entities.filter((o) => o.alive && o.tags.includes(s.tag)).slice(0, MAX_EACH);
+        let all = this.rt.entities.filter((o) => o.alive && o.tags.includes(s.tag));
+        if (all.length > MAX_EACH) {
+          this.report(e, ctx.inst, `"each ${s.tag}" went through only the first ${MAX_EACH} of ${all.length}`);
+          all = all.slice(0, MAX_EACH);
+        }
         const prev = ctx.it;
         for (const o of all) {
           ctx.it = o;

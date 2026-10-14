@@ -974,7 +974,8 @@ describe('behavior scripts', () => {
         handlers: [
           {
             when: { on: 'tick' },
-            do: [{ do: 'each', tag: 'platform', then: [{ do: 'each', tag: 'platform', then: [{ do: 'each', tag: 'platform', then: [{ do: 'set', var: 'n', value: 'n + 1' }] }] }] }],
+            // 200 × 200 × 200 statements every step: a runaway.
+            do: [{ do: 'repeat', times: '200', then: [{ do: 'repeat', times: '200', then: [{ do: 'repeat', times: '200', then: [{ do: 'set', var: 'n', value: 'n + 1' }] }] }] }],
           },
         ],
       }),
