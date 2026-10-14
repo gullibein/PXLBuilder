@@ -848,11 +848,11 @@ try {
     const editor = page.getByTestId('sound-editor');
     const cv = page.getByTestId('sound-canvas');
     const notesNow = async () => JSON.parse((await cv.getAttribute('data-notes')) ?? '[]');
-    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-empty').isVisible()), 'the ♪ at the top opens the sound editor; with no sounds yet it says so and offers + New sound');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && (await page.getByTestId('sound-editor-play').isDisabled()) && (await page.getByTestId('sound-delete').isDisabled()) && !(await page.getByTestId('sound-editor-new').isDisabled()), 'the ♪ at the top opens the sound editor; with no sound open everything is greyed out but + New');
     await page.getByTestId('sound-editor-close').click();
     await check(async () => (await soundCount()) === before, 'opening it makes no sound by itself');
     await page.getByTestId('sound-editor-toggle').click();
-    await page.getByTestId('sound-empty-new').click();
+    await page.getByTestId('sound-editor-new').click();
     await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0 && (await page.getByTestId('sound-delete').isVisible()), '+ New sound makes a new, silent sound (its trash right next to its name)');
     // Draw: the square wave at volume 5; a sweep over notes 1–4 rising from C4 to C5 (measured once the dialog's opening zoom is over).
     await page.waitForTimeout(300);
@@ -921,12 +921,13 @@ try {
     await page.getByTestId('redo').click();
     await page.getByTestId('sound-edit').first().click();
     await page.getByTestId('sound-delete').click();
-    await check(async () => (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'the trash next to the name asks "Delete sound?" first');
+    await check(async () => (await page.getByRole('alertdialog', { name: 'Delete sound?' }).isVisible()) && (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'the trash next to the name asks "Delete sound?" first, in a dialog');
     await page.getByTestId('sound-delete-cancel').click();
     await check(async () => (await page.getByTestId('sound-delete-confirm').count()) === 0 && (await page.getByTestId('sound-editor').isVisible()), 'Cancel keeps it');
     await page.getByTestId('sound-delete').click();
     await page.getByTestId('sound-delete-yes').click();
-    await check(async () => (await page.getByTestId('sound-editor').count()) === 0 && !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Delete removes the sound and closes the editor');
+    await check(async () => (await page.getByTestId('sound-editor').isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Delete removes the sound; the editor stays open, greyed out until + New');
+    await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo brings a deleted sound back');
     await page.getByTestId('undo').click();
@@ -936,7 +937,17 @@ try {
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('sound-editor-toggle').click();
     await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1', 'the ♪ opens the sound last edited');
+    // + New next to the name (left of the trash) makes another one.
+    await check(async () => {
+      const n = await page.getByTestId('sound-editor-new').boundingBox();
+      const name = await page.getByTestId('sound-name').boundingBox();
+      const trash = await page.getByTestId('sound-delete').boundingBox();
+      return n.x > name.x + name.width - 1 && trash.x > n.x + n.width - 1;
+    }, '+ New sits right of the name, the trash right of it');
+    await page.getByTestId('sound-editor-new').click();
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 2', '+ New in the editor makes another sound and opens it');
     await page.getByTestId('sound-editor-close').click();
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     if (await page.getByTestId('sounds-panel').count()) await page.getByTestId('dock-sounds').click();
   }

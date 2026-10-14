@@ -5,7 +5,8 @@
  * user can take turns on the same sound.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
+import { createPortal } from 'react-dom';
+import { emptySteps, isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
 import { playSound, type Playing } from '../audio/synth';
 import { openNewSound, renameSound, updateSound } from '../sounds';
 import { useEditor } from '../store';
@@ -31,6 +32,9 @@ const H = FX_TOP + FX_H;
 
 type Area = 'pitch' | 'volume' | 'effect';
 
+/** What the editor shows (greyed out) when no sound is open. */
+const NO_SOUND = emptySteps();
+
 /** The sound last open in the editor (the ♪ at the top opens it again). */
 let lastSound: string | null = null;
 
@@ -40,13 +44,13 @@ export function SoundEditor() {
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   // What is drawn with, kept while switching between sounds.
   const pens = useState({ wave: 3, volume: 5, effect: 0 });
-  // 'open' (the ♪): the sound last edited, else the game's first sound, else none yet.
-  const shownId = target === 'open' ? ((sounds.find((a) => a.id === lastSound) ?? sounds[0])?.id ?? null) : target;
+  // 'open' (the ♪): the sound last edited, else the game's first sound, else none yet. 'none': no sound open.
+  const shownId = target === 'open' ? ((sounds.find((a) => a.id === lastSound) ?? sounds[0])?.id ?? null) : target === 'none' ? null : target;
   const asset = shownId ? sounds.find((a) => a.id === shownId) : undefined;
   const close = () => useEditor.getState().setSoundEditor(null);
   useEffect(() => {
-    // The sound was deleted (or undone away): nothing to edit.
-    if (target && target !== 'open' && !asset) close();
+    // The sound was deleted (or undone away): the editor stays, with no sound open.
+    if (target && target !== 'open' && target !== 'none' && !asset) useEditor.getState().setSoundEditor('none');
   }, [target, asset === undefined]);
   if (asset) lastSound = asset.id;
   if (!target) return null;
@@ -58,7 +62,7 @@ export function SoundEditor() {
       value={asset?.id ?? ''}
       onChange={(e) => (e.target.value === '+new' ? openNewSound() : useEditor.getState().setSoundEditor(e.target.value))}
     >
-      {!asset && <option value="">No sounds yet</option>}
+      {!asset && <option value="">{sounds.length ? 'No sound open' : 'No sounds yet'}</option>}
       {sounds.map((a) => (
         <option key={a.id} value={a.id}>
           {a.name}
@@ -72,19 +76,7 @@ export function SoundEditor() {
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <section className="dialog sound-editor" role="dialog" aria-label="Sound editor" data-testid="sound-editor">
         {!asset ? (
-          <>
-            <header className="bg-head">
-              <span className="sound-title">Sound {picker}</span>
-              <CloseButton onClose={close} />
-            </header>
-            <div className="sound-empty" data-testid="sound-empty">
-              <p>This game has no sounds yet.</p>
-              <button className="primary-btn" data-testid="sound-empty-new" onClick={openNewSound}>
-                + New sound
-              </button>
-              <p className="muted small">Or ask the AI for one on anything ("the duck quacks when the player touches it") and fine-tune it here.</p>
-            </div>
-          </>
+          <Editor key="none" off pens={pens} picker={picker} name="" sound={NO_SOUND} onChange={() => undefined} onRename={() => null} onDelete={() => undefined} onClose={close} />
         ) : isStepSound(asset.synth) ? (
           <Editor
             key={asset.id}
@@ -96,7 +88,8 @@ export function SoundEditor() {
             onRename={(name) => renameSound(asset.id, name)}
             onDelete={() => {
               const { edit, setSoundEditor } = useEditor.getState();
-              setSoundEditor(null);
+              // The editor stays open, with no sound in it (New makes another).
+              setSoundEditor('none');
               edit(`Delete sound ${asset.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== asset.id)));
             }}
             onClose={close}
@@ -165,9 +158,11 @@ interface EditorProps {
   /** Deletes the sound (after asking). */
   onDelete: () => void;
   onClose: () => void;
+  /** No sound open: everything greyed out but the menu, + New and close. */
+  off?: boolean;
 }
 
-function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onDelete, onClose }: EditorProps) {
+function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onDelete, onClose, off = false }: EditorProps) {
   const [confirming, setConfirming] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const { wave, volume, effect } = pen;
@@ -395,14 +390,14 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
   useEffect(() => {
     const onSpace = (e: KeyboardEvent) => {
       if (e.key !== ' ') return;
-      if ((e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"]')) return;
+      if ((e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"]')) return;
       e.preventDefault();
       e.stopPropagation();
       if (!e.repeat) toggle.current();
     };
     const swallow = (e: KeyboardEvent) => {
       // (A focused button would otherwise click on the key's release.)
-      if (e.key === ' ' && !(e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"]')) e.preventDefault();
+      if (e.key === ' ' && !(e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"]')) e.preventDefault();
     };
     window.addEventListener('keydown', onSpace, true);
     window.addEventListener('keyup', swallow, true);
@@ -415,7 +410,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
   const info = hover !== null ? notes[hover] : null;
   const count = audibleNotes({ type: 'steps', speed: sound.speed, notes });
   return (
-    <div className="se-body" tabIndex={-1} data-testid="sound-editor-body">
+    <div className={`se-body${off ? ' off' : ''}`} tabIndex={-1} data-testid="sound-editor-body" data-off={off ? 'true' : undefined}>
       <header className="bg-head">
         <span className="sound-title">
           Sound
@@ -423,6 +418,8 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
           <input
             className="sound-name"
             value={title}
+            disabled={off}
+            placeholder={off ? 'No sound open' : ''}
             aria-label="Sound name"
             data-testid="sound-name"
             onChange={(e) => setTitle(e.target.value)}
@@ -432,7 +429,10 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
               e.stopPropagation();
             }}
           />
-          <button className="icon-btn" aria-label="Delete sound" title="Delete this sound" data-testid="sound-delete" onClick={() => setConfirming(true)}>
+          <button className="chip-btn sound-new-btn" title="Make a new sound" data-testid="sound-editor-new" onClick={() => void openNewSound()}>
+            + New
+          </button>
+          <button className="icon-btn" aria-label="Delete sound" title="Delete this sound" data-testid="sound-delete" disabled={off} onClick={() => setConfirming(true)}>
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -441,19 +441,8 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         <CloseButton onClose={onClose} />
       </header>
       {nameError && <p className="error small">{nameError}</p>}
-      {confirming && (
-        <div className="sound-confirm" role="alertdialog" aria-label="Delete sound?" data-testid="sound-delete-confirm">
-          <span>
-            <b>Delete sound?</b> <span className="muted small">“{name}” goes from the game (scripts that play it report it missing). Undo brings it back.</span>
-          </span>
-          <button className="chip-btn" data-testid="sound-delete-cancel" onClick={() => setConfirming(false)} autoFocus>
-            Cancel
-          </button>
-          <button className="danger-btn" data-testid="sound-delete-yes" onClick={onDelete}>
-            Delete
-          </button>
-        </div>
-      )}
+      {confirming && <DeleteConfirm name={name} onCancel={() => setConfirming(false)} onDelete={() => (setConfirming(false), onDelete())} />}
+      <fieldset className="se-fieldset" disabled={off}>
       <div className="sound-tools">
         <button className="primary-btn sound-play" data-testid="sound-editor-play" onClick={() => (playing ? stop() : play())} disabled={!count && !playing} title="Play (Space)">
           {playing ? '■ Stop' : '▶ Play'}
@@ -533,7 +522,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         width={W}
         height={H}
         data-testid="sound-canvas"
-        onPointerDown={onDown}
+        onPointerDown={(e) => !off && onDown(e)}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
@@ -543,7 +532,44 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
       <p className="sound-info small" data-testid="sound-info">
         {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : isEmpty(info) ? `Note ${hover! + 1}: empty` : `Note ${hover! + 1}: off (keeps ${pitchName(info[0])} · ${STEP_WAVES[info[1]]}: give it a volume to hear it again)`) : ' '}
       </p>
+      </fieldset>
       <p className="muted small sound-help">Draw notes in the top part (right-click or Alt deletes them), their volume in the middle strip (right-click turns a note off but keeps it), and the chosen effect in the bottom row. Double-click a wave, volume or effect (or right-click it → All notes) to put it on every note. Space plays; Ctrl+Z undoes.</p>
     </div>
+  );
+}
+
+/** "Delete sound?": a dialog over the editor. Esc or Cancel keeps it. */
+function DeleteConfirm({ name, onCancel, onDelete }: { name: string; onCancel: () => void; onDelete: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener('keydown', esc, true);
+    return () => window.removeEventListener('keydown', esc, true);
+  }, [onCancel]);
+  return createPortal(
+    <div className="dialog-backdrop confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <section className="dialog" role="alertdialog" aria-label="Delete sound?" data-testid="sound-delete-confirm">
+        <header className="bg-head">
+          <span>Delete sound?</span>
+        </header>
+        <p className="dialog-text">
+          “{name}” goes from the game, and scripts that play it report it missing. Undo brings it back.
+        </p>
+        <footer className="se-footer">
+          <span className="grow" />
+          <button className="chip-btn" data-testid="sound-delete-cancel" onClick={onCancel} autoFocus>
+            Cancel
+          </button>
+          <button className="danger-btn" data-testid="sound-delete-yes" onClick={onDelete}>
+            Delete
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
   );
 }
