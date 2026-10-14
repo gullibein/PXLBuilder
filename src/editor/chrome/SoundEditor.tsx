@@ -5,7 +5,7 @@
  * user can take turns on the same sound.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { emptySteps, isStepSound, MAX_NOTES, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
+import { emptySteps, isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
 import { playSound, type Playing } from '../audio/synth';
 import { addSound, newSoundName, renameSound, soundNameProblem, updateSound } from '../sounds';
 import { useEditor } from '../store';
@@ -56,6 +56,7 @@ export function SoundEditor() {
       {sounds.map((a) => (
         <option key={a.id} value={a.id}>
           {a.name}
+          {isStepSound(a.synth) ? '' : ' (older)'}
         </option>
       ))}
       {target !== 'new' && <option value="new">+ New sound</option>}
@@ -176,7 +177,39 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
 
   useEffect(() => setTitle(name), [name]);
 
-  const commit = (next: StepNote[], label: string) => onChange({ type: 'steps', speed: sound.speed, notes: next }, label);
+  const commit = (next: StepNote[], label: string) => onChange({ ...sound, notes: next }, label);
+  /** A pen's value on every note that sounds (silent notes stay silent). */
+  const applyAll = (kind: 'wave' | 'volume' | 'effect', value: number) => {
+    const slot = kind === 'wave' ? 1 : kind === 'volume' ? 2 : 3;
+    const next = notes.map((n) => (n[2] > 0 ? (n.map((x, i) => (i === slot ? value : x)) as StepNote) : n));
+    const what = kind === 'wave' ? STEP_WAVES[value] : kind === 'volume' ? `volume ${value}` : `effect ${STEP_EFFECTS[value]}`;
+    if (next.some((n, i) => n.join() !== notes[i].join())) commit(next, `${what} on all notes`);
+  };
+  const [menu, setMenu] = useState<{ x: number; y: number; kind: 'wave' | 'volume' | 'effect'; value: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest?.('.pen-menu')) setMenu(null);
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [menu]);
+  /** Double-click: on all notes; right-click: a menu offering it. */
+  const penProps = (kind: 'wave' | 'volume' | 'effect', value: number) => ({
+    onDoubleClick: () => applyAll(kind, value),
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (kind === 'wave') setWave(value);
+      else if (kind === 'volume') setVolume(value);
+      else setEffect(value);
+      const box = (e.currentTarget as HTMLElement).closest('.se-body')!.getBoundingClientRect();
+      setMenu({ x: e.clientX - box.left, y: e.clientY - box.top, kind, value });
+    },
+  });
+  const setSmooth = (smooth: number) => {
+    const v = Math.max(0, Math.min(MAX_SMOOTH, smooth));
+    if (v !== (sound.smooth ?? 0)) onChange({ ...sound, notes: fullNotes(sound), smooth: v }, `smooth ${v}`);
+  };
   const setSpeed = (speed: number) => {
     const s = Math.max(1, Math.min(MAX_SPEED, Math.round(speed) || 1));
     if (s !== sound.speed) onChange({ ...sound, notes: fullNotes(sound), speed: s }, `speed ${s}`);
@@ -189,7 +222,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
   };
   const play = () => {
     stop();
-    const current: StepSound = { type: 'steps', speed: sound.speed, notes };
+    const current: StepSound = { ...sound, notes };
     if (!audibleNotes(current)) return;
     const handle = playSound(current);
     if (handle) setPlaying({ handle, sound: current });
@@ -253,8 +286,9 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x, top, COL - 4, 1);
       } else {
-        ctx.fillStyle = '#3a4258';
-        ctx.fillRect(x + (COL - 4) / 2 - 1, top + 1, 2, 2);
+        // A silent note keeps its pitch and wave (raise its volume to hear it again): a faint outline there.
+        ctx.strokeStyle = '#3a4258';
+        ctx.strokeRect(x + 0.5, top + 0.5, COL - 5, ROW - 1);
       }
       // Volume.
       ctx.fillStyle = v > 0 ? WAVE_COLORS[w] : '#2a3142';
@@ -393,6 +427,18 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
             +
           </button>
         </span>
+        <span className="sound-speed" title="Softens the sound: filters away its harsh highs (good on noise)">
+          Smooth
+          <button className="chip-btn" aria-label="Less smooth" data-testid="sound-rougher" onClick={() => setSmooth((sound.smooth ?? 0) - 1)} disabled={!sound.smooth}>
+            −
+          </button>
+          <span className="n" data-testid="sound-smooth">
+            {sound.smooth ?? 0}
+          </span>
+          <button className="chip-btn" aria-label="Smoother" data-testid="sound-smoother" onClick={() => setSmooth((sound.smooth ?? 0) + 1)} disabled={(sound.smooth ?? 0) >= MAX_SMOOTH}>
+            +
+          </button>
+        </span>
         <span className="muted small">
           {count} note{count === 1 ? '' : 's'} · {stepSeconds({ type: 'steps', speed: sound.speed, notes }).toFixed(2)} s
         </span>
@@ -401,7 +447,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         <span className="pen-label">Wave</span>
         <span className="pen-group" role="radiogroup" aria-label="Wave">
           {STEP_WAVES.map((w, i) => (
-            <button key={w} role="radio" aria-checked={wave === i} className={`pen${wave === i ? ' on' : ''}`} title={w} aria-label={w} data-testid={`sound-wave-${i}`} onClick={() => setWave(i)}>
+            <button key={w} role="radio" aria-checked={wave === i} className={`pen${wave === i ? ' on' : ''}`} title={w} aria-label={w} data-testid={`sound-wave-${i}`} onClick={() => setWave(i)} {...penProps('wave', i)}>
               <WaveIcon wave={i} />
             </button>
           ))}
@@ -409,7 +455,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         <span className="pen-label">Volume</span>
         <span className="pen-group" role="radiogroup" aria-label="Volume">
           {Array.from({ length: MAX_VOLUME }, (_, k) => k + 1).map((v) => (
-            <button key={v} role="radio" aria-checked={volume === v} className={`pen small-pen${volume === v ? ' on' : ''}`} data-testid={`sound-volume-${v}`} onClick={() => setVolume(v)}>
+            <button key={v} role="radio" aria-checked={volume === v} className={`pen small-pen${volume === v ? ' on' : ''}`} data-testid={`sound-volume-${v}`} onClick={() => setVolume(v)} {...penProps('volume', v)}>
               {v}
             </button>
           ))}
@@ -417,12 +463,27 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         <span className="pen-label">Effect</span>
         <span className="pen-group" role="radiogroup" aria-label="Effect">
           {STEP_EFFECTS.map((fx, i) => (
-            <button key={fx} role="radio" aria-checked={effect === i} className={`pen small-pen${effect === i ? ' on' : ''}`} title={fx} aria-label={fx} data-testid={`sound-effect-${i}`} onClick={() => setEffect(i)}>
+            <button key={fx} role="radio" aria-checked={effect === i} className={`pen small-pen${effect === i ? ' on' : ''}`} title={fx} aria-label={fx} data-testid={`sound-effect-${i}`} onClick={() => setEffect(i)} {...penProps('effect', i)}>
               {EFFECT_MARKS[i]}
             </button>
           ))}
         </span>
       </div>
+      {menu && (
+        <div className="context-menu pen-menu" role="menu" style={{ left: menu.x, top: menu.y }} data-testid="pen-menu">
+          <button
+            className="menu-row"
+            role="menuitem"
+            data-testid="pen-all"
+            onClick={() => {
+              applyAll(menu.kind, menu.value);
+              setMenu(null);
+            }}
+          >
+            All notes: {menu.kind === 'wave' ? STEP_WAVES[menu.value] : menu.kind === 'volume' ? `volume ${menu.value}` : STEP_EFFECTS[menu.value]}
+          </button>
+        </div>
+      )}
       <canvas
         ref={canvas}
         className="sound-canvas"
@@ -437,9 +498,9 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
         onContextMenu={(e) => e.preventDefault()}
       />
       <p className="sound-info small" data-testid="sound-info">
-        {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : `Note ${hover! + 1}: silent`) : ' '}
+        {info ? (info[2] ? `Note ${hover! + 1}: ${pitchName(info[0])} · ${STEP_WAVES[info[1]]} · volume ${info[2]}${info[3] ? ` · ${STEP_EFFECTS[info[3]]}` : ''}` : `Note ${hover! + 1}: silent (keeps ${pitchName(info[0])} · ${STEP_WAVES[info[1]]}: give it a volume to hear it again)`) : ' '}
       </p>
-      <p className="muted small sound-help">Draw notes in the top part (right-click or Alt silences them), their volume in the middle strip, and the chosen effect in the bottom row. Space plays; Ctrl+Z undoes.</p>
+      <p className="muted small sound-help">Draw notes in the top part (right-click or Alt silences them), their volume in the middle strip, and the chosen effect in the bottom row. Double-click a wave, volume or effect (or right-click it → All notes) to put it on every note. Space plays; Ctrl+Z undoes.</p>
     </div>
   );
 }

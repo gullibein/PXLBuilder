@@ -33,6 +33,8 @@
   --radius: 16px;
   --shadow: 0 12px 36px rgba(10, 8, 40, 0.35);
   color-scheme: dark;
+  /* Dropdown lists: the browser draws them, often light; their rows get the editor's colors. */
+  --option-bg: #1b2030;
   font-family: var(--font-ui);
   font-size: 13px;
   color: var(--text);
@@ -698,3 +700,6 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 /* The ✦ above the selection: opens its AI prompt card. */
 .ai-star { position: absolute; left: 0; top: 0; z-index: 15; pointer-events: auto; width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--accent-hi); font: 11px/1 var(--font-ui); box-shadow: var(--shadow); cursor: pointer; animation: pop-in 140ms ease-out; }
 .ai-star:hover { background: var(--accent); color: #fff; }
+
+/* Dropdown rows in the editor's colors (dark list, light text), not the browser's white list. */
+select option, select optgroup { background-color: var(--option-bg); color: var(--text); }

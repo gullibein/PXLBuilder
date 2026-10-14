@@ -879,6 +879,15 @@ try {
     await check(async () => (await notesNow())[1][2] === 0, 'right-click silences a note');
     await page.getByTestId('sound-slower').click();
     await check(async () => (await page.getByTestId('sound-speed').innerText()) === '13', 'speed can be changed');
+    // A wave on every note at once: double-click it. A volume: right-click → All notes. (Silent notes stay silent.)
+    await page.getByTestId('sound-wave-0').dblclick();
+    await check(async () => (await notesNow()).filter((n) => n[2] > 0).every((n) => n[1] === 0) && (await notesNow())[1][2] === 0, 'double-clicking a wave puts it on every note that sounds');
+    await page.getByTestId('sound-volume-7').click({ button: 'right' });
+    await page.getByTestId('pen-all').click();
+    await check(async () => JSON.stringify((await notesNow()).map((n) => n[2])) === JSON.stringify([7, 0, 7, 7]), 'right-click a volume → All notes sets it on every note that sounds');
+    await page.getByTestId('sound-smoother').click();
+    await page.getByTestId('sound-smoother').click();
+    await check(async () => (await page.getByTestId('sound-smooth').innerText()) === '2', 'Smooth softens the sound (0–7)');
     await page.getByTestId('sound-name').fill('Rise');
     await page.getByTestId('sound-name').press('Enter');
     await page.getByTestId('sound-editor-play').click();
@@ -888,10 +897,10 @@ try {
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('dock-sounds').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
-    // Every change is one undo step: rename, speed, silence, effect, volume, and the first notes (which made it).
+    // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, silence, effect, volume, and the first notes (which made it).
     await page.getByTestId('undo').click();
     await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
-    for (let i = 0; i < 5; i++) await page.getByTestId('undo').click();
+    for (let i = 0; i < 9; i++) await page.getByTestId('undo').click();
     await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
     // + New sound in the Sounds tab opens the editor on a new sound too.
     await page.getByTestId('sound-new').click();

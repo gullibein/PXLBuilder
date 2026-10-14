@@ -53,6 +53,12 @@ describe('sounds', () => {
     const seconds = (note * 0.8) / rate;
     expect(flips / seconds).toBeGreaterThan(2 * 440 * 0.9);
     expect(flips / seconds).toBeLessThan(2 * 440 * 1.1);
+    // Smooth softens it: noise loses most of its sample-to-sample jumps (its harsh highs).
+    const rough = renderSteps({ type: 'steps', speed: 24, notes: [[40, 6, 7, 0]] }, rate, () => 0.5 + 0.5 * Math.sin(Math.random() * 1e6));
+    const soft = renderSteps({ type: 'steps', speed: 24, smooth: 5, notes: [[40, 6, 7, 0]] }, rate, () => 0.5 + 0.5 * Math.sin(Math.random() * 1e6));
+    const jumps = (a: Float32Array) => a.slice(400, -400).reduce((n, x, k, all) => (k ? n + Math.abs(x - all[k - 1]) : n), 0);
+    expect(jumps(soft)).toBeLessThan(jumps(rough) * 0.5);
+    expect(parseSteps({ type: 'steps', speed: 8, smooth: 8, notes: [[24, 6, 5, 0]] })).toEqual({ error: expect.stringMatching(/smooth/) });
     // Every wave and effect renders without going out of range.
     for (let w = 0; w < 8; w++)
       for (let e = 0; e < 6; e++) {

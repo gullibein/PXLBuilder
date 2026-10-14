@@ -25,7 +25,11 @@ export interface StepSound {
   /** How long each note lasts, in 1/120 s (1 = fastest). */
   speed: number;
   notes: StepNote[];
+  /** 0–7: how much the sound is softened (its harsh highs filtered away; noise becomes a rumble or a whoosh). Missing: 0. */
+  smooth?: number;
 }
+
+export const MAX_SMOOTH = 7;
 
 const note = z.tuple([
   z.number().int().min(0).max(PITCHES - 1),
@@ -38,6 +42,7 @@ export const stepSoundSchema = z.object({
   type: z.literal('steps'),
   speed: z.number().int().min(1).max(MAX_SPEED),
   notes: z.array(note).min(1).max(MAX_NOTES),
+  smooth: z.number().int().min(0).max(7).optional(),
 });
 
 export function isStepSound(x: unknown): x is StepSound {
@@ -143,6 +148,19 @@ export function renderSteps(s: StepSound, sampleRate: number, random: () => numb
       }
       out[k] = x * vol * 0.4;
     }
+  }
+  // Smoothing: a low-pass filter (two passes), its cutoff lower the higher the setting (7: about 500 Hz).
+  const smoothing = Math.max(0, Math.min(MAX_SMOOTH, s.smooth ?? 0));
+  if (smoothing > 0) {
+    const cutoff = 8000 * 2 ** (-(smoothing - 1) * 0.66);
+    const a = 1 - Math.exp((-2 * Math.PI * cutoff) / sampleRate);
+    for (let pass = 0; pass < 2; pass++) {
+      let y = 0;
+      for (let k = 0; k < out.length; k++) out[k] = y += a * (out[k] - y);
+    }
+    // Filtering takes some loudness away: about half of it back, so a smoothed sound isn't much quieter.
+    const gain = 1 + smoothing * 0.12;
+    for (let k = 0; k < out.length; k++) out[k] = Math.max(-1, Math.min(1, out[k] * gain));
   }
   // The last few milliseconds fade out (no click at the end).
   const fade = Math.min(out.length, Math.round(0.005 * sampleRate));
