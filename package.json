@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p . && node scripts/build-player.mjs && vite build",
+    "build": "tsc -p . && node scripts/build-player.mjs && node scripts/build-runners.mjs && vite build",
     "build:player": "node scripts/build-player.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p .",

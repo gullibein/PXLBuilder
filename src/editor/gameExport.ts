@@ -3,7 +3,7 @@
  * editor, no server, no internet): the game player page (built by
  * scripts/build-player.mjs) with the game inside, as the same bundle Save writes.
  */
-import { projectToBundle } from '../core/serialization/serialize';
+import { gamePageFrom } from '../core/export/gamePage';
 import type { Project } from '../core/types';
 import { offerFile, slugify } from './persistence';
 
@@ -18,12 +18,7 @@ export function canExportGame(): boolean {
 /** The game's page: the player with the game in it (its name as the title). */
 export function gamePage(project: Project, options: { touchControls?: boolean } = {}): string {
   if (!template) throw new Error('The game player is not part of this build (run npm run build:player).');
-  // In a script element "<" is written as <, so nothing in the game (a name, a message) can end it early.
-  const json = JSON.stringify(projectToBundle(project)).replace(/</g, '\\u003c');
-  const title = project.name.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-  return template
-    .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
-    .replace('<!--PXL_GAME-->', () => `<script type="application/json" id="pxl-game"${options.touchControls ? ' data-touch="1"' : ''}>${json}</script>`);
+  return gamePageFrom(template, project, options);
 }
 
 export async function exportGame(project: Project, options: { touchControls?: boolean } = {}): Promise<'saved' | 'declined' | 'failed'> {

@@ -5,7 +5,7 @@ name: Desktop runners
 on:
   push:
     branches: ['main', 'claude/trusting-carson-2kvonz']
-    paths: ['runner/src/**', '.github/workflows/desktop-runners.yml']
+    paths: ['runner/src/**', 'src/core/export/**', '.github/workflows/desktop-runners.yml']
   workflow_dispatch:
 
 permissions:
@@ -44,8 +44,38 @@ jobs:
           name: runner-windows
           path: ${{ runner.temp }}/out
 
-  save:
+  # A game exported with the editor's code into each runner, unzipped and started on the real system.
+  test:
     needs: [macos, windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macos
+          - os: windows-2022
+            target: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: runner-${{ matrix.target }}
+          path: ${{ runner.temp }}/runners/${{ matrix.target }}
+      - run: npm ci
+      - run: node scripts/build-player.mjs
+      - name: Export a game, unzip it and start it
+        shell: bash
+        env:
+          PXL_DESKTOP_TEST: ${{ matrix.target }}
+          PXL_RUNNERS: ${{ runner.temp }}/runners
+        run: npx vitest run src/core/export/desktop.selftest.test.ts
+
+  save:
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

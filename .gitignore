@@ -8,3 +8,4 @@ test-results
 *.tsbuildinfo
 dist-player
 src/player/template.generated.ts
+src/core/export/runners.generated.ts
