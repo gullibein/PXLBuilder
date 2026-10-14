@@ -5,7 +5,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
 import { audio, playRecipe } from '../audio/synth';
-import { InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
+import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
 import { imageLookup } from '../images';
@@ -138,6 +138,7 @@ export function PlayView(props: PlayViewProps) {
       if (action) input.release(action);
     };
     const onBlur = () => input.releaseAll();
+    const pads = new GamepadReader();
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
@@ -149,6 +150,14 @@ export function PlayView(props: PlayViewProps) {
       frame = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
+      // Game controllers: what they hold now, as the same actions as the keys.
+      const pad = pads.read(browserPads());
+      input.holdOnly(pad.actions, 'pad');
+      canvas.dataset.pads = String(pad.connected);
+      if (pad.restart) {
+        runtime.restart();
+        finished = false;
+      }
       if (!finished) {
         runtime.update(dt, input);
         recorder.sample();
@@ -266,7 +275,7 @@ export function PlayView(props: PlayViewProps) {
         </div>
       )}
       {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} />}
-      {props.keyHints !== false && <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
+      {props.keyHints !== false && <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
     </div>
   );
 }

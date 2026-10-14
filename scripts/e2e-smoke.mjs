@@ -1192,6 +1192,38 @@ try {
   await check(jumped, 'Space jumps higher than one tile');
   await check(async () => (await ps())[2] === 1, 'and lands again');
   await page.screenshot({ path: `${OUT}/12-play.png` });
+  {
+    // A game controller (simulated: the browser's Gamepad API answering with one standard pad).
+    const padState = (buttons = [], x = 0) =>
+      page.evaluate(
+        ([down, ax]) => {
+          const pad = { connected: true, mapping: 'standard', axes: [ax, 0, 0, 0], buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: down.includes(i), value: down.includes(i) ? 1 : 0 })) };
+          navigator.getGamepads = () => [pad, null, null, null];
+        },
+        [buttons, x],
+      );
+    await padState();
+    await check(async () => (await play.getAttribute('data-pads')) === '1', 'a game controller is picked up while playing');
+    await page.waitForTimeout(300);
+    const [padX] = await ps();
+    await padState([], 1);
+    await page.waitForTimeout(500);
+    await padState();
+    await check(async () => (await ps())[0] > padX + 40, "the controller's left stick runs right");
+    await page.waitForTimeout(400);
+    await padState([0]);
+    let padJumped = false;
+    for (let i = 0; i < 30 && !padJumped; i++) {
+      await page.waitForTimeout(20);
+      padJumped = (await ps())[1] < 16 - 32;
+    }
+    await padState();
+    await check(padJumped, 'and its A (bottom) button jumps');
+    await check(async () => (await ps())[2] === 1, '(lands again)');
+    await page.evaluate(() => {
+      navigator.getGamepads = () => [null, null, null, null];
+    });
+  }
   // Play draws about 400 pixels tall (an even scale-up), the ⋯ menu switches to full sharpness and back.
   const pixels = async () => {
     const [w, h] = ((await play.getAttribute('data-pixels')) ?? '0x0').split('x').map(Number);

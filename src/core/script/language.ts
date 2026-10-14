@@ -313,7 +313,7 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
   every: { example: '{"on":"every","seconds":2}', doc: 'every N seconds (min 0.05)' },
   enter_state: { example: '{"on":"enter_state"}', doc: 'when the handler\'s "state" is entered (needs "state")' },
   event: { example: '{"on":"event","event":"touch_started","with":"player"}', doc: 'a game event this entity takes part in (as subject or other); "with" = only when the other party has that tag (null: anything)' },
-  key: { example: '{"on":"key","key":"fire","edge":"pressed"}', doc: 'player input: pressed (once), held (every step), released' },
+  key: { example: '{"on":"key","key":"fire","edge":"pressed"}', doc: 'player input: pressed (once), held (every step), released (the keys, touch buttons or a game controller: the same actions)' },
   signal: { example: '{"on":"signal","name":"alarm"}', doc: 'another script sent this signal' },
 };
 
