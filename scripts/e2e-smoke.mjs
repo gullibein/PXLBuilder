@@ -823,6 +823,17 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-sounds').click();
   await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'the Sounds tab (next to Objects) lists the sounds, to play them again');
+  await check(async () => {
+    const play = await page.getByTestId('sound-play').first().boundingBox();
+    const edit = await page.getByTestId('sound-edit').first().boundingBox();
+    const trash = await page.getByTestId('sound-list-delete').first().boundingBox();
+    const mid = (b) => b.y + b.height / 2;
+    return Math.abs(mid(trash) - mid(play)) < 4 && Math.abs(mid(edit) - mid(play)) < 4 && trash.x > edit.x;
+  }, 'each sound is one line: ▶ name, what it is, ✎ and a trash can');
+  await page.getByTestId('sound-list-delete').first().click();
+  await check(async () => (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'its trash asks "Delete sound?" in a dialog');
+  await page.getByTestId('sound-delete-cancel').click();
+  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), '(Cancel keeps it)');
   {
     // The AI's sound opens in the sound editor, note by note.
     await page.getByTestId('sound-edit').first().click();
@@ -839,8 +850,35 @@ try {
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
   await page.getByTestId('undo').click();
 
+  step = 'tabs close from the bars';
+  for (const [tab, panel] of [
+    ['dock-library', 'library-panel'],
+    ['dock-sounds', 'sounds-panel'],
+  ]) {
+    for (const [where, testId] of [
+      ['the top bar', 'project-menu'],
+      ['the tool bar', 'tool-select'],
+      ['the Console button', 'tray-toggle'],
+    ]) {
+      await page.getByTestId(tab).click();
+      await page.getByTestId(testId).click();
+      await check(async () => (await page.getByTestId(panel).count()) === 0, `${tab === 'dock-library' ? 'Objects' : 'Sounds'} closes when ${where} is used`);
+      await page.keyboard.press('Escape');
+      if (await page.getByTestId('tray-close').count()) await page.getByTestId('tray-close').click();
+    }
+    // And the × at its top right closes it.
+    await page.getByTestId(tab).click();
+    await page.getByTestId(panel).getByTestId('dock-panel-close').click();
+    await check(async () => (await page.getByTestId(panel).count()) === 0, `${tab === 'dock-library' ? 'Objects' : 'Sounds'} has a × at its top right that closes it`);
+  }
+
   step = 'sound editor';
   {
+    // (The Sounds tab closes when the top bar is used, e.g. Undo: opened again to read it.)
+    const listText = async () => {
+      if (!(await page.getByTestId('sounds-panel').count())) await page.getByTestId('dock-sounds').click();
+      return page.getByTestId('sound-list').innerText();
+    };
     // The note at the top opens the sound editor on a new sound; nothing is added to the game until a note is drawn.
     const soundCount = async () => (await page.getByTestId('dock-sounds').click(), (await page.getByTestId('sound-list').getByTestId('sound-play').count()) + (await page.getByTestId('dock-sounds').click(), 0));
     const before = await soundCount();
@@ -911,14 +949,15 @@ try {
     await check(async () => (await page.getByTestId('sound-pick').locator('option').allInnerTexts()).some((t) => t.includes('Rise')), 'the picker at the top lists the game\'s sounds');
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('dock-sounds').click();
-    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
+    await check(async () => (await listText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
     // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, delete, volume on, volume off, effect, volume, the first notes, and New sound.
     await page.getByTestId('undo').click();
-    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
+    await check(async () => (await listText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
     for (let i = 0; i < 12; i++) await page.getByTestId('undo').click();
-    await check(async () => !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), '(and the new sound itself)');
+    await check(async () => !(await listText()).includes('Sound 1'), '(and the new sound itself)');
     // The trash at the top deletes the sound, after asking.
     await page.getByTestId('redo').click();
+    await listText();
     await page.getByTestId('sound-edit').first().click();
     await page.getByTestId('sound-delete').click();
     await check(async () => (await page.getByRole('alertdialog', { name: 'Delete sound?' }).isVisible()) && (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'the trash next to the name asks "Delete sound?" first, in a dialog');
@@ -926,12 +965,13 @@ try {
     await check(async () => (await page.getByTestId('sound-delete-confirm').count()) === 0 && (await page.getByTestId('sound-editor').isVisible()), 'Cancel keeps it');
     await page.getByTestId('sound-delete').click();
     await page.getByTestId('sound-delete-yes').click();
-    await check(async () => (await page.getByTestId('sound-editor').isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && !(await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Delete removes the sound; the editor stays open, greyed out until + New');
+    await check(async () => (await page.getByTestId('sound-editor').isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && !(await listText()).includes('Sound 1'), 'Delete removes the sound; the editor stays open, greyed out until + New');
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('undo').click();
-    await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Sound 1'), 'Undo brings a deleted sound back');
+    await check(async () => (await listText()).includes('Sound 1'), 'Undo brings a deleted sound back');
     await page.getByTestId('undo').click();
     // + New sound in the Sounds tab makes one and opens it too; the ♪ then opens the sound last edited.
+    await listText();
     await page.getByTestId('sound-new').click();
     await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await page.getByTestId('sound-delete').isVisible()), '+ New sound in the Sounds tab makes a new sound and opens it');
     await page.getByTestId('sound-editor-close').click();

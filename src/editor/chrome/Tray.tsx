@@ -65,7 +65,7 @@ export function Tray() {
             )}
           </svg>
         </button>
-        <button className="icon-btn" aria-label="Close" onClick={() => setTray({ open: false })}>
+        <button className="icon-btn" aria-label="Close" data-testid="tray-close" onClick={() => setTray({ open: false })}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="m3.5 5.5 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
           </svg>

@@ -1,6 +1,7 @@
 import { PlayButton } from './TopBar';
 import { NoteIcon } from './NoteIcon';
 import { openNewSound } from '../sounds';
+import { DeleteConfirm } from './SoundEditor';
 import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
 import { playSound } from '../audio/synth';
@@ -27,6 +28,16 @@ export function Dock() {
   const dock = useEditor((s) => s.dock);
   const setDock = useEditor((s) => s.setDock);
   const playHere = useEditor((s) => s.layout.playButton === 'bottom');
+  // The Objects and Sounds tabs close as soon as the top bar, the tool bar or the AI History / Console / Debug
+  // buttons are used.
+  useEffect(() => {
+    if (dock !== 'library' && dock !== 'sounds') return;
+    const away = (e: PointerEvent) => {
+      if ((e.target as Element | null)?.closest?.('.topbar, .tool-panel, .tray-chips')) useEditor.getState().setDock(null);
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [dock]);
   return (
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
@@ -54,6 +65,25 @@ export function Dock() {
         {playHere && <PlayButton />}
       </nav>
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The × at the top right of a tab's panel. */
+function PanelClose() {
+  return (
+    <button className="icon-btn dock-panel-close" aria-label="Close" title="Close" data-testid="dock-panel-close" onClick={() => useEditor.getState().setDock(null)}>
+      <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -261,6 +291,7 @@ function ObjectsPanel() {
   const shown = category === 'All' ? definitions : definitions.filter((d) => categoryOf(d) === category);
   return (
     <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" aria-label="Objects">
+      <PanelClose />
       <button className="groups-toggle" data-testid="groups-toggle" aria-expanded={groupsShown} title={groupsShown ? 'Hide the groups' : 'Show the groups'} onClick={toggleGroups}>
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d={groupsShown ? 'M3 7.5 6 4.5l3 3' : 'M3 4.5 6 7.5l3-3'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -290,9 +321,11 @@ function ObjectsPanel() {
 /** The game's sounds: hear them, edit them in the sound editor, make new ones. */
 function SoundsPanel() {
   const assets = useEditor((s) => s.project.assets);
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   return (
     <section className="dock-panel sounds" data-testid="sounds-panel" aria-label="Sounds">
+      <PanelClose />
       <div className="sound-list" data-testid="sound-list">
         {sounds.map((a) => (
           <div key={a.id} className="sound-row">
@@ -303,13 +336,8 @@ function SoundsPanel() {
             <button className="icon-btn" aria-label={`Edit ${a.name}`} title="Edit this sound in the sound editor" data-testid="sound-edit" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
               ✎
             </button>
-            <button
-              className="icon-btn"
-              aria-label={`Delete ${a.name}`}
-              title="Delete this sound (scripts that play it report it missing)"
-              onClick={() => useEditor.getState().edit(`Delete sound ${a.name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== a.id)))}
-            >
-              ×
+            <button className="icon-btn" aria-label={`Delete ${a.name}`} title="Delete this sound" data-testid="sound-list-delete" onClick={() => setDeleting({ id: a.id, name: a.name })}>
+              <TrashIcon />
             </button>
           </div>
         ))}
@@ -318,6 +346,17 @@ function SoundsPanel() {
       <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => void openNewSound()}>
         + New sound
       </button>
+      {deleting && (
+        <DeleteConfirm
+          name={deleting.name}
+          onCancel={() => setDeleting(null)}
+          onDelete={() => {
+            const { id, name } = deleting;
+            setDeleting(null);
+            useEditor.getState().edit(`Delete sound ${name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== id)));
+          }}
+        />
+      )}
       <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>
     </section>
   );

@@ -539,7 +539,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
 }
 
 /** "Delete sound?": a dialog over the editor. Esc or Cancel keeps it. */
-function DeleteConfirm({ name, onCancel, onDelete }: { name: string; onCancel: () => void; onDelete: () => void }) {
+export function DeleteConfirm({ name, onCancel, onDelete }: { name: string; onCancel: () => void; onDelete: () => void }) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;

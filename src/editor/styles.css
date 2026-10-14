@@ -292,3 +292,8 @@
 .sound-new-btn { white-space: nowrap; flex: none; }
 .sound-title { flex-wrap: nowrap; min-width: 0; }
 .sound-title .sound-name { min-width: 6em; flex: 1 1 10em; }
+/* The × at the top right of the Objects and Sounds tabs. */
+.dock-panel { position: relative; }
+.dock-panel-close { position: absolute; top: 6px; right: 6px; z-index: 2; }
+.dock-panel.sounds { padding-top: 36px; }
+.dock-panel.sounds::before { content: 'Sounds'; position: absolute; top: 10px; left: 14px; font-weight: 700; font-size: 12.5px; color: var(--muted); }
