@@ -16,7 +16,7 @@ import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
 import { applyOperations, checkOperations, isEditorOperation, pruneOperations, type ApplyResult, type Operation } from '../../core/commands/operations';
-import { checkEditorSetting, editorSettingsPayload, type EditorLayout } from '../layout/settings';
+import { checkEditorSetting, editorReference, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
 import { produce } from 'immer';
@@ -118,6 +118,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
     history: chatHistory(contextKey(ctx)),
     speed: getAISettings().speed,
+    // What the editor's settings are: fixed, so it goes with the (cached) instructions; the context has their values.
+    reference: editorReference(),
   };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);

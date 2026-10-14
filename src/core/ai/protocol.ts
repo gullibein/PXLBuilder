@@ -21,6 +21,11 @@ export interface AIRequestBody {
   speed?: AISpeed;
   /** Recent requests in the same context (conversational memory; not authoritative). */
   history: AIExchange[];
+  /**
+   * Fixed reference text the app adds to the instructions (the editor's settings and what they mean): the same on
+   * every request, so it is cached with the instructions instead of being sent as new input each time.
+   */
+  reference?: string;
   /** Other objects' code the AI asked for (kind "need_code"), sent with the request asked again. */
   code?: { id: string; name: string; scripts: unknown[] }[];
 }

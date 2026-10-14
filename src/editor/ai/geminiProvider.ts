@@ -92,7 +92,7 @@ export class GeminiProvider implements AIProvider {
         headers: headers(this.apiKey),
         signal,
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPromptWithReplyFormat() }] },
+          systemInstruction: { parts: [{ text: `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}` }] },
           contents: [{ role: 'user', parts: [{ text: userMessage(body) }] }],
           generationConfig: {
             responseMimeType: 'application/json',

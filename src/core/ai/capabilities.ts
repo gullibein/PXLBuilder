@@ -179,8 +179,8 @@ Behaviors (components in the "Behavior" category; add them with add_component, u
 
 Changing the editor (any scope; scope "editor" is only about this)
 - Some requests are about the editor (PXLBuilder's own interface), not the game: "move the Play button to the bottom", "dock the details panel on the right", "make the editor green", "show the jump height above the player while editing", "show how far the player can jump".
-- Layout and look: set_editor_setting, with a key and an allowed value from context.editor.settings (enum values exactly as listed; colors "#rrggbb"; numbers within min/max).
-- Information over the level while editing: add_editor_overlay (kinds in context.editor.overlayKinds; values in context.editor.metrics, or any "Component.field"; target usually the object, e.g. every Player). Adding the same kind for the same target replaces it, so send the full list of values. remove_editor_overlay by id from context.editor.overlays. Overlays are never shown in play.
+- Layout and look: set_editor_setting, with a key and an allowed value from EDITOR SETTINGS (after these instructions; enum values exactly as listed; colors "#rrggbb"; numbers within the range); current values in context.editor.values.
+- Information over the level while editing: add_editor_overlay (kinds and values in EDITOR OVERLAYS after these instructions, or any "Component.field"; target usually the object, e.g. every Player). Adding the same kind for the same target replaces it, so send the full list of values. remove_editor_overlay by id from context.editor.overlays. Overlays are never shown in play.
 - A reply is either all editor operations or all game operations, never both. Editor changes are applied right away (kind "apply").
 - The editor can only change what these describe. For anything else (new panels, moving other buttons, fonts, custom layouts), reply unsupported in one sentence and mention what can be changed.
 

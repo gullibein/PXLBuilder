@@ -69,7 +69,7 @@ export const EDITOR_SETTINGS: (EditorSetting & { key: Exclude<keyof EditorLayout
   {
     key: 'inspector',
     label: 'Details panel (inspector)',
-    description: 'floating: opens on demand over the level (the sliders button on a prompt, or I). docked: always shown as a column at the side; the level view makes room for it.',
+    description: 'floating: opens on demand over the level (right-click an object → Details…, or I). docked: always shown as a column at the side; the level view makes room for it.',
     field: { kind: 'enum', options: ['floating', 'docked'], default: 'floating' },
   },
   {
@@ -138,18 +138,29 @@ export function checkEditorSetting(key: string, value: unknown): string | null {
 
 /** What the AI sees in editor scope: every setting, its allowed values and its current value. */
 export function editorSettingsPayload(layout: EditorLayout): EditorSettingsPayload {
-  return {
-    settings: EDITOR_SETTINGS.map((s) => ({
-      key: s.key,
-      label: s.label,
-      description: s.description,
-      type: s.field.kind,
-      ...(s.field.kind === 'enum' ? { options: s.field.options } : {}),
-      ...(s.field.kind === 'number' ? { min: s.field.min, max: s.field.max } : {}),
-      value: layout[s.key],
-    })),
-    ...overlaysPayload(layout.overlays),
-  };
+  return { values: Object.fromEntries(EDITOR_SETTINGS.map((s) => [s.key, layout[s.key]])), overlays: layout.overlays };
+}
+
+let reference: string | null = null;
+/**
+ * What the editor's settings are and what can be shown over the level: fixed text that goes with the AI's
+ * instructions (cached with them), while each request carries only the current values (editorSettingsPayload).
+ */
+export function editorReference(): string {
+  if (reference) return reference;
+  const { overlayKinds, metrics } = overlaysPayload([]);
+  const allowed = (s: (typeof EDITOR_SETTINGS)[number]) =>
+    s.field.kind === 'enum' ? `one of ${s.field.options.join(' | ')}` : s.field.kind === 'number' ? `number ${s.field.min ?? ''}..${s.field.max ?? ''}` : s.field.kind;
+  reference = [
+    'EDITOR SETTINGS (set_editor_setting key → allowed values; current values in context.editor.values)',
+    ...EDITOR_SETTINGS.map((s) => `- ${s.key} (${s.label}; ${allowed(s)}): ${s.description}`),
+    '',
+    'EDITOR OVERLAYS (add_editor_overlay kinds; what is shown now is in context.editor.overlays)',
+    ...Object.entries(overlayKinds).map(([k, v]) => `- ${k}: ${v}`),
+    'Values an overlay can show (or any "Component.field"):',
+    ...metrics.map((m) => `- ${m.key} (${m.label}): ${m.description}`),
+  ].join('\n');
+  return reference;
 }
 
 const STORAGE_KEY = 'pxlbuilder.editor';

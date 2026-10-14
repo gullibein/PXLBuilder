@@ -125,11 +125,13 @@ export interface EntityBrief {
  * them; core only carries them, so the game model knows nothing about the UI.
  */
 export interface EditorSettingsPayload {
-  settings: { key: string; label: string; description: string; type: string; options?: readonly string[]; min?: number; max?: number; value: unknown }[];
-  /** Information drawn over the level while editing (labels, guides): what is shown now, and what can be. */
+  /**
+   * Each editor setting's current value, by key. What the settings are (labels, descriptions, allowed values), the
+   * overlay kinds and metrics never change, so they come once with the instructions (EDITOR SETTINGS, cached).
+   */
+  values: Record<string, unknown>;
+  /** Information drawn over the level while editing (labels, guides): what is shown now. */
   overlays?: unknown[];
-  overlayKinds?: Record<string, string>;
-  metrics?: { key: string; label: string; description: string }[];
 }
 
 export interface AIPayload {

@@ -214,7 +214,7 @@ export const operationSchema = z.union([
   }).describe('Opens the sprite editor so the USER can draw or edit the sprite by hand ("open the sprite editor", "I want to edit the sprite myself"); changes nothing by itself'),
   z.object({
     op: z.literal('set_editor_setting'),
-    key: z.string().describe('An editor setting key from editor.settings (editor scope only)'),
+    key: z.string().describe('An editor setting key from EDITOR SETTINGS (editor scope only)'),
     valueJson: z.string().describe('The new value as JSON, e.g. "\\"bottom\\"", "true", "1.5"'),
   }),
   z.object({

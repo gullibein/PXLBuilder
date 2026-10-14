@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkEditorSetting, DEFAULT_LAYOUT, EDITOR_SETTINGS, editorSettingsPayload, loadLayout } from './settings';
+import { checkEditorSetting, DEFAULT_LAYOUT, EDITOR_SETTINGS, editorReference, editorSettingsPayload, loadLayout } from './settings';
 
 describe('editor settings', () => {
   it('have defaults for every setting', () => {
@@ -16,10 +16,16 @@ describe('editor settings', () => {
     expect(checkEditorSetting('fontSize', 14)).toMatch(/no setting "fontSize"/);
   });
 
-  it('tell the AI each setting, its allowed values and its current value', () => {
+  it('tell the AI each setting and its allowed values once (fixed reference, cached), and the current values per request', () => {
     const payload = editorSettingsPayload({ ...DEFAULT_LAYOUT, inspector: 'docked' });
-    expect(payload.settings.find((s) => s.key === 'inspector')).toMatchObject({ type: 'enum', options: ['floating', 'docked'], value: 'docked' });
-    expect(payload.settings.find((s) => s.key === 'mouseZoomSpeed')).toMatchObject({ min: 0.25, max: 3, value: 1 });
+    expect(payload.values).toMatchObject({ inspector: 'docked', mouseZoomSpeed: 1 });
+    expect(JSON.stringify(payload).length).toBeLessThan(800);
+    const ref = editorReference();
+    expect(ref).toContain('- inspector (');
+    expect(ref).toContain('one of floating | docked');
+    expect(ref).toContain('number 0.25..3');
+    expect(ref).toContain('EDITOR OVERLAYS');
+    expect(ref).not.toContain("current: "); // values are not part of the fixed text
   });
 
   it('fall back to defaults when nothing is saved (or storage is unavailable)', () => {

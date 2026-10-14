@@ -136,4 +136,13 @@ describe('the Claude call', () => {
     const client = { beta: { messages: { parse: async () => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', parsed_output: answer, usage: { input_tokens: 10, output_tokens: 10 } }) } } } as unknown as Anthropic;
     expect((await askClaude(client, body())).usage?.cost).toBeCloseTo(240 / 1e6, 12);
   });
+
+  it("the app's fixed reference goes after the instructions and is cached with them", async () => {
+    const seen: Record<string, unknown>[] = [];
+    await askClaude(fakeClient(seen), { ...body(), reference: 'EDITOR SETTINGS\n- inspector' });
+    const system = (seen[0] as { system: { text: string; cache_control?: unknown }[] }).system;
+    expect(system).toHaveLength(2);
+    expect(system[0].cache_control).toBeUndefined();
+    expect(system[1]).toEqual({ type: 'text', text: 'EDITOR SETTINGS\n- inspector', cache_control: { type: 'ephemeral', ttl: '1h' } });
+  });
 });

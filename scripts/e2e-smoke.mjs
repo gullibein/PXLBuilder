@@ -394,7 +394,7 @@ function stubModel(body) {
     if (req.includes('disappear')) return update({ action: 'disappear' }, 'The switch now makes the door disappear.', 'Switch makes Door disappear');
   }
   if (body.context.scope === 'editor') {
-    const keys = body.context.editor.settings.map((x) => x.key);
+    const keys = Object.keys(body.context.editor.values);
     const set = (key, value) => ({ op: 'set_editor_setting', key, valueJson: JSON.stringify(value) });
     if (req.includes('sideways')) return { kind: 'apply', message: 'Done.', changes: [], operations: [set('playButton', 'sideways')] };
     if (req.includes('play button')) return { kind: 'apply', message: 'The Play button is now at the bottom.', changes: ['Play button: bottom'], operations: [set('playButton', 'bottom')] };
@@ -2513,7 +2513,7 @@ try {
   await check(serverCalls === serverBefore && anthropicCalls.at(-1).key === VALID && anthropicCalls.at(-1).url.includes('/v1/messages'), 'prompts use the user key, not the server');
   {
     const sent = anthropicCalls.at(-1).sent;
-    await check(anthropicCalls.at(-1).model === 'claude-opus-5-5' && sent.system[0].cache_control?.ttl === '1h' && sent.messages[0].content[0].cache_control?.type === 'ephemeral', 'Opus by default; the system prompt is cached for an hour and the game data for the request');
+    await check(anthropicCalls.at(-1).model === 'claude-opus-5-5' && sent.system.at(-1).cache_control?.ttl === '1h' && sent.system.at(-1).text.startsWith('EDITOR SETTINGS') && sent.messages[0].content[0].cache_control?.type === 'ephemeral', 'Opus by default; the system prompt is cached for an hour and the game data for the request');
     // Each request's cost, from the token counts the API reported: Opus, 1,000 in + 25,000 from cache + 2,000 out = $0.054.
     await kp.keyboard.press('Escape');
     await kp.getByTestId('console-toggle').click();
@@ -2693,7 +2693,7 @@ try {
     const pb = await gPrompt.boundingBox();
     return pb.y + pb.height < gAt(0, -16).y - 40;
   }, 'the prompt moves up to make room for the panel');
-  await check(aiRequests.at(-1).context.editor?.metrics.some((x) => x.key === 'jumpHeight'), 'the AI knows which values can be shown');
+  await check(aiRequests.at(-1).reference?.includes('- jumpHeight ('), 'the AI knows which values can be shown (in the fixed reference sent with its instructions)');
   await gp.screenshot({ path: `${OUT}/18-jump-overlay.png` });
   await gPrompt.getByTestId('result-undo').click();
   await check(async () => (await gCanvas.getAttribute('data-overlays')) === '0', 'Undo removes the overlay (editor undo)');
@@ -2847,7 +2847,7 @@ try {
   await check(async () => (await eResult.getAttribute('data-status')) === 'applied', 'the Editor tab of the ✦ prompt changes the editor');
   await check(async () => (await ep.locator('.dock [data-testid="play"]').count()) === 1 && (await ep.locator('.topbar [data-testid="play"]').count()) === 0, 'the Play button moved to the bottom bar');
   const editorReq = aiRequests.at(-1);
-  await check(editorReq.context.scope === 'editor' && editorReq.context.editor.settings.some((x) => x.key === 'playButton' && x.value === 'top'), 'the AI gets the editor settings, with their current values');
+  await check(editorReq.context.scope === 'editor' && editorReq.context.editor.values.playButton === 'top' && editorReq.reference.includes('- playButton ('), 'the AI gets the editor settings (what they are, with its instructions) and their current values');
   await editorPrompt.getByTestId('prompt-close').click();
   await check(async () => (await ep.getByTestId('global-prompt').count()) === 0, 'the × closes the ✦ prompt card too');
   await ep.screenshot({ path: `${OUT}/16-play-bottom.png` });

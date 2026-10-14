@@ -29,7 +29,7 @@ export function claudeSample(): Promise<SampleFn | null> {
 }
 
 function prompt(body: AIRequestBody): string {
-  return `${systemPromptWithReplyFormat()}\n\n${userMessage(body)}`;
+  return `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}\n\n${userMessage(body)}`;
 }
 
 const MESSAGES: Record<string, string> = {
