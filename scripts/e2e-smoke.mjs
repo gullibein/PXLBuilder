@@ -1874,6 +1874,7 @@ try {
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-export-game').click();
     await check(async () => (await page.getByTestId('export-touch').isChecked()), 'Export game asks about touch controls for phones (on by default)');
+    if (await page.getByTestId('export-target-web').count()) await page.getByTestId('export-target-web').check();
     const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-game-confirm').click()]);
     const file = `${process.cwd()}/${OUT}/exported-game.html`;
     await dl.saveAs(file);
