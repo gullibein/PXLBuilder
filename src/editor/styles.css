@@ -247,3 +247,10 @@
 .se-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .primary-btn { border: none; padding: 6px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; }
 .sprite-edit { position: absolute; left: 2px; top: 2px; border: none; border-radius: 6px; padding: 0 5px; font-size: 11px; background: var(--surface-3); color: var(--text); opacity: 0.85; }
+
+/* Export game: where it is to be played */
+.export-targets { display: grid; gap: 6px; margin-bottom: 10px; }
+.export-target { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.export-target.on { border-color: var(--accent); background: var(--accent-soft); }
+.export-target input { margin-top: 3px; }
+.export-blurb { display: block; margin-top: 2px; }

@@ -245,8 +245,8 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
     ...(canExportGame()
       ? [
           {
-            label: 'Export game (HTML)',
-            detail: 'One web page that plays the game in any browser: send it, or put it on a website. No editor needed.',
+            label: 'Export game…',
+            detail: 'As a web page that plays in any browser, or as a Windows or macOS app. No editor needed.',
             run: () => useEditor.getState().setExportGameOpen(true),
             testId: 'menu-export-game',
           },

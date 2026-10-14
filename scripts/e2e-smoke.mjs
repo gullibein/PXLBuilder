@@ -17,7 +17,7 @@ const URL = `http://localhost:${PORT}/PXLBuilder/`;
 const OUT = 'test-results';
 mkdirSync(OUT, { recursive: true });
 
-execSync('node scripts/build-player.mjs && npx vite build', { stdio: ['ignore', 'ignore', 'inherit'] });
+execSync('node scripts/build-player.mjs && node scripts/build-runners.mjs && npx vite build', { stdio: ['ignore', 'ignore', 'inherit'] });
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], {
   stdio: 'pipe',
   env: { ...process.env, ANTHROPIC_API_KEY: '' },
@@ -1843,6 +1843,30 @@ try {
     await page.getByTestId('global-prompt-toggle').click();
     await check(async () => (await prompts.count()) === 0 && (await page.getByTestId('global-prompt').count()) === 1, 'opening the level/game card closes the open prompt card');
     await page.keyboard.press('Escape');
+  }
+
+  step = 'export game as Windows and macOS apps';
+  if (existsSync('src/core/export/runners.generated.ts')) {
+    const listZip = (path) =>
+      JSON.parse(execSync(`python3 -c "import zipfile,json,sys; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print(json.dumps([[i.filename, i.file_size, (i.external_attr>>16)&0o777] for i in z.infolist()]))" "${path}"`, { encoding: 'utf8' }));
+    for (const [target, label] of [
+      ['windows', 'Windows'],
+      ['macos', 'macOS'],
+    ]) {
+      await page.getByTestId('project-menu').click();
+      await page.getByTestId('menu-export-game').click();
+      await page.getByTestId(`export-target-${target}`).check();
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-game-confirm').click()]);
+      const file = `${process.cwd()}/${OUT}/exported-${target}.zip`;
+      await dl.saveAs(file);
+      const names = listZip(file);
+      const has = (end) => names.find(([n]) => n.endsWith(end));
+      const ok =
+        target === 'windows'
+          ? dl.suggestedFilename().endsWith('-windows.zip') && has('.exe') && has('/game.html') && has('How to play.txt')
+          : dl.suggestedFilename().endsWith('-macos.zip') && has('.app/Contents/MacOS/Game')?.[2] === 0o755 && has('.app/Contents/Resources/game.html') && has('_CodeSignature/CodeResources') && has('Contents/Info.plist');
+      await check(!!ok, `Export game → ${label} app saves a zip with the game in a ${label} program`);
+    }
   }
 
   step = 'export game as a web page';
