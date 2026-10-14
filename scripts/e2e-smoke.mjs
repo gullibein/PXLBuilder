@@ -728,6 +728,10 @@ try {
   await clickWorld(-32, 0);
   await check(async () => (await result.getAttribute('data-status')) === 'applied', 'clicking the enemy again shows its applied result');
   await check(async () => (await prompts.getByTestId('result-undo').count()) === 1, "its change is the latest, so its card offers Undo");
+  await page.getByTestId('undo').click();
+  await check(async () => (await prompts.getByTestId('result-undone').count()) === 1, 'undone with the toolbar Undo: its card says so (↶ Undone)');
+  await page.getByTestId('redo').click();
+  await check(async () => (await prompts.getByTestId('result-undone').count()) === 0 && (await prompts.getByTestId('result-undo').count()) === 1, 'and Redo applies it again');
   await clickWorld(-256, 0);
   await check(async () => (await result.getAttribute('data-status')) === 'applied' && (await result.innerText()).includes('in history') && (await prompts.getByTestId('result-undo').count()) === 0, "the player's card still shows its result, but no Undo: the enemy's change came after it");
   await prompts.getByTestId('prompt-close').click();
@@ -2406,6 +2410,24 @@ try {
   await cp2.getByTestId('save-confirm').click();
   await check(async () => saves.length === 1 && saves[0].filename === 'mole-mine.pxlproj.json' && JSON.parse(saves[0].text).kind === 'pxlbuilder.bundle' && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine'), 'Save renames the game and hands the project file to claude.ai to offer for download');
   await check(async () => (await cp2.locator('.dirty-dot').count()) === 0, 'and the project counts as saved');
+  {
+    const h = JSON.parse(saves[0].text).aiHistory;
+    await check(h?.entries?.some((e) => e.request === 'Give the player five hearts.' && e.status === 'applied') && h.entries.every((e) => !('trace' in e)), "the game file keeps this game's AI History (requests and answers, not the under-the-hood traces)");
+  }
+  {
+    // Opened in another browser: the AI History comes back with the game.
+    const oc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+    const op = await oc.newPage();
+    op.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await op.goto(URL);
+    await startPlatformer(op);
+    await op.getByTestId('open-file-input').setInputFiles({ name: 'mole-mine.pxlproj.json', mimeType: 'application/json', buffer: Buffer.from(saves[0].text) });
+    await check(async () => (await op.getByTestId('project-menu').innerText()).includes('Mole Mine'), '(the saved game opens elsewhere)');
+    await op.getByTestId('tray-toggle').click();
+    await op.getByRole('tab', { name: /AI History/ }).click();
+    await check(async () => (await op.getByTestId('history-list').getByTestId('history-exchange').filter({ hasText: 'Give the player five hearts.' }).count()) === 1, 'opening the saved game brings its AI History back');
+    await oc.close();
+  }
   await cc.close();
 
   step = 'switch connectors';

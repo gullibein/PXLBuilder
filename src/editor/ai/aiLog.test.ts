@@ -59,4 +59,51 @@ describe('AI conversations (kept in the AI History log)', () => {
     expect(again.chatEntries(again.useAILog.getState(), 'project', 30, 'prj_other').map((e) => e.request)).toEqual(['Make a space game']);
     vi.unstubAllGlobals();
   });
+
+  it('an undone AI change stays marked undone (also after other edits clear the redo list); redone, it is applied again', async () => {
+    vi.stubGlobal('localStorage', storage({}));
+    vi.resetModules();
+    const log = await import('./aiLog');
+    const game = (await import('../store')).useEditor.getState().project.id;
+    log.useAILog.setState({ entries: [entry(1, 'entity:p', 'Make it red', { project: game, transactionId: 7 }) as never] });
+    log.markUndoneSteps(new Set([7]), new Set());
+    expect(log.useAILog.getState().entries[0].undone).toBe(true);
+    // Other edits came after: step 7 is in neither list any more, and stays undone.
+    log.markUndoneSteps(new Set(), new Set([8]));
+    expect(log.useAILog.getState().entries[0].undone).toBe(true);
+    log.markUndoneSteps(new Set(), new Set([7]));
+    expect(log.useAILog.getState().entries[0].undone).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('is saved with the game and comes back when it is opened, for the user to read: never sent to the AI', async () => {
+    vi.stubGlobal('localStorage', storage({}));
+    vi.resetModules();
+    const log = await import('./aiLog');
+    const game = (await import('../store')).useEditor.getState().project.id;
+    log.useAILog.setState({
+      entries: [
+        entry(1, 'entity:p', 'Make it red', { project: game, undone: true, trace: [{ kind: 'note', text: 'raw' }] }) as never,
+        entry(2, 'project', 'Make a space game', { project: 'prj_other' }) as never,
+      ],
+    });
+    log.newChat('entity:e');
+    const saved = JSON.parse(JSON.stringify(log.aiHistoryFor(game)));
+    // Only this game's exchanges, without the under-the-hood traces or undo steps.
+    expect(saved.entries).toHaveLength(1);
+    expect(saved.entries[0]).not.toHaveProperty('trace');
+    expect(saved.entries[0]).not.toHaveProperty('transactionId');
+    expect(Object.keys(saved.starts)).toEqual(['entity:e']);
+
+    // Another browser opens the file.
+    vi.stubGlobal('localStorage', storage({}));
+    vi.resetModules();
+    const fresh = await import('./aiLog');
+    expect(fresh.restoreAIHistory(game, { ...saved, starts: {} })).toBe(1);
+    expect(fresh.restoreAIHistory(game, saved)).toBe(0); // not twice
+    const back = fresh.chatEntries(fresh.useAILog.getState(), 'entity:p', 30, game);
+    expect(back.map((e) => [e.request, e.undone])).toEqual([['Make it red', true]]);
+    expect(fresh.chatHistory('entity:p')).toEqual([]);
+    vi.unstubAllGlobals();
+  });
 });

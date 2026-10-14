@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
 import { runPrompt, type PromptOptions, type PromptOutcome } from './runPrompt';
-import { logExchange, newChat, updateExchange } from './aiLog';
+import { logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
 import { useEditor } from '../store';
@@ -136,4 +136,19 @@ export function resetJobs(): void {
 // is stopped (its change would land in the wrong game).
 useEditor.subscribe((s, prev) => {
   if (s.project.id !== prev.project.id) resetJobs();
+});
+
+// Undo and redo (the toolbar, Ctrl+Z, a card's Undo): an AI change whose step is undone is marked so in its card and
+// in the AI History, and stays marked after other edits clear the redo list; redone, it is applied again.
+useEditor.subscribe((s, prev) => {
+  if (s.history === prev.history || s.project.id !== prev.project.id) return;
+  const undone = new Set(s.history.future.map((t) => t.id));
+  const done = new Set(s.history.past.map((t) => t.id));
+  markUndoneSteps(undone, done);
+  for (const job of Object.values(useJobs.getState().jobs)) {
+    const o = job.outcome;
+    if (job.phase !== 'done' || o?.status !== 'applied' || o.editor || o.transactionId === undefined) continue;
+    const now = undone.has(o.transactionId) ? true : done.has(o.transactionId) ? false : o.undone === true;
+    if (now !== (o.undone === true)) put(job.key, { ...job, outcome: { ...o, undone: now } });
+  }
 });

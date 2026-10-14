@@ -2,7 +2,10 @@
  * The conversation with the AI, in full: every request (as typed), the AI's
  * whole answer and its changes, and how it ended (applied, undone, an answer,
  * an error), also for answers that changed nothing. Shown in the AI History
- * tab. Kept in this browser (the last 200), so it survives a reload.
+ * tab. Kept in this browser (the last 1000), so it survives a reload, and
+ * saved in the game file with the game (this game's exchanges, without the
+ * under-the-hood traces), so opening the file brings it back. What is saved
+ * is for the user to read: it is never sent to the AI.
  *
  * It is also each prompt card's conversation: the exchanges about one thing
  * (an object, a pair, the level…, by context key) since that card's last
@@ -39,6 +42,8 @@ export interface AILogEntry {
   note: string | null;
   /** What happened under the hood (kept for the most recent exchanges only). */
   trace?: TraceStep[];
+  /** Came from a saved game file: shown, never sent to the AI. */
+  saved?: true;
 }
 
 const STORAGE_KEY = 'pxlbuilder.aiLog';
@@ -47,7 +52,7 @@ const STARTS_KEY = 'pxlbuilder.chatStarts';
 export const MEMORY_TURNS = 6;
 /** How many earlier exchanges a card shows. */
 const CARD_TURNS = 30;
-const MAX = 200;
+const MAX = 1000;
 /** Exchanges that keep their trace (the raw answers are big; browser storage is small). */
 const TRACED = 20;
 
@@ -148,7 +153,9 @@ export function chatEntries(state: { entries: AILogEntry[]; starts: Record<strin
  * answers with the app's own notes ("⚠ Left out…"), and requests that failed.
  */
 export function chatHistory(key: string): { request: string; reply: string }[] {
-  return chatEntries(useAILog.getState(), key, MEMORY_TURNS).map((e) => ({
+  return chatEntries(useAILog.getState(), key, MEMORY_TURNS)
+    .filter((e) => !e.saved)
+    .map((e) => ({
     request: e.request,
     reply:
       e.status === 'error'
@@ -171,6 +178,77 @@ export function newChat(key: string): void {
 /** The exchange's outcome changed (undone from its card, made a new object instead). */
 export function updateExchange(id: number, outcome: PromptOutcome): void {
   put(useAILog.getState().entries.map((e) => (e.id === id ? { ...e, ...fields(outcome) } : e)));
+}
+
+/** Undo/redo moved steps: AI changes whose step is now undone are marked undone; redone ones are applied again. */
+export function markUndoneSteps(undone: Set<number>, done: Set<number>): void {
+  const entries = useAILog.getState().entries;
+  let changed = false;
+  const next = entries.map((e) => {
+    if (e.transactionId === null || e.status !== 'applied') return e;
+    const now = undone.has(e.transactionId) ? true : done.has(e.transactionId) ? false : e.undone;
+    if (now === e.undone) return e;
+    changed = true;
+    return { ...e, undone: now };
+  });
+  if (changed) put(next);
+}
+
+/** What goes into the game file: this game's exchanges and where its conversations start, without the traces. */
+export interface SavedAIHistory {
+  entries: Omit<AILogEntry, 'id' | 'transactionId' | 'trace' | 'saved' | 'project'>[];
+  starts: Record<string, number>;
+}
+
+export function aiHistoryFor(project: string): SavedAIHistory {
+  const { entries, starts } = useAILog.getState();
+  const mine = entries.filter((e) => e.project === project);
+  return {
+    entries: mine.map(({ id: _id, transactionId: _t, trace: _trace, saved: _saved, project: _p, ...e }) => e),
+    starts: Object.fromEntries(Object.entries(starts).filter(([k]) => k.startsWith(`${project}/`)).map(([k, v]) => [k.slice(project.length + 1), v])),
+  };
+}
+
+/** A game file was opened: its saved AI history joins the log (what is already there is not added twice). */
+export function restoreAIHistory(project: string, saved: unknown): number {
+  if (!saved || typeof saved !== 'object' || !Array.isArray((saved as SavedAIHistory).entries)) return 0;
+  const { entries, starts } = useAILog.getState();
+  const have = new Set(entries.filter((e) => e.project === project).map((e) => `${e.time}|${e.request}`));
+  const added: AILogEntry[] = [];
+  for (const raw of (saved as SavedAIHistory).entries) {
+    if (!raw || typeof raw !== 'object' || typeof raw.request !== 'string' || typeof raw.time !== 'number') continue;
+    if (have.has(`${raw.time}|${raw.request}`)) continue;
+    const status = raw.status === 'applied' || raw.status === 'error' ? raw.status : 'message';
+    added.push({
+      id: nextId++,
+      time: raw.time,
+      key: typeof raw.key === 'string' ? raw.key : undefined,
+      project,
+      where: String(raw.where ?? ''),
+      request: raw.request,
+      status,
+      message: String(raw.message ?? ''),
+      changes: Array.isArray(raw.changes) ? raw.changes.map(String) : [],
+      warn: raw.warn === true,
+      transactionId: null,
+      undone: raw.undone === true,
+      note: typeof raw.note === 'string' ? raw.note : null,
+      saved: true,
+    });
+  }
+  const savedStarts = (saved as SavedAIHistory).starts;
+  const nextStarts = { ...starts };
+  if (savedStarts && typeof savedStarts === 'object') {
+    for (const [k, v] of Object.entries(savedStarts)) if (typeof v === 'number' && !(`${project}/${k}` in nextStarts)) nextStarts[`${project}/${k}`] = v;
+    useAILog.setState({ starts: nextStarts });
+    try {
+      localStorage.setItem(STARTS_KEY, JSON.stringify(nextStarts));
+    } catch {
+      // Storage unavailable: lasts for this page.
+    }
+  }
+  if (added.length) put([...entries, ...added].sort((a, b) => a.time - b.time));
+  return added.length;
 }
 
 export function clearAILog(): void {

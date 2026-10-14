@@ -26,6 +26,11 @@ export interface ProjectBundle {
   kind: 'pxlbuilder.bundle';
   bundleVersion: 1;
   files: ProjectFiles;
+  /**
+   * The editor's AI History for this game (requests, answers, what was changed or undone), saved with it for the
+   * user to read. Not part of the game: ignored by the player, never sent to the AI.
+   */
+  aiHistory?: unknown;
 }
 
 export interface LoadResult {

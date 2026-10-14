@@ -7,6 +7,7 @@ import { createProject } from '../core/model/factory';
 import { gameFromText, projectFromBundle, projectToBundle } from '../core/serialization/serialize';
 import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
+import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 
 const AUTOSAVE_KEY = 'pxlbuilder.autosave';
 export const PROJECT_FILE_EXTENSION = '.pxlproj.json';
@@ -184,7 +185,8 @@ export async function offerFile(filename: string, blob: Blob): Promise<'saved' |
  */
 export async function saveProjectToFile(): Promise<void> {
   const { project, markSaved, logMessage } = useEditor.getState();
-  const text = JSON.stringify(projectToBundle(project), null, 2);
+  // The AI History goes with the game (for the user to read back; never sent to the AI).
+  const text = JSON.stringify({ ...projectToBundle(project), aiHistory: aiHistoryFor(project.id) }, null, 2);
   const filename = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
   const blob = new Blob([text], { type: 'application/json' });
   void writeAutosave(project);
@@ -219,9 +221,11 @@ export async function saveProjectToFile(): Promise<void> {
 export async function openProjectFile(file: File): Promise<void> {
   const { replaceProject, logMessage } = useEditor.getState();
   try {
-    const { project, warnings } = gameFromText(await file.text(), componentRegistry);
+    const text = await file.text();
+    const { project, warnings } = gameFromText(text, componentRegistry);
     replaceProject(`Open ${file.name}`, project);
     logMessage('info', `Opened "${project.name}" from ${file.name}`);
+    if (text.trimStart().startsWith('{')) restoreAIHistory(project.id, (JSON.parse(text) as { aiHistory?: unknown }).aiHistory);
     for (const w of warnings) logMessage('warn', w);
   } catch (e) {
     logMessage('error', `Could not open ${file.name}: ${(e as Error).message}`);
