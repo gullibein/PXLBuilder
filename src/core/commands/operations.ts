@@ -7,6 +7,7 @@
  * mutation functions the inspector uses. A list of operations is applied
  * all-or-nothing inside one transaction.
  */
+import { gridFor } from '../model/spriteResolution';
 import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
@@ -613,6 +614,17 @@ export function applyOperations(
         const drawn = normalizePixelArt({ palette: op.palette, rows: op.rows });
         const err = checkPixelArt(drawn);
         if (err) throw new m.ModelError(`Sprite: ${err}`);
+        // The game's sprite size is kept: a drawing with more pixels than it allows for this object is refused (the AI
+        // draws it again at the right size), so every picture in the game has pixels of the same size.
+        const res = project.settings.spriteResolution;
+        if (res && res !== 32) {
+          const grid = gridFor(size, res);
+          if (drawn.rows[0].length > grid.width + 1 || drawn.rows.length > grid.height + 1) {
+            throw new m.ModelError(
+              `Sprite "${op.name}" is ${drawn.rows[0].length}×${drawn.rows.length} pixels, but this game's sprites are ${res}×${res} pixels a tile: draw this ${size.x}×${size.y} object ${grid.width}×${grid.height} pixels`,
+            );
+          }
+        }
         // Other proportions than the object's are fitted (repeated or padded), not rejected.
         const art = fitPixelArt(drawn, size);
         const frames = [art.rows];

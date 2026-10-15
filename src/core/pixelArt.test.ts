@@ -221,3 +221,18 @@ describe('see-through palette colors', () => {
     expect(colorAlpha(withAlpha('#ff0000', 0.25))).toBeCloseTo(0.25, 2);
   });
 });
+
+describe("the game's sprite size", () => {
+  it('a drawing for a new object made in the same reply keeps to it (8×8 a tile: a 16×16 one is refused, 8×8 is fine)', () => {
+    const registry = createBuiltinRegistry();
+    const project = createProject(registry);
+    project.settings.spriteResolution = 8;
+    const make = (side: number) => [
+      { op: 'create_definition', ref: 'dirt', name: 'Dirt', description: '', category: 'Tiles', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":32,"color":"#8b5a2b"}' }] },
+      { op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: 'dirt', name: 'Dirt', palette: [{ key: 'a', color: '#8b5a2b' }], rows: Array.from({ length: side }, () => 'a'.repeat(side)), situation: null },
+    ];
+    expect(() => produce(project, (d) => void applyOperations(d, make(16) as never, registry))).toThrow(/16×16 pixels, but this game's sprites are 8×8 pixels a tile: draw this 32×32 object 8×8 pixels/);
+    const ok = produce(project, (d) => void applyOperations(d, make(8) as never, registry));
+    expect(ok.assets.find((a) => a.name === 'Dirt')?.pixelArt?.rows).toHaveLength(8);
+  });
+});
