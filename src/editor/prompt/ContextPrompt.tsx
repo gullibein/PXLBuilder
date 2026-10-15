@@ -28,8 +28,8 @@ export function ContextPrompt() {
   // Only once asked for: a double-click (or double-tap, or Enter) opens it.
   const promptOpen = useEditor((s) => s.promptOpen);
   const ctx = useMemo(
-    () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId }),
-    [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId],
+    () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline }),
+    [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline],
   );
   const key = ctx ? contextKey(ctx) : null;
   const wrapRef = useRef<HTMLDivElement>(null);

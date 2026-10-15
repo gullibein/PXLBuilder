@@ -111,6 +111,7 @@ export function contextName(ctx: AIContext): string {
     case 'group':
       return `${ctx.entityIds.length} objects`;
     case 'level':
+      if (ctx.camera) return scene ? `Camera (${scene.name})` : 'Camera';
       return scene ? `World (${scene.name})` : 'World';
     case 'background':
       return 'Background';

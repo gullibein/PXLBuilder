@@ -32,8 +32,11 @@ export type AIContext =
   | { kind: 'group'; sceneId: Id; entityIds: Id[] }
   /** Exactly two selected entities: the request is usually about how they relate. Order = selection order. */
   | { kind: 'pair'; sceneId: Id; entityIds: [Id, Id] }
-  /** The level itself (world settings, all of its contents). `point` is where the user pointed, if anywhere. */
-  | { kind: 'level'; sceneId: Id; point: Vec2 | null }
+  /**
+   * The level itself (world settings, all of its contents). `point` is where the user pointed, if anywhere. `camera`:
+   * asked from the level's camera outline (its own conversation, about the camera).
+   */
+  | { kind: 'level'; sceneId: Id; point: Vec2 | null; camera?: 'start' | 'limits' }
   /** The level's background (color, image, how it moves). */
   | { kind: 'background'; sceneId: Id }
   /** The whole game. */
@@ -61,7 +64,7 @@ export function contextKey(ctx: AIContext): string {
     case 'pair':
       return `${ctx.kind}:${ctx.entityIds.join(',')}`;
     case 'level':
-      return `level:${ctx.sceneId}`;
+      return ctx.camera ? `camera:${ctx.sceneId}` : `level:${ctx.sceneId}`;
     case 'background':
       return `background:${ctx.sceneId}`;
     case 'project':
@@ -180,6 +183,8 @@ export interface AIPayload {
   targets: EntityDetail[];
   /** Where the user pointed in the level (world coordinates), if anywhere. */
   point: Vec2 | null;
+  /** Asked from the camera outline: the request is about the level's camera (level.camera). */
+  aboutCamera?: true;
   /**
    * The other placed things that matter one by one (with ids, for changing that one): the few of a kind (the player,
    * doors, a goal), and any changed on its own. Plain copies of objects placed many times (ground, walls, dirt,
@@ -386,6 +391,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     point: ctx.kind === 'level' ? ctx.point : null,
+    ...(ctx.kind === 'level' && ctx.camera ? { aboutCamera: true as const } : {}),
     otherEntities: others.list,
     otherCopies: others.copies,
     library: project.definitions.map((d) => ({

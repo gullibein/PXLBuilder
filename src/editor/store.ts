@@ -536,10 +536,11 @@ export function getActiveScene(state: Pick<EditorState, 'project' | 'activeScene
 }
 
 /** The AI context implied by the current selection, or null when nothing is selected. */
-export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext' | 'selectedConnectionId'>): AIContext | null {
+export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext' | 'selectedConnectionId'> & { cameraOutline?: 'start' | 'limits' | null }): AIContext | null {
   if (state.selectedConnectionId) return { kind: 'connection', sceneId: state.activeSceneId, relationshipId: state.selectedConnectionId };
   const fromSelection = contextFromSelection(state.activeSceneId, state.selectedEntityIds);
   if (fromSelection) return fromSelection;
-  if (state.worldContext) return { kind: 'level', sceneId: state.activeSceneId, point: state.worldContext.point };
+  // A camera outline: the level's camera, with a conversation of its own.
+  if (state.worldContext) return { kind: 'level', sceneId: state.activeSceneId, point: state.worldContext.point, ...(state.cameraOutline ? { camera: state.cameraOutline } : {}) };
   return null;
 }

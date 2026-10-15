@@ -2265,6 +2265,7 @@ try {
       'clicking it selects it (it glows, no spot marker) and opens its AI card, with a Settings button',
     );
     await check(async () => (await prompts.getByTestId('prompt-input').getAttribute('placeholder')).length < 30, '(its hint is short)');
+    await check(async () => (await prompts.getByTestId('chat-past').count()) === 0, "it is the camera's own conversation (the level's earlier requests are not in it)");
     await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
     await prompts.getByTestId('camera-settings-btn').click();
     {

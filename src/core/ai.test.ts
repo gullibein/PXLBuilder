@@ -480,3 +480,16 @@ describe('the level, compactly', () => {
     expect(payload.level.map!.rows.some((r) => r.includes('##########'))).toBe(true);
   });
 });
+
+describe('the camera has its own conversation', () => {
+  it("asked from the camera outline: its own key (not the level's), and the AI is told it is about the camera", () => {
+    expect(contextKey({ kind: 'level', sceneId: 's1', point: null })).toBe('level:s1');
+    expect(contextKey({ kind: 'level', sceneId: 's1', point: null, camera: 'start' })).toBe('camera:s1');
+    expect(contextKey({ kind: 'level', sceneId: 's1', point: null, camera: 'limits' })).toBe('camera:s1');
+    const registry = createBuiltinRegistry();
+    const project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    expect(buildAIPayload(project, { kind: 'level', sceneId, point: null, camera: 'start' }, registry).aboutCamera).toBe(true);
+    expect(buildAIPayload(project, { kind: 'level', sceneId, point: null }, registry).aboutCamera).toBeUndefined();
+  });
+});
