@@ -89,6 +89,8 @@ export function Viewport() {
   const hoverLinkRef = useRef<Id | null>(null);
   /** The camera outline under the mouse (it glows a little). */
   const hoverOutlineRef = useRef<CameraOutline | null>(null);
+  /** The level drawn once (see the render loop): redrawn only when the game, the view or a drag changes it. */
+  const layerRef = useRef<{ canvas: HTMLCanvasElement; key: string; entities: ResolvedEntity[] | null; project: unknown; animated: ResolvedEntity[] } | null>(null);
   /** Pointer position in world space (for the brush ghost). */
   const pointerWorldRef = useRef<Vec2 | null>(null);
   const spaceDownRef = useRef(false);
@@ -117,7 +119,12 @@ export function Viewport() {
 
   // Render loop. Also publishes the prompt anchor every frame.
   useEffect(() => {
+    layerRef.current = null;
     let frame = 0;
+    // What the last frame was drawn from: an unchanged editor with nothing moving on screen isn't drawn again (an
+    // idle editor then costs nothing, which matters on a laptop on battery).
+    let lastSig: unknown[] = [];
+    let lastMoving = true;
     const draw = (time: number) => {
       frame = requestAnimationFrame(draw);
       const canvas = canvasRef.current;
@@ -128,6 +135,21 @@ export function Viewport() {
       const view = viewRef.current;
       const dpr = canvas.width / view.width;
       const drag = dragRef.current;
+      const jobsNow = useJobs.getState().jobs;
+      const sig = [state, jobsNow, view.width, view.height, canvas.width, canvas.height, hoverRef.current, hoverOutlineRef.current, hoverLinkRef.current, layerRef.current?.key];
+      if (!lastMoving && !drag && sig.length === lastSig.length && sig.every((v, i) => v === lastSig[i])) return;
+      lastSig = sig;
+      // Something on screen moves by itself (animations, the selection's pulse, AI work, a flash): drawn every frame.
+      lastMoving =
+        state.selectedEntityIds.length > 0 ||
+        !!state.worldContext ||
+        !!state.selectedConnectionId ||
+        state.tool.kind === 'brush' ||
+        state.tool.kind === 'eyedropper' ||
+        (!!state.flash && time < state.flash.until + 100) ||
+        Object.keys(jobsNow).length > 0 ||
+        (layerRef.current?.animated.length ?? 1) > 0 ||
+        layerRef.current?.key === '';
 
       const placed = resolveSceneEntities(state.project, scene.id);
       let entities = placed;
@@ -153,17 +175,55 @@ export function Viewport() {
 
       const images = imageLookup(state.project);
       const wire = state.layout.wireframe;
-      if (wire) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = theme.wire.ground;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      } else drawBackground(ctx, view, dpr, scene.world, state.camera, images);
+      /*
+       * The level (background, grid and everything placed) is drawn into a layer of its own, and that layer is
+       * drawn again only when something in it changes: the game, what is being dragged, the view or its zoom, a
+       * picture that finished loading. Moving the mouse (hover frames, outlines, the prompt anchor) then costs only
+       * the overlays, not the whole level again: on a slow laptop on battery that is the difference between the
+       * hover frame following the mouse and lagging seconds behind.
+       */
+      const layer = (layerRef.current ??= { canvas: document.createElement('canvas'), key: '', entities: null, project: null, animated: [] });
+      const key = `${scene.id}|${state.camera.x},${state.camera.y},${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}`;
+      if (layer.key !== key || layer.entities !== entities || layer.project !== state.project) {
+        if (layer.canvas.width !== canvas.width || layer.canvas.height !== canvas.height) {
+          layer.canvas.width = canvas.width;
+          layer.canvas.height = canvas.height;
+        }
+        const lctx = layer.canvas.getContext('2d')!;
+        lctx.setTransform(1, 0, 0, 1, 0, 0);
+        lctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+        let missing = false;
+        const tracked: typeof images = (id) => {
+          const img = images(id);
+          if (!img) missing = true;
+          return img;
+        };
+        if (wire) {
+          lctx.fillStyle = theme.wire.ground;
+          lctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
+        } else drawBackground(lctx, view, dpr, scene.world, state.camera, tracked);
+        applyCamera(lctx, state.camera, view, dpr);
+        if (state.layout.showGrid) drawGrid(lctx, state.camera, view, state.project.settings.gridSize, wire);
+        // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter
+        // still. Animated sprites play in the editor too: they are drawn every frame, on top of the layer.
+        const shown = entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e));
+        const isAnimated = (e: ResolvedEntity) => {
+          const id = e.components.Sprite?.assetId;
+          return typeof id === 'string' && !!images(id)?.animation;
+        };
+        if (wire) drawWireframe(lctx, entities, state.camera.zoom);
+        else drawEntities(lctx, shown.filter((e) => !isAnimated(e)), tracked, 0.3, 0);
+        layer.animated = wire ? [] : shown.filter(isAnimated);
+        // A picture not loaded yet was drawn as its color: the layer is drawn again once it is.
+        layer.key = missing ? '' : key;
+        layer.entities = entities;
+        layer.project = state.project;
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(layer.canvas, 0, 0);
       applyCamera(ctx, state.camera, view, dpr);
-      if (state.layout.showGrid) drawGrid(ctx, state.camera, view, state.project.settings.gridSize, wire);
-      if (wire) drawWireframe(ctx, entities, state.camera.zoom);
-      // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter still.
-      // Animated sprites play in the editor too.
-      else drawEntities(ctx, entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e)), images, 0.3, time / 1000);
+      if (layer.animated.length) drawEntities(ctx, layer.animated, images, 0.3, time / 1000);
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';

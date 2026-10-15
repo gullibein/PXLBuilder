@@ -65,9 +65,15 @@ export function whenImageReady(assetId: string, data: string, onReady: (source: 
   return () => entry.img.removeEventListener('load', ready);
 }
 
+const byProject = new WeakMap<Project, Map<string, Project['assets'][number]>>();
+
 export function imageLookup(project: Project): ImageLookup {
+  // Assets by id, once per version of the game (a level draws hundreds of things a frame).
+  let assets = byProject.get(project);
+  if (!assets) byProject.set(project, (assets = new Map(project.assets.map((a) => [a.id, a]))));
+  const table = assets;
   return (assetId) => {
-    const asset = project.assets.find((a) => a.id === assetId);
+    const asset = table.get(assetId);
     if (!asset || (asset.kind !== 'image' && asset.kind !== 'spritesheet')) return null;
     const entry = entryFor(assetId, asset.data);
     if (!loaded(entry.img)) return null;
