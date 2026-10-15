@@ -300,11 +300,14 @@ export function Viewport() {
         publishAnchor({ key: anchorKey, rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: !!l });
       } else if (state.worldContext) {
         const p = state.worldContext.point ? toScreen(state.worldContext.point) : { x: view.width / 2, y: view.height / 2 };
-        drawWorldMarker(ctx, p, scene.name, time);
+        // A selected camera outline glows instead (the level's marker is for a spot on the level).
+        if (!state.cameraOutline) drawWorldMarker(ctx, p, scene.name, time);
+        if (canvas.dataset.marker !== (state.cameraOutline ? '' : '1')) canvas.dataset.marker = state.cameraOutline ? '' : '1';
         publishAnchor({ key: anchorKey, rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: true });
       } else {
         publishAnchor(null);
       }
+      if (!state.worldContext && canvas.dataset.marker) canvas.dataset.marker = '';
     };
     frame = requestAnimationFrame(draw);
     return () => {

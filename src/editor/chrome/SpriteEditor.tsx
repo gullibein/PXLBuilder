@@ -1,3 +1,4 @@
+import { colorAlpha, withAlpha } from '../../core/model/pixelArt';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { createAnimatedPixelArtAsset, MAX_FRAMES } from '../../core/model/factory';
@@ -685,7 +686,7 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
               <div className="se-side">
                 <div className="se-palette" data-testid="se-palette">
                   {draft.palette.map((p) => (
-                    <button key={p.key} className={`se-swatch${p.key === color ? ' on' : ''}`} style={{ background: p.color }} title={p.color} data-testid={`se-color-${p.key}`} onClick={() => setColor(p.key)} />
+                    <button key={p.key} className={`se-swatch${p.key === color ? ' on' : ''}`} style={{ backgroundImage: `linear-gradient(${p.color}, ${p.color}), var(--checker)` }} title={p.color} data-testid={`se-color-${p.key}`} onClick={() => setColor(p.key)} />
                   ))}
                   <label className="se-add" title="Add a color">
                     +
@@ -703,10 +704,25 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                   </label>
                 </div>
                 {swatch && (
-                  <label className="se-row">
-                    <span>This color</span>
-                    <input type="color" value={swatch.color} data-testid="se-recolor" onChange={(e) => change(recolor(draft, swatch.key, e.target.value))} />
-                  </label>
+                  <>
+                    <label className="se-row">
+                      <span>This color</span>
+                      <input type="color" value={swatch.color.slice(0, 7)} data-testid="se-recolor" onChange={(e) => change(recolor(draft, swatch.key, withAlpha(e.target.value, colorAlpha(swatch.color))))} />
+                    </label>
+                    <label className="se-row" title="How solid this color is: lower lets what is under it show through (for shading over a color, glass, shadows). The eraser makes pixels fully clear.">
+                      <span>Opacity</span>
+                      <input
+                        type="range"
+                        min={5}
+                        max={100}
+                        step={5}
+                        value={Math.round(colorAlpha(swatch.color) * 100)}
+                        data-testid="se-opacity"
+                        onChange={(e) => change(recolor(draft, swatch.key, withAlpha(swatch.color, Number(e.target.value) / 100)))}
+                      />
+                      <span className="muted small">{Math.round(colorAlpha(swatch.color) * 100)}%</span>
+                    </label>
+                  </>
                 )}
                 <label className="se-row">
                   <input type="checkbox" checked={onion} onChange={(e) => setOnion(e.target.checked)} /> <span>Show the frame before</span>

@@ -11,7 +11,7 @@ describe('leaving out unused objects', () => {
   it('keeps placed objects, objects a kept script creates, their pictures and every sound', () => {
     const p = createProject(registry);
     const scene = p.scenes[0];
-    const piece = createDefinition('Piece', { Sprite: { assetId: null, frame: 1, width: 32, height: 32, color: '#0ff', visible: true, layer: 0 } });
+    const piece = createDefinition('Piece', { Sprite: registry.createDefault('Sprite', { color: '#00ffff' }) });
     addDefinition(p, piece, registry);
     const board = createDefinition('Board');
     board.scripts = [{ id: 'scr_1', name: 'Spawner', enabled: true, on: { event: 'start' }, do: [{ do: 'spawn', object: piece.id, x: '0', y: '0', tag: null }] } as never];

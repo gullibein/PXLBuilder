@@ -85,6 +85,40 @@ export function drawBackground(
   }
 }
 
+/** Tinted copies of pictures, per picture and color (made once; a game uses a handful of colors). */
+const tintCache = new WeakMap<object, Map<string, CanvasImageSource>>();
+
+/**
+ * The picture multiplied by a color: white becomes the color, grays darker
+ * shades of it, its see-through parts stay as they are. Falls back to the
+ * picture itself where there is no canvas to draw on (tests).
+ */
+function tinted(source: CanvasImageSource, color: string): CanvasImageSource {
+  const w = (source as { width?: number }).width ?? 0;
+  const h = (source as { height?: number }).height ?? 0;
+  if (!w || !h || typeof document === 'undefined') return source;
+  let byColor = tintCache.get(source);
+  if (!byColor) tintCache.set(source, (byColor = new Map()));
+  const hit = byColor.get(color);
+  if (hit) return hit;
+  const canvas = document.createElement('canvas');
+  canvas.width = Number(w);
+  canvas.height = Number(h);
+  const c = canvas.getContext('2d');
+  if (!c) return source;
+  c.imageSmoothingEnabled = false;
+  c.drawImage(source, 0, 0);
+  c.globalCompositeOperation = 'multiply';
+  c.fillStyle = color;
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  // Multiply fills the see-through parts too: keep only where the picture is, as see-through as it is there.
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(source, 0, 0);
+  if (byColor.size > 64) byColor.clear();
+  byColor.set(color, canvas);
+  return canvas;
+}
+
 /** Mixes a hex color toward white (amount > 0) or black (amount < 0). */
 export function shade(hex: string, amount: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex);
@@ -195,11 +229,12 @@ export function drawEntities(
     if (img) {
       // Pixel art stays crisp. The image (or sheet cell) stretches to the sprite size.
       ctx.imageSmoothingEnabled = false;
+      const source = sprite.tint === true ? tinted(img.source, color) : img.source;
       if (img.grid) {
         const r = cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1);
-        ctx.drawImage(img.source, r.x, r.y, r.w, r.h, -size.x / 2, -size.y / 2, size.x, size.y);
+        ctx.drawImage(source, r.x, r.y, r.w, r.h, -size.x / 2, -size.y / 2, size.x, size.y);
       } else {
-        ctx.drawImage(img.source, -size.x / 2, -size.y / 2, size.x, size.y);
+        ctx.drawImage(source, -size.x / 2, -size.y / 2, size.x, size.y);
       }
     } else if (entity.tile) {
       const w = size.x;

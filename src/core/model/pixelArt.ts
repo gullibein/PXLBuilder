@@ -14,7 +14,8 @@ export interface PixelArt {
 }
 
 export const MAX_PIXEL_SIDE = 64;
-const HEX = /^#[0-9a-f]{6}$/i;
+/** #rrggbb, or #rrggbbaa for a see-through color (aa: 01–fe; ff is solid, 00 is "."). */
+const HEX = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
 
 /**
  * The grid size to draw for an object of this size: the same proportions,
@@ -56,8 +57,10 @@ export function normalizePixelArt(art: PixelArt): PixelArt {
         clear.add(p.key);
         continue;
       }
-      color = color.slice(0, 7);
+      // Solid: plain #rrggbb. Anything in between stays see-through.
+      if (/ff$/i.test(color)) color = color.slice(0, 7);
     }
+    color = color.toLowerCase();
     palette.push({ key: p.key, color });
   }
   if (!palette.some((p) => p.key === ' ')) clear.add(' ');
@@ -87,7 +90,7 @@ export function checkPixelArt(art: PixelArt, size?: { x: number; y: number }): s
   for (const p of palette) {
     if ([...p.key].length !== 1) return `Palette key "${p.key}" must be one character`;
     if (p.key === '.') return '"." is transparent and cannot be given a color';
-    if (!HEX.test(p.color)) return `Palette color "${p.color}" must be like #ff8800`;
+    if (!HEX.test(p.color)) return `Palette color "${p.color}" must be like #ff8800 (or #ff880080 for half see-through)`;
     keys.set(p.key, p.color);
   }
   for (const row of rows) for (const ch of row) if (ch !== '.' && !keys.has(ch)) return `"${ch}" is used in the rows but not in the palette`;
@@ -102,6 +105,25 @@ export function checkPixelArt(art: PixelArt, size?: { x: number; y: number }): s
   return null;
 }
 
+/** A palette color as SVG fill attributes (a see-through color as its opacity). */
+function svgFill(color: string): string {
+  if (color.length !== 9) return `fill="${color}"`;
+  const alpha = parseInt(color.slice(7), 16) / 255;
+  return `fill="${color.slice(0, 7)}" fill-opacity="${Number(alpha.toFixed(3))}"`;
+}
+
+/** How see-through a palette color is: 1 solid … 0 clear. */
+export function colorAlpha(color: string): number {
+  return /^#[0-9a-f]{8}$/i.test(color) ? parseInt(color.slice(7), 16) / 255 : 1;
+}
+
+/** The color with this opacity (1: plain #rrggbb). */
+export function withAlpha(color: string, alpha: number): string {
+  const rgb = color.slice(0, 7);
+  const a = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
+  return a >= 255 ? rgb : `${rgb}${a.toString(16).padStart(2, '0')}`;
+}
+
 /** SVG markup: one rectangle per horizontal run of the same color. */
 export function pixelArtToSvg(art: PixelArt): string {
   const colors = new Map(art.palette.map((p) => [p.key, p.color]));
@@ -114,7 +136,7 @@ export function pixelArtToSvg(art: PixelArt): string {
       const ch = row[x];
       let end = x + 1;
       while (end < width && row[end] === ch) end++;
-      if (ch !== '.') rects.push(`<rect x="${x}" y="${y}" width="${end - x}" height="1" fill="${colors.get(ch)}"/>`);
+      if (ch !== '.') rects.push(`<rect x="${x}" y="${y}" width="${end - x}" height="1" ${svgFill(colors.get(ch) ?? '#000000')}/>`);
       x = end;
     }
   });

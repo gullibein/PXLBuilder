@@ -231,6 +231,7 @@
 .chip-btn:disabled { opacity: 0.45; cursor: default; }
 .se-palette { display: flex; flex-wrap: wrap; gap: 4px; }
 .se-swatch { width: 22px; height: 22px; border-radius: 5px; border: 2px solid var(--line); padding: 0; }
+.se-swatch { background-size: auto, 8px 8px; }
 .se-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
 .se-add { position: relative; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; border: 1px dashed var(--line); cursor: pointer; font-weight: 700; color: var(--muted); }
 .se-add input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

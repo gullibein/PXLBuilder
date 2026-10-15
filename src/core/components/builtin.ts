@@ -16,7 +16,13 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       frame: { kind: 'number', default: 1, min: 1, step: 1, integer: true, description: 'Cell number when the image is a sprite sheet (1 = top-left, counting across rows)' },
       width: { kind: 'number', default: 32, min: 0, step: 1, description: 'Width in pixels' },
       height: { kind: 'number', default: 32, min: 0, step: 1, description: 'Height in pixels' },
-      color: { kind: 'color', default: '#cccccc', description: 'Fill color used when no asset is set' },
+      color: { kind: 'color', default: '#cccccc', description: 'Fill color used when no asset is set; with tint, the color the picture is tinted' },
+      tint: {
+        kind: 'boolean',
+        default: false,
+        description:
+          'Tint the picture with color: white pixels become the color, grays darker shades of it, black stays black, see-through pixels stay see-through. One shaded picture drawn in grays then serves every color (blocks of a falling-blocks game, team colors…); scripts can change color in play.',
+      },
       visible: { kind: 'boolean', default: true },
       layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
     },

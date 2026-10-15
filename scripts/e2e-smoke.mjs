@@ -342,6 +342,22 @@ function stubModel(body) {
       operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: 'Spikes', palette: [{ key: 'g', color: '#d9dde6' }, { key: 'd', color: '#5b6070' }], rows, situation: null }],
     };
   }
+  if (req.includes('tinted red brick')) {
+    const { width, height } = t[0].spriteGrid;
+    // White face, gray rim, a see-through dark shadow along the bottom row.
+    const rows = Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => (y === height - 1 ? 's' : x === 0 || y === 0 || x === width - 1 ? 'g' : 'w')).join(''));
+    const id = t[0].object.id;
+    return {
+      kind: 'apply',
+      message: `${t[0].object.name}: one shaded brick picture, tinted red.`,
+      changes: [`${t[0].object.name}: shaded brick, tinted red`],
+      operations: [
+        { op: 'draw_sprite', target: 'definition', id, name: 'Brick', palette: [{ key: 'w', color: '#ffffff' }, { key: 'g', color: '#9a9a9a' }, { key: 's', color: '#00000060' }], rows, situation: null },
+        { op: 'set_component_field', target: 'definition', id, component: 'Sprite', field: 'color', valueJson: '"#ff0000"' },
+        { op: 'set_component_field', target: 'definition', id, component: 'Sprite', field: 'tint', valueJson: 'true' },
+      ],
+    };
+  }
   if (req.includes('mushroom-enemies by jumping')) {
     const mushroom = body.context.library.find((d) => d.name === 'Mushroom');
     if (!mushroom) return { kind: 'answer', message: "There's no mushroom enemy in your library yet. Create one with + Create, place a few, then ask again.", changes: [], operations: [] };
@@ -1193,6 +1209,11 @@ try {
   await check(async () => (await seCanvas.getAttribute('data-tool')) === 'pencil' && (await se.getByTestId('se-color-a').getAttribute('class')).includes('on'), 'Alt-clicking a pixel picks its color, and letting go of Alt brings the pencil back');
   await clickPixel(2, 2);
   await check(async () => (await px()).split('/')[2][2] === 'a', 'the pencil now draws in the picked color');
+  await se.getByTestId('se-opacity').fill('50');
+  await check(async () => /^#[0-9a-f]{6}80$/.test(await se.getByTestId('se-color-a').getAttribute('title')), "a color's Opacity makes it see-through (#rrggbb80 at 50%)");
+  await se.getByTestId('se-opacity').fill('100');
+  await check(async () => /^#[0-9a-f]{6}$/.test(await se.getByTestId('se-color-a').getAttribute('title')), '(and solid again at 100%)');
+  await se.focus(); // (keys go to the editor, as after a click on it)
   await page.keyboard.press('s');
   const sel = async () => (await seCanvas.getAttribute('data-selection')) ?? '';
   const dragPixels = async (a, b) => {
@@ -2234,7 +2255,7 @@ try {
     await page.mouse.move(edge.x, edge.y);
     await check(async () => (await canvas.getAttribute('data-camera-outline')) === 'start|', 'hovering the camera outline highlights it');
     await page.mouse.click(edge.x, edge.y);
-    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await canvas.getAttribute('data-context')) === 'level' && (await prompts.count()) === 0, 'clicking it selects it (it glows)');
+    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await canvas.getAttribute('data-context')) === 'level' && (await prompts.count()) === 0 && !(await canvas.getAttribute('data-marker')), 'clicking it selects it (it glows; no spot marker on the level)');
     {
       const panel = page.getByTestId('camera-panel');
       await check(async () => (await panel.count()) === 1 && (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player', 'and opens the Camera card: it follows the Player');
@@ -2849,6 +2870,27 @@ try {
   await check(async () => (await swp.getByTestId('component-Sprite').innerText()).includes('Spikes'), 'the hazard now uses the drawn "Spikes" image (its size is unchanged)');
   await swp.getByTestId('close-details').click();
   await swp.screenshot({ path: `${OUT}/25-spikes-sprite.png`, clip: { x: sw_sAt(-260, -260).x, y: sw_sAt(-260, -260).y, width: 520, height: 320 } });
+  {
+    // A tinted picture: drawn in white and grays, shown in the Sprite color (one picture serves every color).
+    await swp.mouse.click(sw_sAt(-150, -150).x, sw_sAt(-150, -150).y);
+    await sw_sAsk('Make it a tinted red brick.');
+    await changeObject(sw_sPrompt);
+    await check(async () => (await sw_sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', '"a tinted red brick" draws a gray picture and turns tint on');
+    await swp.keyboard.press('Escape');
+    const pixel = async (wx, wy) =>
+      swp.evaluate(({ x, y }) => {
+        const c = document.querySelector('[data-testid="viewport-canvas"]');
+        const r = c.getBoundingClientRect();
+        const k = c.width / r.width;
+        return [...c.getContext('2d').getImageData(Math.round((x - r.left) * k), Math.round((y - r.top) * k), 1, 1).data];
+      }, sw_sAt(wx, wy));
+    await swp.waitForTimeout(300);
+    await swp.screenshot({ path: `${OUT}/25b-tinted-brick.png`, clip: { x: sw_sAt(-200, -190).x, y: sw_sAt(-200, -190).y, width: 100, height: 80 } });
+    await check(async () => {
+      const [r, g, b] = await pixel(-150, -150);
+      return r > 200 && g < 60 && b < 60;
+    }, 'on the level its white face shows in the Sprite color (red)');
+  }
   await swc.close();
 
   step = 'own API key, and changes placed on the right object';

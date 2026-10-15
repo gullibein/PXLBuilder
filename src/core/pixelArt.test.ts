@@ -4,7 +4,7 @@ import { applyOperations } from './commands/operations';
 import { createBuiltinRegistry } from './components/builtin';
 import { createProject, instantiateDefinition } from './model/factory';
 import * as m from './model/mutations';
-import { checkPixelArt, normalizePixelArt, pixelArtToSvg, suggestedGrid } from './model/pixelArt';
+import { checkPixelArt, colorAlpha, normalizePixelArt, pixelArtToSvg, suggestedGrid, withAlpha } from './model/pixelArt';
 import { resolveEntity } from './model/resolve';
 
 const registry = createBuiltinRegistry();
@@ -197,5 +197,27 @@ describe('animated sprites drawn by the AI', () => {
     // A required field that is missing is still an error.
     const broken = { ...reply, operations: [{ op: 'draw_sprite', target: 'definition', id: coinDef.id, palette, rows: coin(0) }] };
     expect(aiResponseSchema.safeParse(fillMissingNulls(broken)).success).toBe(false);
+  });
+});
+
+describe('see-through palette colors', () => {
+  it('keeps a see-through color (solid ones as #rrggbb, clear ones as ".")', () => {
+    const art = normalizePixelArt({ palette: [{ key: 'a', color: '#FFFFFF60' }, { key: 'b', color: '#123456ff' }, { key: 'c', color: '#12345600' }], rows: ['abc'] });
+    expect(art.palette).toEqual([{ key: 'a', color: '#ffffff60' }, { key: 'b', color: '#123456' }]);
+    expect(art.rows).toEqual(['ab.']);
+    expect(checkPixelArt(art)).toBeNull();
+  });
+
+  it('draws it with its opacity', () => {
+    const svg = pixelArtToSvg({ palette: [{ key: 'a', color: '#00000080' }, { key: 'b', color: '#ff0000' }], rows: ['ab'] });
+    expect(svg).toContain('fill="#000000" fill-opacity="0.502"');
+    expect(svg).toContain('fill="#ff0000"/>');
+  });
+
+  it('opacity helpers', () => {
+    expect(colorAlpha('#ff0000')).toBe(1);
+    expect(withAlpha('#ff0000', 0.5)).toBe('#ff000080');
+    expect(withAlpha('#ff000080', 1)).toBe('#ff0000');
+    expect(colorAlpha(withAlpha('#ff0000', 0.25))).toBeCloseTo(0.25, 2);
   });
 });
