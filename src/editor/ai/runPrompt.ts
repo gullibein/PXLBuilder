@@ -4,7 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { buildAIPayload, codeFor, contextKey, type AIContext } from '../../core/ai/context';
+import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from '../../core/ai/context';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
@@ -133,6 +133,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // What the editor's settings are: fixed, so it goes with the (cached) instructions; the context has their values.
     reference: editorReference(),
   };
+  // The full code of the objects the request names and of the player's object, sent along (no second round trip).
+  const along = codeToSend(state.project, ctx, request);
+  if (along.length) {
+    body.code = codeFor(state.project, along);
+    trace?.('note', `Sent along: the code of ${body.code.map((c) => c.name).join(', ')}`);
+  }
   const starterNow = (): GameType => useEditor.getState().project.settings.gameType ?? 'platformer';
   if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS };
   let response: AIResponse;

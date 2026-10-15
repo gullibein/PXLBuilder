@@ -426,7 +426,7 @@ describe("other objects' code goes to the AI", () => {
     // It goes after the game data (which stays the same, so it is read from the cache) and before the request.
     const { context, rest } = userMessageParts({ context: payload, request: 'Why?', history: [], code });
     expect(context).not.toContain('solid_at');
-    expect(rest.indexOf('CODE YOU ASKED FOR')).toBeLessThan(rest.indexOf('REQUEST'));
+    expect(rest.indexOf('FULL CODE')).toBeLessThan(rest.indexOf('REQUEST'));
     expect(rest).toContain('solid_at(self.x, self.y + 32)');
   });
 

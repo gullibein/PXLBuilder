@@ -3,7 +3,7 @@
  * needed). Uses the same request as the dev server (core/ai/claude.ts).
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { askClaude, CLAUDE_MODELS, MODEL } from '../../core/ai/claude';
+import { askClaude, CLAUDE_MODELS, claudeFormats, MODEL, rememberClaudeFormats } from '../../core/ai/claude';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import type { TraceFn } from '../../core/ai/trace';
@@ -26,11 +26,13 @@ export class BrowserClaudeProvider implements AIProvider {
 
   async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
     const model = getAISettings().claudeModel;
+    restoreFormats();
     trace?.('sent', `Claude with your Anthropic key (${CLAUDE_MODELS[model].name}${body.speed === 'fast' ? ', fast' : ''})`);
     const result = await askClaude(client(this.apiKey), body, signal, model, (note) => {
       trace?.('note', note);
       this.onNote?.(note);
     });
+    keepFormats();
     if (result.usage) {
       // What it cost, from the API's own token counts: in the trace, and in the console (with the running totals).
       const spent = recordSpend(result.usage);
@@ -53,5 +55,32 @@ export async function testApiKey(apiKey: string): Promise<{ ok: true } | { ok: f
     if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return { ok: false, message: 'The key was not accepted.' };
     if (e instanceof Anthropic.APIConnectionError) return { ok: false, message: 'Could not reach the Anthropic API from this page (network, or the page does not allow it).' };
     return { ok: false, message: (e as Error).message };
+  }
+}
+
+/**
+ * Which reply format each model takes, as found out in earlier visits: kept for a week (Anthropic may lift a limit),
+ * so a visit doesn't first ask with formats the model refuses.
+ */
+const FORMATS_KEY = 'pxlbuilder.claudeFormats';
+const WEEK = 7 * 24 * 3600 * 1000;
+let restored = false;
+function restoreFormats(): void {
+  if (restored) return;
+  restored = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(FORMATS_KEY) ?? 'null') as { at: number; formats: Record<string, unknown> } | null;
+    if (saved && Date.now() - saved.at < WEEK) rememberClaudeFormats(saved.formats);
+  } catch {
+    // Nothing kept: found out again.
+  }
+}
+function keepFormats(): void {
+  try {
+    const formats = claudeFormats();
+    const before = JSON.parse(localStorage.getItem(FORMATS_KEY) ?? 'null') as { at: number; formats: Record<string, unknown> } | null;
+    if (JSON.stringify(before?.formats ?? {}) !== JSON.stringify(formats)) localStorage.setItem(FORMATS_KEY, JSON.stringify({ at: Date.now(), formats }));
+  } catch {
+    // Not kept; fine.
   }
 }

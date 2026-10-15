@@ -91,7 +91,7 @@ function stubModel(body) {
   if (req.includes('what does the coin do')) {
     // Other objects' code isn't sent up front: ask for the Coin's, then answer from it.
     const coin = body.context.library.find((d) => d.name === 'Coin');
-    if (!body.code) return { kind: 'need_code', message: "I need to read the Coin's code.", changes: [], operations: [], needCode: [coin.id] };
+    if (!body.code?.some((c) => c.id === coin.id)) return { kind: 'need_code', message: "I need to read the Coin's code.", changes: [], operations: [], needCode: [coin.id] };
     const got = body.code.find((c) => c.id === coin.id);
     return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
   }
@@ -1883,7 +1883,7 @@ try {
     await gp.getByTestId('prompt-input').fill('What does the coin do?');
     await gp.getByTestId('prompt-input').press('Enter');
     await check(async () => (await gp.getByTestId('prompt-result').innerText()).includes("I read the Coin's code: 0 script(s), sent when I asked"), "the AI asks for an object's code it needs, gets it, and answers (one prompt, two requests)");
-    await check(aiRequests.length === before + 2 && !aiRequests[before].code && aiRequests[before + 1].code?.[0]?.name === 'Coin', '(the first request without the code, the second with it)');
+    await check(aiRequests.length === before + 2 && !aiRequests[before].code?.some((c) => c.name === 'Coin') && aiRequests[before + 1].code?.some((c) => c.name === 'Coin'), '(the first request without the code, the second with it)');
     await page.keyboard.press('Escape');
   }
 

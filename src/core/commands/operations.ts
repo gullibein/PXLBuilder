@@ -307,7 +307,7 @@ function substituteRefs(value: unknown, entities: Map<string, Id>, objects: Map<
   if (out.kind === 'object' && typeof out.id === 'string') out.id = objects.get(out.id) ?? out.id;
   if (out.type === 'spawn' && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
   // Script statements that name a library object.
-  if ((out.do === 'spawn' || out.do === 'shoot') && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
+  if ((out.do === 'spawn' || out.do === 'shoot' || out.do === 'draw') && typeof out.object === 'string') out.object = objects.get(out.object) ?? out.object;
   return out;
 }
 

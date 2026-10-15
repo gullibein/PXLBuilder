@@ -287,7 +287,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   repeat: { example: '{"do":"repeat","times":"self.max_health","then":[…]}', doc: 'run "then" N times (at most 2000); inside, "i" counts 0, 1, 2…' },
   draw: {
     example: '{"do":"draw","id":"heart{i}","shape":"sprite","anchor":"top_left","x":"16 + i * 40","y":"16","w":"32","h":"32","text":null,"size":null,"color":"#ff4d6d","object":"<library object id>","alpha":null}',
-    doc: 'draw on the screen, on top of the game, until erased or drawn again with the same id ("{expression}" parts in id and text are filled in, so "heart{i}" makes one per repeat). shape: text (text, size = font px, color), rect / circle (w, h, color), sprite (a library object\'s look, w × h). anchor: where x, y count from (a screen corner, side or the center; x grows right, y down; the drawing lines up with that corner, e.g. "top_right" with x "-16" sits 16 px from the right edge), or "world" for level coordinates (moves with the camera: labels over things). alpha: 0..1 (null = 1). Use it for health bars, hearts, scores, timers, labels',
+    doc: 'draw on the screen, on top of the game, until erased or drawn again with the same id ("{expression}" parts in id and text are filled in, so "heart{i}" makes one per repeat). shape: text (text, size = font px, color), rect / circle (w, h, color), sprite (a library object\'s look, w × h). anchor: where x, y count from (a screen corner, side or the center; x grows right, y down; the drawing lines up with that corner, e.g. "top_right" with x "-16" sits 16 px from the right edge), or "world" for level coordinates (moves with the camera: labels over things, a pose drawn on a thing): with "world", x, y is the CENTER of the drawing, the same point as a thing\'s own x, y: "self.x", "self.y" puts it exactly on the thing (not at its top-left corner). alpha: 0..1 (null = 1). Use it for health bars, hearts, scores, timers, labels',
   },
   erase: { example: '{"do":"erase","id":"heart{i}"}', doc: 'remove a drawing by id (null = everything this entity drew)' },
   play_sound: {
@@ -322,8 +322,29 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
 const expr = z.string().min(1);
 const nexpr = expr.nullable().default(null);
 
-const stmt: z.ZodType<Stmt> = z.lazy(() =>
-  z.discriminatedUnion('do', [
+/**
+ * A null for a setting that has a default (an AI writing "color": null on a sprite drawing) means "the default", as a
+ * missing setting does: it is dropped before checking, instead of failing the whole script. Settings that may be null
+ * keep their null.
+ */
+function nullMeansDefault(options: readonly z.ZodObject[]): (value: unknown) => unknown {
+  return (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const v = value as Record<string, unknown>;
+    const option = options.find((o) => (o.shape.do as z.ZodLiteral).value === v.do);
+    if (!option) return value;
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v)) {
+      const field = option.shape[k] as z.ZodType | undefined;
+      if (val === null && field && !field.safeParse(null).success) continue;
+      out[k] = val;
+    }
+    return out;
+  };
+}
+
+const stmt: z.ZodType<Stmt> = z.lazy(() => {
+  const union = z.discriminatedUnion('do', [
     z.object({ do: z.literal('set'), var: z.string().min(1), value: expr, on: nexpr }),
     z.object({ do: z.literal('if'), cond: expr, then: z.array(stmt).default([]), else: z.array(stmt).default([]) }),
     z.object({ do: z.literal('each'), tag: z.string().min(1), then: z.array(stmt) }),
@@ -392,8 +413,9 @@ const stmt: z.ZodType<Stmt> = z.lazy(() =>
     z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
     z.object({ do: z.literal('camera_focus'), target: expr, seconds: expr.default('2') }),
     z.object({ do: z.literal('camera_follow'), target: nexpr }),
-  ]),
-) as z.ZodType<Stmt>;
+  ]);
+  return z.preprocess(nullMeansDefault(union.options as readonly z.ZodObject[]), union);
+}) as z.ZodType<Stmt>;
 
 const trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('start') }),

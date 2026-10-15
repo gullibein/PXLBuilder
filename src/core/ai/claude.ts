@@ -68,6 +68,16 @@ export type ClaudeNote = (message: string) => void;
  */
 const accepted = { fallbacks: new Set<string>(), format: new Map<string, 'compact' | 'tool'>() };
 
+/** Which reply format each model was found to take (missing: the full strict format). Kept by the browser for a while. */
+export function claudeFormats(): Record<string, 'compact' | 'tool'> {
+  return Object.fromEntries(accepted.format);
+}
+
+/** What an earlier visit found out (so a visit doesn't ask with formats the model refuses, twice, before answering). */
+export function rememberClaudeFormats(formats: Record<string, unknown>): void {
+  for (const [model, level] of Object.entries(formats)) if (level === 'compact' || level === 'tool') accepted.format.set(model, level);
+}
+
 /** For tests: assume everything is accepted again. */
 export function resetClaudeFeatures(): void {
   accepted.fallbacks.clear();
