@@ -138,6 +138,30 @@ export function setCameraSettings(project: Project, sceneId: Id, patch: Partial<
   scene.camera = checked.camera;
 }
 
+/**
+ * What the camera follows in a level: this placed object (it gets a CameraTarget), or nothing (null: a still
+ * camera). Everything else in the level that the camera would follow stops being followed (in this level only).
+ */
+export function setCameraFollow(project: Project, sceneId: Id, entityId: Id | null, registry: ComponentRegistry): void {
+  const scene = getScene(project, sceneId);
+  if (entityId !== null) getEntity(project, sceneId, entityId);
+  for (const e of scene.entities) {
+    const has = 'CameraTarget' in resolveEntity(project, e, registry).components;
+    if (e.id === entityId && !has) addEntityComponent(project, sceneId, e.id, 'CameraTarget', registry);
+    if (e.id !== entityId && has) removeEntityComponent(project, sceneId, e.id, 'CameraTarget');
+  }
+}
+
+/** How many pixels tall the game is drawn when played (0: full sharpness; null: as the editor's setting / sharp). */
+export function setPlayPixels(project: Project, pixels: number | null): void {
+  if (pixels === null) {
+    delete project.settings.playPixels;
+    return;
+  }
+  if (!Number.isInteger(pixels) || pixels < 0 || pixels > 2160) throw new ModelError('Play resolution is 0 (sharp) or 1–2160 pixels tall');
+  project.settings.playPixels = pixels;
+}
+
 export function addAsset(project: Project, asset: AssetRecord): void {
   if (project.assets.some((a) => a.id === asset.id)) throw new ModelError(`Asset "${asset.id}" already exists`);
   if (!asset.data.startsWith('data:')) throw new ModelError('Asset data must be a data URL');

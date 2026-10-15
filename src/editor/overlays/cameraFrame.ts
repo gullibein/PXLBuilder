@@ -34,9 +34,22 @@ export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: View
 
 export type CameraOutline = 'start' | 'limits';
 
-/** The outline whose edge is at this point (within a few screen pixels), if any: the start frame first. */
-export function outlineAt(f: CameraFrame, p: { x: number; y: number }, zoom: number): CameraOutline | null {
-  const near = 6 / zoom;
+/** The start frame's label (drawn above its top-left corner). */
+const startLabel = (f: CameraFrame) => (f.follows ? `Camera at start (follows ${f.follows})` : 'Camera (stays still)');
+const LIMITS_LABEL = 'Camera limits';
+
+/**
+ * The outline at this point, if any (the start frame first): on its label, or
+ * on its edge within `band` screen pixels (0 where an object is under the
+ * point: the limits hug the level's outermost objects, which stay pickable;
+ * the label always picks the outline).
+ */
+export function outlineAt(f: CameraFrame, p: { x: number; y: number }, zoom: number, band = 6): CameraOutline | null {
+  // Labels: about 6.2 screen px per character at the 11 px font, 16 px tall, just above (start) or below (limits).
+  const onLabel = (text: string, x: number, baseline: number) => p.x >= x && p.x <= x + (text.length * 6.2 + 6) / zoom && p.y >= baseline - 16 / zoom && p.y <= baseline;
+  if (onLabel(startLabel(f), f.frame.minX, f.frame.minY)) return 'start';
+  if (f.limits && onLabel(LIMITS_LABEL, f.limits.minX, f.limits.maxY + 16 / zoom)) return 'limits';
+  const near = band / zoom;
   const onEdge = (b: CameraBounds) => {
     const inside = p.x > b.minX - near && p.x < b.maxX + near && p.y > b.minY - near && p.y < b.maxY + near;
     const deep = p.x > b.minX + near && p.x < b.maxX - near && p.y > b.minY + near && p.y < b.maxY - near;
@@ -78,10 +91,10 @@ export function drawCameraFrame(ctx: CanvasRenderingContext2D, f: CameraFrame, z
   if (f.limits) {
     const b = f.limits;
     outline(b, 'limits', 'rgba(255, 82, 82, 0.85)', 'rgba(255, 60, 60, 0.95)', 1.5, [6, 5]);
-    label('Camera limits', b.minX, b.maxY + 16 * px, 'rgba(255, 120, 120, 0.95)');
+    label(LIMITS_LABEL, b.minX, b.maxY + 16 * px, 'rgba(255, 120, 120, 0.95)');
   }
   const r = f.frame;
   outline(r, 'start', 'rgba(255, 255, 255, 0.75)', 'rgba(255, 255, 255, 0.95)', 2, [10, 6]);
-  label(f.follows ? `Camera at start (follows ${f.follows})` : 'Camera (stays still)', r.minX, r.minY, 'rgba(255, 255, 255, 0.9)');
+  label(startLabel(f), r.minX, r.minY, 'rgba(255, 255, 255, 0.9)');
   ctx.restore();
 }

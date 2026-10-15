@@ -97,7 +97,7 @@ function Player() {
   const { project } = game;
   return (
     <>
-      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => 0} keyHints={false} touchControls={touchControls} />
+      <PlayView key={run} project={project} startSceneId={project.startSceneId} playPixels={() => project.settings.playPixels ?? 0} keyHints={false} touchControls={touchControls} />
       {dropHint}
     </>
   );

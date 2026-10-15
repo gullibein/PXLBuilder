@@ -8,6 +8,7 @@ import { gameFromText, projectFromBundle, projectToBundle } from '../core/serial
 import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
+import { withoutUnused } from '../core/model/unused';
 
 const AUTOSAVE_KEY = 'pxlbuilder.autosave';
 export const PROJECT_FILE_EXTENSION = '.pxlproj.json';
@@ -178,17 +179,54 @@ export async function offerFile(filename: string, blob: Blob): Promise<'saved' |
   return 'saved';
 }
 
+/** Where each game was last saved, when the browser lets the page write files itself (Chrome, Edge): Save replaces it. */
+const savedFiles = new Map<string, FileSystemFileHandleLike>();
+
+interface FileSystemFileHandleLike {
+  name: string;
+  createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }>;
+  queryPermission?(o: { mode: 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(o: { mode: 'readwrite' }): Promise<PermissionState>;
+}
+type SaveFilePicker = (o: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandleLike>;
+
+/** The file this game was saved to in this visit (Save writes over it), if any. */
+export function savedFileName(projectId: string): string | null {
+  return savedFiles.get(projectId)?.name ?? null;
+}
+
+/** Whether Save can write a file itself (and so replace it), rather than download a new copy each time. */
+export function canReplaceFiles(): boolean {
+  return typeof (window as { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function';
+}
+
+export interface SaveOptions {
+  /** Leave out the library objects no level uses (and pictures only they show). */
+  dropUnused?: boolean;
+  /** Choose a new file even if the game was saved to one already. */
+  asNew?: boolean;
+}
+
 /**
- * Downloads the project as one bundle file. In the published app (claude.ai)
- * the viewer offers the file instead (pages may not download by themselves):
- * the user confirms the name and it is saved like any download.
+ * Saves the project as one bundle file. In the published app (claude.ai) the
+ * viewer offers the file instead (pages may not download by themselves): the
+ * user confirms the name and it is saved like any download. Where the browser
+ * lets the page write files (Chrome, Edge), the first Save asks where, and the
+ * next ones write over that file; elsewhere it is an ordinary download.
  */
-export async function saveProjectToFile(): Promise<void> {
+export async function saveProjectToFile(options: SaveOptions = {}): Promise<void> {
   const { project, markSaved, logMessage } = useEditor.getState();
+  let saved = project;
+  if (options.dropUnused) {
+    const r = withoutUnused(project);
+    saved = r.project;
+    if (r.objects.length) logMessage('info', `Left out of the file: ${r.objects.length} unused object${r.objects.length === 1 ? '' : 's'} (${r.objects.join(', ')})${r.pictures ? ` and ${r.pictures} picture${r.pictures === 1 ? '' : 's'} only they used` : ''}. They are still here in the editor.`);
+  }
   // The AI History goes with the game (for the user to read back; never sent to the AI).
-  const text = JSON.stringify({ ...projectToBundle(project), aiHistory: aiHistoryFor(project.id) });
+  const text = JSON.stringify({ ...projectToBundle(saved), aiHistory: aiHistoryFor(project.id) });
   const filename = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
   const blob = new Blob([text], { type: 'application/json' });
+  const size = blob.size < 1024 * 1024 ? `${Math.max(1, Math.round(blob.size / 1024))} KB` : `${(blob.size / 1024 / 1024).toFixed(1)} MB`;
   void writeAutosave(project);
 
   const downloads = await claudeCapability<ViewerDownloads>('downloads');
@@ -196,7 +234,7 @@ export async function saveProjectToFile(): Promise<void> {
     try {
       await downloads.save({ filename, data: blob });
       markSaved();
-      logMessage('info', `Saved "${project.name}" (${filename})`);
+      logMessage('info', `Saved "${project.name}" (${filename}, ${size})`);
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === 'declined') logMessage('info', 'Save cancelled');
@@ -204,6 +242,28 @@ export async function saveProjectToFile(): Promise<void> {
       else logMessage('error', `Could not save the file here (${code ?? 'unknown'}). Your work is still kept in this browser.`);
     }
     return;
+  }
+
+  const picker = (window as { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
+  if (typeof picker === 'function') {
+    try {
+      let handle = options.asNew ? undefined : savedFiles.get(project.id);
+      if (handle?.requestPermission && (await handle.queryPermission?.({ mode: 'readwrite' })) !== 'granted' && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') handle = undefined;
+      handle ??= await picker.call(window, { suggestedName: filename, types: [{ description: 'PXLBuilder game', accept: { 'application/json': ['.json'] } }] });
+      const out = await handle.createWritable();
+      await out.write(blob);
+      await out.close();
+      savedFiles.set(project.id, handle);
+      markSaved();
+      logMessage('info', `Saved "${project.name}" (${handle.name}, ${size})`);
+      return;
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') {
+        logMessage('info', 'Save cancelled');
+        return;
+      }
+      // Not allowed here (e.g. inside another site's frame): an ordinary download instead.
+    }
   }
 
   const url = URL.createObjectURL(blob);
@@ -215,7 +275,7 @@ export async function saveProjectToFile(): Promise<void> {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   markSaved();
-  logMessage('info', `Saved "${project.name}" (${filename})`);
+  logMessage('info', `Saved "${project.name}" (${filename}, ${size})`);
 }
 
 export async function openProjectFile(file: File): Promise<void> {

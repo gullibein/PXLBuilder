@@ -2235,11 +2235,36 @@ try {
     await check(async () => (await canvas.getAttribute('data-camera-outline')) === 'start|', 'hovering the camera outline highlights it');
     await page.mouse.click(edge.x, edge.y);
     await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await canvas.getAttribute('data-context')) === 'level' && (await prompts.count()) === 0, 'clicking it selects it (it glows)');
+    {
+      const panel = page.getByTestId('camera-panel');
+      await check(async () => (await panel.count()) === 1 && (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player', 'and opens the Camera card: it follows the Player');
+      const zoomInput = panel.getByTestId('camera-panel-zoom');
+      await zoomInput.fill('2');
+      await zoomInput.press('Enter');
+      await check(async () => {
+        const f = await frameOf();
+        return Math.abs(f[2] - f[0] - (f1[2] - f1[0]) / 2) < 2;
+      }, 'zoom 2 in the card: the outline shows half as much');
+      await panel.getByTestId('camera-follow').selectOption('');
+      await check(async () => (await panel.getByTestId('camera-ease').count()) === 0 && (await panel.getByTestId('camera-panel-fixed-set').count()) === 1, 'Follows: nothing makes it a still camera (no ease; where it looks instead)');
+      await panel.getByTestId('camera-resolution').selectOption('180');
+      await check(async () => (await panel.getByTestId('camera-resolution').inputValue()) === '180', 'the play resolution is set for the game');
+      for (let i = 0; i < 3; i++) await page.getByTestId('undo').click();
+      await check(async () => (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player' && (await frameOf()).join() === f1.join() && (await panel.getByTestId('camera-resolution').inputValue()) === 'editor', 'each change is one Undo step');
+      await page.screenshot({ path: `${OUT}/26c-camera-card.png` });
+    }
     await page.mouse.dblclick(edge.x, edge.y);
     await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.innerText()).includes('Camera at start'), 'double-clicking it opens the card to ask about the camera');
     await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
     await page.keyboard.press('Escape');
     await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'Esc lets go of it');
+    {
+      const label = { x: box.x + box.width / 2 + (f1[0] - cx) * zoom + 24, y: box.y + box.height / 2 + (f1[1] - cy) * zoom - 7 };
+      await page.mouse.click(label.x, label.y);
+      await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await page.getByTestId('camera-panel').count()) === 1, 'clicking its label opens the Camera card too');
+      await page.getByTestId('camera-panel-close').click();
+      await check(async () => (await page.getByTestId('camera-panel').count()) === 0 && (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'its × closes it');
+    }
     // Zoom back in where it zoomed out (the later steps click at fixed places).
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     for (let i = 0; i < 3; i++) {
@@ -2457,7 +2482,7 @@ try {
   await page.getByTestId('new-sprite-size-8').click();
   await page.getByTestId('game-platformer').click();
   await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project → Platformer starts an empty level');
-  await check(async () => (await canvas.getAttribute('data-camera-frame')) === '', 'no camera outline before a player is placed');
+  await check(async () => (await canvas.getAttribute('data-camera-frame')) === '', 'no camera outline on an empty level');
   await page.getByTestId('project-menu').click();
   await check(async () => (await page.getByTestId('sprite-size-8').getAttribute('aria-pressed')) === 'true', 'the sprite size picked when starting (8×8) is the game\'s sprite size (project menu)');
   await page.getByTestId('sprite-size-16').click();
@@ -2466,7 +2491,7 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   await page.dragAndDrop('[data-testid="definition-Player"]', '[data-testid="viewport-canvas"]', { targetPosition: { x: (await canvas.boundingBox()).width / 2, y: (await canvas.boundingBox()).height / 2 } });
-  await check(async () => ((await canvas.getAttribute('data-camera-frame')) ?? '') !== '', 'the camera outline appears once the player is placed');
+  await check(async () => ((await canvas.getAttribute('data-camera-frame')) ?? '') !== '', 'the camera outline appears once something is placed');
   await page.getByTestId('undo').click();
   wg = await wholeGame();
   await check(async () => (await wg.getByTestId('chat-past').count()) === 0 && (await wg.getByTestId('prompt-chat').count()) === 0, "a new game's Whole game card starts empty: another game's conversation isn't in it");
@@ -2679,6 +2704,19 @@ try {
   await cp2.getByTestId('save-confirm').click();
   await check(async () => saves.length === 1 && saves[0].filename === 'mole-mine.pxlproj.json' && JSON.parse(saves[0].text).kind === 'pxlbuilder.bundle' && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine'), 'Save renames the game and hands the project file to claude.ai to offer for download');
   await check(async () => (await cp2.locator('.dirty-dot').count()) === 0, 'and the project counts as saved');
+  {
+    await cp2.getByTestId('project-menu').click();
+    await cp2.getByTestId('menu-save').click();
+    await check(async () => /^\(\d+: /.test(await cp2.getByTestId('save-unused-count').innerText()), 'Save offers to leave out the objects no level uses (and names them)');
+    await cp2.getByTestId('save-drop-unused').check();
+    await cp2.getByTestId('save-confirm').click();
+    await check(async () => {
+      if (saves.length !== 2) return false;
+      const defs = (t) => JSON.parse(t).files['project.json'].objects.map((o) => o.name);
+      return defs(saves[1].text).join() === 'Player' && defs(saves[0].text).length > 5;
+    }, 'and the file then has only the Player (the only object placed); the editor keeps the rest');
+    await check(async () => (await cp2.getByTestId('dock-library').count()) === 1, '(the editor still works)');
+  }
   {
     const h = JSON.parse(saves[0].text).aiHistory;
     await check(h?.entries?.some((e) => e.request === 'Give the player five hearts.' && e.status === 'applied') && h.entries.every((e) => !('trace' in e)), "the game file keeps this game's AI History (requests and answers, not the under-the-hood traces)");

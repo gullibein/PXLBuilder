@@ -10,6 +10,7 @@ import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
 import { SpriteEditor } from './chrome/SpriteEditor';
+import { CameraPanel } from './chrome/CameraPanel';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
 import { LogicPanel } from './logic/LogicPanel';
 import { Dock } from './chrome/Dock';
@@ -60,7 +61,7 @@ export function App() {
           <PlayView
             project={useEditor.getState().project}
             startSceneId={useEditor.getState().activeSceneId}
-            playPixels={() => useEditor.getState().layout.playPixels}
+            playPixels={() => useEditor.getState().project.settings.playPixels ?? useEditor.getState().layout.playPixels}
             stopHint="Esc stops"
             touchControls
             onEnd={(report, project) => {
@@ -89,6 +90,7 @@ export function App() {
         <ContextPrompt />
         <ToolPanel />
         <BackgroundPanel />
+        <CameraPanel />
         <LogicPanel />
         <SpritesPanel />
         <AIConnection />

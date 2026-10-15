@@ -232,6 +232,12 @@ export interface ProjectSettings {
    * as they ship.
    */
   spriteResolution?: 8 | 16 | 32 | 64;
+  /**
+   * How many pixels tall the game is drawn when played (about; scaled up with hard edges to fill the screen), in
+   * the editor's Play and in exported games. 0: at the full sharpness of the screen. Missing: the editor's own
+   * Play resolution setting, and full sharpness in exported games.
+   */
+  playPixels?: number;
 }
 
 export type GameType = 'platformer' | 'topdown';
