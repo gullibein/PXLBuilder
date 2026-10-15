@@ -2484,6 +2484,13 @@ try {
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await check(async () => (await page.getByTestId('game-idea-go').isDisabled()) === true, 'New game has a field to tell the AI what game you want (Make it waits for words)');
+  {
+    const picker = page.getByTestId('game-chooser').getByTestId('ai-picker');
+    await picker.click();
+    await check(async () => (await page.getByTestId('ai-picker-menu').isVisible()) && (await page.getByTestId('game-chooser').isVisible()), 'New game lets you choose the AI that builds it (the AI menu opens over the dialog)');
+    await picker.click();
+    await check(async () => (await page.getByTestId('ai-picker-menu').count()) === 0 && (await page.getByTestId('game-chooser').isVisible()), '(and closes again, the dialog still open)');
+  }
   await page.getByTestId('game-idea').fill('A cave game where you dig for diamonds');
   await page.getByTestId('game-idea').press('Enter');
   await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'telling it goes straight to the editor, the Whole game card working on it');

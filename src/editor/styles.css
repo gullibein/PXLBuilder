@@ -164,6 +164,7 @@
 .style-dialog { width: min(560px, calc(100% - 32px)); }
 .game-dialog { width: min(640px, calc(100% - 32px)); }
 .game-idea { display: flex; gap: 8px; align-items: stretch; }
+.game-idea .prompt-icon.ai-picker { height: auto; align-self: stretch; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); font-size: 12px; }
 .game-idea textarea { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; }
 .game-idea button { padding: 0 16px; }
 .game-idea button:disabled { opacity: 0.5; }

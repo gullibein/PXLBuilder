@@ -1,3 +1,4 @@
+import { AIPicker } from '../prompt/AIPicker';
 import { useMemo, useState } from 'react';
 import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
 import { createStarterAssets } from '../../core/model/factory';
@@ -68,6 +69,7 @@ export function GameChooser() {
               }
             }}
           />
+          <AIPicker />
           <button type="submit" className="btn-primary" disabled={!idea.trim()} data-testid="game-idea-go">
             Make it
           </button>
