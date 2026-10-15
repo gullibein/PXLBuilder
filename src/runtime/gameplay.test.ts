@@ -75,6 +75,22 @@ describe('gameplay', () => {
     expect(events(rt, 'collected')).toEqual([expect.objectContaining({ subject: 'Player', other: 'Coin', detail: { item: 'coin' } })]);
   });
 
+  it('picking up a heart gives back one heart of health, never more than the most', () => {
+    const { rt, input, p } = level(({ place }) => {
+      place('Heart', { x: 40, y: 16 });
+      place('Heart', { x: 130, y: 16 });
+    });
+    p.health!.current = 1;
+    walkRight(rt, input, 0.25);
+    expect(p.health!.current).toBe(2);
+    expect(rt.entities.filter((e) => e.name === 'Heart' && !e.alive)).toHaveLength(1);
+    p.health!.current = 3;
+    walkRight(rt, input, 1);
+    expect(rt.entities.filter((e) => e.name === 'Heart' && !e.alive)).toHaveLength(2);
+    expect(p.health!.current).toBe(3);
+    expect(p.inventory?.get('heart') ?? 0).toBe(0); // used up, not kept
+  });
+
   it('a hazard hurts the player, with a short invincibility; at zero health the player dies and respawns', () => {
     // A wall right after the hazard keeps the player in it.
     const { rt, input, p } = level(({ place }) => {

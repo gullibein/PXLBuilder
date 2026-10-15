@@ -90,7 +90,7 @@ export interface RuntimeEntity {
   invincible: number;
   /** Item name -> count, or null without an Inventory. */
   inventory: Map<string, number> | null;
-  collectible: { item: string; keep: boolean } | null;
+  collectible: { item: string; keep: boolean; heal: number } | null;
   stompable: { stompers: string[]; bounce: number; damage: number } | null;
   /** Which way it faces (1 right, -1 left): set by running and patrolling; drawn mirrored when -1. */
   facing: 1 | -1;
@@ -366,7 +366,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     damage: c.Damage ? Number(c.Damage.amount) : null,
     invincible: 0,
     inventory,
-    collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume' } : null,
+    collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume', heal: Math.max(0, Number(c.Collectible.heal) || 0) } : null,
     stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
     stompGrace: 0,
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,

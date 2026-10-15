@@ -9,7 +9,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import type { AssetRecord, ObjectDefinition } from '../types';
-import { createAnimatedPixelArtAsset, createDefinition, createLeverAsset, createPixelArtAsset } from './factory';
+import { createAnimatedPixelArtAsset, createDefinition, createHeartAsset, createLeverAsset, createPixelArtAsset, heartDefinition } from './factory';
 import type { PixelArt } from './pixelArt';
 
 const PLAYER_DOWN: PixelArt = {
@@ -390,6 +390,7 @@ export interface TopDownStarterAssets {
   goal: AssetRecord;
   lever: AssetRecord;
   barrel: AssetRecord;
+  heart: AssetRecord;
 }
 
 export function createTopDownStarterAssets(): TopDownStarterAssets {
@@ -407,6 +408,7 @@ export function createTopDownStarterAssets(): TopDownStarterAssets {
     goal: createPixelArtAsset('Stairs', STAIRS),
     lever: createLeverAsset(),
     barrel: createPixelArtAsset('Barrel', BARREL),
+    heart: createHeartAsset(),
   };
 }
 
@@ -423,6 +425,7 @@ const CATEGORIES: Record<string, string> = {
   Teleporter: 'Environment',
   Goal: 'Environment',
   Barrel: 'Environment',
+  Heart: 'Items',
 };
 const TILES = new Set(['Wall', 'Floor', 'Hazard']);
 
@@ -558,6 +561,7 @@ export function createTopDownStarterDefinitions(registry: ComponentRegistry, ass
       ['barrel', 'pushable'],
       'A barrel the player can push, one tile per push (for puzzles); it blocks everything else like a wall.',
     ),
+    heartDefinition(registry, assets.heart),
   ];
   for (const def of defs) {
     def.metadata.starter = def.name;

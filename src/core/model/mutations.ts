@@ -416,7 +416,7 @@ function freshStarters(project: Project, registry: ComponentRegistry): { defs: O
     return { defs: createTopDownStarterDefinitions(registry, assets), newAssets: unique };
   }
   const fresh = createStarterAssets();
-  const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever), player: reuse(fresh.player), enemy: reuse(fresh.enemy), hazard: reuse(fresh.hazard), teleporter: reuse(fresh.teleporter), goal: reuse(fresh.goal), crate: reuse(fresh.crate) };
+  const assets: StarterAssets = { ladder: reuse(fresh.ladder), lever: reuse(fresh.lever), player: reuse(fresh.player), enemy: reuse(fresh.enemy), hazard: reuse(fresh.hazard), teleporter: reuse(fresh.teleporter), goal: reuse(fresh.goal), crate: reuse(fresh.crate), heart: reuse(fresh.heart) };
   return { defs: createStarterDefinitions(registry, assets), newAssets };
 }
 

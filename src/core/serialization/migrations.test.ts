@@ -122,7 +122,7 @@ describe('format v2 -> v3', () => {
     expect(out.assets.find((a) => a.id === player.components.Sprite.assetId)?.name).toBe('Player');
     // A recolored enemy keeps its own look.
     expect(out.definitions.find((d) => d.name === 'Enemy')!.components.Sprite.assetId).toBeNull();
-    expect(out.assets.filter((a) => !['Teleporter', 'Goal'].includes(a.name))).toHaveLength(1); // (v10 adds the Teleporter's and Goal's)
+    expect(out.assets.filter((a) => !['Teleporter', 'Goal', 'Heart'].includes(a.name))).toHaveLength(1); // (v10 adds the Teleporter's and Goal's, v12 the Heart's)
   });
 
   it('v7 -> v8: the starter Player jumps with 350 and the starter Hazard looks like spikes, unless changed', async () => {
@@ -169,11 +169,23 @@ describe('format v2 -> v3', () => {
     const { migrateProject } = await import('./migrations');
     type Out = { definitions: { name: string; components: Record<string, unknown> }[]; assets: { name: string }[] };
     const out = migrateProject({ formatVersion: 9, assets: [], scenes: [], definitions: [] }) as unknown as Out;
-    expect(out.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal']);
+    expect(out.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal', 'Heart']); // (and v12's Heart)
     expect(out.definitions[1].components.Goal).toBeDefined();
-    expect(out.assets.map((a) => a.name)).toEqual(['Teleporter', 'Goal']);
+    expect(out.assets.map((a) => a.name)).toEqual(['Teleporter', 'Goal', 'Heart']);
     const own = migrateProject({ formatVersion: 9, assets: [], scenes: [], definitions: [{ id: 'd', name: 'Teleporter', description: '', tags: [], metadata: {}, components: {} }] }) as unknown as Out;
-    expect(own.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal']); // the game's own Teleporter is kept, not doubled
+    expect(own.definitions.map((d) => d.name)).toEqual(['Teleporter', 'Goal', 'Heart']); // the game's own Teleporter is kept, not doubled
+  });
+
+  it("v11 -> v12: a Heart object is added (at the game's sprite size), unless the game has one", async () => {
+    const { migrateProject } = await import('./migrations');
+    type Out = { definitions: { name: string; components: Record<string, Record<string, unknown>> }[]; assets: { id: string; name: string; pixelArt?: { rows: string[] } }[] };
+    const out = migrateProject({ formatVersion: 11, settings: { gridSize: 16, spriteResolution: 8 }, assets: [], scenes: [], definitions: [] }) as unknown as Out;
+    const heart = out.definitions.find((d) => d.name === 'Heart')!;
+    expect(heart.components.Collectible.heal).toBe(1);
+    const art = out.assets.find((a) => a.id === heart.components.Sprite.assetId)!;
+    expect([art.pixelArt!.rows[0].length, art.pixelArt!.rows.length]).toEqual([8, 8]);
+    const own = migrateProject({ formatVersion: 11, assets: [], scenes: [], definitions: [{ id: 'd', name: 'Heart', description: '', tags: [], metadata: {}, components: {} }] }) as unknown as Out;
+    expect(own.definitions.map((d) => d.name)).toEqual(['Heart']);
   });
 
   it('v10 -> v11: the starter Enemy patrols and chases, unless it was given its own behavior or the game is top-down', async () => {

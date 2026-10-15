@@ -253,6 +253,8 @@ export class Gameplay {
     item.alive = false;
     this.rt.markSolidsDirty();
     if (item.collectible!.keep) this.addItem(collector, item.collectible!.item, 1);
+    // A heart (or anything that heals): health back, up to the maximum.
+    if (item.collectible!.heal > 0 && collector.health) collector.health.current = Math.min(collector.health.max, collector.health.current + item.collectible!.heal);
     this.emit('collected', collector, item, { item: item.collectible!.item });
   }
 

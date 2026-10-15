@@ -132,6 +132,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {
       collectionBehavior: { kind: 'enum', options: ['addToInventory', 'consume'], default: 'addToInventory', description: 'addToInventory: the collector keeps it as an item. consume: it is used up at once (only the "collected" event happens)' },
       itemId: { kind: 'string', default: '', description: 'Item name added to the collector inventory (empty: the object name in lower case)' },
+      heal: { kind: 'number', default: 0, min: 0, step: 1, integer: true, description: 'Health given back to the collector when picked up (a heart: 1), up to its maximum; 0: none' },
     },
   },
   {

@@ -133,6 +133,28 @@ export const HAND_DRAWN_8: Record<string, string[]> = {
   'Floor spikes': ['kkkkkkkk', 'kphpphpk', 'khgphgpk', 'kppppppk', 'kphpphpk', 'khgphgpk', 'kppppppk', 'kkkkkkkk'],
 };
 
+/** Pictures drawn by hand at 16 pixels a tile (a heart made smaller loses its shape and glint). By the picture's name. */
+export const HAND_DRAWN_16: Record<string, string[]> = {
+  Heart: [
+    '................',
+    '..oooo....oooo..',
+    '.oaaaao..oaaaao.',
+    'oahhaaaooaaaaaao',
+    'oahwaaaaaaaaaaao',
+    'oahaaaaaaaaaaabo',
+    'oaaaaaaaaaaaaabo',
+    'oaaaaaaaaaaaabbo',
+    '.oaaaaaaaaaaabo.',
+    '..oaaaaaaaaabo..',
+    '...oaaaaaaabo...',
+    '....oaaaaabo....',
+    '.....oaaabo.....',
+    '......oabo......',
+    '.......oo.......',
+    '................',
+  ],
+};
+
 /** Pixel art from a simple SVG of rectangles (the shipped ladder and lever pictures). */
 export function svgRectsToArt(svg: string, width: number, height: number): PixelArt {
   const grid = Array.from({ length: height }, () => Array<string>(width).fill('.'));
@@ -237,8 +259,8 @@ function artOf(asset: AssetRecord): Art | null {
 
 /** A built-in picture at a resolution, as asset fields (the data string tells sizes apart). */
 function variantFields(source: Art, sourceRes: number, res: number, name: string) {
-  const hand = res === 8 && source.frames.length === 1 ? HAND_DRAWN_8[name] : undefined;
-  const fitsHand = hand && hand[0].length === Math.ceil((source.frames[0][0].length * 8) / sourceRes);
+  const hand = source.frames.length === 1 ? (res === 8 ? HAND_DRAWN_8[name] : res === 16 ? HAND_DRAWN_16[name] : undefined) : undefined;
+  const fitsHand = hand && hand[0].length === Math.ceil((source.frames[0][0].length * res) / sourceRes);
   const art = fitsHand ? { palette: source.palette.filter((p) => hand.join('').includes(p.key)), frames: [hand] } : artAtResolution(source, sourceRes, res);
   return pixelArtFields(art.palette, art.frames, art.fps ?? 8);
 }

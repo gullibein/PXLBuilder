@@ -45,6 +45,8 @@ const SET: Record<string, { frames: string[][]; fps?: number }> = {
   // A purple horned beetle.
   'platformer:Enemy': { frames: [['.e....e.', '..2222..', '.222222.', '27022702', '22222222', '2e2222e2', '.222222.', '.2.22.2.']] },
   // A gold coin with a shine.
+  // A red heart with a white glint (the player's hearts on the screen too).
+  '*:Heart': { frames: [['.22..22.', '2ee22882', '2e788882', '28888882', '.288882.', '..2882..', '...22...', '........']] },
   '*:Coin': { frames: [['..9999..', '.9aaaa9.', '9a7aaaa9', '9a7aa9a9', '9aaaa9a9', '9aaaaaa9', '.9aaaa9.', '..9999..']] },
   // A key: ring, shaft, two teeth.
   '*:Key': { frames: [['.aaa....', 'a...a...', 'a...aaaa', 'a...a.a.', '.aaa..a.']] },

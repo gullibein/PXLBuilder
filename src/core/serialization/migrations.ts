@@ -1,7 +1,9 @@
 import { componentRegistry } from '../components/builtin';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
-import { createStarterAssets, createStarterDefinitions, ENEMY_PATROL, SPIKES_ART_V8_ROWS } from '../model/factory';
+import { createHeartAsset, createStarterAssets, createStarterDefinitions, ENEMY_PATROL, heartDefinition, SPIKES_ART_V8_ROWS } from '../model/factory';
+import { eightBitArt } from '../model/eightBitSet';
+import { lookAt, starterLook } from '../model/spriteResolution';
 import { FORMAT_VERSION } from './version';
 
 /**
@@ -301,6 +303,31 @@ function migrateV10toV11(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v11 -> v12
+ * - New starter object: Heart (a pickup that gives back a heart of health; its look is the player's hearts on the
+ *   screen), added to games that don't have one yet, at the game's sprite size.
+ */
+function migrateV11toV12(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const has = (project.definitions ?? []).some((d: Raw) => (d.metadata?.starter ?? d.name) === 'Heart' || d.name === 'Heart');
+  if (has) return project;
+  const asset = createHeartAsset();
+  const res = project.settings?.spriteResolution;
+  if (res && res !== 32) {
+    const found = starterLook('Heart', asset, 32);
+    const look = found && { ...found, eight: eightBitArt(project.settings?.gameType ?? 'platformer', 'Heart', null) ?? undefined };
+    const fields = look && lookAt(look, res);
+    if (fields) Object.assign(asset, fields);
+  }
+  const def = heartDefinition(componentRegistry, asset);
+  def.metadata.starter = 'Heart';
+  def.metadata.category = 'Items';
+  project.definitions = [...(project.definitions ?? []), def];
+  project.assets = [...(project.assets ?? []), asset];
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -312,6 +339,7 @@ export const MIGRATIONS: Migration[] = [
   { from: 8, to: 9, migrate: migrateV8toV9 },
   { from: 9, to: 10, migrate: migrateV9toV10 },
   { from: 10, to: 11, migrate: migrateV10toV11 },
+  { from: 11, to: 12, migrate: migrateV11toV12 },
 ];
 
 export class MigrationError extends Error {

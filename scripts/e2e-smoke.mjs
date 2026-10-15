@@ -2688,6 +2688,7 @@ try {
   const evs = async () => (await lPlay.getAttribute('data-events')) ?? '';
   await check(async () => (await lps())[2] === 1, 'play: the player lands');
   await check(async () => (await lp.getByTestId('hud-health').getAttribute('aria-label')) === 'Health 3 of 3', 'the HUD shows the player\'s hearts');
+  await check(async () => (await lp.getByTestId('hud-heart').count()) === 3 && ((await lp.getByTestId('hud-heart').first().getAttribute('src')) ?? '').startsWith('data:image/svg'), "(drawn with the Heart object's picture)");
   const walkUntil = async (x) => {
     await lp.keyboard.down('ArrowRight');
     for (let i = 0; i < 150 && (await lps())[0] < x; i++) await lp.waitForTimeout(20);

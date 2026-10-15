@@ -456,6 +456,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .hud-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.72); color: #fff; font: 600 13px var(--font-ui); }
 .hud-hearts { color: #ff6b81; letter-spacing: 1px; font-size: 15px; }
 .hud-hearts .empty { color: rgba(255, 255, 255, 0.25); }
+.hud-hearts { display: inline-flex; align-items: center; gap: 2px; }
+.hud-heart { width: 18px; height: 18px; image-rendering: pixelated; display: block; }
+.hud-heart.empty { filter: grayscale(1) brightness(0.55); opacity: 0.6; }
 /* Centered without a transform, so the pop-in (which animates transform) doesn't shift it. In the console font. */
 .hud-banner { position: absolute; left: 0; right: 0; top: 38%; width: fit-content; margin: 0 auto; padding: 18px 28px; border-radius: 6px; background: rgba(15, 12, 30, 0.86); color: #ffe08f; font: 22px/1.4 var(--font-console); text-align: center; pointer-events: none; z-index: 6; animation: pop-in 180ms ease-out; max-width: calc(100% - 32px); box-sizing: border-box; }
 .hud-message { position: absolute; left: 0; right: 0; top: 22%; width: fit-content; margin: 0 auto; padding: 14px 20px; border-radius: 6px; background: rgba(15, 12, 30, 0.8); color: #fff; font: 14px/1.5 var(--font-console); text-align: center; pointer-events: none; z-index: 5; animation: pop-in 140ms ease-out; max-width: calc(100% - 32px); box-sizing: border-box; }

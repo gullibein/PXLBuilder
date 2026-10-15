@@ -335,10 +335,80 @@ export interface StarterAssets {
   teleporter: AssetRecord;
   goal: AssetRecord;
   crate: AssetRecord;
+  heart: AssetRecord;
+}
+
+/**
+ * The heart: a pickup that gives back one heart of health, and the picture the player's hearts are drawn with on
+ * the screen (so changing its look changes them too). Drawn by hand at 16 pixels a tile (HAND_DRAWN_16) and at 8
+ * (eightBitSet.ts); this 32-pixel one is the 16-pixel drawing doubled with Scale2x (smooth curves), and 64 is made
+ * from it the same way.
+ */
+export const HEART_ART: PixelArt = {
+  palette: [
+    { key: 'o', color: '#5c1324' },
+    { key: 'a', color: '#e8344a' },
+    { key: 'b', color: '#b0213a' },
+    { key: 'h', color: '#ff8d9b' },
+    { key: 'w', color: '#fff0f2' },
+  ],
+  rows: [
+    '................................',
+    '................................',
+    '.....oooooo..........oooooo.....',
+    '...oooooooooo......oooooooooo...',
+    '...ooaaaaaaoo......ooaaaaaaoo...',
+    '.ooaaaaaaaaaaoo..ooaaaaaaaaaaoo.',
+    'oooaahhaaaaaaooooooaaaaaaaaaaooo',
+    'ooaahhhhaaaaaaaooaaaaaaaaaaaaaoo',
+    'ooaahhhwaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaahhwaaaaaaaaaaaaaaaaaaaaaaaoo',
+    'ooaahhaaaaaaaaaaaaaaaaaaaaaaaboo',
+    'ooaahhaaaaaaaaaaaaaaaaaaaaaabboo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaaabboo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaabbboo',
+    'ooaaaaaaaaaaaaaaaaaaaaaaaaabbboo',
+    'oooaaaaaaaaaaaaaaaaaaaaaaabbbooo',
+    '.ooaaaaaaaaaaaaaaaaaaaaaaabbboo.',
+    '...ooaaaaaaaaaaaaaaaaaaaabboo...',
+    '...ooaaaaaaaaaaaaaaaaaaaabboo...',
+    '.....ooaaaaaaaaaaaaaaaabboo.....',
+    '.....ooaaaaaaaaaaaaaaaabboo.....',
+    '.......ooaaaaaaaaaaaabboo.......',
+    '.......ooaaaaaaaaaaaabboo.......',
+    '.........ooaaaaaaaabboo.........',
+    '.........ooaaaaaaaabboo.........',
+    '...........ooaaaabboo...........',
+    '...........ooaaaabboo...........',
+    '.............ooaboo.............',
+    '.............oooooo.............',
+    '...............oo...............',
+    '................................',
+    '................................',
+  ],
+};
+
+export function createHeartAsset(): AssetRecord {
+  return createPixelArtAsset('Heart', HEART_ART);
+}
+
+/** The Heart object (the same in both starter sets). */
+export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord): ObjectDefinition {
+  const c = (type: string, props: Record<string, unknown> = {}) => registry.createDefault(type, props);
+  return createDefinition(
+    'Heart',
+    {
+      Sprite: c('Sprite', { width: 32, height: 32, color: '#e8344a', assetId: asset.id }),
+      Collider: c('Collider', { shape: 'circle', size: { x: 24, y: 24 }, isTrigger: true, matchSprite: false }),
+      Collectible: c('Collectible', { collectionBehavior: 'consume', itemId: 'heart', heal: 1 }),
+    },
+    ['collectible', 'heart'],
+    "A heart: picking it up gives back one heart of health (up to the most the player can have). Its look is also the look of the player's hearts on the screen.",
+  );
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE) };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset() };
 }
 
 /** Library categories of the starter objects. */
@@ -356,6 +426,7 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Teleporter: 'Environment',
   Goal: 'Environment',
   Crate: 'Environment',
+  Heart: 'Items',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder']);
 
@@ -494,6 +565,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       ['crate', 'pushable'],
       'A heavy crate the player can push sideways, slowly (it falls off ledges); stand on it to reach higher.',
     ),
+    heartDefinition(registry, assets.heart),
   ];
   for (const def of defs) {
     // Remembers which starter this is, so it can be reset even after being renamed.
@@ -532,6 +604,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal, assets.crate],
+    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal, assets.crate, assets.heart],
   };
 }

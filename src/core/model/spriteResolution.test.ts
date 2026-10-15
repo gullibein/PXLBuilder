@@ -6,7 +6,7 @@ import { applyOperations, operationSchema } from '../commands/operations';
 import { createProject } from './factory';
 import * as m from './mutations';
 import { checkPixelArt } from './pixelArt';
-import { BOX_ART, scale2x, shrink } from './spriteResolution';
+import { BOX_ART, scale2x, shrink, HAND_DRAWN_16 } from './spriteResolution';
 import type { Project } from '../types';
 
 const registry = createBuiltinRegistry();
@@ -25,6 +25,15 @@ describe('sprite size', () => {
     // A diagonal edge: the corner pixel takes the neighbours' color.
     expect(scale2x(['aa', 'a.'])).toEqual(['aaaa', 'aaaa', 'aaa.', 'aa..']);
     expect(shrink(['aab.', 'ab..', '....', '..cc'], 2)).toEqual(['a.', '.c']);
+  });
+
+  it('the Heart has its own drawings at 8, 16 and 32 (64 is made from the 32): every size whole', () => {
+    for (const [res, side] of [[8, 8], [16, 16], [32, 32], [64, 64]] as const) {
+      const p = res === 32 ? createProject(registry) : produce(createProject(registry), (d) => void m.changeSpriteResolution(d, res, registry));
+      expect(size(p, 'Heart'), `at ${res}`).toBe(`${side}x${side}`);
+    }
+    const p16 = produce(createProject(registry), (d) => void m.changeSpriteResolution(d, 16, registry));
+    expect(look(p16, 'Heart')!.pixelArt!.rows).toEqual(HAND_DRAWN_16.Heart);
   });
 
   it('the hand-drawn pictures for objects that ship as plain boxes are valid pixel art', () => {

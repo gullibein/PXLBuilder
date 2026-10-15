@@ -1,5 +1,5 @@
 import { resolutionZoom } from '../../core/model/camera';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
@@ -62,8 +62,20 @@ export function isTouchScreen(): boolean {
   return typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 }
 
+/**
+ * The picture the player's hearts are drawn with: the game's Heart object's look (built in, or the user's own
+ * drawing), or null for a plain ♥ (no Heart object, or one without a picture).
+ */
+export function heartPicture(project: Project): string | null {
+  const def = project.definitions.find((d) => d.metadata.starter === 'Heart') ?? project.definitions.find((d) => d.name.toLowerCase() === 'heart');
+  const assetId = def?.components.Sprite?.assetId;
+  const asset = typeof assetId === 'string' ? project.assets.find((a) => a.id === assetId && a.kind === 'image') : undefined;
+  return asset?.data ?? null;
+}
+
 export function PlayView(props: PlayViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const heart = useMemo(() => heartPicture(props.project), [props.project]);
   // The game's controls, for the on-screen buttons.
   const inputRef = useRef<InputState | null>(null);
   const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null });
@@ -284,11 +296,15 @@ export function PlayView(props: PlayViewProps) {
       <div className="hud" data-testid="hud">
         {hud.health && (
           <span className="hud-chip hud-hearts" data-testid="hud-health" aria-label={`Health ${hud.health.current} of ${hud.health.max}`}>
-            {Array.from({ length: Math.min(hud.health.max, 12) }, (_, i) => (
-              <span key={i} className={i < hud.health!.current ? '' : 'empty'}>
-                ♥
-              </span>
-            ))}
+            {Array.from({ length: Math.min(hud.health.max, 12) }, (_, i) =>
+              heart ? (
+                <img key={i} src={heart} alt="" className={`hud-heart${i < hud.health!.current ? '' : ' empty'}`} data-testid="hud-heart" />
+              ) : (
+                <span key={i} className={i < hud.health!.current ? '' : 'empty'}>
+                  ♥
+                </span>
+              ),
+            )}
           </span>
         )}
         {hud.items.map(([item, count]) => (
