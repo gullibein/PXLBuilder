@@ -133,7 +133,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // What the editor's settings are: fixed, so it goes with the (cached) instructions; the context has their values.
     reference: editorReference(),
   };
-  // The full code of the objects the request names and of the player's object, sent along (no second round trip).
+  // The full code of the objects the request names, sent along (no second round trip).
   const along = codeToSend(state.project, ctx, request);
   if (along.length) {
     body.code = codeFor(state.project, along);

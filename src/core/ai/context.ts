@@ -463,22 +463,20 @@ function scriptsInFull(project: Project, scene: Scene, targetIds: Id[]): Set<Id>
 }
 
 /**
- * Objects whose full scripts are sent with a request without being asked for (as FULL CODE): those the request names
- * ("make the mole shake while digging") and the player's object in this level (the one asked about most), so the AI
- * doesn't need a second round trip to read them. Not the selected things' own (they are in targets already).
+ * Objects whose full scripts are sent with a request without being asked for (as FULL CODE): only those the request
+ * names ("make the mole shake while digging"), so the AI doesn't need a second round trip to read code it obviously
+ * needs, and no request pays for code it doesn't mention. Not the selected things' own (they are in targets already).
  */
 export function codeToSend(project: Project, ctx: AIContext, request: string): Id[] {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const inTargets = scriptsInFull(project, scene, 'entityIds' in ctx ? ctx.entityIds : []);
   const text = request.toLowerCase();
-  const placedHere = new Set(scene.entities.map((e) => e.definitionId));
   const out: Id[] = [];
   for (const d of project.definitions) {
     if (!d.scripts?.length || inTargets.has(d.id)) continue;
     const name = d.name.toLowerCase();
     const named = name.length >= 3 && new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|es)?([^a-z0-9]|$)`).test(text);
-    const player = !!d.components.CharacterController && placedHere.has(d.id);
-    if (named || player) out.push(d.id);
+    if (named) out.push(d.id);
   }
   return out;
 }

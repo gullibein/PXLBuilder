@@ -39,7 +39,7 @@ describe('what AIs commonly write in scripts', () => {
     expect(drawn.object).toBe(made.id);
   });
 
-  it("the scripts of objects the request names, and the player's, are sent along in full (no extra round trip to ask for them)", () => {
+  it("the scripts of the objects a request names are sent along in full (no round trip to ask; nothing else is sent)", () => {
     const p = createProject(registry);
     const player = p.definitions.find((d) => d.name === 'Player')!;
     const coin = p.definitions.find((d) => d.name === 'Coin')!;
@@ -48,7 +48,8 @@ describe('what AIs commonly write in scripts', () => {
     coin.scripts = [script('b') as never];
     p.scenes[0].entities = [{ id: 'e1', name: 'Player', definitionId: player.id, transform: { position: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } }, components: {}, removedComponents: [], tags: [], metadata: {} }];
     const full = (request: string) => JSON.stringify(codeFor(p, codeToSend(p, { kind: 'level', sceneId: p.scenes[0].id, point: null }, request)).map((c) => c.name));
-    expect(full('make it rain')).toBe('["Player"]');
-    expect(full('the coins should spin')).toBe('["Player","Coin"]');
+    expect(full('make it rain')).toBe('[]');
+    expect(full('the coins should spin')).toBe('["Coin"]');
+    expect(full('the player should jump higher')).toBe('["Player"]');
   });
 });
