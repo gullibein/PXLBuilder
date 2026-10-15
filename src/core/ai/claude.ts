@@ -118,7 +118,8 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const { context, rest } = userMessageParts(body);
   const common = {
     model,
-    max_tokens: 16000,
+    // Room for big answers (a whole game, many drawings at once); the request is streamed, so a long one doesn't time out.
+    max_tokens: 64000,
     messages: [
       {
         role: 'user' as const,
@@ -137,6 +138,8 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     ...(body.reference ? [{ type: 'text' as const, text }] : []),
     { type: 'text' as const, text: body.reference ?? text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } },
   ];
+  // Streamed (a long answer takes minutes), and the whole message read at the end: the same message parse/create give.
+  const send = <P extends Parameters<typeof client.beta.messages.stream>[0]>(params: P) => client.beta.messages.stream(params, { signal }).finalMessage();
   const used = (r: { model?: string; usage?: Parameters<typeof usageCost>[1] }) => (r.usage ? usageCost(r.model ?? model, r.usage) : undefined);
   const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };
@@ -144,14 +147,11 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const level = accepted.format.get(model);
   if (level === 'compact') {
     systemPrompt ??= buildSystemPrompt(componentRegistry);
-    const response = await client.beta.messages.parse(
-      {
-        ...common,
-        output_config: { effort, format: betaJSONSchemaOutputFormat(compactFormat() as Parameters<typeof betaJSONSchemaOutputFormat>[0]) },
-        system: cachedSystem(systemPrompt + COMPACT_NOTE),
-      },
-      { signal },
-    );
+    const response = await send({
+      ...common,
+      output_config: { effort, format: betaJSONSchemaOutputFormat(compactFormat() as Parameters<typeof betaJSONSchemaOutputFormat>[0]) },
+      system: cachedSystem(systemPrompt + COMPACT_NOTE),
+    });
     const usage = used(response);
     const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
     if (response.stop_reason === 'refusal') return withUsage(declined);
@@ -168,14 +168,11 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   }
   if (!level) {
     systemPrompt ??= buildSystemPrompt(componentRegistry);
-    const response = await client.beta.messages.parse(
-      {
-        ...common,
-        output_config: { effort, format: betaZodOutputFormat(aiResponseSchema) },
-        system: cachedSystem(systemPrompt),
-      },
-      { signal },
-    );
+    const response = await send({
+      ...common,
+      output_config: { effort, format: betaZodOutputFormat(aiResponseSchema) },
+      system: cachedSystem(systemPrompt),
+    });
     const usage = used(response);
     const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
     if (response.stop_reason === 'refusal') return withUsage(declined);
@@ -191,16 +188,14 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   // tool calls as text (a known failure of these models) is stopped there instead of running to the length limit.
   const system = cachedSystem(systemPromptWithReplyFormat() + REPLY_TOOL_NOTE);
   const ask = (messages: typeof common.messages | (typeof common.messages[number] | { role: 'assistant' | 'user'; content: unknown })[]) =>
-    client.beta.messages.create(
-      { ...common, messages: messages as typeof common.messages, output_config: { effort }, system, tools: [replyTool()], tool_choice: { type: 'auto' }, stop_sequences: FAKE_TOOL_CALL },
-      { signal },
-    );
+    send({ ...common, messages: messages as typeof common.messages, output_config: { effort }, system, tools: [replyTool()], tool_choice: { type: 'auto' }, stop_sequences: FAKE_TOOL_CALL });
   let response = await ask(common.messages);
   let usage = used(response);
   const withUsage = <T extends ClaudeResult>(r: T): T => (usage ? { ...r, usage } : r);
   if (response.stop_reason === 'refusal') return withUsage(declined);
   const cutOff = () => {
-    note(`${CLAUDE_MODELS[model].name}'s answer reached the length limit (${common.max_tokens} tokens). It began: ${replyText(response).slice(0, 600)}`);
+    const inTool = response.content.some((b) => b.type === 'tool_use');
+    note(`${CLAUDE_MODELS[model].name}'s answer reached the length limit (${common.max_tokens} tokens${inTool ? ', written into the reply tool' : ''}). It began: ${replyText(response).slice(0, 600) || '(no text)'}`);
     return withUsage(incomplete);
   };
   if (response.stop_reason === 'max_tokens') return cutOff();

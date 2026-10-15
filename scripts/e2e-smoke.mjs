@@ -2997,7 +2997,20 @@ try {
     const request = text.slice(text.lastIndexOf('REQUEST\n') + 8);
     // (The real API's strict format always has every field: needCode and starter are null unless used.)
     const out = { needCode: null, starter: null, ...stubModel({ context, request, history: [] }) };
-    return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 25000, cache_creation_input_tokens: 0 } });
+    const usage = { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 25000, cache_creation_input_tokens: 0 };
+    if (!sent.stream) return json(200, { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [{ type: 'text', text: JSON.stringify(out) }], stop_reason: 'end_turn', stop_sequence: null, usage });
+    // Streamed (as the app asks): the server-sent events the API sends.
+    anthropicCalls.at(-1).streamed = true;
+    const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+    const body = [
+      ev('message_start', { message: { id: 'msg_test', type: 'message', role: 'assistant', model: sent.model, content: [], stop_reason: null, stop_sequence: null, usage: { ...usage, output_tokens: 1 } } }),
+      ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }),
+      ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: JSON.stringify(out) } }),
+      ev('content_block_stop', { index: 0 }),
+      ev('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: usage.output_tokens } }),
+      ev('message_stop', {}),
+    ].join('');
+    return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'text/event-stream' }, body });
   });
   await kp.goto(URL);
   await startPlatformer(kp);
@@ -3042,6 +3055,7 @@ try {
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'message' && (await kPrompt.getByTestId('prompt-result').innerText()).includes("There's no mushroom enemy"), 'the AI instructs the user when what they describe does not exist yet');
   await check(serverCalls === serverBefore && anthropicCalls.at(-1).key === VALID && anthropicCalls.at(-1).url.includes('/v1/messages'), 'prompts use the user key, not the server');
+  await check(anthropicCalls.at(-1).streamed === true && anthropicCalls.at(-1).sent.max_tokens === 64000, '(streamed, with room for long answers: 64,000 tokens)');
   {
     const sent = anthropicCalls.at(-1).sent;
     await check(anthropicCalls.at(-1).model === 'claude-opus-5-5' && sent.system.at(-1).cache_control?.ttl === '1h' && sent.system.at(-1).text.startsWith('EDITOR SETTINGS') && sent.messages[0].content[0].cache_control?.type === 'ephemeral', 'Opus by default; the system prompt is cached for an hour and the game data for the request');

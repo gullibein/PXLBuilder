@@ -3,13 +3,29 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { askClaude, MODEL, resetClaudeFeatures, usageCost } from './claude';
 import type { AIRequestBody } from './protocol';
 
+/**
+ * The client as askClaude uses it: requests are streamed (stream(...).finalMessage()). A stand-in written with parse
+ * (strict reply format) and create (without it) answers through them.
+ */
+function streaming(fake: { beta: { messages: { parse?: (p: never, o?: unknown) => unknown; create?: (p: never, o?: unknown) => unknown } } }): Anthropic {
+  const { parse, create } = fake.beta.messages;
+  const stream = (params: { output_config?: { format?: unknown } }, options?: unknown) => ({
+    finalMessage: async () => {
+      const call = params.output_config?.format ? parse : create;
+      if (!call) throw new Error('no stand-in for this call');
+      return call(params as never, options);
+    },
+  });
+  return { beta: { messages: { ...fake.beta.messages, stream } } } as unknown as Anthropic;
+}
+
 /** A client whose one call records its parameters and answers. */
 function fakeClient(seen: Record<string, unknown>[]): Anthropic {
   const parse = async (params: Record<string, unknown>) => {
     seen.push(params);
     return { stop_reason: 'end_turn', parsed_output: { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null, starter: null } };
   };
-  return { beta: { messages: { parse } } } as unknown as Anthropic;
+  return streaming({ beta: { messages: { parse } } });
 }
 const body = (speed?: 'best' | 'fast'): AIRequestBody => ({ context: { scope: 'level' } as never, request: 'Hello', history: [], ...(speed ? { speed } : {}) });
 
@@ -25,7 +41,7 @@ describe('the Claude call', () => {
   });
 
   it("a rejected request says why, in Anthropic's words, with the request id", async () => {
-    const failing = {
+    const failing = streaming({
       beta: {
         messages: {
           parse: async () => {
@@ -33,7 +49,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     const result = await askClaude(failing, body());
     expect(result).toMatchObject({ ok: false, error: 'AI request failed (400): max_tokens: must be at most 128000 (request req_123)' });
   });
@@ -43,7 +59,7 @@ describe('the Claude call', () => {
 
   it('an account without the fallback beta: asks again without it, and from then on', async () => {
     const seen: Record<string, unknown>[] = [];
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async (params: Record<string, unknown>) => {
@@ -53,7 +69,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     expect(await askClaude(client, body())).toEqual({ ok: true, response: answer });
     expect(seen.map((p) => !!p.fallbacks)).toEqual([true, false]);
     expect(seen[1].betas).toBeUndefined();
@@ -63,7 +79,7 @@ describe('the Claude call', () => {
 
   it('a refused reply format: the format goes in the prompt instead, and the answer is checked the same way', async () => {
     const seen: Record<string, unknown>[] = [];
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async () => {
@@ -75,7 +91,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     expect(await askClaude(client, body('fast'))).toEqual({ ok: true, response: answer });
     const params = seen[0] as { output_config: Record<string, unknown>; system: { text: string }[] };
     expect(params.output_config).toEqual({ effort: 'low' });
@@ -85,7 +101,7 @@ describe('the Claude call', () => {
   it('a model refusing the strict format says so in the console, and only that model asks without it', async () => {
     const notes: string[] = [];
     const used: string[] = [];
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async (params: { model: string }) => {
@@ -99,7 +115,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     await askClaude(client, body(), undefined, 'claude-haiku-5-5', (n) => notes.push(n));
     await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
     // Full format, then its compact form (both refused), then the reply tool; Sonnet keeps the full format.
@@ -119,7 +135,7 @@ describe('the Claude call', () => {
       operations: [{ op: 'place_instance', sceneId: 's1', definitionRef: 'def_1', x: 3, y: 4, name: '', ref: '' }],
       starter: '',
     };
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async (params: { output_config: { format: { schema?: Record<string, unknown> } }; system: { text: string }[] }) => {
@@ -130,7 +146,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     const result = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
     expect(result).toMatchObject({ ok: true, response: { kind: 'apply', needCode: null, starter: null } });
     const op = (result as { response: { operations: Record<string, unknown>[] } }).response.operations[0];
@@ -147,7 +163,7 @@ describe('the Claude call', () => {
     const notes: string[] = [];
     const sent: { messages: { role: string; content: unknown }[] }[] = [];
     let replies = ['Sure! Here it is: {"kind": "answer", "message": "Hi" "changes": []}', JSON.stringify(answer)];
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async () => {
@@ -159,7 +175,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     const result = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
     expect(result).toMatchObject({ ok: true, response: answer, usage: { inputTokens: 200, outputTokens: 20 } });
     expect(sent).toHaveLength(2);
@@ -180,7 +196,7 @@ describe('the Claude call', () => {
       { stop_reason: 'stop_sequence', content: [{ type: 'text', text: 'I need to see the code first.\n\n' }] },
       { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Here it is.' }, { type: 'tool_use', id: 't1', name: 'reply', input: answer }] },
     ];
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async () => {
@@ -192,7 +208,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     expect(await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n))).toMatchObject({ ok: true, response: answer });
     const first = sent[0] as { tools: { name: string; input_schema: { type: string; properties: Record<string, unknown> } }[]; tool_choice: unknown; stop_sequences: string[]; system: { text: string }[] };
     expect(first.tools.map((t) => t.name)).toEqual(['reply']);
@@ -210,14 +226,14 @@ describe('the Claude call', () => {
 
   it('other rejections are reported, not retried', async () => {
     let calls = 0;
-    const client = { beta: { messages: { parse: async () => { calls++; throw rejected('messages: text content blocks must be non-empty'); } } } } as unknown as Anthropic;
+    const client = streaming({ beta: { messages: { parse: async () => { calls++; throw rejected('messages: text content blocks must be non-empty'); } } } });
     expect(await askClaude(client, body())).toMatchObject({ ok: false, error: 'AI request failed (400): messages: text content blocks must be non-empty' });
     expect(calls).toBe(1);
   });
 
   it('no API credit: says so, and that a Claude subscription is billed separately', async () => {
     let calls = 0;
-    const client = {
+    const client = streaming({
       beta: {
         messages: {
           parse: async () => {
@@ -226,7 +242,7 @@ describe('the Claude call', () => {
           },
         },
       },
-    } as unknown as Anthropic;
+    });
     const result = await askClaude(client, body());
     expect(result).toMatchObject({ ok: false, status: 402 });
     expect(!result.ok && result.error).toMatch(/no credit left.*paid separately from a Claude subscription/);
@@ -259,7 +275,7 @@ describe('the Claude call', () => {
     expect(usageCost('claude-haiku-5-5', { input_tokens: 1e6, output_tokens: 1e6 }).cost).toBeCloseTo(0.6, 10);
     expect(usageCost('some-other-model', { input_tokens: 1, output_tokens: 1 }).cost).toBeNull();
     // The answer carries it.
-    const client = { beta: { messages: { parse: async () => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', parsed_output: answer, usage: { input_tokens: 10, output_tokens: 10 } }) } } } as unknown as Anthropic;
+    const client = streaming({ beta: { messages: { parse: async () => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', parsed_output: answer, usage: { input_tokens: 10, output_tokens: 10 } }) } } });
     expect((await askClaude(client, body())).usage?.cost).toBeCloseTo(240 / 1e6, 12);
   });
 
