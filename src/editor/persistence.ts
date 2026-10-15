@@ -186,7 +186,7 @@ export async function offerFile(filename: string, blob: Blob): Promise<'saved' |
 export async function saveProjectToFile(): Promise<void> {
   const { project, markSaved, logMessage } = useEditor.getState();
   // The AI History goes with the game (for the user to read back; never sent to the AI).
-  const text = JSON.stringify({ ...projectToBundle(project), aiHistory: aiHistoryFor(project.id) }, null, 2);
+  const text = JSON.stringify({ ...projectToBundle(project), aiHistory: aiHistoryFor(project.id) });
   const filename = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
   const blob = new Blob([text], { type: 'application/json' });
   void writeAutosave(project);
