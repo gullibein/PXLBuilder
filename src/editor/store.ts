@@ -64,6 +64,9 @@ export interface EditorState {
   worldContext: { point: Vec2 | null } | null;
   /** A camera outline clicked on the level (it glows; the level card asks about the camera). */
   cameraOutline: 'start' | 'limits' | null;
+  /** The camera's settings card is open (from the Settings button on the camera's prompt card). */
+  cameraSettingsOpen: boolean;
+  setCameraSettingsOpen(open: boolean): void;
   /** The global (not object-bound) prompt. */
   globalPrompt: { open: boolean; scope: 'level' | 'project' | 'editor' };
   camera: Camera;
@@ -205,6 +208,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedDefinitionId: null,
     worldContext: null,
     cameraOutline: null,
+    cameraSettingsOpen: false,
     globalPrompt: { open: false, scope: 'level' },
     camera: { x: 0, y: 0, zoom: 1 },
     layout: loadLayout(),
@@ -319,7 +323,11 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setActiveScene(sceneId) {
       if (!get().project.scenes.some((s) => s.id === sceneId)) return;
-      set({ activeSceneId: sceneId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, cameraOutline: null, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+      set({ activeSceneId: sceneId, selectedEntityIds: [], selectedConnectionId: null, worldContext: null, cameraOutline: null, cameraSettingsOpen: false, camera: { x: 0, y: 0, zoom: get().camera.zoom } });
+    },
+
+    setCameraSettingsOpen(open) {
+      set({ cameraSettingsOpen: open });
     },
 
     selectCameraOutline(part, point) {
@@ -328,7 +336,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     selectConnection(id) {
-      set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, cameraOutline: null, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
+      set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, cameraOutline: null, cameraSettingsOpen: false, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
     },
 
     selectEntities(ids) {
@@ -338,6 +346,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         selectedConnectionId: unique.length ? null : get().selectedConnectionId,
         worldContext: unique.length ? null : get().worldContext,
         cameraOutline: unique.length ? null : get().cameraOutline,
+        cameraSettingsOpen: unique.length ? false : get().cameraSettingsOpen,
         selectedDefinitionId: unique.length ? null : get().selectedDefinitionId,
         backgroundOpen: unique.length ? false : get().backgroundOpen,
         spritesFor: unique.length ? null : get().spritesFor,
@@ -352,13 +361,13 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setWorldContext(point) {
-      if (point === false) set({ worldContext: null, cameraOutline: null, promptOpen: get().selectedEntityIds.length || get().selectedConnectionId ? get().promptOpen : false });
-      else set({ worldContext: { point }, cameraOutline: null, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
+      if (point === false) set({ worldContext: null, cameraOutline: null, cameraSettingsOpen: false, promptOpen: get().selectedEntityIds.length || get().selectedConnectionId ? get().promptOpen : false });
+      else set({ worldContext: { point }, cameraOutline: null, cameraSettingsOpen: false, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
     setGlobalPrompt(open, scope) {
       // Opening the level/game card closes an object's or the level's card (only one prompt card at a time).
-      if (open) set({ selectedEntityIds: [], worldContext: null, selectedConnectionId: null, cameraOutline: null });
+      if (open) set({ selectedEntityIds: [], worldContext: null, selectedConnectionId: null, cameraOutline: null, cameraSettingsOpen: false });
       set((s) => ({ globalPrompt: { open, scope: scope ?? s.globalPrompt.scope } }));
     },
 

@@ -233,9 +233,9 @@ export interface ProjectSettings {
    */
   spriteResolution?: 8 | 16 | 32 | 64;
   /**
-   * How many pixels tall the game is drawn when played (about; scaled up with hard edges to fill the screen), in
-   * the editor's Play and in exported games. 0: at the full sharpness of the screen. Missing: the editor's own
-   * Play resolution setting, and full sharpness in exported games.
+   * The game's resolution: how many picture pixels the screen shows top to bottom when played (about; each picture
+   * pixel a whole number of screen pixels), in the editor's Play and in exported games: lower zooms in. The camera's
+   * zoom counts in whole picture pixels on top of it. Missing or 0: as big as the screen (the camera's zoom).
    */
   playPixels?: number;
 }

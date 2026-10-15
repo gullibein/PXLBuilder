@@ -1435,7 +1435,7 @@ try {
       navigator.getGamepads = () => [null, null, null, null];
     });
   }
-  // Play draws about 400 pixels tall (an even scale-up), the ⋯ menu switches to full sharpness and back.
+  // Low-resolution play never draws the pictures with fewer pixels than they have (32×32 pictures at zoom 1: full size).
   const pixels = async () => {
     const [w, h] = ((await play.getAttribute('data-pixels')) ?? '0x0').split('x').map(Number);
     const full = await play.evaluate((c) => [Math.round(c.getBoundingClientRect().width * devicePixelRatio), Math.round(c.getBoundingClientRect().height * devicePixelRatio)]);
@@ -1443,8 +1443,8 @@ try {
   };
   await check(async () => {
     const { w, h, full } = await pixels();
-    return h >= 260 && h <= 560 && h < full[1] && Math.abs(w / h - full[0] / full[1]) < 0.02;
-  }, 'Play draws the game at a low resolution (about 400 pixels tall, same shape as the screen)');
+    return h === full[1] && w === full[0];
+  }, 'Play never draws 32×32 pictures with fewer pixels than they have (at zoom 1: one canvas pixel per picture pixel, even with low-resolution play on)');
   await page.keyboard.press('Escape');
   await page.getByTestId('main-menu').click();
   await page.getByTestId('menu-low-res').click();
@@ -1457,7 +1457,7 @@ try {
   await page.getByTestId('main-menu').click();
   await page.getByTestId('menu-low-res').click();
   await page.getByTestId('play').click();
-  await check(async () => (await pixels()).h < (await pixels()).full[1], 'and turned back on, low resolution again');
+  await check(async () => (await pixels()).h === (await pixels()).full[1], 'and turned back on, the pictures still keep all their pixels');
   await check(async () => (await ps())[2] === 1, 'the game runs');
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').isVisible()) && (await play.count()) === 0, 'Esc stops the game and returns to the editor');
@@ -2255,10 +2255,21 @@ try {
     await page.mouse.move(edge.x, edge.y);
     await check(async () => (await canvas.getAttribute('data-camera-outline')) === 'start|', 'hovering the camera outline highlights it');
     await page.mouse.click(edge.x, edge.y);
-    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await canvas.getAttribute('data-context')) === 'level' && (await prompts.count()) === 0 && !(await canvas.getAttribute('data-marker')), 'clicking it selects it (it glows; no spot marker on the level)');
+    await check(
+      async () =>
+        (await canvas.getAttribute('data-camera-outline')).endsWith('|start') &&
+        (await prompts.count()) === 1 &&
+        (await prompts.getByTestId('camera-settings-btn').count()) === 1 &&
+        (await page.getByTestId('camera-panel').count()) === 0 &&
+        !(await canvas.getAttribute('data-marker')),
+      'clicking it selects it (it glows, no spot marker) and opens its AI card, with a Settings button',
+    );
+    await check(async () => (await prompts.getByTestId('prompt-input').getAttribute('placeholder')).length < 30, '(its hint is short)');
+    await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
+    await prompts.getByTestId('camera-settings-btn').click();
     {
       const panel = page.getByTestId('camera-panel');
-      await check(async () => (await panel.count()) === 1 && (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player', 'and opens the Camera card: it follows the Player');
+      await check(async () => (await panel.count()) === 1 && (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player', 'Settings opens the Camera card: it follows the Player');
       const zoomInput = panel.getByTestId('camera-panel-zoom');
       await zoomInput.fill('2');
       await zoomInput.press('Enter');
@@ -2270,21 +2281,31 @@ try {
       await check(async () => (await panel.getByTestId('camera-ease').count()) === 0 && (await panel.getByTestId('camera-panel-fixed-set').count()) === 1, 'Follows: nothing makes it a still camera (no ease; where it looks instead)');
       await panel.getByTestId('camera-resolution').selectOption('180');
       await check(async () => (await panel.getByTestId('camera-resolution').inputValue()) === '180', 'the play resolution is set for the game');
+      {
+        await page.getByTestId('play').click();
+        const playCanvas = page.getByTestId('play-canvas');
+        await check(async () => {
+          const [w, h] = ((await playCanvas.getAttribute('data-pixels')) ?? '0x0').split('x').map(Number);
+          const full = await playCanvas.evaluate((c) => Math.round(c.getBoundingClientRect().height * devicePixelRatio));
+          return h >= 150 && h <= 260 && w > h && Math.abs(full / h - Math.round(full / h)) < 0.05;
+        }, 'Play at resolution 180: the screen shows about 180 picture pixels top to bottom (each a whole number of screen pixels)');
+        await page.keyboard.press('Escape');
+        await check(async () => (await page.getByTestId('viewport-canvas').isVisible()) && (await page.getByTestId('camera-panel').count()) === 1, '(back in the editor, the camera settings still open)');
+      }
       for (let i = 0; i < 3; i++) await page.getByTestId('undo').click();
       await check(async () => (await panel.getByTestId('camera-follow').locator('option:checked').innerText()) === 'Player' && (await frameOf()).join() === f1.join() && (await panel.getByTestId('camera-resolution').inputValue()) === 'editor', 'each change is one Undo step');
       await page.screenshot({ path: `${OUT}/26c-camera-card.png` });
+      await panel.getByTestId('camera-panel-close').click();
+      await check(async () => (await panel.count()) === 0 && (await canvas.getAttribute('data-camera-outline')).endsWith('|start'), "the settings card's × closes it (the camera stays selected)");
     }
-    await page.mouse.dblclick(edge.x, edge.y);
-    await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.innerText()).includes('Camera at start'), 'double-clicking it opens the card to ask about the camera');
-    await page.screenshot({ path: `${OUT}/26b-camera-outline.png` });
     await page.keyboard.press('Escape');
     await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'Esc lets go of it');
     {
       const label = { x: box.x + box.width / 2 + (f1[0] - cx) * zoom + 24, y: box.y + box.height / 2 + (f1[1] - cy) * zoom - 7 };
       await page.mouse.click(label.x, label.y);
-      await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await page.getByTestId('camera-panel').count()) === 1, 'clicking its label opens the Camera card too');
-      await page.getByTestId('camera-panel-close').click();
-      await check(async () => (await page.getByTestId('camera-panel').count()) === 0 && (await canvas.getAttribute('data-camera-outline')).endsWith('|'), 'its × closes it');
+      await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|start') && (await prompts.count()) === 1, 'clicking its label opens its card too');
+      await page.keyboard.press('Escape');
+      await check(async () => (await canvas.getAttribute('data-camera-outline')).endsWith('|') && (await prompts.count()) === 0, '(Esc closes it)');
     }
     // Zoom back in where it zoomed out (the later steps click at fixed places).
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

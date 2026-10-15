@@ -61,7 +61,7 @@ export function App() {
           <PlayView
             project={useEditor.getState().project}
             startSceneId={useEditor.getState().activeSceneId}
-            playPixels={() => useEditor.getState().project.settings.playPixels ?? useEditor.getState().layout.playPixels}
+            playPixels={() => useEditor.getState().layout.playPixels}
             stopHint="Esc stops"
             touchControls
             onEnd={(report, project) => {

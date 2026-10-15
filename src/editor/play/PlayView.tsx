@@ -1,8 +1,9 @@
+import { resolutionZoom } from '../../core/model/camera';
 import { useEffect, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
-import { applyCamera, drawBackground, drawEntities } from '../../render/renderer';
+import { applyCamera, drawBackground, drawEntities, pixelPerfectZoom } from '../../render/renderer';
 import { drawScreenDrawings, LookCache } from '../../render/screen';
 import { audio, playSound } from '../audio/synth';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
@@ -98,23 +99,51 @@ export function PlayView(props: PlayViewProps) {
     inputRef.current = input;
 
     const size = { width: 1, height: 1 };
+    // Level pixels per picture pixel (pictures are drawn for 32-pixel tiles at the game's sprite size).
+    const worldPerArt = 32 / (project.settings.spriteResolution ?? 32);
+    /** The game's zoom over the camera's own (from the game's resolution; 1 without one). */
+    let extraZoom = 1;
     /**
-     * The canvas has as many pixels as the screen area, or, at a lower play
-     * resolution, a whole number of times fewer (so every game pixel is the
-     * same size on screen), scaled up with hard edges by CSS. Drawing fewer
-     * pixels is what makes play fast on weak graphics chips.
+     * The canvas has as many pixels as the screen area, or a whole number of
+     * times fewer, scaled up with hard edges by CSS (every canvas pixel the
+     * same size on screen).
+     * - The game's resolution (Camera settings) sets how many picture pixels
+     *   tall the screen shows: the canvas is that many pixels tall, one per
+     *   picture pixel (times the camera's zoom, in whole picture pixels), so
+     *   the game is zoomed in and every picture pixel is shown whole.
+     * - Otherwise the editor's Play resolution only makes drawing lighter: the
+     *   canvas never gets fewer pixels than the pictures have (fewer would drop
+     *   some of their pixels and stretch others).
      */
     const measure = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const target = props.playPixels();
-      const shrink = target > 0 ? Math.max(1, Math.round((rect.height * dpr) / target)) : 1;
+      let shrink = 1;
+      const gamePixels = project.settings.playPixels ?? 0;
+      if (gamePixels > 0) {
+        const r = resolutionZoom(runtime.camera.zoom, rect.height, dpr, gamePixels, worldPerArt);
+        shrink = r.shrink;
+        extraZoom = r.zoom / runtime.camera.zoom;
+      } else {
+        extraZoom = 1;
+        const target = props.playPixels();
+        const wanted = target > 0 ? Math.max(1, Math.round((rect.height * dpr) / target)) : 1;
+        // Screen pixels per picture pixel; the shrink must divide it so each picture pixel is whole canvas pixels.
+        const perArt = Math.max(1, Math.round(dpr * runtime.camera.zoom * worldPerArt));
+        for (let k = Math.min(wanted, perArt); k >= 1; k--) {
+          if (perArt % k === 0) {
+            shrink = k;
+            break;
+          }
+        }
+      }
       size.width = rect.width;
       size.height = rect.height;
       canvas.width = Math.max(1, Math.round((rect.width * dpr) / shrink));
       canvas.height = Math.max(1, Math.round((rect.height * dpr) / shrink));
       canvas.dataset.pixels = `${canvas.width}x${canvas.height}`;
-      runtime.cam.setView(rect.width, rect.height);
+      // The camera keeps to its limits for what the screen really shows at the game's zoom.
+      runtime.cam.setView(rect.width / extraZoom, rect.height / extraZoom);
       runtime.screen = { w: rect.width, h: rect.height };
     };
     // Measured now, so the camera starts inside its limits for this screen; then on every resize.
@@ -182,7 +211,9 @@ export function PlayView(props: PlayViewProps) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const dpr = canvas.width / size.width;
-      const view = runtime.cam.frame();
+      // Every picture pixel the same size: the zoom is rounded to the nearest that gives whole canvas pixels.
+      const frameNow = runtime.cam.frame();
+      const view = { ...frameNow, zoom: pixelPerfectZoom(frameNow.zoom * extraZoom, dpr, worldPerArt) };
       drawBackground(ctx, size, dpr, scene.world, view, images);
       applyCamera(ctx, view, size, dpr);
       // (Animations hold still too once the level is won.)

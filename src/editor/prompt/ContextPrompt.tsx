@@ -21,6 +21,8 @@ export function ContextPrompt() {
   const worldContext = useEditor((s) => s.worldContext);
   const selectedConnectionId = useEditor((s) => s.selectedConnectionId);
   const cameraOutline = useEditor((s) => s.cameraOutline);
+  const cameraSettingsOpen = useEditor((s) => s.cameraSettingsOpen);
+  const setCameraSettingsOpen = useEditor((s) => s.setCameraSettingsOpen);
   // Out of the way while objects are moved, stretched or resized; back when they're let go.
   const objectDrag = useEditor((s) => s.objectDrag);
   // Only once asked for: a double-click (or double-tap, or Enter) opens it.
@@ -100,7 +102,18 @@ export function ContextPrompt() {
           <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
           <path d="M1.8 8h12.4M8 1.8c-3.2 3.4-3.2 9 0 12.4M8 1.8c3.2 3.4 3.2 9 0 12.4" fill="none" stroke="currentColor" strokeWidth="1.1" />
         </svg>
-        {cameraOutline === 'start' ? 'Camera at start' : cameraOutline === 'limits' ? 'Camera limits' : 'World'}
+        {cameraOutline === 'start' ? 'Camera' : cameraOutline === 'limits' ? 'Camera limits' : 'World'}
+        {cameraOutline && (
+          <button
+            className={`chip-btn small camera-settings-btn${cameraSettingsOpen ? ' on' : ''}`}
+            data-testid="camera-settings-btn"
+            aria-pressed={cameraSettingsOpen}
+            title="The camera's settings: what it follows, ease, zoom, limits, resolution…"
+            onClick={() => setCameraSettingsOpen(!cameraSettingsOpen)}
+          >
+            Settings
+          </button>
+        )}
       </>
     ) : ctx.kind === 'connection' ? (
       <ConnectionHeader sceneId={ctx.sceneId} relationshipId={ctx.relationshipId} />
@@ -131,9 +144,9 @@ export function ContextPrompt() {
           header={header}
           placeholder={
             cameraOutline === 'start'
-              ? 'Ask about the camera: "zoom out a bit", "start further left", "follow the player more loosely"…'
+              ? 'e.g. "zoom out a bit"'
               : cameraOutline === 'limits'
-                ? 'Where may the camera go? "let it show a bit below the level", "no limits"…'
+                ? 'e.g. "no limits"'
                 : undefined
           }
           onEscape={close}

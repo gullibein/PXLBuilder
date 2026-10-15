@@ -6,22 +6,21 @@ import type { Id } from '../../core/types';
 import { NumberInput, Vec2Input } from '../panels/FieldEditor';
 import { getActiveScene, useEditor } from '../store';
 
-/** Play resolutions offered (pixels tall), besides the editor's setting and full sharpness. */
+/** Game resolutions offered (picture pixels the screen shows, top to bottom). */
 const RESOLUTIONS = [128, 180, 240, 270, 360, 400, 480, 720];
 
 /**
- * The level's camera, opened by clicking the camera outline on the level:
+ * The level's camera, opened with Settings on the camera's prompt card (a click on the camera outline):
  * what it follows and how softly, zoom, look-ahead, dead zone, limits, where
  * a still camera looks, and the game's play resolution. Every change is one
  * Undo step (a slider drag is one step).
  */
 export function CameraPanel() {
-  const outline = useEditor((s) => s.cameraOutline);
+  const outline = useEditor((s) => (s.cameraSettingsOpen ? s.cameraOutline : null));
   const scene = useEditor(getActiveScene);
   const project = useEditor((s) => s.project);
-  const editorPixels = useEditor((s) => s.layout.playPixels);
   if (!outline) return null;
-  const { edit, setWorldContext } = useEditor.getState();
+  const { edit, setCameraSettingsOpen } = useEditor.getState();
   const sid = scene.id;
   const c = scene.camera;
   const set = (label: string, patch: Partial<CameraSettings>, key?: string) => edit(label, (p) => setCameraSettings(p, sid, patch), key ? { coalesceKey: `${sid}.camera.${key}` } : undefined);
@@ -40,7 +39,7 @@ export function CameraPanel() {
   };
 
   const gamePixels = project.settings.playPixels;
-  const resolutionValue = gamePixels === undefined ? 'editor' : String(gamePixels);
+  const resolutionValue = gamePixels ? String(gamePixels) : 'editor';
   const resolutions = [...new Set([...RESOLUTIONS, ...(gamePixels ? [gamePixels] : [])])].sort((a, b) => a - b);
 
   return (
@@ -53,7 +52,7 @@ export function CameraPanel() {
           </svg>
           Camera <span className="muted">· {scene.name}</span>
         </span>
-        <button className="icon-btn" aria-label="Close camera" data-testid="camera-panel-close" onClick={() => setWorldContext(false)}>
+        <button className="icon-btn" aria-label="Close camera" data-testid="camera-panel-close" onClick={() => setCameraSettingsOpen(false)}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -158,7 +157,7 @@ export function CameraPanel() {
           </>
         )}
 
-        <label htmlFor="cam-res" title="How many pixels tall the game is drawn when played, scaled up with hard edges (lower = chunkier pixels and faster). For the whole game: Play here and exported games.">
+        <label htmlFor="cam-res" title="How many picture pixels the screen shows top to bottom when played: lower zooms in (bigger pixels, every one whole). For the whole game: Play here and exported games.">
           Resolution
         </label>
         <select
@@ -170,8 +169,7 @@ export function CameraPanel() {
             edit('Play resolution', (p) => setPlayPixels(p, v === 'editor' ? null : Number(v)));
           }}
         >
-          <option value="editor">Not set ({editorPixels ? `${editorPixels} px` : 'sharp'} in Play)</option>
-          <option value="0">Sharp (the screen's own pixels)</option>
+          <option value="editor">Not set (as big as the screen)</option>
           {resolutions.map((n) => (
             <option key={n} value={String(n)}>
               {n} pixels tall
@@ -179,7 +177,7 @@ export function CameraPanel() {
           ))}
         </select>
       </div>
-      <p className="cam-note muted">Resolution is for the whole game (Play and exports; not set: exports are sharp); the rest is this level. Double-click the outline to ask the AI instead.</p>
+      <p className="cam-note muted">Resolution is for the whole game, in Play and exported games: the screen shows that many picture pixels top to bottom (zoomed in, every pixel whole; zoom 2 shows half as much). The rest is this level.</p>
     </section>
   );
 }

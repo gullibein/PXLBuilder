@@ -18,7 +18,8 @@ export interface CameraFrame {
   follows: string | null;
 }
 
-export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: ViewSize): CameraFrame {
+/** `zoom`: the zoom Play will use (the game's resolution can set it; see resolutionZoom). */
+export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: ViewSize, zoom = scene.camera.zoom): CameraFrame {
   const target = entities.find((e) => e.components.CameraTarget) ?? null;
   const level = boundsOf(
     entities.map((e) => {
@@ -26,9 +27,9 @@ export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: View
       return { x: e.transform.position.x, y: e.transform.position.y, w: s.x, h: s.y };
     }),
   );
-  const c = startCamera(scene.camera, target ? target.transform.position : null, level, view);
-  const hw = view.width / 2 / scene.camera.zoom;
-  const hh = view.height / 2 / scene.camera.zoom;
+  const c = startCamera({ ...scene.camera, zoom }, target ? target.transform.position : null, level, view);
+  const hw = view.width / 2 / zoom;
+  const hh = view.height / 2 / zoom;
   return { frame: { minX: c.x - hw, minY: c.y - hh, maxX: c.x + hw, maxY: c.y + hh }, limits: cameraLimits(scene.camera, level), follows: target?.name ?? null };
 }
 

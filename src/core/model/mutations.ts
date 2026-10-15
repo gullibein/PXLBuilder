@@ -152,7 +152,7 @@ export function setCameraFollow(project: Project, sceneId: Id, entityId: Id | nu
   }
 }
 
-/** How many pixels tall the game is drawn when played (0: full sharpness; null: as the editor's setting / sharp). */
+/** The game's resolution: picture pixels the screen shows top to bottom when played (null or 0: as big as the screen). */
 export function setPlayPixels(project: Project, pixels: number | null): void {
   if (pixels === null) {
     delete project.settings.playPixels;

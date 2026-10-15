@@ -45,6 +45,21 @@ export function screenToWorld(camera: Camera, view: ViewSize, p: Vec2): Vec2 {
 }
 
 /** Sets the canvas transform so subsequent drawing is in world coordinates. */
+/**
+ * The zoom closest to `zoom` at which every pixel of the game's pictures
+ * covers a whole number of canvas pixels (or a whole fraction of one), so
+ * pixel art is drawn with all its pixels the same size instead of some
+ * wider than others. `canvasPerCss`: canvas pixels per CSS pixel;
+ * `worldPerArt`: level pixels per picture pixel (1 for 32×32 pictures on
+ * 32-pixel tiles).
+ */
+export function pixelPerfectZoom(zoom: number, canvasPerCss: number, worldPerArt: number): number {
+  const perArt = zoom * canvasPerCss * worldPerArt;
+  if (!(perArt > 0) || !Number.isFinite(perArt)) return zoom;
+  const even = perArt >= 1 ? Math.round(perArt) : 1 / Math.round(1 / perArt);
+  return even / (canvasPerCss * worldPerArt);
+}
+
 export function applyCamera(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize, dpr: number): void {
   ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * (view.width / 2 - camera.x * camera.zoom), dpr * (view.height / 2 - camera.y * camera.zoom));
 }

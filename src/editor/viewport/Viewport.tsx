@@ -1,3 +1,4 @@
+import { resolutionZoom } from '../../core/model/camera';
 import { useEffect, useRef, useState } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
@@ -169,7 +170,7 @@ export function Viewport() {
       // The camera outline once anything is placed (with nothing to follow, it shows where a still camera looks).
       if (state.layout.showCameraOutlines && placed.length) {
         // From where things are, not where they're being dragged: the camera frame stays put while the player is held.
-        const f = cameraFrame(scene, placed, view);
+        const f = cameraFrame(scene, placed, view, playZoom(state.project, scene, view));
         drawCameraFrame(ctx, f, state.camera.zoom, { hover: hoverOutlineRef.current, selected: state.cameraOutline });
         frameAttr = [f.frame.minX, f.frame.minY, f.frame.maxX, f.frame.maxY].map((v) => v.toFixed(0)).join(',');
       }
@@ -530,12 +531,12 @@ export function Viewport() {
         state.selectConnection(line);
         return;
       }
-      // A camera outline (its label, or its line where no object is under it): select it (it glows) and open the Camera card; a
-      // double-click asks the AI about the camera in the level's card.
-      const outline = additive || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom, hit ? 0 : 6);
+      // A camera outline (its label, or its line where no object is under it): select it (it glows) and open its prompt
+      // card (with Settings for the camera's settings).
+      const outline = additive || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
       if (outline) {
-        if (state.cameraOutline !== outline) state.setPromptOpen(false);
         state.selectCameraOutline(outline, world);
+        state.setPromptOpen(true);
         return;
       }
       if (hit) {
@@ -615,7 +616,7 @@ export function Viewport() {
       const line = hit || onConnector ? null : connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       hoverLinkRef.current = line;
       const onLine = !!line;
-      hoverOutlineRef.current = onConnector || onLine || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current), world, state.camera.zoom, hit ? 0 : 6);
+      hoverOutlineRef.current = onConnector || onLine || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current, playZoom(state.project, getActiveScene(state), viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
       // On the outline's label: that is what a click picks, not the object under it.
       if (hoverOutlineRef.current) hoverRef.current = null;
       canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine || hoverOutlineRef.current ? 'pointer' : 'default';
@@ -767,7 +768,7 @@ export function Viewport() {
     const hit = pick(entities, world);
     const scene = getActiveScene(state);
     // The camera outline is picked as a single click picks it.
-    const outline = state.layout.showCameraOutlines && entities.length ? outlineAt(cameraFrame(scene, entities, viewRef.current), world, state.camera.zoom, hit ? 0 : 6) : null;
+    const outline = state.layout.showCameraOutlines && entities.length ? outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6) : null;
     if (outline) state.selectCameraOutline(outline, world);
     else if (hit) {
       if (!state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
@@ -1595,4 +1596,11 @@ function drawMarquee(ctx: CanvasRenderingContext2D, a: Vec2, b: Vec2, zoom: numb
   ctx.lineWidth = 1 / zoom;
   ctx.fillRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
   ctx.strokeRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
+}
+
+/** The zoom Play will use for this level: its camera's, or the one the game's resolution makes (as Play works it out). */
+function playZoom(project: Project, scene: Scene, view: ViewSize): number {
+  const pixels = project.settings.playPixels;
+  if (!pixels) return scene.camera.zoom;
+  return resolutionZoom(scene.camera.zoom, view.height, window.devicePixelRatio || 1, pixels, 32 / (project.settings.spriteResolution ?? 32)).zoom;
 }

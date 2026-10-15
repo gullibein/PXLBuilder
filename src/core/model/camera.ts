@@ -60,6 +60,19 @@ export const CAMERA_HELP: Record<keyof CameraSettings, string> = {
   fixedAt: '{x, y} where a still camera looks when nothing has a CameraTarget, or null = the middle of the level',
 };
 
+/**
+ * Play at a game resolution (the screen shows `pixels` picture pixels tall,
+ * every one of them whole): how many screen pixels make one canvas pixel
+ * (`shrink`, a whole number) and the zoom that results. The camera's own zoom
+ * counts in whole picture pixels (2 = each picture pixel is two canvas
+ * pixels: shows half as much). `worldPerArt`: level pixels per picture pixel.
+ */
+export function resolutionZoom(cameraZoom: number, screenHeight: number, dpr: number, pixels: number, worldPerArt: number): { zoom: number; shrink: number } {
+  const shrink = Math.max(1, Math.round((screenHeight * dpr) / pixels));
+  const perArt = Math.max(1, Math.round(cameraZoom));
+  return { shrink, zoom: perArt / ((dpr / shrink) * worldPerArt) };
+}
+
 /** Checks a full settings object; the error names the setting. */
 export function checkCamera(value: unknown): { camera: CameraSettings } | { error: string } {
   const r = cameraSchema.safeParse(value);
