@@ -162,10 +162,12 @@ function placeOnScreen(ctx: CanvasRenderingContext2D, position: { x: number; y: 
   }
   const hw = (size.x * Math.abs(scale.x)) / 2;
   const hh = (size.y * Math.abs(scale.y)) / 2;
+  // On whole canvas pixels: the left/top edge is rounded and the size kept (rounding both edges on their own would
+  // draw a thing one pixel wider or narrower depending on where it is, stretching its pixels as it moves).
   const x0 = Math.round(m.a * (position.x - hw) + m.e);
-  const x1 = Math.round(m.a * (position.x + hw) + m.e);
+  const x1 = x0 + Math.round(m.a * 2 * hw);
   const y0 = Math.round(m.d * (position.y - hh) + m.f);
-  const y1 = Math.round(m.d * (position.y + hh) + m.f);
+  const y1 = y0 + Math.round(m.d * 2 * hh);
   // At least one pixel, so tiny things don't vanish when zoomed far out.
   const w = Math.max(1, Math.abs(x1 - x0));
   const h = Math.max(1, Math.abs(y1 - y0));

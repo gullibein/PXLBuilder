@@ -543,6 +543,8 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 @media (max-width: 760px) {
   .topbar { column-gap: 8px; padding: 0 10px; }
   .topbar .project-btn { display: none; }
+  .save-btn { padding: 0 7px; }
+  .save-btn span { display: none; }
   .scene-btn { min-width: 0; }
   .topbar > .play-btn { padding: 0 16px; }
   .icon-group { margin-left: 0; }

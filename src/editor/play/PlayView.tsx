@@ -213,7 +213,10 @@ export function PlayView(props: PlayViewProps) {
       const dpr = canvas.width / size.width;
       // Every picture pixel the same size: the zoom is rounded to the nearest that gives whole canvas pixels.
       const frameNow = runtime.cam.frame();
-      const view = { ...frameNow, zoom: pixelPerfectZoom(frameNow.zoom * extraZoom, dpr, worldPerArt) };
+      const zoomNow = pixelPerfectZoom(frameNow.zoom * extraZoom, dpr, worldPerArt);
+      // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
+      const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
+      const view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
       drawBackground(ctx, size, dpr, scene.world, view, images);
       applyCamera(ctx, view, size, dpr);
       // (Animations hold still too once the level is won.)

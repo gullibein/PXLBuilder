@@ -9,6 +9,7 @@ import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 import { withoutUnused } from '../core/model/unused';
+import { cloudSavesAvailable, saveToCloud } from './cloudSaves';
 
 const AUTOSAVE_KEY = 'pxlbuilder.autosave';
 export const PROJECT_FILE_EXTENSION = '.pxlproj.json';
@@ -179,6 +180,74 @@ export async function offerFile(filename: string, blob: Blob): Promise<'saved' |
   return 'saved';
 }
 
+const DROP_KEY = 'pxlbuilder.saveDropUnused';
+/** Whether saves leave out the objects no level uses (the Save window's choice, remembered in this browser). */
+export function dropUnusedChoice(): boolean {
+  try {
+    return localStorage.getItem(DROP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+export function setDropUnusedChoice(on: boolean): void {
+  try {
+    localStorage.setItem(DROP_KEY, on ? '1' : '0');
+  } catch {
+    // Not remembered; fine.
+  }
+}
+
+export const sizeText = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+/** The game as a saved file's text (with its AI History, for the user to read back; never sent to the AI). */
+function gameFileText(dropUnused: boolean): string {
+  const { project, logMessage } = useEditor.getState();
+  let saved = project;
+  if (dropUnused) {
+    const r = withoutUnused(project);
+    saved = r.project;
+    if (r.objects.length) logMessage('info', `Left out of the save: ${r.objects.length} unused object${r.objects.length === 1 ? '' : 's'} (${r.objects.join(', ')})${r.pictures ? ` and ${r.pictures} picture${r.pictures === 1 ? '' : 's'} only they used` : ''}. They are still here in the editor.`);
+  }
+  return JSON.stringify({ ...projectToBundle(saved), aiHistory: aiHistoryFor(project.id) });
+}
+
+/**
+ * Save in one step (the Save button, Ctrl+S): in the published app on
+ * claude.ai, kept with the app (no download dialogs; Open lists it);
+ * elsewhere as a file (in Chrome and Edge over the file saved to before).
+ * Resolves whether it was saved.
+ */
+export async function quickSave(): Promise<boolean> {
+  const { project, markSaved, logMessage } = useEditor.getState();
+  if (await cloudSavesAvailable()) {
+    void writeAutosave(project);
+    const r = await saveToCloud(project.id, project.name, gameFileText(dropUnusedChoice()));
+    if (r.ok) {
+      markSaved();
+      logMessage('info', `Saved "${project.name}" (${sizeText(r.bytes)}): Open lists it. Save as file… gives you a copy on your computer.`);
+      return true;
+    }
+    logMessage('error', `Could not save here (${r.error}). Your work is still kept in this browser; Save as file… saves a copy on your computer.`);
+    return false;
+  }
+  await saveProjectToFile({ dropUnused: dropUnusedChoice() });
+  return !useEditor.getState().dirty;
+}
+
+/** Opens a game from a saved file's text (a file from the computer, or a save kept with the app). */
+export function openGameText(text: string, from: string): void {
+  const { replaceProject, logMessage } = useEditor.getState();
+  try {
+    const { project, warnings } = gameFromText(text, componentRegistry);
+    replaceProject(`Open ${from}`, project);
+    logMessage('info', `Opened "${project.name}" from ${from}`);
+    if (text.trimStart().startsWith('{')) restoreAIHistory(project.id, (JSON.parse(text) as { aiHistory?: unknown }).aiHistory);
+    for (const w of warnings) logMessage('warn', w);
+  } catch (e) {
+    logMessage('error', `Could not open ${from}: ${(e as Error).message}`);
+  }
+}
+
 /** Where each game was last saved, when the browser lets the page write files itself (Chrome, Edge): Save replaces it. */
 const savedFiles = new Map<string, FileSystemFileHandleLike>();
 
@@ -216,17 +285,10 @@ export interface SaveOptions {
  */
 export async function saveProjectToFile(options: SaveOptions = {}): Promise<void> {
   const { project, markSaved, logMessage } = useEditor.getState();
-  let saved = project;
-  if (options.dropUnused) {
-    const r = withoutUnused(project);
-    saved = r.project;
-    if (r.objects.length) logMessage('info', `Left out of the file: ${r.objects.length} unused object${r.objects.length === 1 ? '' : 's'} (${r.objects.join(', ')})${r.pictures ? ` and ${r.pictures} picture${r.pictures === 1 ? '' : 's'} only they used` : ''}. They are still here in the editor.`);
-  }
-  // The AI History goes with the game (for the user to read back; never sent to the AI).
-  const text = JSON.stringify({ ...projectToBundle(saved), aiHistory: aiHistoryFor(project.id) });
+  const text = gameFileText(options.dropUnused ?? false);
   const filename = `${slugify(project.name) || 'project'}${PROJECT_FILE_EXTENSION}`;
   const blob = new Blob([text], { type: 'application/json' });
-  const size = blob.size < 1024 * 1024 ? `${Math.max(1, Math.round(blob.size / 1024))} KB` : `${(blob.size / 1024 / 1024).toFixed(1)} MB`;
+  const size = sizeText(blob.size);
   void writeAutosave(project);
 
   const downloads = await claudeCapability<ViewerDownloads>('downloads');
@@ -279,16 +341,10 @@ export async function saveProjectToFile(options: SaveOptions = {}): Promise<void
 }
 
 export async function openProjectFile(file: File): Promise<void> {
-  const { replaceProject, logMessage } = useEditor.getState();
   try {
-    const text = await file.text();
-    const { project, warnings } = gameFromText(text, componentRegistry);
-    replaceProject(`Open ${file.name}`, project);
-    logMessage('info', `Opened "${project.name}" from ${file.name}`);
-    if (text.trimStart().startsWith('{')) restoreAIHistory(project.id, (JSON.parse(text) as { aiHistory?: unknown }).aiHistory);
-    for (const w of warnings) logMessage('warn', w);
+    openGameText(await file.text(), file.name);
   } catch (e) {
-    logMessage('error', `Could not open ${file.name}: ${(e as Error).message}`);
+    useEditor.getState().logMessage('error', `Could not open ${file.name}: ${(e as Error).message}`);
   }
 }
 

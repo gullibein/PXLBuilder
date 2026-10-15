@@ -6,7 +6,8 @@ import { componentRegistry } from '../../core/components/builtin';
 import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
 import { canExportGame, exportPlayer } from '../gameExport';
-import { openProjectFile, PROJECT_FILE_EXTENSION } from '../persistence';
+import { openProjectFile, PROJECT_FILE_EXTENSION, quickSave } from '../persistence';
+import { cloudSavesAvailable } from '../cloudSaves';
 import { NoteIcon } from './NoteIcon';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
@@ -30,7 +31,8 @@ export function TopBar() {
           <span className="wordmark-mark" aria-hidden="true" />
           <span>PXLBuilder</span>
         </span>
-        <ProjectMenu onOpen={() => fileInput.current?.click()} />
+        <ProjectMenu onOpen={openGame} />
+        <SaveButton />
         <SceneSelector />
         <div className="icon-group">
           <button className="icon-btn" disabled={!canUndo} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo" data-testid="undo" onClick={undo}>
@@ -237,6 +239,45 @@ export function PlayButton() {
   );
 }
 
+/** Open: the saves kept with the app (claude.ai), or a file from the computer. */
+export function openGame(): void {
+  void cloudSavesAvailable().then((cloud) => {
+    if (cloud) useEditor.getState().setOpenDialog(true);
+    else document.querySelector<HTMLInputElement>('[data-testid="open-file-input"]')?.click();
+  });
+}
+
+/** Save in one click: kept with the app on claude.ai, a file elsewhere. Shows "Saved" for a moment. */
+function SaveButton() {
+  const dirty = useEditor((s) => s.dirty);
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  useEffect(() => {
+    if (state !== 'saved') return;
+    const t = setTimeout(() => setState('idle'), 1800);
+    return () => clearTimeout(t);
+  }, [state]);
+  return (
+    <button
+      className={`save-btn${dirty ? ' dirty' : ''}`}
+      title="Save (Ctrl+S)"
+      aria-label="Save"
+      data-testid="save-button"
+      data-state={state}
+      disabled={state === 'saving'}
+      onClick={async () => {
+        setState('saving');
+        setState((await quickSave()) ? 'saved' : 'idle');
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3 2.5h8l2.5 2.5v8.5H3z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M5.5 2.5v3.5h5v-3.5M5.5 13.5v-4h5v4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      </svg>
+      <span>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved' : 'Save'}</span>
+    </button>
+  );
+}
+
 /** The project: its name, and New / Open / Save / reset the built-in objects. */
 function ProjectMenu({ onOpen }: { onOpen: () => void }) {
   const { open, setOpen, ref } = usePopover();
@@ -245,7 +286,8 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
   const items: { label: string; hint?: string; detail?: string; run: () => void; testId: string; sep?: boolean }[] = [
     { label: 'New project', detail: 'Pick a platformer or a top-down game: an empty level with that kind of built-in objects', run: () => useEditor.getState().setGameChooser('new'), testId: 'menu-new' },
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
-    { label: 'Save…', hint: 'Ctrl+S', detail: 'Name the game and save it as a file', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
+    { label: 'Save', hint: 'Ctrl+S', detail: 'In one click (the Save button at the top does the same)', run: () => void quickSave(), testId: 'menu-quick-save' },
+    { label: 'Save as file…', detail: 'Name the game and save it as a file on your computer', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
     ...(canExportGame()
       ? [
           {

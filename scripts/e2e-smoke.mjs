@@ -2717,6 +2717,19 @@ try {
   await cp2.exposeFunction('__stubSave', (filename, text) => {
     saves.push({ filename, text });
   });
+  // The artifact's own storage (assets: files served at /_blob/<id>; db: documents).
+  const blobs = new Map();
+  let blobCount = 0;
+  await cp2.exposeFunction('__stubUpload', (text) => {
+    const id = `${++blobCount}`.padStart(32, '0');
+    blobs.set(id, text);
+    return id;
+  });
+  await cp2.exposeFunction('__stubDeleteBlob', (id) => blobs.delete(id));
+  await cp2.route('**/_blob/*', (r) => {
+    const id = r.request().url().split('/_blob/')[1];
+    return blobs.has(id) ? r.fulfill({ status: 200, contentType: 'application/json', body: blobs.get(id) }) : r.fulfill({ status: 404, body: '' });
+  });
   // Stand-in for the claude.ai artifact viewer: window.claude.use("sample" | "downloads") like the real runtime.
   await cp2.addInitScript(() => {
     const sample = Object.freeze(Object.assign(async (input, options) => ({ text: JSON.stringify(await window.__stubSample(input, options?.cache)), truncated: false }), { json: (input, options) => window.__stubSample(input, options?.cache) }));
@@ -2726,7 +2739,23 @@ try {
         return { status: 'saved' };
       },
     });
-    window.claude = Object.freeze({ use: async (name) => (name === 'sample' ? sample : name === 'downloads' ? downloads : null) });
+    const assets = Object.freeze({
+      upload: async (blob) => {
+        const text = await blob.text();
+        const id = await window.__stubUpload(text);
+        return { id, url: `/_blob/${id}`, sizeBytes: text.length, contentType: 'application/json' };
+      },
+      delete: async (id) => window.__stubDeleteBlob(id),
+    });
+    const docs = new Map();
+    window.__docs = docs;
+    const snap = (path) => ({ id: path.split('/').pop(), exists: docs.has(path), data: () => (docs.has(path) ? structuredClone(docs.get(path)) : undefined) });
+    const db = Object.freeze({
+      doc: (path) => ({ get: async () => snap(path), set: async (data) => void docs.set(path, structuredClone(data)), delete: async () => void docs.delete(path) }),
+      collection: (path) => ({ get: async () => ({ docs: [...docs.keys()].filter((k) => k.startsWith(`${path}/`) && k.split('/').length === path.split('/').length + 1).map(snap) }) }),
+    });
+    const caps = { sample, downloads, assets, db };
+    window.claude = Object.freeze({ use: async (name) => caps[name] ?? null });
   });
   await cp2.goto(URL);
   await startPlatformer(cp2);
@@ -2765,6 +2794,20 @@ try {
       return defs(saves[1].text).join() === 'Player' && defs(saves[0].text).length > 5;
     }, 'and the file then has only the Player (the only object placed); the editor keeps the rest');
     await check(async () => (await cp2.getByTestId('dock-library').count()) === 1, '(the editor still works)');
+  }
+  {
+    // Save in one click: kept with the app (no download, no dialog); Open lists it.
+    const before = saves.length;
+    await cp2.getByTestId('save-button').click();
+    await check(async () => (await cp2.getByTestId('save-button').getAttribute('data-state')) === 'saved' && blobs.size === 1 && saves.length === before && (await cp2.getByTestId('save-dialog').count()) === 0, 'the Save button saves in one click, kept with the app on claude.ai (no download, no dialog)');
+    await check(async () => (await cp2.evaluate(() => [...window.__docs.values()].map((d) => d.name).join())) === 'Mole Mine', '(listed under the game\'s name)');
+    await cp2.keyboard.press('Control+s');
+    await check(async () => blobCount === 2 && blobs.size === 1 && (await cp2.evaluate(() => window.__docs.size)) === 1, 'Ctrl+S saves again, over the same save (the old file is removed)');
+    await cp2.keyboard.press('Control+o');
+    const od = cp2.getByTestId('open-dialog');
+    await check(async () => (await od.getByTestId('open-save').count()) === 1 && (await od.getByTestId('open-save').innerText()).includes('Mole Mine'), 'Open (Ctrl+O) lists the saved games');
+    await od.getByTestId('open-save').click();
+    await check(async () => (await od.count()) === 0 && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine') && (await cp2.getByTestId('dock-library').count()) === 1, 'picking one opens it');
   }
   {
     const h = JSON.parse(saves[0].text).aiHistory;

@@ -302,3 +302,14 @@
 .console-actions { display: flex; gap: 4px; }
 .console-copy-box { display: grid; gap: 4px; margin-top: 6px; }
 .console-copy-box textarea { width: 100%; min-height: 120px; font: 11.5px var(--font-data); background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+.save-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: 600 12.5px var(--font-ui); cursor: pointer; }
+.save-btn:hover { border-color: var(--accent); }
+.save-btn.dirty svg { color: var(--accent-hi, var(--accent)); }
+.save-btn[data-state='saved'] { border-color: #3ddc84; color: #3ddc84; }
+.save-btn:disabled { opacity: 0.7; cursor: default; }
+.open-dialog { width: min(480px, calc(100% - 32px)); }
+.open-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
+.open-row { display: flex; align-items: center; gap: 6px; }
+.open-pick { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); cursor: pointer; }
+.open-pick:hover { border-color: var(--accent); }
+.open-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

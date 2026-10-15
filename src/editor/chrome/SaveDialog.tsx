@@ -1,17 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { renameProject } from '../../core/model/mutations';
 import { withoutUnused } from '../../core/model/unused';
-import { canReplaceFiles, PROJECT_FILE_EXTENSION, savedFileName, saveProjectToFile, slugify } from '../persistence';
+import { canReplaceFiles, dropUnusedChoice, PROJECT_FILE_EXTENSION, savedFileName, saveProjectToFile, setDropUnusedChoice, slugify } from '../persistence';
 import { useEditor } from '../store';
-
-const DROP_KEY = 'pxlbuilder.saveDropUnused';
-function readDrop(): boolean {
-  try {
-    return localStorage.getItem(DROP_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Save: the game's name (renamed if changed, one Undo step), whether to leave
@@ -23,7 +14,7 @@ export function SaveDialog() {
   const name = useEditor((s) => s.project.name);
   const project = useEditor((s) => s.project);
   const [text, setText] = useState(name);
-  const [dropUnused, setDropUnused] = useState(readDrop);
+  const [dropUnused, setDropUnused] = useState(dropUnusedChoice);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -43,9 +34,9 @@ export function SaveDialog() {
   };
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <section className="dialog" role="dialog" aria-label="Save game" data-testid="save-dialog" onKeyDown={(e) => e.stopPropagation()}>
+      <section className="dialog" role="dialog" aria-label="Save as file" data-testid="save-dialog" onKeyDown={(e) => e.stopPropagation()}>
         <header className="bg-head">
-          <span>Save game</span>
+          <span>Save as file</span>
         </header>
         <label className="se-row">
           <span>Name</span>
@@ -80,11 +71,7 @@ export function SaveDialog() {
             data-testid="save-drop-unused"
             onChange={(e) => {
               setDropUnused(e.target.checked);
-              try {
-                localStorage.setItem(DROP_KEY, e.target.checked ? '1' : '0');
-              } catch {
-                // Not remembered; fine.
-              }
+              setDropUnusedChoice(e.target.checked);
             }}
           />
           <span>

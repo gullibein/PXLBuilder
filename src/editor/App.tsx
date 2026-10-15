@@ -1,3 +1,5 @@
+import { OpenDialog } from './chrome/OpenDialog';
+import { quickSave } from './persistence';
 import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
 import { ExportGameDialog } from './chrome/ExportGameDialog';
@@ -17,7 +19,7 @@ import { Dock } from './chrome/Dock';
 import { SpritesPanel } from './chrome/SpritesPanel';
 import { GlobalPrompt } from './chrome/GlobalPrompt';
 import { ToolPanel } from './chrome/ToolPanel';
-import { PlayButton, TopBar } from './chrome/TopBar';
+import { openGame, PlayButton, TopBar } from './chrome/TopBar';
 import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
 import { ContextPrompt } from './prompt/ContextPrompt';
@@ -100,6 +102,7 @@ export function App() {
         <SpriteExport />
         <CodeEditor />
         <SaveDialog />
+        <OpenDialog />
         <ExportGameDialog />
         <SoundEditor />
         <GlobalPrompt />
@@ -135,12 +138,14 @@ function useGlobalShortcuts() {
       }
       if (mod && key === 's') {
         e.preventDefault();
-        state.setSaveDialog(true);
+        // Ctrl+Shift+S: Save as file…; Ctrl+S saves in one step.
+        if (e.shiftKey) state.setSaveDialog(true);
+        else void quickSave();
         return;
       }
       if (mod && key === 'o') {
         e.preventDefault();
-        document.querySelector<HTMLInputElement>('[data-testid="open-file-input"]')?.click();
+        openGame();
         return;
       }
       if (mod && key === 'k') {
