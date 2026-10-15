@@ -92,15 +92,43 @@ export function drawLine(d: SpriteDraft, frame: number, x0: number, y0: number, 
   return out;
 }
 
-/** Fills the area of same-colored pixels around (x, y) that touch side by side. */
-export function fill(d: SpriteDraft, frame: number, x: number, y: number, key: string): SpriteDraft {
+/** How different two palette colors are: 0 the same … 100 as far apart as colors go (the largest channel difference). */
+export function colorDistance(a: string, b: string): number {
+  const ch = (c: string, i: number) => parseInt(c.slice(1 + i * 2, 3 + i * 2), 16);
+  const alpha = (c: string) => (c.length === 9 ? ch(c, 3) : 255);
+  let most = 0;
+  for (let i = 0; i < 3; i++) most = Math.max(most, Math.abs(ch(a, i) - ch(b, i)));
+  return (Math.max(most, Math.abs(alpha(a) - alpha(b))) / 255) * 100;
+}
+
+/**
+ * Fills the area around (x, y) whose pixels touch side by side and have the clicked pixel's color, or (tolerance
+ * 1–100, in %) a color close to it: at 0 only the very same color, at 100 everything that touches. Clear pixels (".")
+ * only go with clear pixels, except at 100. With key "." it erases the area.
+ */
+export function fill(d: SpriteDraft, frame: number, x: number, y: number, key: string, tolerance = 0): SpriteDraft {
   const rows = d.frames[frame].map((r) => [...r]);
   const from = rows[y]?.[x];
-  if (from === undefined || from === key) return d;
+  if (from === undefined || (from === key && tolerance <= 0)) return d;
+  const colors = new Map(d.palette.map((p) => [p.key, p.color]));
+  const like = new Map<string, boolean>();
+  const matches = (k: string) => {
+    let m = like.get(k);
+    if (m === undefined) {
+      if (k === from) m = true;
+      else if (tolerance >= 100) m = true;
+      else if (k === '.' || from === '.') m = false;
+      else m = colorDistance(colors.get(k) ?? '#000000', colors.get(from) ?? '#000000') <= tolerance;
+      like.set(k, m);
+    }
+    return m;
+  };
+  const seen = new Uint8Array(d.width * d.height);
   const stack: [number, number][] = [[x, y]];
   while (stack.length) {
     const [cx, cy] = stack.pop()!;
-    if (cx < 0 || cy < 0 || cx >= d.width || cy >= d.height || rows[cy][cx] !== from) continue;
+    if (cx < 0 || cy < 0 || cx >= d.width || cy >= d.height || seen[cy * d.width + cx] || !matches(rows[cy][cx])) continue;
+    seen[cy * d.width + cx] = 1;
     rows[cy][cx] = key;
     stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
   }

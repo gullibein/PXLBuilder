@@ -1209,6 +1209,27 @@ try {
   await check(async () => (await seCanvas.getAttribute('data-tool')) === 'pencil' && (await se.getByTestId('se-color-a').getAttribute('class')).includes('on'), 'Alt-clicking a pixel picks its color, and letting go of Alt brings the pencil back');
   await clickPixel(2, 2);
   await check(async () => (await px()).split('/')[2][2] === 'a', 'the pencil now draws in the picked color');
+  {
+    // The eraser can clear an area (like a fill), and the fill has a tolerance.
+    await se.getByTestId('se-tool-eraser').click();
+    await check(async () => (await se.getByTestId('se-erase-pixels').getAttribute('aria-checked')) === 'true' && (await se.getByTestId('se-erase-tolerance').count()) === 0, 'the eraser erases pixels, or an area: chosen under the tools');
+    await se.getByTestId('se-erase-area').click();
+    await se.getByTestId('se-erase-tolerance').fill('0');
+    await se.screenshot({ path: `${OUT}/10e-eraser-area.png` });
+    await clickPixel(1, 1);
+    await check(async () => (await px()).split('/')[1].slice(0, 6) === '....d.' && (await px()).split('/')[2][2] === 'a', 'Area: a click clears the area of that color it touches (here one pixel; the others stay)');
+    await se.getByTestId('se-undo').click();
+    await se.getByTestId('se-erase-pixels').click();
+    await se.getByTestId('se-tool-fill').click();
+    await se.getByTestId('se-fill-tolerance').fill('100');
+    await check(async () => (await se.getByTestId('se-fill-tolerance').inputValue()) === '100', 'the fill has a tolerance slider');
+    await clickPixel(0, 0);
+    await check(async () => !(await px()).includes('.'), 'at 100% it fills everything that touches, whatever its color');
+    await se.getByTestId('se-undo').click();
+    await se.getByTestId('se-fill-tolerance').fill('0');
+    await check(async () => (await px()).split('/')[1].slice(0, 6) === '.a..d.', '(Undo brings the drawing back)');
+    await se.getByTestId('se-tool-pencil').click();
+  }
   await se.getByTestId('se-opacity').fill('50');
   await check(async () => /^#[0-9a-f]{6}80$/.test(await se.getByTestId('se-color-a').getAttribute('title')), "a color's Opacity makes it see-through (#rrggbb80 at 50%)");
   await se.getByTestId('se-opacity').fill('100');

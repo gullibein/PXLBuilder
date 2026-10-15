@@ -161,6 +161,14 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
     setFrameState(i);
   };
   const [tool, setToolState] = useState<Tool>('pencil');
+  // Tool options (remembered in this browser): the fill's tolerance, and whether the eraser erases pixels or an area.
+  const [opts, setOptsState] = useState<ToolOptions>(readToolOptions);
+  const setOpts = (patch: Partial<ToolOptions>) =>
+    setOptsState((o) => {
+      const next = { ...o, ...patch };
+      writeToolOptions(next);
+      return next;
+    });
   // The selected rectangle (Select tool); it stays when switching frames, to copy from one and paste into another.
   const [sel, setSelState] = useState<PixelRect | null>(null);
   const selRef = useRef<PixelRect | null>(null);
@@ -404,7 +412,12 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
       return;
     }
     if (using === 'fill' && e.button !== 2) {
-      change((d) => fill(d, frame, x, y, key));
+      change((d) => fill(d, frame, x, y, key, opts.fillTolerance));
+      return;
+    }
+    // The eraser in area mode clears the area like a fill (with its own tolerance).
+    if (using === 'eraser' && opts.eraseArea) {
+      change((d) => fill(d, frame, x, y, '.', opts.eraseTolerance));
       return;
     }
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -684,6 +697,20 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 )}
               </div>
               <div className="se-side">
+                {tool === 'fill' && !alt && <ToleranceRow label="Fill tolerance" value={opts.fillTolerance} testId="se-fill-tolerance" onChange={(fillTolerance) => setOpts({ fillTolerance })} />}
+                {tool === 'eraser' && !alt && (
+                  <div className="se-tool-options" data-testid="se-eraser-options">
+                    <div className="seg small" role="radiogroup" aria-label="Eraser">
+                      <button role="radio" aria-checked={!opts.eraseArea} className={!opts.eraseArea ? 'on' : ''} data-testid="se-erase-pixels" onClick={() => setOpts({ eraseArea: false })}>
+                        Pixels
+                      </button>
+                      <button role="radio" aria-checked={opts.eraseArea} className={opts.eraseArea ? 'on' : ''} data-testid="se-erase-area" title="Click to clear the whole area of the same color (like a fill)" onClick={() => setOpts({ eraseArea: true })}>
+                        Area (fill)
+                      </button>
+                    </div>
+                    {opts.eraseArea && <ToleranceRow label="Tolerance" value={opts.eraseTolerance} testId="se-erase-tolerance" onChange={(eraseTolerance) => setOpts({ eraseTolerance })} />}
+                  </div>
+                )}
                 <div className="se-palette" data-testid="se-palette">
                   {draft.palette.map((p) => (
                     <button key={p.key} className={`se-swatch${p.key === color ? ' on' : ''}`} style={{ backgroundImage: `linear-gradient(${p.color}, ${p.color}), var(--checker)` }} title={p.color} data-testid={`se-color-${p.key}`} onClick={() => setColor(p.key)} />
@@ -822,5 +849,40 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
         )}
       </section>
     </div>
+  );
+}
+
+interface ToolOptions {
+  /** Fill: how different a color may be and still be filled (0 only the same color … 100 everything that touches). */
+  fillTolerance: number;
+  /** Eraser: clear a whole area at a click (like a fill) instead of pixels. */
+  eraseArea: boolean;
+  eraseTolerance: number;
+}
+const TOOL_OPTIONS_KEY = 'pxlbuilder.spriteToolOptions';
+function readToolOptions(): ToolOptions {
+  const base: ToolOptions = { fillTolerance: 0, eraseArea: false, eraseTolerance: 0 };
+  try {
+    return { ...base, ...(JSON.parse(localStorage.getItem(TOOL_OPTIONS_KEY) ?? '{}') as Partial<ToolOptions>) };
+  } catch {
+    return base;
+  }
+}
+function writeToolOptions(o: ToolOptions): void {
+  try {
+    localStorage.setItem(TOOL_OPTIONS_KEY, JSON.stringify(o));
+  } catch {
+    // Not remembered; fine.
+  }
+}
+
+/** A tolerance slider: 0 = only the very same color, 100 = every color that touches. */
+function ToleranceRow({ label, value, testId, onChange }: { label: string; value: number; testId: string; onChange: (v: number) => void }) {
+  return (
+    <label className="se-row se-tolerance" title="How different a color may be from the clicked one and still be taken in: 0 only the very same color, 100 every color that touches">
+      <span>{label}</span>
+      <input type="range" min={0} max={100} step={1} value={value} data-testid={testId} onChange={(e) => onChange(Number(e.target.value))} />
+      <span className="muted small se-tolerance-value">{value}%</span>
+    </label>
   );
 }

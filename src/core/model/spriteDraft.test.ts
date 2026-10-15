@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from './factory';
 import * as m from './mutations';
-import { addColor, addFrame, blankDraft, draftFromAsset, draftFromPixels, drawLine, fill, moveFrame, recolor, removeFrame, resize, setPixel, usedPalette } from './spriteDraft';
+import { addColor, addFrame, blankDraft, colorDistance, draftFromAsset, draftFromPixels, drawLine, fill, moveFrame, recolor, removeFrame, resize, setPixel, usedPalette } from './spriteDraft';
 
 describe('sprite editor drafts', () => {
   it('pixels, lines without gaps, and fill of a connected area', () => {
@@ -18,6 +18,24 @@ describe('sprite editor drafts', () => {
     expect(d.frames[0]).toEqual(['ba..', 'ba..']);
     // Off the picture: nothing happens.
     expect(setPixel(d, 0, 9, 9, 'b')).toBe(d);
+  });
+
+  it('fill with a tolerance takes in close colors too; filling with "." erases an area', () => {
+    const palette = [
+      { key: 'a', color: '#808080' },
+      { key: 'b', color: '#8c8c8c' }, // 12 apart: about 5%
+      { key: 'c', color: '#ff0000' }, // far
+    ];
+    const d = { ...blankDraft(4, 2), palette, frames: [['abc.', 'abba']] };
+    expect(fill(d, 0, 0, 0, 'c').frames[0]).toEqual(['cbc.', 'cbba']);
+    expect(fill(d, 0, 0, 0, 'c', 10).frames[0]).toEqual(['ccc.', 'cccc']);
+    // Erase-fill: the close grays go, the red and what is already clear stay.
+    expect(fill(d, 0, 0, 0, '.', 10).frames[0]).toEqual(['..c.', '....']);
+    // Clear pixels only go with clear ones, until 100.
+    expect(fill(d, 0, 3, 0, 'a', 50).frames[0]).toEqual(['abca', 'abba']);
+    expect(fill(d, 0, 3, 0, 'a', 100).frames[0]).toEqual(['aaaa', 'aaaa']);
+    expect(colorDistance('#000000', '#ffffff')).toBe(100);
+    expect(colorDistance('#ff000080', '#ff0000')).toBeCloseTo(49.8, 1);
   });
 
   it('colors: added once, changed everywhere at once, and only used ones are saved', () => {

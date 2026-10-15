@@ -313,3 +313,6 @@
 .open-pick { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); cursor: pointer; }
 .open-pick:hover { border-color: var(--accent); }
 .open-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-tool-options { display: grid; gap: 6px; }
+.se-tolerance input[type='range'] { flex: 1; min-width: 0; }
+.se-tolerance-value { min-width: 3.2em; text-align: right; }
