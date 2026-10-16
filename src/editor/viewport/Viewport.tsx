@@ -1,4 +1,6 @@
 import { resolutionZoom } from '../../core/model/camera';
+import { MAX_ZOOM, MIN_ZOOM } from './zoomLimits';
+import { ZoomBar } from './ZoomBar';
 import { useEffect, useRef, useState } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
@@ -47,8 +49,6 @@ type Drag =
   /** Dragging from a switch's red connector onto another object. */
   | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null };
 
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 8;
 /** Screen space reserved by floating chrome, so the prompt avoids it. */
 export const CHROME_INSETS = { top: 4, bottom: 76 };
 
@@ -889,6 +889,7 @@ export function Viewport() {
           openMenuAt(e);
         }}
       />
+      <ZoomBar />
       {menu && (
         <ContextMenu
           x={menu.x}

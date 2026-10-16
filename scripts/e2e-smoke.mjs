@@ -536,6 +536,17 @@ try {
   step = 'canvas first';
   await check(async () => (await canvas.isVisible()) && (await page.getByTestId('inspector').count()) === 0, 'the game canvas fills the window; no inspector panel by default');
   await check(async () => (await prompts.count()) === 0, 'no prompt is visible when nothing is selected');
+  {
+    // The zoom bar: + and − step, the slider sets it, the percentage goes back to 100%.
+    const pct = async () => Number((await page.getByTestId('zoom-reset').innerText()).replace('%', ''));
+    await page.getByTestId('zoom-in').click();
+    await check(async () => (await pct()) === 125, 'the zoom bar: + zooms in one step (125%)');
+    await page.getByTestId('zoom-slider').focus();
+    await page.keyboard.press('Home');
+    await check(async () => (await pct()) === 10, 'the zoom slider sets the zoom (all the way out: 10%)');
+    await page.getByTestId('zoom-reset').click();
+    await check(async () => (await pct()) === 100, 'a click on the percentage goes back to 100%');
+  }
   await check(async () => (await page.getByTestId('library-panel').count()) === 0, 'library is closed until asked for');
 
   step = 'build a level from the library';

@@ -26,6 +26,18 @@ describe('wheel interpretation', () => {
     expect(zoomOut.kind === 'zoom' && zoomOut.factor < 1).toBe(true);
   });
 
+  it('a mouse notch reported with ctrlKey zooms one moderate step, not a pinch-sized jump', () => {
+    const read = createWheelInterpreter();
+    for (const e of [ev({ deltaY: 100, ctrlKey: true }), ev({ deltaY: -120, ctrlKey: true }), ev({ deltaY: 3, deltaMode: 1, ctrlKey: true })]) {
+      const r = read(e);
+      expect(r.kind).toBe('zoom');
+      if (r.kind === 'zoom') expect(Math.abs(Math.log(r.factor))).toBeLessThan(0.15);
+    }
+    // A big single pinch event is capped too.
+    const big = read(ev({ deltaY: -36.5, ctrlKey: true }));
+    expect(big.kind === 'zoom' && big.factor < 1.45).toBe(true);
+  });
+
   it('Alt + two-finger scroll zooms', () => {
     const read = createWheelInterpreter();
     const r = read(ev({ deltaY: -8, altKey: true }));

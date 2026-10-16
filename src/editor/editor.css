@@ -338,6 +338,14 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .tool svg { width: 16px; height: 16px; }
 .tool-sep { width: 20px; height: 1px; margin: 3px 0; background: var(--line); }
 
+/* ---------------------------------------------------------------- zoom (bottom left, under the dock's panels) */
+.zoom-bar { position: absolute; left: 14px; bottom: 16px; display: flex; align-items: center; gap: 2px; padding: 3px 6px 3px 3px; z-index: 14; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.zoom-bar .tool { width: 28px; height: 28px; }
+.zoom-bar input[type='range'] { width: 110px; accent-color: var(--accent); }
+.zoom-pct { min-width: 44px; height: 26px; padding: 0 4px; border: none; border-radius: 7px; background: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.zoom-pct:hover { color: var(--text); background: var(--surface-2); }
+@media (max-width: 760px) { .zoom-bar { display: none; } }
+
 /* ---------------------------------------------------------------- background card */
 .background-panel { position: absolute; left: 80px; top: 16px; width: min(300px, calc(100% - 96px)); max-height: calc(100% - 100px); overflow: auto; display: grid; gap: 14px; padding: 14px; z-index: 16; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); animation: pop-in 140ms ease-out; }
 .bg-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }

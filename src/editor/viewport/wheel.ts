@@ -3,7 +3,8 @@
  * expect different things from them.
  *
  * - Trackpad two-finger scroll: pan.
- * - Trackpad pinch: zoom (browsers report it as a wheel event with ctrlKey).
+ * - Trackpad pinch: zoom (browsers report it as a wheel event with ctrlKey);
+ *   a coarse mouse notch with ctrlKey zooms by the mouse step, not the pinch rate.
  * - Alt (or Cmd/Ctrl) + scroll: zoom, on any device.
  * - Classic mouse wheel: zoom.
  *
@@ -38,6 +39,8 @@ const MOUSE_ZOOM_RATE = 0.0013;
 /** Largest delta one mouse event counts for (accelerated or fast-spun wheels send several hundred). */
 const MOUSE_DELTA_CAP = 100;
 const TRACKPAD_ZOOM_RATE = 0.004;
+/** Largest delta one pinch event counts for (about 1.4× at most). */
+const PINCH_DELTA_CAP = 35;
 
 /** `speed` scales mouse-wheel zoom (1 = default). */
 export function createWheelInterpreter(speed: () => number = () => 1) {
@@ -47,14 +50,21 @@ export function createWheelInterpreter(speed: () => number = () => 1) {
     const dx = e.deltaX * unit;
     const dy = e.deltaY * unit;
 
-    if (e.ctrlKey) return { kind: 'zoom', factor: Math.exp(-dy * 0.01) }; // pinch (or Ctrl+wheel)
-
     // Some browsers report Alt/Shift + wheel on the horizontal axis.
     const d = dy || dx;
     const fineGrained = e.deltaMode === 0 && ((e.deltaX !== 0 && e.deltaY !== 0) || !Number.isInteger(d) || Math.abs(d) < MOUSE_STEP_MIN);
+    const mouseZoom = (): WheelIntent => ({ kind: 'zoom', factor: Math.exp(-Math.sign(d) * Math.min(Math.abs(d), MOUSE_DELTA_CAP) * MOUSE_ZOOM_RATE * speed()) });
+
+    if (e.ctrlKey) {
+      // A pinch sends many small, fine steps. A mouse notch with Ctrl (or a mouse wheel some apps report with ctrlKey
+      // set) is one coarse step of about 100: at the pinch rate that was a 2.7× jump per notch, so it zooms by the
+      // mouse step instead.
+      if (!fineGrained) return mouseZoom();
+      return { kind: 'zoom', factor: Math.exp(-Math.max(-PINCH_DELTA_CAP, Math.min(PINCH_DELTA_CAP, dy)) * 0.01) };
+    }
+
     const trackpad = fineGrained || e.timeStamp - lastTrackpad < TRACKPAD_STICKY_MS;
     if (trackpad) lastTrackpad = e.timeStamp;
-    const mouseZoom = (): WheelIntent => ({ kind: 'zoom', factor: Math.exp(-Math.sign(d) * Math.min(Math.abs(d), MOUSE_DELTA_CAP) * MOUSE_ZOOM_RATE * speed()) });
 
     if (e.altKey || e.metaKey) return trackpad ? { kind: 'zoom', factor: Math.exp(-d * TRACKPAD_ZOOM_RATE) } : mouseZoom();
     if (trackpad) return { kind: 'pan', dx, dy };
