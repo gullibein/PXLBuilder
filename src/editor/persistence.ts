@@ -9,7 +9,6 @@ import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 import { withoutUnused } from '../core/model/unused';
-import { cloudSavesAvailable, saveToCloud } from './cloudSaves';
 
 const AUTOSAVE_KEY = 'pxlbuilder.autosave';
 export const PROJECT_FILE_EXTENSION = '.pxlproj.json';
@@ -217,19 +216,12 @@ function gameFileText(dropUnused: boolean): string {
  * elsewhere as a file (in Chrome and Edge over the file saved to before).
  * Resolves whether it was saved.
  */
+/**
+ * Save in one click: writes the game's file. Where the page may write files itself (Chrome, Edge), into the file it
+ * was opened from or last saved to, with no dialog once allowed; elsewhere (inside claude.ai, other browsers) it is
+ * offered as a download. False when it didn't save.
+ */
 export async function quickSave(): Promise<boolean> {
-  const { project, markSaved, logMessage } = useEditor.getState();
-  if (await cloudSavesAvailable()) {
-    void writeAutosave(project);
-    const r = await saveToCloud(project.id, project.name, gameFileText(dropUnusedChoice()));
-    if (r.ok) {
-      markSaved();
-      logMessage('info', `Saved "${project.name}" (${sizeText(r.bytes)}): Open lists it. Save as file… gives you a copy on your computer.`);
-      return true;
-    }
-    logMessage('error', `Could not save here (${r.error}). Your work is still kept in this browser; Save as file… saves a copy on your computer.`);
-    return false;
-  }
   await saveProjectToFile({ dropUnused: dropUnusedChoice() });
   return !useEditor.getState().dirty;
 }
@@ -259,9 +251,77 @@ interface FileSystemFileHandleLike {
 }
 type SaveFilePicker = (o: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandleLike>;
 
-/** The file this game was saved to in this visit (Save writes over it), if any. */
+/** The file this game was opened from or saved to in this visit (Save writes over it), if any. */
 export function savedFileName(projectId: string): string | null {
   return savedFiles.get(projectId)?.name ?? null;
+}
+
+// The files are remembered across visits too (the browser keeps the handle; writing to it again asks once).
+const HANDLE_DB = 'pxlbuilder-files';
+function handleStore(mode: IDBTransactionMode): Promise<IDBObjectStore | null> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(HANDLE_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('handles');
+      req.onsuccess = () => resolve(req.result.transaction('handles', mode).objectStore('handles'));
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function rememberFile(projectId: string, handle: FileSystemFileHandleLike): void {
+  savedFiles.set(projectId, handle);
+  void handleStore('readwrite').then((store) => {
+    try {
+      store?.put(handle, projectId);
+    } catch {
+      // Not storable here: remembered for this visit only.
+    }
+  });
+}
+
+async function rememberedFile(projectId: string): Promise<FileSystemFileHandleLike | undefined> {
+  const now = savedFiles.get(projectId);
+  if (now) return now;
+  const store = await handleStore('readonly');
+  if (!store) return undefined;
+  return new Promise((resolve) => {
+    try {
+      const req = store.get(projectId);
+      req.onsuccess = () => resolve((req.result as FileSystemFileHandleLike | undefined) ?? undefined);
+      req.onerror = () => resolve(undefined);
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+type OpenFilePicker = (o: { types: { description: string; accept: Record<string, string[]> }[]; multiple?: boolean }) => Promise<(FileSystemFileHandleLike & { getFile(): Promise<File> })[]>;
+
+/**
+ * Open from the computer, remembering the file (where the page may write files: Chrome, Edge), so Save writes back
+ * into it. True when handled (opened or cancelled); false when the browser or page doesn't allow it (then the
+ * ordinary file input is used, and Save offers a download).
+ */
+export async function openFileWithPicker(): Promise<boolean> {
+  const picker = (window as { showOpenFilePicker?: OpenFilePicker }).showOpenFilePicker;
+  if (typeof picker !== 'function') return false;
+  try {
+    const [handle] = await picker.call(window, { types: [{ description: 'PXLBuilder game', accept: { 'application/json': ['.json'] } }] });
+    if (!handle) return true;
+    const file = await handle.getFile();
+    openGameText(await file.text(), file.name);
+    const { project, markSaved } = useEditor.getState();
+    rememberFile(project.id, handle);
+    markSaved();
+    return true;
+  } catch (e) {
+    if ((e as { name?: string }).name === 'AbortError') return true;
+    // Not allowed here (inside another site's frame, as on claude.ai): the ordinary file input instead.
+    return false;
+  }
 }
 
 /** Whether Save can write a file itself (and so replace it), rather than download a new copy each time. */
@@ -291,12 +351,37 @@ export async function saveProjectToFile(options: SaveOptions = {}): Promise<void
   const size = sizeText(blob.size);
   void writeAutosave(project);
 
+  // First, where the page may write files itself (Chrome, Edge; not inside another site's frame): straight into the
+  // file the game was opened from or last saved to, with no dialog once allowed (the first time the browser asks
+  // once), or, the first time, where you choose.
+  const picker = (window as { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
+  if (typeof picker === 'function') {
+    try {
+      let handle = options.asNew ? undefined : await rememberedFile(project.id);
+      if (handle?.requestPermission && (await handle.queryPermission?.({ mode: 'readwrite' })) !== 'granted' && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') handle = undefined;
+      handle ??= await picker.call(window, { suggestedName: filename, types: [{ description: 'PXLBuilder game', accept: { 'application/json': ['.json'] } }] });
+      const out = await handle.createWritable();
+      await out.write(blob);
+      await out.close();
+      rememberFile(project.id, handle);
+      markSaved();
+      logMessage('info', `Saved "${project.name}" into ${handle.name} (${size})`);
+      return;
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') {
+        logMessage('info', 'Save cancelled');
+        return;
+      }
+      // Not allowed here (inside claude.ai's frame): offered as a download instead.
+    }
+  }
+
   const downloads = await claudeCapability<ViewerDownloads>('downloads');
   if (downloads) {
     try {
       await downloads.save({ filename, data: blob });
       markSaved();
-      logMessage('info', `Saved "${project.name}" (${filename}, ${size})`);
+      logMessage('info', `Saved "${project.name}" (${filename}, ${size}) as a download. Inside claude.ai the page can't write your file itself, so the browser asks each time; opened as its own page in Chrome or Edge, Save writes straight into the file.`);
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === 'declined') logMessage('info', 'Save cancelled');
@@ -304,28 +389,6 @@ export async function saveProjectToFile(options: SaveOptions = {}): Promise<void
       else logMessage('error', `Could not save the file here (${code ?? 'unknown'}). Your work is still kept in this browser.`);
     }
     return;
-  }
-
-  const picker = (window as { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
-  if (typeof picker === 'function') {
-    try {
-      let handle = options.asNew ? undefined : savedFiles.get(project.id);
-      if (handle?.requestPermission && (await handle.queryPermission?.({ mode: 'readwrite' })) !== 'granted' && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') handle = undefined;
-      handle ??= await picker.call(window, { suggestedName: filename, types: [{ description: 'PXLBuilder game', accept: { 'application/json': ['.json'] } }] });
-      const out = await handle.createWritable();
-      await out.write(blob);
-      await out.close();
-      savedFiles.set(project.id, handle);
-      markSaved();
-      logMessage('info', `Saved "${project.name}" (${handle.name}, ${size})`);
-      return;
-    } catch (e) {
-      if ((e as { name?: string }).name === 'AbortError') {
-        logMessage('info', 'Save cancelled');
-        return;
-      }
-      // Not allowed here (e.g. inside another site's frame): an ordinary download instead.
-    }
   }
 
   const url = URL.createObjectURL(blob);

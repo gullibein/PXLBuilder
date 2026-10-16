@@ -2765,6 +2765,12 @@ try {
     return blobs.has(id) ? r.fulfill({ status: 200, contentType: 'application/json', body: blobs.get(id) }) : r.fulfill({ status: 404, body: '' });
   });
   // Stand-in for the claude.ai artifact viewer: window.claude.use("sample" | "downloads") like the real runtime.
+  // Inside claude.ai the page is in another site's frame, where the browser doesn't let it show file pickers.
+  await cp2.addInitScript(() => {
+    const blocked = () => Promise.reject(new DOMException("Cross origin sub frames aren't allowed to show a file picker.", 'SecurityError'));
+    window.showSaveFilePicker = blocked;
+    window.showOpenFilePicker = blocked;
+  });
   await cp2.addInitScript(() => {
     const sample = Object.freeze(Object.assign(async (input, options) => ({ text: JSON.stringify(await window.__stubSample(input, options?.cache)), truncated: false }), { json: (input, options) => window.__stubSample(input, options?.cache) }));
     const downloads = Object.freeze({
@@ -2830,18 +2836,13 @@ try {
     await check(async () => (await cp2.getByTestId('dock-library').count()) === 1, '(the editor still works)');
   }
   {
-    // Save in one click: kept with the app (no download, no dialog); Open lists it.
+    // Save in one click: the game's file (inside claude.ai the page can't write it itself, so claude.ai offers it as a
+    // download, with no dialog of the app's own first).
     const before = saves.length;
     await cp2.getByTestId('save-button').click();
-    await check(async () => (await cp2.getByTestId('save-button').getAttribute('data-state')) === 'saved' && blobs.size === 1 && saves.length === before && (await cp2.getByTestId('save-dialog').count()) === 0, 'the Save button saves in one click, kept with the app on claude.ai (no download, no dialog)');
-    await check(async () => (await cp2.evaluate(() => [...window.__docs.values()].map((d) => d.name).join())) === 'Mole Mine', '(listed under the game\'s name)');
+    await check(async () => (await cp2.getByTestId('save-button').getAttribute('data-state')) === 'saved' && saves.length === before + 1 && saves.at(-1).filename === 'mole-mine.pxlproj.json' && blobs.size === 0 && (await cp2.getByTestId('save-dialog').count()) === 0, "the Save button saves the game's file in one click (offered by claude.ai; no dialog of the app's own, nothing kept with the app instead)");
     await cp2.keyboard.press('Control+s');
-    await check(async () => blobCount === 2 && blobs.size === 1 && (await cp2.evaluate(() => window.__docs.size)) === 1, 'Ctrl+S saves again, over the same save (the old file is removed)');
-    await cp2.keyboard.press('Control+o');
-    const od = cp2.getByTestId('open-dialog');
-    await check(async () => (await od.getByTestId('open-save').count()) === 1 && (await od.getByTestId('open-save').innerText()).includes('Mole Mine'), 'Open (Ctrl+O) lists the saved games');
-    await od.getByTestId('open-save').click();
-    await check(async () => (await od.count()) === 0 && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine') && (await cp2.getByTestId('dock-library').count()) === 1, 'picking one opens it');
+    await check(async () => saves.length === before + 2, 'Ctrl+S saves the file again');
   }
   {
     const h = JSON.parse(saves[0].text).aiHistory;
@@ -2862,6 +2863,75 @@ try {
     await oc.close();
   }
   await cc.close();
+
+  step = 'save straight into the file (own page, Chrome/Edge)';
+  {
+    const fc = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const fp = await fc.newPage();
+    fp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    // The browser's file pickers, as Chrome gives them to a page of its own: a handle the page writes into itself.
+    await fp.addInitScript(() => {
+      window.__files = { picked: 0, asked: 0, writes: [] };
+      // (A file chosen in the Save picker may be written at once; one opened only after the browser asks.)
+      const handle = (name, text, writable) => {
+        let allowed = writable;
+        const h = {
+          name,
+          text,
+          getFile: async () => new File([h.text], name),
+          queryPermission: async () => (allowed ? 'granted' : 'prompt'),
+          requestPermission: async () => {
+            window.__files.asked++;
+            allowed = true;
+            return 'granted';
+          },
+          createWritable: async () => ({
+            write: async (blob) => {
+              h.text = await blob.text();
+              window.__files.writes.push(name);
+            },
+            close: async () => {},
+          }),
+        };
+        return h;
+      };
+      window.showSaveFilePicker = async (o) => {
+        window.__files.picked++;
+        const h = handle(o.suggestedName, '', true);
+        window.__files.last = h;
+        return h;
+      };
+      window.showOpenFilePicker = async () => {
+        window.__files.picked++;
+        // The file saved before, opened again (as if from File Explorer).
+        const h = handle('boulderdash.pxlproj.json', window.__files.last.text, false);
+        window.__files.opened = h;
+        return [h];
+      };
+    });
+    await fp.goto(URL);
+    await startPlatformer(fp);
+    const files = () => fp.evaluate(() => ({ picked: window.__files.picked, asked: window.__files.asked, writes: window.__files.writes.join() }));
+    await fp.getByTestId('save-button').click();
+    await check(async () => (await files()).picked === 1 && (await files()).writes === 'untitled-game.pxlproj.json', 'the first Save asks where once, and writes the file there');
+    await fp.getByTestId('save-button').click();
+    await fp.keyboard.press('Control+s');
+    await check(async () => (await files()).picked === 1 && (await files()).writes.split(',').length === 3, 'the next Saves write straight into the same file: no dialog at all');
+    await fp.keyboard.press('Control+o');
+    await check(async () => (await files()).picked === 2 && (await fp.locator('.dirty-dot').count()) === 0, 'Open (Ctrl+O) picks a file from the computer');
+    await fp.getByTestId('save-button').click();
+    await check(async () => {
+      const f = await files();
+      return f.picked === 2 && f.asked === 1 && f.writes.endsWith('boulderdash.pxlproj.json');
+    }, 'Save writes back into the opened file (the browser asks once to allow it), no Save As dialog');
+    await fp.getByTestId('save-button').click();
+    await check(async () => {
+      const f = await files();
+      return f.asked === 1 && f.writes.split(',').filter((w) => w === 'boulderdash.pxlproj.json').length === 2;
+    }, 'and after that, Save just writes it');
+    await check(JSON.parse(await fp.evaluate(() => window.__files.opened.text)).kind === 'pxlbuilder.bundle', '(the file written is a whole game file)');
+    await fc.close();
+  }
 
   step = 'switch connectors';
   const swc = await browser.newContext({ viewport: { width: 1400, height: 860 } });

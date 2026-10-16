@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { deleteCloudSave, listCloudSaves, readCloudSave, type CloudSave } from '../cloudSaves';
 import { openGameText, sizeText } from '../persistence';
 import { useEditor } from '../store';
+import { openFromComputer } from './TopBar';
 
 /** Open (in the published app on claude.ai): the games saved with the app, most recent first, or a file from the computer. */
 export function OpenDialog() {
@@ -83,7 +84,7 @@ export function OpenDialog() {
             data-testid="open-from-file"
             onClick={() => {
               close();
-              document.querySelector<HTMLInputElement>('[data-testid="open-file-input"]')?.click();
+              void openFromComputer();
             }}
           >
             From a file on this computer…

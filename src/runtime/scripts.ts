@@ -20,6 +20,10 @@ import type { InputState } from './input';
 import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
+import { byTag, PointGrid } from './spatialIndex';
+
+/** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
+const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
 
 export interface ScriptInstance {
   script: BehaviorScript;
@@ -90,6 +94,39 @@ export class ScriptSystem {
   }
 
   before(dt: number, input: InputState): void {
+    // While the scripts run, nothing moves but what they move: point and tag questions use an index of the level,
+    // dropped whenever a statement moves, adds, removes or retags something.
+    this.indexing = true;
+    try {
+      this.beforeAll(dt, input);
+    } finally {
+      this.indexing = false;
+      this.index = null;
+    }
+  }
+
+  private indexing = false;
+  private index: { things: PointGrid<RuntimeEntity>; solids: PointGrid<Box>; tags: Map<string, RuntimeEntity[]> } | null = null;
+
+  /** The level's index while the scripts' step runs (null at other times, e.g. in events during physics: then everything is looked at). */
+  private levelIndex() {
+    if (!this.indexing) return null;
+    if (!this.index) {
+      const alive = this.rt.entities.filter((o) => o.alive);
+      this.index = { things: new PointGrid(alive, (o) => this.thingBox(o)), solids: new PointGrid(this.rt.solids, (b) => b), tags: byTag(alive) };
+    }
+    return this.index;
+  }
+
+  /** The box thing_at finds a thing by: its collider, or (without one) its picture. */
+  private thingBox(o: RuntimeEntity): Box | null {
+    const b = this.rt.boxOf(o);
+    if (b) return b;
+    const sp = o.base.components.Sprite;
+    return { x: o.x, y: o.y, hw: (Number(sp?.width) || 0) / 2, hh: (Number(sp?.height) || 0) / 2 };
+  }
+
+  private beforeAll(dt: number, input: InputState): void {
     this.input = input;
     this.stepBudget = STEP_BUDGET;
     const gen = this.generation;
@@ -226,6 +263,17 @@ export class ScriptSystem {
   }
 
   private stmt(s: Stmt, ctx: Ctx, chain: number): void {
+    const keeps = KEEPS_INDEX.has(s.do);
+    if (!keeps) this.index = null;
+    try {
+      this.statement(s, ctx, chain);
+    } finally {
+      // (Also after: what it evaluated may have rebuilt the index before it moved something.)
+      if (!keeps) this.index = null;
+    }
+  }
+
+  private statement(s: Stmt, ctx: Ctx, chain: number): void {
     const e = ctx.self;
     const n = (text: string) => num(this.eval(text, ctx));
     const ent = (text: string | null) => (text === null ? e : asEntity(this.eval(text, ctx)));
@@ -656,7 +704,7 @@ export class ScriptSystem {
   private nearest(from: RuntimeEntity, tag: string): RuntimeEntity | null {
     let best: RuntimeEntity | null = null;
     let bestD = Infinity;
-    for (const o of this.rt.entities) {
+    for (const o of this.levelIndex()?.tags.get(tag) ?? this.rt.entities) {
       if (o === from || !o.alive || o.projectile || !o.tags.includes(tag)) continue;
       const d = Math.hypot(o.x - from.x, o.y - from.y);
       if (d < bestD) {
@@ -697,6 +745,8 @@ export class ScriptSystem {
   }
 
   private solidAt(x: number, y: number): boolean {
+    const index = this.levelIndex();
+    if (index) return index.solids.first(x, y) !== null;
     return this.rt.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh);
   }
 
@@ -796,6 +846,8 @@ export class ScriptSystem {
         const x = n(0);
         const y = n(1);
         const tag = v.length > 2 && v[2] !== null ? show(v[2]) : null;
+        const index = this.levelIndex();
+        if (index) return index.things.first(x, y, (o) => o !== self && o.alive && (tag === null || o.tags.includes(tag)));
         return (
           this.rt.entities.find((o) => {
             if (o === self || !o.alive || (tag !== null && !o.tags.includes(tag))) return false;

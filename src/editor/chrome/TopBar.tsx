@@ -6,7 +6,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
 import { frameView } from '../actions';
 import { canExportGame, exportPlayer } from '../gameExport';
-import { openProjectFile, PROJECT_FILE_EXTENSION, quickSave } from '../persistence';
+import { openFileWithPicker, openProjectFile, PROJECT_FILE_EXTENSION, quickSave } from '../persistence';
 import { cloudSavesAvailable } from '../cloudSaves';
 import { NoteIcon } from './NoteIcon';
 import { getActiveScene, useEditor } from '../store';
@@ -241,10 +241,16 @@ export function PlayButton() {
 
 /** Open: the saves kept with the app (claude.ai), or a file from the computer. */
 export function openGame(): void {
-  void cloudSavesAvailable().then((cloud) => {
+  void cloudSavesAvailable().then(async (cloud) => {
     if (cloud) useEditor.getState().setOpenDialog(true);
-    else document.querySelector<HTMLInputElement>('[data-testid="open-file-input"]')?.click();
+    else await openFromComputer();
   });
+}
+
+/** A file from the computer: remembered where the page may write files (so Save writes back into it), else the file input. */
+export async function openFromComputer(): Promise<void> {
+  if (await openFileWithPicker()) return;
+  document.querySelector<HTMLInputElement>('[data-testid="open-file-input"]')?.click();
 }
 
 /** Save in one click: kept with the app on claude.ai, a file elsewhere. Shows "Saved" for a moment. */
@@ -259,7 +265,7 @@ function SaveButton() {
   return (
     <button
       className={`save-btn${dirty ? ' dirty' : ''}`}
-      title="Save (Ctrl+S)"
+      title="Save (Ctrl+S): writes the game's file (in Chrome or Edge, straight into the file it was opened from)"
       aria-label="Save"
       data-testid="save-button"
       data-state={state}
@@ -286,7 +292,7 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
   const items: { label: string; hint?: string; detail?: string; run: () => void; testId: string; sep?: boolean }[] = [
     { label: 'New project', detail: 'Pick a platformer or a top-down game: an empty level with that kind of built-in objects', run: () => useEditor.getState().setGameChooser('new'), testId: 'menu-new' },
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
-    { label: 'Save', hint: 'Ctrl+S', detail: 'In one click (the Save button at the top does the same)', run: () => void quickSave(), testId: 'menu-quick-save' },
+    { label: 'Save', hint: 'Ctrl+S', detail: "In one click (the Save button at the top does the same): into the game's file; in Chrome or Edge with no dialog once allowed", run: () => void quickSave(), testId: 'menu-quick-save' },
     { label: 'Save as file…', detail: 'Name the game and save it as a file on your computer', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
     ...(canExportGame()
       ? [
