@@ -211,6 +211,8 @@ export interface AIPayload {
     codeInTargets?: true;
     /** Sprites collected for this object (left out when none): image asset id, its name, the cell (sprite sheets). */
     sprites?: { assetId: Id; image: string; frame: number; sheet?: true }[];
+    /** Look settings not at their defaults (left out when none): Sprite roundCorners, tint, layer. */
+    look?: { roundCorners?: number; tint?: true; layer?: number };
   }[];
   /** The level's relationships and rules: in words, plus their data (for editing or removing by id). */
   logic: {
@@ -414,6 +416,15 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
           return { assetId: r.assetId, image: a?.name ?? '?', frame: r.frame, ...(a?.kind === 'spritesheet' ? { sheet: true as const } : {}) };
         });
         return sprites.length ? { sprites } : {};
+      })(),
+      ...(() => {
+        const sp = d.components.Sprite ?? {};
+        const look = {
+          ...(typeof sp.roundCorners === 'number' && sp.roundCorners > 0 ? { roundCorners: sp.roundCorners } : {}),
+          ...(sp.tint === true ? { tint: true as const } : {}),
+          ...(typeof sp.layer === 'number' && sp.layer !== 0 ? { layer: sp.layer } : {}),
+        };
+        return Object.keys(look).length ? { look } : {};
       })(),
     })),
     logic: {

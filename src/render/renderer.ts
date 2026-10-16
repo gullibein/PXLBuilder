@@ -291,7 +291,9 @@ export function drawEntities(
   clock = 0,
 ): void {
   const tiles = new Set<string>();
-  for (const e of entities) if (e.tile) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
+  // Tiles, and anything with rounded corners (an object the AI made for dirt need not be marked a tile), by cell.
+  const rounds = (e: ResolvedEntity) => typeof e.components.Sprite?.roundCorners === 'number' && (e.components.Sprite.roundCorners as number) > 0;
+  for (const e of entities) if (e.tile || rounds(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
   const shown = visibleArea(ctx);
 
   for (const entity of byLayer(entities)) {
@@ -328,7 +330,7 @@ export function drawEntities(
       } else ctx.fillRect(-size.x / 2, y, size.x, size.y);
     };
     // Rounded corners of a tile surface: from the tiles of the same kind around it.
-    const round = entity.tile && typeof sprite.roundCorners === 'number' && sprite.roundCorners > 0 && rotation % 360 === 0;
+    const round = rounds(entity) && rotation % 360 === 0;
     if (round) {
       const art = cell ? { w: cell.w, h: cell.h } : source ? imageSize(source) : { w: size.x, h: size.y };
       const px = size.x / (art.w || size.x);

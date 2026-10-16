@@ -71,3 +71,31 @@ describe('rounded tile corners', () => {
     expect([...fills.keys()].sort()).toEqual(['1,1,tl', '1,2,bl', '1,2,br', '3,1,tr', '3,1,br'].sort());
   });
 });
+
+describe('rounded corners on objects that are not marked as tiles', () => {
+  it('an AI-made dirt object (no tile placement) rounds its outside corners too', () => {
+    let clips = 0;
+    const ctx = {
+      save() {},
+      restore() {},
+      setTransform() {},
+      getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+      canvas: { width: 1000, height: 1000 },
+      beginPath() {},
+      rect() {},
+      clip: () => clips++,
+      fillRect() {},
+      drawImage() {},
+      set fillStyle(_v: string) {},
+      set globalAlpha(_v: number) {},
+      set imageSmoothingEnabled(_v: boolean) {},
+    } as unknown as CanvasRenderingContext2D;
+    const dirt = (x: number, roundCorners: number) =>
+      ({ id: `d${x}`, name: 'Dirt', definitionId: 'dirt', tags: [], tile: false, scripts: [], transform: { position: { x, y: 16 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { Sprite: { assetId: null, width: 32, height: 32, color: '#853', roundCorners } } }) as never;
+    drawEntities(ctx, [dirt(16, 2), dirt(48, 2)], () => null, 0, 0);
+    expect(clips).toBe(2); // each of the two has two free corners cut
+    clips = 0;
+    drawEntities(ctx, [dirt(16, 0), dirt(48, 0)], () => null, 0, 0);
+    expect(clips).toBe(0);
+  });
+});

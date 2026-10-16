@@ -32,7 +32,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
         step: 1,
         integer: true,
         description:
-          'For tile objects (dirt, rock, grass…): rounds the corners of the surface they make, by this many picture pixels (0 = square). Outside corners (where nothing of the same kind is next to it on two sides) are cut off; inside corners (where a dug tunnel or gap turns) are filled with a little of the tile, so tunnels and edges look rounded. Worked out by the engine from the tiles around, also while tiles are removed in play: no script needed',
+          'For objects laid out in a grid (dirt, rock, grass…; tiles or not): rounds the corners of the surface they make, by this many picture pixels (0 = square). Outside corners (where nothing of the same kind is next to it on two sides) are cut off; inside corners (where a dug tunnel or gap turns) are filled with a little of the tile, so tunnels and edges look rounded. Worked out by the engine from the tiles around, also while tiles are removed in play: no script needed',
       },
       layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
     },
