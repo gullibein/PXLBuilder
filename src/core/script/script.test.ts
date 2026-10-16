@@ -57,6 +57,15 @@ describe('scripts', () => {
     }
   });
 
+  it('states given as one string (a slip) are read as the list they mean', () => {
+    for (const states of ['walk, charge', '["walk","charge"]', 'walk charge']) {
+      const r = checkScript({ ...charger, states }, project);
+      expect('script' in r && r.script.states).toEqual(['walk', 'charge']);
+    }
+    const none = checkScript({ ...charger, states: null, handlers: [charger.handlers[2]] }, project);
+    expect('script' in none && none.script.states).toEqual([]);
+  });
+
   const broken = (patch: (s: typeof charger) => unknown) => {
     const r = checkScript(patch(structuredClone(charger)), project);
     return 'error' in r ? r.error : null;

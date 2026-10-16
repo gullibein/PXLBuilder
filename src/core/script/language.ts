@@ -442,9 +442,25 @@ export const scriptSchema = z.object({
   vars: z
     .array(z.object({ name: z.string().min(1), value: z.union([z.number().finite(), z.boolean(), z.string().max(200)]) }))
     .default([]),
-  states: z.array(z.string().min(1)).default([]),
+  // A list, but a slip the AI makes is read as the list it means: one name ("falling"), names in one string
+  // ("idle, falling"), the list as JSON text ("[\"idle\",\"falling\"]"), or null (no states).
+  states: z.preprocess(statesList, z.array(z.string().min(1))).default([]),
   handlers: z.array(handler).min(1),
 });
+
+function statesList(value: unknown): unknown {
+  if (value === null) return [];
+  if (typeof value !== 'string') return value;
+  const t = value.trim();
+  if (t.startsWith('[')) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      // Not JSON after all: names in it, read below.
+    }
+  }
+  return t.replace(/[[\]"']/g, ' ').split(/[\s,]+/).filter(Boolean);
+}
 
 // ---------------------------------------------------------------- checking
 
