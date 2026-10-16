@@ -460,6 +460,8 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .logic-add select { min-width: 0; font-size: 12px; }
 
 /* ---------------------------------------------------------------- play HUD */
+/* The built-in display is drawn into the game (on its pixel grid); these stay for screen readers only. */
+.hud, .hud-banner, .hud-message { position: absolute !important; left: 0; top: 0; width: 1px !important; height: 1px !important; padding: 0 !important; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hud { position: absolute; left: 16px; top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; z-index: 5; }
 .hud-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(15, 12, 30, 0.72); color: #fff; font: 600 13px var(--font-ui); }
 .hud-hearts { color: #ff6b81; letter-spacing: 1px; font-size: 15px; }

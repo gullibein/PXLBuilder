@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
 import { applyCamera, drawBackground, drawEntities, pixelPerfectZoom } from '../../render/renderer';
-import { drawScreenDrawings, LookCache } from '../../render/screen';
+import { drawScreenDrawings, LookCache, type PixelGrid } from '../../render/screen';
+import { drawBuiltinHud } from '../../render/hud';
 import { audio, playSound } from '../audio/synth';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
@@ -86,6 +87,9 @@ export function PlayView(props: PlayViewProps) {
     loadConsoleFont();
     const images = imageLookup(project);
     const looks = new LookCache(project, componentRegistry);
+    // The player's hearts are the game's Heart object, drawn in the game like everything else.
+    const heartDef = project.definitions.find((d) => d.metadata.starter === 'Heart') ?? project.definitions.find((d) => d.name.toLowerCase() === 'heart');
+    const heartLook = heartDef ? looks.get(heartDef.id) : null;
     // Sounds the game plays (made by the synthesizer from their recipes). Started now: Play was just clicked.
     const sounds = new Map(project.assets.filter((a) => a.kind === 'sound' && a.synth).map((a) => [a.id, a.synth!]));
     if (sounds.size) audio();
@@ -234,10 +238,21 @@ export function PlayView(props: PlayViewProps) {
       // (Animations hold still too once the level is won.)
       drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time);
       // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top.
+      // Everything over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.
+      const perArt = zoomNow * dpr * worldPerArt;
+      const grid: PixelGrid = { cell: perArt >= 1 ? Math.round(perArt) : 1, lowRes: (project.settings.playPixels ?? 0) > 0 };
       const drawings = [...runtime.drawings.values()];
-      drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time);
+      drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time, grid);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time);
+      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);
+      {
+        const p = runtime.entities.find((e) => e.controller);
+        const health = p?.health && !runtime.builtinHidden.has('hearts') ? { current: p.health.current, max: p.health.max } : null;
+        const items = p?.inventory && !runtime.builtinHidden.has('items') ? [...p.inventory.entries()] : [];
+        const message = runtime.messages.at(-1) ?? null;
+        drawBuiltinHud(ctx, { health, items, message, banner }, { width: canvas.width, height: canvas.height, grid, levelScale: zoomNow * dpr, cssPx: dpr }, heartLook, images, runtime.time);
+        canvas.dataset.grid = String(grid.cell);
+      }
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       for (const s of runtime.soundQueue.splice(0)) {
         const recipe = sounds.get(s.assetId);
