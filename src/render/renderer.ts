@@ -204,6 +204,78 @@ export function byLayer<T extends ResolvedEntity>(entities: T[]): T[] {
 
 const tileKey = (definitionId: string | null, x: number, y: number) => `${definitionId}|${Math.round(x)}|${Math.round(y)}`;
 
+/** Picture pixels cut from each row of a rounded corner, the row at the edge first (a pixel-art quarter circle: 2 → [2, 1], 4 → [4, 2, 1, 1]). */
+export function cornerCuts(r: number): number[] {
+  return Array.from({ length: r }, (_, i) => Math.ceil(r - Math.sqrt(r * r - (r - i) ** 2) - 1e-9));
+}
+
+type Corner = 'tl' | 'tr' | 'bl' | 'br';
+
+export interface TileCorners {
+  /** This tile's own corners that are cut off (nothing of its kind next to it on those two sides). */
+  cut: Corner[];
+  /** Corners of the empty cell above or below this tile that are filled (a tunnel turning): the cell (dy = -1 above, 1 below) and which of its corners. */
+  fill: { dy: -1 | 1; corner: Corner }[];
+}
+
+/**
+ * Which corners a tile rounds, from which cells around it hold a tile of the
+ * same kind (`has(dx, dy)`, in cells). An inside corner is filled by the tile
+ * above or below the empty cell (never by the one beside it too), so no fill is
+ * drawn twice.
+ */
+export function tileCorners(has: (dx: number, dy: number) => boolean): TileCorners {
+  const up = has(0, -1);
+  const down = has(0, 1);
+  const left = has(-1, 0);
+  const right = has(1, 0);
+  const cut: Corner[] = [];
+  if (!up && !left) cut.push('tl');
+  if (!up && !right) cut.push('tr');
+  if (!down && !left) cut.push('bl');
+  if (!down && !right) cut.push('br');
+  const fill: TileCorners['fill'] = [];
+  // The empty cell below: filled at its top-left when the tile left of it and the one left of this are there.
+  if (!down) {
+    if (left && has(-1, 1)) fill.push({ dy: 1, corner: 'tl' });
+    if (right && has(1, 1)) fill.push({ dy: 1, corner: 'tr' });
+  }
+  if (!up) {
+    if (left && has(-1, -1)) fill.push({ dy: -1, corner: 'bl' });
+    if (right && has(1, -1)) fill.push({ dy: -1, corner: 'br' });
+  }
+  return { cut, fill };
+}
+
+/**
+ * Adds to the path the rectangle (x, y, w, h) without the given corners, each
+ * cut as a staircase (`cuts`, in units of px × py), as rows of whole picture pixels.
+ */
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, cut: Corner[], cuts: number[], px: number, py: number): void {
+  const r = cuts.length;
+  const has = (c: Corner) => cut.includes(c);
+  ctx.rect(x, y + r * py, w, h - 2 * r * py);
+  for (let i = 0; i < r; i++) {
+    const top = y + i * py;
+    const bottom = y + h - (i + 1) * py;
+    const tl = has('tl') ? cuts[i] * px : 0;
+    const tr = has('tr') ? cuts[i] * px : 0;
+    const bl = has('bl') ? cuts[i] * px : 0;
+    const br = has('br') ? cuts[i] * px : 0;
+    ctx.rect(x + tl, top, w - tl - tr, py);
+    ctx.rect(x + bl, bottom, w - bl - br, py);
+  }
+}
+
+/** Adds to the path the filled part of an empty cell's corner (x, y, w, h: the cell): the cut shape, the other way round. */
+function cornerFillPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, corner: Corner, cuts: number[], px: number, py: number): void {
+  cuts.forEach((n, i) => {
+    const ry = corner[0] === 't' ? y + i * py : y + h - (i + 1) * py;
+    const rx = corner[1] === 'l' ? x : x + w - n * px;
+    ctx.rect(rx, ry, n * px, py);
+  });
+}
+
 /**
  * Draws entities in order (later entities on top). Expects world-space transform on ctx.
  * Tile objects of the same kind join into one surface: a lighter top edge only
@@ -243,16 +315,45 @@ export function drawEntities(
     placeOnScreen(ctx, position, rotation, scale, size);
     ctx.fillStyle = color;
     const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
-    if (img) {
-      // Pixel art stays crisp. The image (or sheet cell) stretches to the sprite size.
-      ctx.imageSmoothingEnabled = false;
-      const source = sprite.tint === true ? tinted(img.source, color) : img.source;
-      if (img.grid) {
-        const r = cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1);
-        ctx.drawImage(source, r.x, r.y, r.w, r.h, -size.x / 2, -size.y / 2, size.x, size.y);
-      } else {
-        ctx.drawImage(source, -size.x / 2, -size.y / 2, size.x, size.y);
+    const source = img && sprite.tint === true ? tinted(img.source, color) : img?.source;
+    const cell = img?.grid ? cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1) : null;
+    /** The picture (or, without one, the color) over the tile's own square moved `dy` tiles down. */
+    const paint = (dy: number) => {
+      const y = -size.y / 2 + dy * size.y;
+      if (img && source) {
+        // Pixel art stays crisp. The image (or sheet cell) stretches to the sprite size.
+        ctx.imageSmoothingEnabled = false;
+        if (cell) ctx.drawImage(source, cell.x, cell.y, cell.w, cell.h, -size.x / 2, y, size.x, size.y);
+        else ctx.drawImage(source, -size.x / 2, y, size.x, size.y);
+      } else ctx.fillRect(-size.x / 2, y, size.x, size.y);
+    };
+    // Rounded corners of a tile surface: from the tiles of the same kind around it.
+    const round = entity.tile && typeof sprite.roundCorners === 'number' && sprite.roundCorners > 0 && rotation % 360 === 0;
+    if (round) {
+      const art = cell ? { w: cell.w, h: cell.h } : source ? imageSize(source) : { w: size.x, h: size.y };
+      const px = size.x / (art.w || size.x);
+      const py = size.y / (art.h || size.y);
+      const r = Math.min(Math.round(sprite.roundCorners as number), Math.floor(Math.min(art.w, art.h) / 2));
+      const cuts = cornerCuts(r);
+      const sx = size.x * Math.abs(scale.x);
+      const sy = size.y * Math.abs(scale.y);
+      const corners = tileCorners((dx, dy) => tiles.has(tileKey(entity.definitionId, position.x + dx * sx, position.y + dy * sy)));
+      for (const f of corners.fill) {
+        ctx.save();
+        ctx.beginPath();
+        cornerFillPath(ctx, -size.x / 2, -size.y / 2 + f.dy * size.y, size.x, size.y, f.corner, cuts, px, py);
+        ctx.clip();
+        paint(f.dy);
+        ctx.restore();
       }
+      if (corners.cut.length && r > 0) {
+        ctx.beginPath();
+        roundedRectPath(ctx, -size.x / 2, -size.y / 2, size.x, size.y, corners.cut, cuts, px, py);
+        ctx.clip();
+      }
+    }
+    if (img) {
+      paint(0);
     } else if (entity.tile) {
       const w = size.x;
       const h = size.y;

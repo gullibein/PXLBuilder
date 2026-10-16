@@ -10,7 +10,7 @@
  * "send the exact problem back once" retry applies on top.
  */
 import type { TraceFn } from '../../core/ai/trace';
-import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 
@@ -145,8 +145,8 @@ export class GeminiProvider implements AIProvider {
       .filter((p) => !p.thought && typeof p.text === 'string')
       .map((p) => p.text)
       .join('');
-    let raw: unknown;
-    try {
+    let raw: unknown = proseReply(text);
+    if (raw === null) try {
       raw = parseJsonReply(text);
     } catch {
       throw new AIUnavailableError("Gemini's answer could not be read. Try again, or ask for less at once.");

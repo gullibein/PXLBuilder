@@ -40,6 +40,17 @@ export function userMessage(body: AIRequestBody): string {
   return context + rest;
 }
 
+/**
+ * A finished reply of only words, no JSON at all ("No changes this time: the record shows…"): read as an answer that
+ * changes nothing, rather than asked for again (a second request with the whole game costs as much as the first).
+ * Null for anything with a brace in it or too short to be a sentence.
+ */
+export function proseReply(text: string): { kind: 'answer'; message: string; changes: []; operations: []; needCode: null; starter: null } | null {
+  const t = text.trim();
+  if (t.length < 20 || t.includes('{') || t.split(/\s+/).length < 4) return null;
+  return { kind: 'answer', message: t, changes: [], operations: [], needCode: null, starter: null };
+}
+
 /** The JSON object in a plain-JSON reply (tolerates a ```json fence around it). */
 export function parseJsonReply(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');

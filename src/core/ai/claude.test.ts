@@ -183,10 +183,10 @@ describe('the Claude call', () => {
     expect(String(sent[1].messages[2].content)).toMatch(/not valid JSON/);
     expect(notes.some((n) => /couldn't be read .*It began: Sure! Here it is/.test(n))).toBe(true);
     // Unreadable twice: a plain error, and the console has both beginnings.
-    replies = ['oops', 'still oops'];
+    replies = ['{oops', '{still oops'];
     const again = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
     expect(again).toMatchObject({ ok: false, error: expect.stringMatching(/could not be read \(twice/) });
-    expect(notes.at(-1)).toMatch(/Still not readable.*It began: still oops/);
+    expect(notes.at(-1)).toMatch(/Still not readable.*It began: \{still oops/);
   });
 
   it('without the strict format: a reply tool is offered (not forced), its input is the answer; a reply that writes tool calls as text is stopped and asked again', async () => {

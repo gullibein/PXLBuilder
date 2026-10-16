@@ -8,7 +8,7 @@
  * (from the same schema the server uses) and checked against it before any
  * operation is applied.
  */
-import { parseJsonReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
@@ -101,8 +101,8 @@ export class SampleAIProvider implements AIProvider {
     // and an answer that was cut off is told apart from one that is malformed.
     const cutOff = () => new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
     if (answer.truncated) throw cutOff();
-    let raw: unknown;
-    try {
+    let raw: unknown = proseReply(answer.text);
+    if (raw === null) try {
       raw = parseJsonReply(answer.text);
     } catch (e) {
       // Not readable: say what came back (for the console), and ask once for the same answer as valid JSON.

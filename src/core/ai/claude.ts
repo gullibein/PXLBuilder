@@ -10,7 +10,7 @@ import { betaJSONSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/beta/json-
 import { compactSchema, expandReply } from './compactSchema';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
-import { parseJsonReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
+import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
 import { aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from './protocol';
 
 export const MODEL = 'claude-opus-5-5';
@@ -211,9 +211,10 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   if (response.stop_reason === 'max_tokens') return cutOff();
   if (response.stop_reason === 'stop_sequence') note(`${CLAUDE_MODELS[model].name} began writing a tool call as text; stopped it there.`);
   let text = replyText(response);
-  let raw: unknown;
-  try {
-    raw = toolReply(response) ?? parseJsonReply(text);
+  // A finished reply of only words is an answer (never one stopped where it began writing a tool call).
+  let raw: unknown = toolReply(response) ?? (response.stop_reason === 'stop_sequence' ? null : proseReply(text));
+  if (raw === null) try {
+    raw = parseJsonReply(text);
   } catch (e) {
     // Not readable: said in the console (with what came back), and asked once more for it as valid JSON.
     const problem = (e as Error).message;

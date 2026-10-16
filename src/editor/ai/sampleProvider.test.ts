@@ -52,7 +52,12 @@ describe('Claude through claude.ai (sample)', () => {
     expect(await new SampleAIProvider(fake(() => answer, (s) => `Hér er svarið:\n\`\`\`json\n${s}\n\`\`\``)).respond(body)).toEqual(answer);
     expect(await new SampleAIProvider(fake(() => answer, (s) => `${s}\nVona að þetta hjálpi!`)).respond(body)).toEqual(answer);
     await expect(new SampleAIProvider(fake(() => answer, (s) => s.slice(0, 20), true)).respond(body)).rejects.toThrow(/too long and got cut off/);
-    await expect(new SampleAIProvider(fake(() => answer, () => 'Ég get það ekki.')).respond(body)).rejects.toThrow(/wasn't in the form the app reads/);
+    await expect(new SampleAIProvider(fake(() => answer, () => '{"kind": "answer", "message": "Ég get')).respond(body)).rejects.toThrow(/wasn't in the form the app reads/);
+    // Only words, no JSON: read as an answer that changes nothing (not asked for again, which would cost a second request).
+    let asked = 0;
+    const prose = await new SampleAIProvider(fake(() => answer, () => (asked++, 'No changes this time: the record shows no errors.'))).respond(body);
+    expect(prose).toMatchObject({ kind: 'answer', message: 'No changes this time: the record shows no errors.', operations: [] });
+    expect(asked).toBe(1);
   });
   it('an unreadable answer is logged and asked for once more, with the exact problem; a fixed one is used', async () => {
     const good = { kind: 'apply', message: 'Pilla', changes: [], operations: [], needCode: null, starter: null };
