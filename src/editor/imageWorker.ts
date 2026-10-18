@@ -1,24 +1,27 @@
 /**
- * Pictures made by an image generator the user runs themselves (a Cloudflare
- * Worker: POST {"prompt": "..."} gives back the image). Its address is kept
- * in this browser only (it is not in the code: anyone with it could use up
- * the Worker's free allowance). The picture is then brought down to the
- * game's own pixels, like everything else in the game.
+ * Pictures made by an image generator (a Cloudflare Worker: POST
+ * {"prompt": "..."} gives back the image): PXLBuilder's own by default, or
+ * one the user sets in the Background card's settings (kept in this
+ * browser). The picture is then brought down to the game's own pixels, like
+ * everything else in the game.
  */
 
 const KEY = 'pxl.imageWorker';
 
+/** PXLBuilder's own image generator: used unless another one is set. (An address, not a key: it holds no secret.) */
+export const DEFAULT_IMAGE_WORKER = 'https://pxlbuilder-image.gundur.workers.dev';
+
 export function imageWorkerUrl(): string {
   try {
-    return localStorage.getItem(KEY) ?? '';
+    return localStorage.getItem(KEY) || DEFAULT_IMAGE_WORKER;
   } catch {
-    return '';
+    return DEFAULT_IMAGE_WORKER;
   }
 }
 
 export function setImageWorkerUrl(url: string): void {
   try {
-    if (url.trim()) localStorage.setItem(KEY, url.trim());
+    if (url.trim() && url.trim() !== DEFAULT_IMAGE_WORKER) localStorage.setItem(KEY, url.trim());
     else localStorage.removeItem(KEY);
   } catch {
     // Not kept (private window): asked again next time.

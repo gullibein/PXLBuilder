@@ -1382,8 +1382,14 @@ try {
       genBodies.push(route.request().postData());
       return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: Buffer.from(bigPng, 'base64') });
     });
+    // (PXLBuilder's own generator is never called from the tests.)
+    let realCalls = 0;
+    await page.route('https://pxlbuilder-image.gundur.workers.dev/**', (route) => (realCalls++, route.abort()));
     const gen = bgPanel.getByTestId('bg-generate');
-    await check(async () => (await gen.getByTestId('bg-gen-url').count()) === 1 && (await gen.getByTestId('bg-gen-go').isDisabled()), "Generate first asks for the image generator's address");
+    await gen.getByTestId('bg-gen-prompt').fill('x');
+    await check(async () => (await gen.getByTestId('bg-gen-url').count()) === 0 && !(await gen.getByTestId('bg-gen-go').isDisabled()), "Generate works out of the box (PXLBuilder's own image generator; no address to set)");
+    await gen.getByTestId('bg-gen-settings').click();
+    await check(async () => (await gen.getByTestId('bg-gen-url').inputValue()) === 'https://pxlbuilder-image.gundur.workers.dev', '(settings show its address, and another can be set)');
     await gen.getByTestId('bg-gen-url').fill('https://pxl-test-image.example.workers.dev/');
     await gen.getByTestId('bg-gen-url-save').click();
     await gen.getByTestId('bg-gen-prompt').fill('a starry night over mountains');
@@ -1405,6 +1411,11 @@ try {
     await check(colors <= 32, `(in a small palette, like pixel art: ${colors} colors)`);
     await page.getByTestId('undo').click();
     await check(async () => (await bgPanel.innerText()).includes('64×32'), 'Undo takes it back');
+    await gen.getByTestId('bg-gen-settings').click();
+    await gen.getByTestId('bg-gen-url-default').click();
+    await gen.getByTestId('bg-gen-settings').click();
+    await check(async () => (await gen.getByTestId('bg-gen-url').inputValue()) === 'https://pxlbuilder-image.gundur.workers.dev' && realCalls === 0, 'Default goes back to PXLBuilder\'s own generator');
+    await gen.getByTestId('bg-gen-settings').click();
   }
   await page.getByTestId('tool-background').click();
   await check(async () => (await bgPanel.count()) === 0, 'the background card closes again');

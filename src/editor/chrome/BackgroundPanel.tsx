@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
-import { backgroundPixels, generateImage, imageWorkerUrl, pixelate, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
+import { backgroundPixels, DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelate, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
 import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
@@ -176,7 +176,7 @@ export function BackgroundPanel() {
 function GenerateBackground({ sceneId }: { sceneId: string }) {
   const [prompt, setPrompt] = useState('');
   const [url, setUrl] = useState(imageWorkerUrl);
-  const [settings, setSettings] = useState(() => !imageWorkerUrl());
+  const [settings, setSettings] = useState(false);
   const [state, setState] = useState<{ busy: boolean; message: string | null; error: boolean }>({ busy: false, message: null, error: false });
   const run = async () => {
     const what = prompt.trim();
@@ -209,10 +209,13 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
       {settings && (
         <div className="bg-gen-settings">
           <label className="small muted" htmlFor="bg-gen-url">
-            Your image generator&apos;s address (a Cloudflare Worker). Kept in this browser only.
+            The image generator&apos;s address (a Cloudflare Worker). PXLBuilder&apos;s own unless you set another; yours is kept in this browser only.
           </label>
           <div className="bg-gen-row">
             <input id="bg-gen-url" type="url" placeholder="https://….workers.dev" value={url} data-testid="bg-gen-url" onChange={(e) => setUrl(e.target.value)} />
+            <button className="chip-btn" data-testid="bg-gen-url-default" disabled={url === DEFAULT_IMAGE_WORKER} title="Use PXLBuilder's own image generator" onClick={() => (setUrl(DEFAULT_IMAGE_WORKER), setImageWorkerUrl(''), setSettings(false))}>
+              Default
+            </button>
             <button
               className="chip-btn"
               data-testid="bg-gen-url-save"
