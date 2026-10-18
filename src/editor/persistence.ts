@@ -199,7 +199,8 @@ export function setDropUnusedChoice(on: boolean): void {
 export const sizeText = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 /** The game as a saved file's text (with its AI History, for the user to read back; never sent to the AI). */
-function gameFileText(dropUnused: boolean): string {
+/** The game file's text as saved (with or without the objects no level uses). */
+export function gameFileText(dropUnused: boolean): string {
   const { project, logMessage } = useEditor.getState();
   let saved = project;
   if (dropUnused) {

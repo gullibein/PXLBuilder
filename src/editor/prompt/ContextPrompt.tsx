@@ -25,6 +25,7 @@ export function ContextPrompt() {
   const setCameraSettingsOpen = useEditor((s) => s.setCameraSettingsOpen);
   // Out of the way while objects are moved, stretched or resized; back when they're let go.
   const objectDrag = useEditor((s) => s.objectDrag);
+  const gameSiteOpen = useEditor((s) => s.gameSite !== null);
   // Only once asked for: a double-click (or double-tap, or Enter) opens it.
   const promptOpen = useEditor((s) => s.promptOpen);
   const ctx = useMemo(
@@ -132,7 +133,7 @@ export function ContextPrompt() {
     selectConnection(null);
   };
   return (
-    <div className={`context-layer${objectDrag ? ' stepped-aside' : ''}`}>
+    <div className={`context-layer${objectDrag || gameSiteOpen ? ' stepped-aside' : ''}`}>
       <svg className="connector" aria-hidden="true">
         <line ref={lineRef} style={{ visibility: 'hidden' }} />
         <circle ref={dotRef} r="2.5" style={{ visibility: 'hidden' }} />

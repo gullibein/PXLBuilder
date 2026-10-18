@@ -3,9 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
-import { applyCamera, drawBackground, drawEntities, pixelPerfectZoom } from '../../render/renderer';
-import { drawScreenDrawings, LookCache, type PixelGrid } from '../../render/screen';
-import { drawBuiltinHud } from '../../render/hud';
+import { LookCache } from '../../render/screen';
+import { drawPlayFrame } from './playFrame';
 import { audio, playSound } from '../audio/synth';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
@@ -226,33 +225,8 @@ export function PlayView(props: PlayViewProps) {
       canvas.dataset.level = scene.name;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      const dpr = canvas.width / size.width;
-      // Every picture pixel the same size: the zoom is rounded to the nearest that gives whole canvas pixels.
-      const frameNow = runtime.cam.frame();
-      const zoomNow = pixelPerfectZoom(frameNow.zoom * extraZoom, dpr, worldPerArt);
-      // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
-      const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
-      const view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
-      drawBackground(ctx, size, dpr, scene.world, view, images);
-      applyCamera(ctx, view, size, dpr);
-      // (Animations hold still too once the level is won.)
-      drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time);
-      // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top.
-      // Everything over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.
-      const perArt = zoomNow * dpr * worldPerArt;
-      const grid: PixelGrid = { cell: perArt >= 1 ? Math.round(perArt) : 1, lowRes: (project.settings.playPixels ?? 0) > 0 };
-      const drawings = [...runtime.drawings.values()];
-      drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time, grid);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);
-      {
-        const p = runtime.entities.find((e) => e.controller);
-        const health = p?.health && !runtime.builtinHidden.has('hearts') ? { current: p.health.current, max: p.health.max } : null;
-        const items = p?.inventory && !runtime.builtinHidden.has('items') ? [...p.inventory.entries()] : [];
-        const message = runtime.messages.at(-1) ?? null;
-        drawBuiltinHud(ctx, { health, items, message, banner }, { width: canvas.width, height: canvas.height, grid, levelScale: zoomNow * dpr, cssPx: dpr }, heartLook, images, runtime.time);
-        canvas.dataset.grid = String(grid.cell);
-      }
+      const grid = drawPlayFrame(ctx, runtime, { project, scene, size, extraZoom, worldPerArt, images, looks, heartLook }, banner);
+      canvas.dataset.grid = String(grid.cell);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       for (const s of runtime.soundQueue.splice(0)) {
         const recipe = sounds.get(s.assetId);

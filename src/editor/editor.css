@@ -734,3 +734,22 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 
 /* Dropdown rows in the editor's colors (dark list, light text), not the browser's white list. */
 select option, select optgroup { background-color: var(--option-bg); color: var(--text); }
+
+/* ---------------------------------------------------------------- PXLGameSite */
+.dialog.gamesite { width: min(980px, calc(100% - 32px)); }
+.dialog.gamesite, .dialog.gamesite-save { background: var(--bar); backdrop-filter: none; }
+.dialog.gamesite-save { width: min(440px, calc(100% - 32px)); }
+.gs-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.gs-card { display: grid; gap: 6px; margin: 0; padding: 8px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.gs-pick { padding: 0; border: none; background: none; cursor: pointer; border-radius: 8px; overflow: hidden; }
+.gs-pick:hover .gs-shot { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gs-shot { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; image-rendering: pixelated; background: #000; border-radius: 8px; }
+.gs-shot.empty { display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.gs-caption { display: grid; gap: 2px; text-align: center; }
+.gs-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-name-input { width: 100%; box-sizing: border-box; text-align: center; font-weight: 700; }
+.gs-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.gamesite-play { position: fixed; inset: 0; z-index: 60; display: grid; grid-template-rows: auto 1fr; background: var(--ink); }
+.gamesite-play-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.gs-title { font-weight: 700; }
+.gamesite-play-stage { position: relative; min-height: 0; }

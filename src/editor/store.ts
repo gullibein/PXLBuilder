@@ -116,6 +116,9 @@ export interface EditorState {
   /** The Open window (saves kept with the app on claude.ai, or a file). */
   openDialog: boolean;
   setOpenDialog(open: boolean): void;
+  /** PXLGameSite: putting this game up ('save'), or browsing everyone's games ('view'). */
+  gameSite: 'save' | 'view' | null;
+  setGameSite(gameSite: 'save' | 'view' | null): void;
   /** The Export game window (options, then the HTML file). */
   exportGameOpen: boolean;
   /** The sound editor, open on this sound (an asset id), 'open': on the sound last edited (or the first one), 'none': with no sound in it. */
@@ -239,6 +242,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     codeEditor: null,
     saveDialog: false,
     openDialog: false,
+    gameSite: null,
     exportGameOpen: false,
     soundEditor: null,
     flash: null,
@@ -473,6 +477,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ soundEditor });
     },
 
+    setGameSite(gameSite) {
+      set({ gameSite });
+    },
     setOpenDialog(openDialog) {
       set({ openDialog });
     },

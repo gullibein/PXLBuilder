@@ -1,3 +1,4 @@
+import { GameSite } from './gamesite/GameSite';
 import { OpenDialog } from './chrome/OpenDialog';
 import { quickSave } from './persistence';
 import { CodeEditor } from './chrome/CodeEditor';
@@ -103,6 +104,7 @@ export function App() {
         <CodeEditor />
         <SaveDialog />
         <OpenDialog />
+        <GameSite />
         <ExportGameDialog />
         <SoundEditor />
         <GlobalPrompt />
@@ -123,6 +125,8 @@ function useGlobalShortcuts() {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       const state = useEditor.getState();
+      // PXLGameSite is open: its keys are its own (and a game played there gets the game's).
+      if (state.gameSite) return;
       if (state.mode === 'play') {
         // While playing, keys belong to the game; Esc (or Ctrl/Cmd+Enter) stops.
         if (e.key === 'Escape' || (mod && e.key === 'Enter')) {

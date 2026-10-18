@@ -2794,7 +2794,9 @@ try {
       doc: (path) => ({ get: async () => snap(path), set: async (data) => void docs.set(path, structuredClone(data)), delete: async () => void docs.delete(path) }),
       collection: (path) => ({ get: async () => ({ docs: [...docs.keys()].filter((k) => k.startsWith(`${path}/`) && k.split('/').length === path.split('/').length + 1).map(snap) }) }),
     });
-    const caps = { sample, downloads, assets, db };
+    // Who is signed in (PXLGameSite keeps each person's games under their id).
+    const user = Object.freeze({ id: async () => 'user_a', profiles: async (ids) => Object.fromEntries(ids.map((id) => [id, { name: id === 'user_b' ? 'Sigga' : 'Me' }])) });
+    const caps = { sample, downloads, assets, db, user };
     window.claude = Object.freeze({ use: async (name) => caps[name] ?? null });
   });
   await cp2.goto(URL);
@@ -2843,6 +2845,52 @@ try {
     await check(async () => (await cp2.getByTestId('save-button').getAttribute('data-state')) === 'saved' && saves.length === before + 1 && saves.at(-1).filename === 'mole-mine.pxlproj.json' && blobs.size === 0 && (await cp2.getByTestId('save-dialog').count()) === 0, "the Save button saves the game's file in one click (offered by claude.ai; no dialog of the app's own, nothing kept with the app instead)");
     await cp2.keyboard.press('Control+s');
     await check(async () => saves.length === before + 2, 'Ctrl+S saves the file again');
+  }
+  {
+    // PXLGameSite: the game shop inside the app.
+    await cp2.getByTestId('project-menu').click();
+    await cp2.getByTestId('menu-gamesite-save').click();
+    const gs = cp2.getByTestId('gamesite-save');
+    await check(async () => (await gs.getByTestId('gamesite-save-name').inputValue()) === 'Mole Mine' && (await gs.getByTestId('gamesite-save-shot').count()) === 1, 'Save to PXLGameSite shows the game\'s picture with its name under it');
+    const shotSize = await gs.getByTestId('gamesite-save-shot').evaluate((img) => `${img.naturalWidth}x${img.naturalHeight}`);
+    await check(shotSize === '480x270', `(the picture is the game at its own pixels: ${shotSize})`);
+    await cp2.waitForTimeout(400);
+    await cp2.screenshot({ path: `${OUT}/40-gamesite-save.png` });
+    await gs.getByTestId('gamesite-save-confirm').click();
+    await check(async () => (await gs.getByTestId('gamesite-save-done').count()) === 1, 'it is put up');
+    const keys = await cp2.evaluate(() => [...window.__docs.keys()].filter((k) => k.startsWith('gamesite/')).sort());
+    await check(keys.includes('gamesite/user_a') && keys.some((k) => k.startsWith('gamesite/user_a/shots/')) && keys.some((k) => k.startsWith('gamesite/user_a/parts/')), "kept under the person's own id: the list, the picture and the game file");
+    // Someone else's game, put up from another account.
+    await cp2.evaluate(() => {
+      const docs = window.__docs;
+      for (const [k, v] of [...docs]) if (k.startsWith('gamesite/user_a')) docs.set(k.replace('user_a', 'user_b'), structuredClone(v));
+      const list = docs.get('gamesite/user_b');
+      const [gid] = Object.keys(list.games);
+      list.games[gid] = { ...list.games[gid], name: 'Sigga Jumps', savedAt: Date.now() + 1000 };
+    });
+    await gs.getByRole('button', { name: 'Close' }).first().click();
+    await cp2.getByTestId('project-menu').click();
+    await cp2.getByTestId('menu-gamesite-view').click();
+    const site = cp2.getByTestId('gamesite');
+    await check(async () => (await site.getByTestId('gamesite-game').count()) === 2 && (await site.getByTestId('gamesite-game-name').allInnerTexts()).join() === 'Sigga Jumps,Mole Mine', "View PXLGameSite lists everyone's games, newest first, each with its name");
+    await check(async () => (await site.locator('.gs-shot[src^="data:image/png"]').count()) === 2 && (await site.getByTestId('gamesite-game').first().innerText()).includes('Sigga') && (await site.getByTestId('gamesite-game').nth(1).innerText()).includes('yours'), "with each game's picture and who made it");
+    await cp2.waitForTimeout(400);
+    await cp2.screenshot({ path: `${OUT}/40-gamesite.png` });
+    await check(async () => (await site.getByTestId('gamesite-game').first().getByTestId('gamesite-game-remove').count()) === 0 && (await site.getByTestId('gamesite-game').nth(1).getByTestId('gamesite-game-remove').count()) === 1, 'only your own games can be removed');
+    await site.getByTestId('gamesite-game-play').first().click();
+    await check(async () => (await cp2.getByTestId('gamesite-play').count()) === 1 && (await cp2.getByTestId('gamesite-play').getByTestId('play-canvas').count()) === 1, 'a click on a game plays it');
+    await cp2.keyboard.press('ArrowRight');
+    await check(async () => (await cp2.getByTestId('viewport-canvas').count()) === 1 && (await cp2.getByTestId('tool-pen').getAttribute('aria-pressed')) !== 'true', '(its keys go to the game, not the editor)');
+    await cp2.keyboard.press('Escape');
+    await check(async () => (await cp2.getByTestId('gamesite-play').count()) === 0 && (await site.count()) === 1, 'Esc goes back to PXLGameSite');
+    await site.getByTestId('gamesite-game').first().getByTestId('gamesite-game-copy').click();
+    await check(async () => (await site.count()) === 0 && (await cp2.getByTestId('project-menu').innerText()).includes('Mole Mine'), "Open a copy opens the game in the editor (to change it as your own)");
+    await cp2.getByTestId('project-menu').click();
+    await cp2.getByTestId('menu-gamesite-view').click();
+    await site.getByTestId('gamesite-game').nth(1).getByTestId('gamesite-game-remove').click();
+    await site.getByTestId('gamesite-game-remove-confirm').click();
+    await check(async () => (await site.getByTestId('gamesite-game').count()) === 1 && !(await cp2.evaluate(() => [...window.__docs.keys()].some((k) => k.startsWith('gamesite/user_a/')))), 'your own game can be taken off (its picture and file go too)');
+    await site.getByRole('button', { name: 'Close' }).first().click();
   }
   {
     const h = JSON.parse(saves[0].text).aiHistory;
@@ -2911,6 +2959,10 @@ try {
     });
     await fp.goto(URL);
     await startPlatformer(fp);
+    await fp.getByTestId('project-menu').click();
+    await fp.getByTestId('menu-gamesite-view').click();
+    await check(async () => (await fp.getByTestId('gamesite-unavailable').innerText()).includes('claude.ai'), 'outside claude.ai, PXLGameSite says where it is');
+    await fp.keyboard.press('Escape');
     const files = () => fp.evaluate(() => ({ picked: window.__files.picked, asked: window.__files.asked, writes: window.__files.writes.join() }));
     await fp.getByTestId('save-button').click();
     await check(async () => (await files()).picked === 1 && (await files()).writes === 'untitled-game.pxlproj.json', 'the first Save asks where once, and writes the file there');
