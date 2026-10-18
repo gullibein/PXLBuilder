@@ -166,6 +166,10 @@ export function BackgroundPanel() {
       )}
 
       <div className="bg-prompt">
+        <div className="bg-ai" data-testid="bg-ai">
+          <span className="bg-label">Ask the AI</span>
+          <p className="muted small">Change the background in words: its color, how the picture fits or moves…</p>
+        </div>
         <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Describe the background…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
       </div>
     </section>
@@ -201,7 +205,7 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
   return (
     <div className="bg-section" data-testid="bg-generate">
       <span className="bg-label">
-        Generate
+        Image generator
         <button className="link small" data-testid="bg-gen-settings" onClick={() => setSettings(!settings)}>
           {settings ? 'hide settings' : 'settings'}
         </button>
@@ -232,7 +236,7 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
       )}
       <div className="bg-gen-row">
         <input
-          placeholder="e.g. a starry night over mountains"
+          placeholder="Describe the picture…"
           value={prompt}
           aria-label="Describe the background picture"
           data-testid="bg-gen-prompt"
