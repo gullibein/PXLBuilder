@@ -1356,7 +1356,13 @@ try {
   });
   await bgPanel.getByTestId('bg-file').setInputFiles({ name: 'mountains.png', mimeType: 'image/png', buffer: Buffer.from(bgPng, 'base64') });
   await check(async () => (await bgPanel.locator('.bg-image img').count()) === 1 && (await bgPanel.innerText()).includes('64×32'), 'an uploaded image becomes the background');
-  await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 1, 'fit and movement controls appear for the image');
+  await check(async () => (await bgPanel.getByTestId('bg-fit').count()) === 1 && (await bgPanel.getByTestId('bg-movement').count()) === 1, 'fit and movement controls appear for the image');
+  await bgPanel.getByTestId('bg-movement').selectOption('level');
+  await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 0, '"Moves with the level": no slider');
+  await bgPanel.getByTestId('bg-movement').selectOption('depth');
+  await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 1, '"Moves slower": the slider for how much');
+  // (Back to moving with the level: the AI is asked for the change below.)
+  await bgPanel.getByTestId('bg-movement').selectOption('level');
   await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').fill('The background should move sideways along with the level.');
   await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').press('Enter');
   await check(async () => (await bgPanel.getByTestId('bg-parallax').inputValue()) === '50', 'a background prompt changes how it moves (50%)');
@@ -1392,9 +1398,49 @@ try {
     await check(async () => (await gen.getByTestId('bg-gen-url').inputValue()) === 'https://pxlbuilder-image.gundur.workers.dev', '(settings show its address, and another can be set)');
     await gen.getByTestId('bg-gen-url').fill('https://pxl-test-image.example.workers.dev/');
     await gen.getByTestId('bg-gen-url-save').click();
+    const defaultSize = [await gen.getByTestId('bg-gen-w').inputValue(), await gen.getByTestId('bg-gen-h').inputValue()].map(Number);
+    const limits = (await canvas.getAttribute('data-camera-frame')) ?? '';
+    await check(defaultSize[0] >= 8 && defaultSize[1] >= 8, `its size (in game pixels) starts as the camera limits box: ${defaultSize.join('×')}`);
+    await gen.getByTestId('bg-gen-w').fill('320');
+    await gen.getByTestId('bg-gen-h').fill('180');
     await gen.getByTestId('bg-gen-prompt').fill('a starry night over mountains');
     await gen.getByTestId('bg-gen-go').click();
-    await check(async () => (await bgPanel.innerText()).includes('720×720') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), "the picture becomes the background, at the game's pixels (720 tall for 32×32 sprites)");
+    await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'the picture is made at the size asked for (320×180 game pixels) and becomes the background');
+    const boxOf = async () => ((await canvas.getAttribute('data-background-box')) ?? '').split(',').map(Number);
+    const b0 = await boxOf();
+    await check(b0.length === 4 && b0[2] - b0[0] === 320 && b0[3] - b0[1] === 180 && (await bgPanel.getByTestId('bg-movement').inputValue()) === 'level', 'placed in the level in a box (each picture pixel one game pixel), moving with the level');
+    {
+      // Dragged inside the box: it moves; dragged by its corner: it gets bigger, redrawn at the new size.
+      const [cx, cy, zoom] = ((await canvas.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+      const cbox = await canvas.boundingBox();
+      const toScreen = (wx, wy) => ({ x: cbox.x + cbox.width / 2 + (wx - cx) * zoom, y: cbox.y + cbox.height / 2 + (wy - cy) * zoom });
+      // A spot inside the box with no object on it (there the pointer shows it can be moved).
+      let inside = null;
+      for (let fy = 0.15; fy < 0.9 && !inside; fy += 0.1)
+        for (let fx = 0.1; fx < 0.9 && !inside; fx += 0.1) {
+          const pt = toScreen(b0[0] + (b0[2] - b0[0]) * fx, b0[1] + (b0[3] - b0[1]) * fy);
+          if (pt.x < cbox.x + 80 || pt.y < cbox.y + 20 || pt.x > cbox.x + cbox.width - 20 || pt.y > cbox.y + cbox.height - 90) continue;
+          await page.mouse.move(pt.x, pt.y);
+          if ((await canvas.evaluate((el) => el.style.cursor)) === 'move') inside = pt;
+        }
+      await check(!!inside, '(over the box where no object is, the pointer shows it can be moved)');
+      await page.mouse.down();
+      await page.mouse.move(inside.x + 40, inside.y + 20, { steps: 4 });
+      await page.mouse.up();
+      const b1 = await boxOf();
+      await check(Math.round((b1[0] - b0[0]) * zoom) === 40 && Math.round((b1[1] - b0[1]) * zoom) === 20 && b1[2] - b1[0] === 320, 'dragging inside the box moves the picture');
+      const corner = toScreen(b1[2], b1[3]);
+      await page.mouse.move(corner.x, corner.y);
+      await page.mouse.down();
+      await page.mouse.move(corner.x + 80, corner.y + 40, { steps: 4 });
+      await page.mouse.up();
+      await check(async () => {
+        const b2 = await boxOf();
+        return Math.round((b2[2] - b2[0]) * 1) === Math.round(320 + 80 / zoom) && (await bgPanel.innerText()).includes(`${Math.round(320 + 80 / zoom)}×${Math.round(180 + 40 / zoom)}`);
+      }, 'dragging its corner resizes it, and the picture is drawn again at the new size (each pixel still one game pixel)');
+      await page.getByTestId('undo').click();
+      await check(async () => (await boxOf()).join() === b1.join(), '(a resize is one Undo step)');
+    }
     await check(genBodies.length === 1 && JSON.parse(genBodies[0]).prompt.startsWith('a starry night over mountains'), '(the description went to the generator)');
     const colors = await bgPanel.locator('.bg-image img').evaluate(async (img) => {
       await img.decode();
@@ -1409,6 +1455,7 @@ try {
       return set.size;
     });
     await check(colors <= 32, `(in a small palette, like pixel art: ${colors} colors)`);
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await check(async () => (await bgPanel.innerText()).includes('64×32'), 'Undo takes it back');
     await gen.getByTestId('bg-gen-settings').click();

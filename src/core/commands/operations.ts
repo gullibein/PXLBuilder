@@ -82,7 +82,7 @@ export const operationSchema = z.union([
     op: z.literal('set_background'),
     sceneId: z.string(),
     color: z.string().nullable().describe('Background color "#rrggbb", or null to keep'),
-    fit: z.enum(['cover', 'tile']).nullable().describe('cover: image fills the view height and repeats sideways; tile: repeats at its own size'),
+    fit: z.enum(['cover', 'tile', 'placed']).nullable().describe('cover: image fills the view height and repeats sideways; tile: repeats at its own size; placed: one picture at a place in the level (moved and resized in the editor)'),
     parallax: z.number().nullable().describe('0 = background stays fixed on screen, 1 = moves exactly with the level; 0.2-0.6 gives depth'),
     removeImage: z.boolean().describe('true to remove the background image and show only the color'),
   }),

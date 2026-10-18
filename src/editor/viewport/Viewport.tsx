@@ -1,10 +1,11 @@
 import { resolutionZoom } from '../../core/model/camera';
+import { levelPerPixel, placeBackground } from '../background';
 import { MAX_ZOOM, MIN_ZOOM } from './zoomLimits';
 import { ZoomBar } from './ZoomBar';
 import { useEffect, useRef, useState } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
-import { addEntity, moveEntities, removeEntities } from '../../core/model/mutations';
+import { addEntity, moveEntities, removeEntities, setBackground } from '../../core/model/mutations';
 import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { componentRegistry } from '../../core/components/builtin';
@@ -47,7 +48,29 @@ type Drag =
   /** Dragging a corner point of one object's box: its new size (`rect`, in the level). */
   | { kind: 'resize'; id: Id; box: Rect; dir: Handle['dir']; rect: Rect }
   /** Dragging from a switch's red connector onto another object. */
-  | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null };
+  | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null }
+  /** The placed background picture (its card open): moved (`dir` null) or resized from a corner or side; one Undo step. */
+  | { kind: 'background'; sceneId: Id; box: Rect; dir: Handle['dir'] | null; start: Vec2; rect: Rect; key: string };
+
+/** The placed background picture's box, while the Background card is open (it can be moved and resized then). */
+function backgroundBox(state: ReturnType<typeof useEditor.getState>): Rect | null {
+  if (!state.backgroundOpen) return null;
+  const bg = getActiveScene(state).world.background;
+  if (bg.fit !== 'placed' || !bg.rect || !bg.imageAssetId) return null;
+  return { minX: bg.rect.x, minY: bg.rect.y, maxX: bg.rect.x + bg.rect.w, maxY: bg.rect.y + bg.rect.h };
+}
+
+/** A box after dragging one of its corners or sides to a point (the other sides stay), never smaller than `min`. */
+function dragSide(box: Rect, dir: Handle['dir'], p: Vec2, min: number): Rect {
+  const r = { ...box };
+  if (dir.x > 0) r.maxX = Math.max(box.minX + min, p.x);
+  if (dir.x < 0) r.minX = Math.min(box.maxX - min, p.x);
+  if (dir.y > 0) r.maxY = Math.max(box.minY + min, p.y);
+  if (dir.y < 0) r.minY = Math.min(box.maxY - min, p.y);
+  return r;
+}
+
+const rectOf = (b: Rect) => ({ x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY });
 
 /** Screen space reserved by floating chrome, so the prompt avoids it. */
 export const CHROME_INSETS = { top: 4, bottom: 76 };
@@ -201,7 +224,7 @@ export function Viewport() {
         if (wire) {
           lctx.fillStyle = theme.wire.ground;
           lctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
-        } else drawBackground(lctx, view, dpr, scene.world, state.camera, tracked);
+        } else drawBackground(lctx, view, dpr, scene.world, state.camera, tracked, true);
         applyCamera(lctx, state.camera, view, dpr);
         if (state.layout.showGrid) drawGrid(lctx, state.camera, view, state.project.settings.gridSize, wire);
         // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter
@@ -253,6 +276,10 @@ export function Viewport() {
       }
       const reach = drag?.kind === 'extend' ? (shortening ? boxAround(selected.map(getWorldBounds)) : boxAround([drag.box, ...ghosts.map(getWorldBounds)])) : null;
       drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
+      const bgBox = backgroundBox(state);
+      if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
+      const bgAttr = bgBox ? [bgBox.minX, bgBox.minY, bgBox.maxX, bgBox.maxY].map((v) => v.toFixed(0)).join(',') : '';
+      if ((canvas.dataset.backgroundBox ?? '') !== bgAttr) canvas.dataset.backgroundBox = bgAttr;
       const handlesAttr = selected.length ? selectionFrame(selected).handles.map((h) => `${h.kind[0]}${h.dir.x},${h.dir.y}@${h.at.x.toFixed(0)},${h.at.y.toFixed(0)}`).join(' ') : '';
       if ((canvas.dataset.handles ?? '') !== handlesAttr) canvas.dataset.handles = handlesAttr;
       // The middle of the selection, in the level (for tests: where to right-click it).
@@ -558,6 +585,18 @@ export function Viewport() {
     } else if (ev.button === 0) {
       const world = toWorld(ev);
       const entities = resolveSceneEntities(state.project, state.activeSceneId);
+      // The placed background (its card open): its corners and sides resize it, and inside it, where no object is,
+      // it is dragged along.
+      const bgBox = backgroundBox(state);
+      if (bgBox) {
+        const h = handleAt(handlesFor(bgBox, true), bgBox, world, state.camera.zoom, ev.pointerType === 'touch' ? 18 : 8);
+        const inside = world.x >= bgBox.minX && world.x <= bgBox.maxX && world.y >= bgBox.minY && world.y <= bgBox.maxY;
+        if (h || (inside && !pick(entities, world))) {
+          dragRef.current = { kind: 'background', sceneId: state.activeSceneId, box: bgBox, dir: h ? h.dir : null, start: world, rect: bgBox, key: `${state.activeSceneId}.background.${ev.timeStamp}` };
+          capture(canvas, ev.pointerId);
+          return;
+        }
+      }
       const handle = connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
       if (handle) {
         dragRef.current = { kind: 'connect', fromId: handle.entityId, from: handle.point, current: world, targetId: null };
@@ -662,6 +701,13 @@ export function Viewport() {
       }
       const world = toWorld(ev);
       const entities = resolveSceneEntities(state.project, state.activeSceneId);
+      const bgBox = backgroundBox(state);
+      const bgHandle = bgBox && handleAt(handlesFor(bgBox, true), bgBox, world, state.camera.zoom, 8);
+      if (bgBox && (bgHandle || (world.x >= bgBox.minX && world.x <= bgBox.maxX && world.y >= bgBox.minY && world.y <= bgBox.maxY && !pick(entities, world)))) {
+        hoverRef.current = null;
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : bgHandle ? handleCursor(bgHandle) : 'move';
+        return;
+      }
       const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
       const frame = chosen.length ? selectionFrame(chosen) : null;
       const handle = frame && handleAt(frame.handles, frame.box, world, state.camera.zoom, 8);
@@ -692,6 +738,20 @@ export function Viewport() {
       const p = toWorld(ev);
       const past = pastSide(drag.box, drag.dir, p);
       drag.count = past >= 0 ? extendCount(drag.box, drag.dir, p, drag.step) : -shrinkCount(drag.layers, -past);
+      return;
+    }
+    if (drag.kind === 'background') {
+      const p = toWorld(ev);
+      const k = levelPerPixel(state.project);
+      if (drag.dir) drag.rect = dragSide(drag.box, drag.dir, p, 8 * k);
+      else {
+        // Moved in whole game pixels.
+        const dx = Math.round((p.x - drag.start.x) / k) * k;
+        const dy = Math.round((p.y - drag.start.y) / k) * k;
+        drag.rect = { minX: drag.box.minX + dx, maxX: drag.box.maxX + dx, minY: drag.box.minY + dy, maxY: drag.box.maxY + dy };
+      }
+      // Shown as it goes (stretched while resizing; drawn again at its new size when let go), all one Undo step.
+      state.edit('Move background', (pr) => setBackground(pr, drag.sceneId, { rect: rectOf(drag.rect) }), { coalesceKey: drag.key });
       return;
     }
     if (drag.kind === 'resize') {
@@ -766,6 +826,10 @@ export function Viewport() {
     if (drag?.kind === 'extend') {
       if (drag.count > 0) extendSelection(drag.ids, extendOffsets(drag.dir, drag.step, drag.count), drag.selection);
       else if (drag.count < 0) shortenSelection(drag.layers.slice(0, -drag.count).flatMap((l) => l.ids), drag.selection);
+      return;
+    }
+    if (drag?.kind === 'background') {
+      if (drag.rect !== drag.box) void placeBackground(drag.sceneId, rectOf(drag.rect), drag.key);
       return;
     }
     if (drag?.kind === 'resize') {
@@ -1261,6 +1325,26 @@ function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[]
       ctx.fill();
       ctx.stroke();
     }
+  }
+  ctx.restore();
+}
+
+/** The placed background's box with its handles (corners and sides resize it). */
+function drawBackgroundBox(ctx: CanvasRenderingContext2D, box: Rect, zoom: number): void {
+  ctx.save();
+  ctx.strokeStyle = theme.select;
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.setLineDash([6 / zoom, 4 / zoom]);
+  ctx.strokeRect(box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY);
+  ctx.setLineDash([]);
+  const s = 8 / zoom;
+  ctx.fillStyle = theme.handle;
+  ctx.lineWidth = 1.25 / zoom;
+  for (const h of handlesFor(box, true)) {
+    ctx.beginPath();
+    ctx.rect(h.at.x - s / 2, h.at.y - s / 2, s, s);
+    ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
 }

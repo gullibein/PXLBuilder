@@ -155,7 +155,7 @@ export interface AIPayload {
     name: string;
     gravity: Vec2;
     backgroundColor: string;
-    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile'; parallax: number };
+    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number };
     isStartLevel: boolean;
     /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };

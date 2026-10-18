@@ -70,8 +70,13 @@ export interface EntityInstance {
 export interface BackgroundSettings {
   /** Image asset drawn behind the level, or null for a plain color. */
   imageAssetId: Id | null;
-  /** cover: fills the view's height and repeats sideways. tile: repeats at the image's own size. */
-  fit: 'cover' | 'tile';
+  /**
+   * cover: fills the view's height and repeats sideways. tile: repeats at the image's own size. placed: one picture
+   * at `rect` in the level (where it was put and how big it was made), each picture pixel one game pixel.
+   */
+  fit: 'cover' | 'tile' | 'placed';
+  /** placed: where the picture is in the level (top-left corner, size in level pixels). */
+  rect?: { x: number; y: number; w: number; h: number } | null;
   /** How much the background moves with the level: 0 = fixed to the screen, 1 = moves exactly with the level. */
   parallax: number;
 }

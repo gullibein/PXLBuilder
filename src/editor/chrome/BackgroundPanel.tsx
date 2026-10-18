@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
-import { backgroundPixels, DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelate, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
+import { DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelateTo, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
+import { levelPerPixel, limitsBox, pixelsFor, placeBackground, rememberOriginal } from '../background';
 import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
@@ -137,31 +138,62 @@ export function BackgroundPanel() {
       {asset && (
         <div className="bg-section">
           <span className="bg-label">Fit</span>
-          <div className="segmented" role="radiogroup" aria-label="Image fit">
+          <div className="segmented" role="radiogroup" aria-label="Image fit" data-testid="bg-fit">
             {(
               [
                 ['cover', 'Fill'],
                 ['tile', 'Repeat'],
+                ['placed', 'Placed'],
               ] as const
             ).map(([fit, label]) => (
-              <button key={fit} role="radio" aria-checked={bg.fit === fit} className={bg.fit === fit ? 'on' : ''} onClick={() => edit('Set background fit', (p) => setBackground(p, sid, { fit }))}>
+              <button
+                key={fit}
+                role="radio"
+                aria-checked={bg.fit === fit}
+                className={bg.fit === fit ? 'on' : ''}
+                title={fit === 'placed' ? 'One picture at a place in the level: move it and resize it there with the mouse while this card is open' : undefined}
+                onClick={() => {
+                  if (fit === 'placed' && !bg.rect) void placeBackground(sid, limitsBox(useEditor.getState().project, scene), `${sid}.bg-fit`);
+                  else edit('Set background fit', (p) => setBackground(p, sid, { fit }));
+                }}
+              >
                 {label}
               </button>
             ))}
           </div>
-          <label className="bg-label" htmlFor="bg-parallax">
-            Moves with the level <span className="muted">{Math.round(bg.parallax * 100)}%</span>
+          {bg.fit === 'placed' && <span className="bg-hint">Drag it in the level to move it, its corners and sides to resize it.</span>}
+          <label className="bg-label" htmlFor="bg-movement">
+            Movement
           </label>
-          <input
-            id="bg-parallax"
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(bg.parallax * 100)}
-            data-testid="bg-parallax"
-            onChange={(e) => edit('Set background movement', (p) => setBackground(p, sid, { parallax: Number(e.target.value) / 100 }), { coalesceKey: `${sid}.parallax` })}
-          />
-          <span className="bg-hint">0% stays put on screen · 100% scrolls with the level</span>
+          <select
+            id="bg-movement"
+            data-testid="bg-movement"
+            value={bg.parallax >= 1 ? 'level' : bg.parallax <= 0 ? 'screen' : 'depth'}
+            onChange={(e) => {
+              const parallax = e.target.value === 'level' ? 1 : e.target.value === 'screen' ? 0 : 0.5;
+              edit('Set background movement', (p) => setBackground(p, sid, { parallax }));
+            }}
+          >
+            <option value="level">Moves with the level</option>
+            <option value="depth">Moves slower (far away)</option>
+            <option value="screen">Stays on the screen</option>
+          </select>
+          {bg.parallax > 0 && bg.parallax < 1 && (
+            <>
+              <label className="bg-label" htmlFor="bg-parallax">
+                How much it moves <span className="muted">{Math.round(bg.parallax * 100)}%</span>
+              </label>
+              <input
+                id="bg-parallax"
+                type="range"
+                min={1}
+                max={99}
+                value={Math.round(bg.parallax * 100)}
+                data-testid="bg-parallax"
+                onChange={(e) => edit('Set background movement', (p) => setBackground(p, sid, { parallax: Number(e.target.value) / 100 }), { coalesceKey: `${sid}.parallax` })}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -176,6 +208,12 @@ export function BackgroundPanel() {
 /** Generate: a picture from the user's own image generator, brought down to the game's pixels and set as the background. */
 function GenerateBackground({ sceneId }: { sceneId: string }) {
   const [prompt, setPrompt] = useState('');
+  // The picture's size in game pixels: the camera limits box's, unless changed.
+  const [size, setSize] = useState(() => {
+    const { project } = useEditor.getState();
+    const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
+    return pixelsFor(project, limitsBox(project, scene));
+  });
   const [url, setUrl] = useState(imageWorkerUrl);
   const [settings, setSettings] = useState(false);
   const [state, setState] = useState<{ busy: boolean; message: string | null; error: boolean }>({ busy: false, message: null, error: false });
@@ -184,17 +222,23 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
     if (!what || state.busy) return;
     setState({ busy: true, message: 'Making the picture… (this can take half a minute)', error: false });
     try {
-      const blob = await generateImage(`${what}, pixel art video game background, no characters, no text`);
+      const w = Math.max(8, Math.min(2048, Math.round(size.w) || 8));
+      const h = Math.max(8, Math.min(2048, Math.round(size.h) || 8));
+      const blob = await generateImage(`${what}, pixel art video game background, no characters, no text`, { width: w, height: h });
       const { project, edit, logMessage } = useEditor.getState();
-      const height = backgroundPixels(project.settings.playPixels, project.settings.spriteResolution);
-      const img = await pixelate(blob, height);
+      const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
+      const img = await pixelateTo(blob, w, h);
       const asset = createImageAsset(what.slice(0, 40), img.data, img.width, img.height, 'png');
+      rememberOriginal(asset.id, blob);
+      // Placed over the camera limits box (from its top-left corner), each picture pixel one game pixel.
+      const box = limitsBox(project, scene);
+      const k = levelPerPixel(project);
       edit('Generate background', (p) => {
         addAsset(p, asset);
-        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'cover' });
+        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: 1, rect: { x: Math.round(box.x / k) * k, y: Math.round(box.y / k) * k, w: w * k, h: h * k } });
       });
       logMessage('info', `Background made: "${what}" (${img.width}×${img.height}, the game's own pixels).`);
-      setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels, at the game's resolution. Undo takes it back.`, error: false });
+      setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`, error: false });
     } catch (e) {
       setState({ busy: false, message: (e as Error).message, error: true });
     }
@@ -231,6 +275,13 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
           </div>
         </div>
       )}
+      <div className="bg-gen-row bg-gen-size">
+        <span className="small muted">Size</span>
+        <input type="number" min={8} max={2048} value={size.w} aria-label="Width in game pixels" data-testid="bg-gen-w" onChange={(e) => setSize({ ...size, w: Number(e.target.value) })} />
+        <span className="small muted">×</span>
+        <input type="number" min={8} max={2048} value={size.h} aria-label="Height in game pixels" data-testid="bg-gen-h" onChange={(e) => setSize({ ...size, h: Number(e.target.value) })} />
+        <span className="small muted">pixels</span>
+      </div>
       <div className="bg-gen-row">
         <input
           placeholder="Describe the picture…"

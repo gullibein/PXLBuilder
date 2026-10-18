@@ -34,7 +34,12 @@ export const sceneSchema = z.object({
   world: z.object({
     gravity: vec2,
     backgroundColor: z.string(),
-    background: z.object({ imageAssetId: id.nullable(), fit: z.enum(['cover', 'tile']), parallax: z.number().min(0).max(1) }),
+    background: z.object({
+      imageAssetId: id.nullable(),
+      fit: z.enum(['cover', 'tile', 'placed']),
+      parallax: z.number().min(0).max(1),
+      rect: z.object({ x: z.number().finite(), y: z.number().finite(), w: z.number().positive(), h: z.number().positive() }).nullable().optional(),
+    }),
   }),
   entities: z.array(entitySchema),
   relationships: z.array(relationshipSchema),

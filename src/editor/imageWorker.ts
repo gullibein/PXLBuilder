@@ -39,12 +39,12 @@ export function validWorkerUrl(url: string): boolean {
 }
 
 /** Asks the generator for a picture; the error says what went wrong in plain words. */
-export async function generateImage(prompt: string, signal?: AbortSignal): Promise<Blob> {
+export async function generateImage(prompt: string, size?: { width: number; height: number }, signal?: AbortSignal): Promise<Blob> {
   const url = imageWorkerUrl();
   if (!validWorkerUrl(url)) throw new Error('Set the image generator\'s address first (Settings, under Generate).');
   let res: Response;
   try {
-    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }), signal });
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, ...(size ?? {}) }), signal });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     throw new Error(
@@ -115,20 +115,25 @@ export function toPalette(data: Uint8ClampedArray, palette: [number, number, num
   }
 }
 
-/** The generated picture at the game's pixels: `height` pixels tall (its shape kept), in a small palette, as a PNG. */
-export async function pixelate(blob: Blob, height: number): Promise<{ data: string; width: number; height: number }> {
+/**
+ * The picture at exactly w × h pixels (its middle, cut to that shape, filling it), averaged down and brought into a
+ * small palette of its own colors, as a PNG. From a generated picture or an image's data URL.
+ */
+export async function pixelateTo(source: Blob | string, w: number, h: number): Promise<{ data: string; width: number; height: number }> {
+  const blob = typeof source === 'string' ? await (await fetch(source)).blob() : source;
   const bitmap = await createImageBitmap(blob);
-  const h = Math.max(8, Math.min(height, bitmap.height));
-  const w = Math.max(8, Math.round((bitmap.width / bitmap.height) * h));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('No canvas here');
-  // Averaged down (each new pixel the mix of the ones it covers), then into the palette.
+  // The largest part of the picture with the box's shape, from its middle.
+  const scale = Math.min(bitmap.width / w, bitmap.height / h);
+  const sw = w * scale;
+  const sh = h * scale;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  ctx.drawImage(bitmap, (bitmap.width - sw) / 2, (bitmap.height - sh) / 2, sw, sh, 0, 0, w, h);
   bitmap.close?.();
   const img = ctx.getImageData(0, 0, w, h);
   toPalette(img.data, paletteFor(img.data));

@@ -112,6 +112,15 @@ export function setWorldSettings(project: Project, sceneId: Id, patch: Partial<W
   Object.assign(scene.world, cloneValue(patch));
 }
 
+/** Replaces an image's picture (a background redrawn at a new size), keeping its id so everything using it follows. */
+export function replaceImageData(project: Project, assetId: Id, data: string, width: number, height: number): void {
+  const asset = project.assets.find((a) => a.id === assetId);
+  if (!asset || asset.kind !== 'image') throw new ModelError(`Image "${assetId}" not found`);
+  asset.data = data;
+  asset.width = width;
+  asset.height = height;
+}
+
 export function setBackground(project: Project, sceneId: Id, patch: Partial<BackgroundSettings>): void {
   const scene = getScene(project, sceneId);
   if (patch.imageAssetId !== undefined && patch.imageAssetId !== null) {
@@ -119,7 +128,8 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
     if (!asset) throw new ModelError(`Image "${patch.imageAssetId}" not found`);
     if (asset.kind !== 'image') throw new ModelError(`"${asset.name}" is not an image`);
   }
-  if (patch.fit !== undefined && patch.fit !== 'cover' && patch.fit !== 'tile') throw new ModelError('Background fit must be "cover" or "tile"');
+  if (patch.fit !== undefined && !['cover', 'tile', 'placed'].includes(patch.fit)) throw new ModelError('Background fit must be "cover", "tile" or "placed"');
+  if (patch.rect && !(patch.rect.w > 0 && patch.rect.h > 0 && [patch.rect.x, patch.rect.y, patch.rect.w, patch.rect.h].every(Number.isFinite))) throw new ModelError('A placed background needs a position and a size');
   if (patch.parallax !== undefined && !(Number.isFinite(patch.parallax) && patch.parallax >= 0 && patch.parallax <= 1)) {
     throw new ModelError('Background movement must be between 0 and 1');
   }

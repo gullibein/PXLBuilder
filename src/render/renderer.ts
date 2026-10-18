@@ -77,6 +77,8 @@ export function drawBackground(
   world: WorldSettings,
   camera: Camera,
   images: ImageLookup = noImages,
+  /** The editor: a placed picture shows where it is in the level (to move and resize it), however it moves in play. */
+  editing = false,
 ): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = world.backgroundColor;
@@ -84,6 +86,19 @@ export function drawBackground(
   const { imageAssetId, fit, parallax } = world.background;
   const img = imageAssetId ? images(imageAssetId)?.source : null;
   if (!img) return;
+  if (fit === 'placed') {
+    const r = world.background.rect;
+    if (!r) return;
+    // In the level at its place; moving less than the level (parallax below 1) looks farther away.
+    const p = editing ? 1 : parallax;
+    const sx = (r.x - camera.x * p) * camera.zoom + view.width / 2;
+    const sy = (r.y - camera.y * p) * camera.zoom + view.height / 2;
+    // On whole canvas pixels, each picture pixel the same size.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, Math.round(sx * dpr), Math.round(sy * dpr), Math.round(r.w * camera.zoom * dpr), Math.round(r.h * camera.zoom * dpr));
+    return;
+  }
   const { w: iw, h: ih } = imageSize(img);
   if (!iw || !ih) return;
   const scale = fit === 'cover' ? view.height / ih : camera.zoom;
