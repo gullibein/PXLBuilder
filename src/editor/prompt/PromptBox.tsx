@@ -227,40 +227,45 @@ export function PromptBox(props: PromptBoxProps) {
           </div>
         </div>
       )}
-      <div className="prompt-field">
-        <span className="spark" aria-hidden="true">
-          ✦
-        </span>
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={text}
-          placeholder={working ? 'Working on it…' : runner.state.phase === 'done' ? 'Reply or ask something else…' : (props.placeholder ?? 'Type a command…')}
-          readOnly={working}
-          aria-label="Describe a change"
-          data-testid="prompt-input"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              if (text) setText('');
-              else {
-                inputRef.current?.blur();
-                props.onEscape?.();
+      {/* More than a line of words: they get the card's whole width, and the AI and Send buttons go under them. */}
+      <div className={`prompt-field${text.length > 26 || text.includes('\n') ? ' stacked' : ''}`} data-stacked={text.length > 26 || text.includes('\n') ? '' : undefined}>
+        <div className="prompt-line">
+          <span className="spark" aria-hidden="true">
+            ✦
+          </span>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={text}
+            placeholder={working ? 'Working on it…' : runner.state.phase === 'done' ? 'Reply or ask something else…' : (props.placeholder ?? 'Type a command…')}
+            readOnly={working}
+            aria-label="Describe a change"
+            data-testid="prompt-input"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                if (text) setText('');
+                else {
+                  inputRef.current?.blur();
+                  props.onEscape?.();
+                }
               }
-            }
-          }}
-        />
-        <AIPicker />
-        <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={!text.trim() || working} onClick={submit}>
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        {!props.header && closeButton}
+            }}
+          />
+          {!props.header && closeButton}
+        </div>
+        <div className="prompt-actions">
+          <AIPicker />
+          <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={!text.trim() || working} onClick={submit}>
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
       {expanded &&
         runner.state.phase === 'done' &&

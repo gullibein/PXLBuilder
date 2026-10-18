@@ -247,7 +247,10 @@
 .se-thumb, .se-preview { image-rendering: pixelated; display: block; }
 .se-frame-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .se-preview { padding: 4px; border-radius: 8px; background: #1b1828; }
-.se-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.se-name-fields { display: grid; gap: 8px; }
+.se-name-fields .se-row input:not([type]), .se-name-fields .se-row select { flex: 1; min-width: 0; }
+/* Export, Cancel and Save: on the frames' row, at its right end. */
+.se-finish { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .primary-btn { border: none; padding: 6px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; }
 .sprite-edit { position: absolute; left: 2px; top: 2px; border: none; border-radius: 6px; padding: 0 5px; font-size: 11px; background: var(--surface-3); color: var(--text); opacity: 0.85; }
 

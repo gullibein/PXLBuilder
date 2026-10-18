@@ -127,6 +127,14 @@ code { font-family: var(--font-data); font-size: 11px; }
 .prompt.has-header .prompt-field { margin: 0 8px 8px; padding: 2px 4px 2px 10px; border-radius: 12px; background: var(--card); }
 .prompt.has-header .prompt-result { margin: -2px 8px 8px; padding: 6px 10px 8px; border: none; border-radius: 10px; background: var(--card); }
 .prompt-field { display: flex; align-items: center; gap: 7px; }
+/* One line: everything in a row (the words, the AI and Send buttons, then the close button). */
+.prompt-field:not(.stacked) .prompt-line, .prompt-field:not(.stacked) .prompt-actions { display: contents; }
+.prompt-field:not(.stacked) .prompt-close { order: 2; }
+/* More than a line: the words take the whole width, the buttons a row under them. */
+.prompt-field.stacked { flex-direction: column; align-items: stretch; gap: 2px; }
+.prompt-field.stacked .prompt-line { display: flex; align-items: flex-start; gap: 7px; }
+.prompt-field.stacked .prompt-line .spark { padding-top: 6px; }
+.prompt-field.stacked .prompt-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-bottom: 2px; }
 .spark { color: var(--accent); font-size: 13px; user-select: none; }
 .is-working .spark { animation: spin 1.4s linear infinite; }
 .prompt textarea { flex: 1; min-width: 0; resize: none; border: none; outline: none; background: none; color: var(--card-text); font: 13px/18px var(--font-ui); padding: 6px 0; }
@@ -351,8 +359,9 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .bg-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }
 .bg-head > span { display: flex; align-items: center; gap: 8px; }
 .bg-head svg { color: #7fb6ff; }
-.se-new-wrap { position: relative; font-weight: 400; }
-.se-new-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 200px; padding: 8px; border-radius: 10px; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.se-new-wrap { position: relative; font-weight: 400; margin-right: 8px; }
+.sprite-editor > .bg-head { gap: 16px; }
+.se-new-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 200px; padding: 8px; border-radius: 10px; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .bg-section { display: grid; gap: 8px; }
 .camera-panel { width: min(340px, calc(100% - 96px)); gap: 10px; }
 .camera-panel .bg-head .muted { font-weight: 500; }

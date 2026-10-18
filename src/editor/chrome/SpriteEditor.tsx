@@ -593,6 +593,8 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
           <span>
             {asset ? `Edit sprite ${asset.name}` : 'New sprite'} <span className="muted">· {def.name}</span>
           </span>
+          {/* (Apart from the sprite's name: on the right, next to Close.) */}
+          <span className="grow" />
           {draft && (
             <span className="se-new-wrap">
               <button className="chip-btn" data-testid="se-new" aria-expanded={newMenu} onClick={() => setNewMenu(!newMenu)} title="Start another sprite for this object (e.g. a walk cycle next to the standing one)">
@@ -611,7 +613,6 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
               )}
             </span>
           )}
-          <span className="grow" />
           <button className="icon-btn" aria-label="Close without saving" data-testid="se-close" onClick={close}>
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -697,6 +698,26 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 )}
               </div>
               <div className="se-side">
+                <div className="se-name-fields">
+                  <label className="se-row">
+                    <span>Name</span>
+                    <input ref={nameRef} value={name} data-testid="se-name" onChange={(e) => setName(e.target.value)} />
+                  </label>
+                  {!asset && (
+                    <label className="se-row">
+                      <span>Use as</span>
+                      <select value={use} data-testid="se-use" onChange={(e) => setUse(e.target.value)}>
+                        <option value="">Its normal look</option>
+                        {situations.map((s) => (
+                          <option key={s} value={s}>
+                            {situationLabel(s)}
+                          </option>
+                        ))}
+                        <option value={KEEP}>Not used yet (kept in its sprites)</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
                 {tool === 'fill' && !alt && <ToleranceRow label="Fill tolerance" value={opts.fillTolerance} testId="se-fill-tolerance" onChange={(fillTolerance) => setOpts({ fillTolerance })} />}
                 {tool === 'eraser' && !alt && (
                   <div className="se-tool-options" data-testid="se-eraser-options">
@@ -804,47 +825,28 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                 )}
               </div>
               {draft.frames.length > 1 && <Preview draft={draft} />}
+              <div className="se-finish">
+                <button
+                  className="chip-btn"
+                  data-testid="se-export"
+                  title="Save this sprite (all its frames, as drawn now) as a PNG or JSON"
+                  onClick={() => {
+                    const palette = usedPalette(draft);
+                    const title = name.trim() || 'Sprite';
+                    const sheet = createAnimatedPixelArtAsset(title, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
+                    useEditor.getState().openSpriteExport({ assets: [sheet], name: title });
+                  }}
+                >
+                  Export…
+                </button>
+                <button className="chip-btn" onClick={close}>
+                  Cancel
+                </button>
+                <button className="primary-btn" data-testid="se-save" onClick={save}>
+                  {asset ? 'Save' : 'Save and use'}
+                </button>
+              </div>
             </div>
-            <footer className="se-footer">
-              <label className="se-row">
-                <span>Name</span>
-                <input ref={nameRef} value={name} data-testid="se-name" onChange={(e) => setName(e.target.value)} />
-              </label>
-              {!asset && (
-                <label className="se-row">
-                  <span>Use as</span>
-                  <select value={use} data-testid="se-use" onChange={(e) => setUse(e.target.value)}>
-                    <option value="">Its normal look</option>
-                    {situations.map((s) => (
-                      <option key={s} value={s}>
-                        {situationLabel(s)}
-                      </option>
-                    ))}
-                    <option value={KEEP}>Not used yet (kept in its sprites)</option>
-                  </select>
-                </label>
-              )}
-              <span className="grow" />
-              <button
-                className="chip-btn"
-                data-testid="se-export"
-                title="Save this sprite (all its frames, as drawn now) as a PNG or JSON"
-                onClick={() => {
-                  const palette = usedPalette(draft);
-                  const title = name.trim() || 'Sprite';
-                  const sheet = createAnimatedPixelArtAsset(title, palette.length ? palette : draft.palette.slice(0, 1), draft.frames, draft.fps);
-                  useEditor.getState().openSpriteExport({ assets: [sheet], name: title });
-                }}
-              >
-                Export…
-              </button>
-              <button className="chip-btn" onClick={close}>
-                Cancel
-              </button>
-              <button className="primary-btn" data-testid="se-save" onClick={save}>
-                {asset ? 'Save' : 'Save and use'}
-              </button>
-            </footer>
           </>
         )}
       </section>
