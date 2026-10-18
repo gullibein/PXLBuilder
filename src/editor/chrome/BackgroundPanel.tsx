@@ -166,11 +166,8 @@ export function BackgroundPanel() {
       )}
 
       <div className="bg-prompt">
-        <div className="bg-ai" data-testid="bg-ai">
-          <span className="bg-label">Ask the AI</span>
-          <p className="muted small">Change the background in words: its color, how the picture fits or moves…</p>
-        </div>
-        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Describe the background…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
+        <div className="bg-ai" aria-hidden="true" />
+        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
       </div>
     </section>
   );

@@ -774,6 +774,5 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .bg-gen-row input { flex: 1; min-width: 0; }
 .bg-gen-settings { display: grid; gap: 4px; }
 .bg-label .link { margin-left: 8px; font-weight: 400; }
-/* The AI prompt is set apart from the image generator by a line, with its own label. */
-.bg-ai { display: grid; gap: 4px; padding-top: 12px; margin-bottom: 8px; border-top: 1px solid var(--line); }
-.bg-ai p { margin: 0; }
+/* The AI prompt is set apart from the image generator by a line. */
+.bg-ai { margin: 2px 0 12px; border-top: 1px solid var(--line); }
