@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
 import { DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelateTo, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
-import { levelPerPixel, limitsBox, pixelsFor, placeBackground, rememberOriginal } from '../background';
+import { limitsBox, pictureBox, pixelsFor, placeBackground, rememberOriginal, type PictureSize } from '../background';
 import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
@@ -208,12 +208,23 @@ export function BackgroundPanel() {
 /** Generate: a picture from the user's own image generator, brought down to the game's pixels and set as the background. */
 function GenerateBackground({ sceneId }: { sceneId: string }) {
   const [prompt, setPrompt] = useState('');
-  // The picture's size in game pixels: the camera limits box's, unless changed.
+  // How big the picture is: the camera limits box (Level), what the camera shows (Screen), or a size of one's own.
+  const [sizeMode, setSizeMode] = useState<PictureSize>('level');
   const [size, setSize] = useState(() => {
     const { project } = useEditor.getState();
     const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
     return pixelsFor(project, limitsBox(project, scene));
   });
+  const project = useEditor((s) => s.project);
+  const sceneNow = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
+  const target = pictureBox(project, sceneNow, sizeMode, size);
+  const targetKey = `${target.x},${target.y},${target.w},${target.h}`;
+  // The box shows in the level while this card is open: where the new picture goes, and how big it is.
+  useEffect(() => {
+    useEditor.getState().setBackgroundTarget(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey]);
+  useEffect(() => () => useEditor.getState().setBackgroundTarget(null), []);
   const [url, setUrl] = useState(imageWorkerUrl);
   const [settings, setSettings] = useState(false);
   const [state, setState] = useState<{ busy: boolean; message: string | null; error: boolean }>({ busy: false, message: null, error: false });
@@ -222,20 +233,18 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
     if (!what || state.busy) return;
     setState({ busy: true, message: 'Making the picture… (this can take half a minute)', error: false });
     try {
-      const w = Math.max(8, Math.min(2048, Math.round(size.w) || 8));
-      const h = Math.max(8, Math.min(2048, Math.round(size.h) || 8));
+      const { w, h } = target.pixels;
       const blob = await generateImage(`${what}, pixel art video game background, no characters, no text`, { width: w, height: h });
       const { project, edit, logMessage } = useEditor.getState();
       const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
       const img = await pixelateTo(blob, w, h);
       const asset = createImageAsset(what.slice(0, 40), img.data, img.width, img.height, 'png');
       rememberOriginal(asset.id, blob);
-      // Placed over the camera limits box (from its top-left corner), each picture pixel one game pixel.
-      const box = limitsBox(project, scene);
-      const k = levelPerPixel(project);
+      // In the box shown in the level, each picture pixel one game pixel.
+      const box = pictureBox(project, scene, sizeMode, size);
       edit('Generate background', (p) => {
         addAsset(p, asset);
-        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: 1, rect: { x: Math.round(box.x / k) * k, y: Math.round(box.y / k) * k, w: w * k, h: h * k } });
+        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: 1, rect: { x: box.x, y: box.y, w: box.w, h: box.h } });
       });
       logMessage('info', `Background made: "${what}" (${img.width}×${img.height}, the game's own pixels).`);
       setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`, error: false });
@@ -275,12 +284,44 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
           </div>
         </div>
       )}
+      <div className="segmented" role="radiogroup" aria-label="Picture size" data-testid="bg-gen-size-mode">
+        {(
+          [
+            ['level', 'Level', 'The camera limits box'],
+            ['screen', 'Screen', 'What the camera shows (the game screen)'],
+            ['custom', 'User defined', 'A size of your own, in game pixels'],
+          ] as const
+        ).map(([mode, label, title]) => (
+          <button
+            key={mode}
+            role="radio"
+            aria-checked={sizeMode === mode}
+            className={sizeMode === mode ? 'on' : ''}
+            title={title}
+            data-testid={`bg-gen-size-${mode}`}
+            onClick={() => {
+              // Your own size starts from the one shown now.
+              if (mode === 'custom' && sizeMode !== 'custom') setSize(target.pixels);
+              setSizeMode(mode);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="bg-gen-row bg-gen-size">
-        <span className="small muted">Size</span>
-        <input type="number" min={8} max={2048} value={size.w} aria-label="Width in game pixels" data-testid="bg-gen-w" onChange={(e) => setSize({ ...size, w: Number(e.target.value) })} />
-        <span className="small muted">×</span>
-        <input type="number" min={8} max={2048} value={size.h} aria-label="Height in game pixels" data-testid="bg-gen-h" onChange={(e) => setSize({ ...size, h: Number(e.target.value) })} />
-        <span className="small muted">pixels</span>
+        {sizeMode === 'custom' ? (
+          <>
+            <input type="number" min={8} max={2048} value={size.w} aria-label="Width in game pixels" data-testid="bg-gen-w" onChange={(e) => setSize({ ...size, w: Number(e.target.value) })} />
+            <span className="small muted">×</span>
+            <input type="number" min={8} max={2048} value={size.h} aria-label="Height in game pixels" data-testid="bg-gen-h" onChange={(e) => setSize({ ...size, h: Number(e.target.value) })} />
+            <span className="small muted">pixels</span>
+          </>
+        ) : (
+          <span className="small muted" data-testid="bg-gen-size">
+            {target.pixels.w} × {target.pixels.h} pixels (the box in the level)
+          </span>
+        )}
       </div>
       <div className="bg-gen-row">
         <input

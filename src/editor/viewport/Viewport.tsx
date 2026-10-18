@@ -1,5 +1,4 @@
-import { resolutionZoom } from '../../core/model/camera';
-import { levelPerPixel, placeBackground } from '../background';
+import { levelPerPixel, placeBackground, playZoom } from '../background';
 import { MAX_ZOOM, MIN_ZOOM } from './zoomLimits';
 import { ZoomBar } from './ZoomBar';
 import { useEffect, useRef, useState } from 'react';
@@ -278,6 +277,13 @@ export function Viewport() {
       drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
       const bgBox = backgroundBox(state);
       if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
+      // Where a picture about to be generated goes, and how big it is.
+      const t0 = state.backgroundOpen ? state.backgroundTarget : null;
+      // (Not over a picture already made in that very box.)
+      const target = t0 && !(bgBox && bgBox.minX === t0.x && bgBox.minY === t0.y && bgBox.maxX === t0.x + t0.w && bgBox.maxY === t0.y + t0.h) ? t0 : null;
+      if (target) drawPictureTarget(ctx, target, state.camera.zoom);
+      const targetAttr = target ? [target.x, target.y, target.x + target.w, target.y + target.h].map((v) => v.toFixed(0)).join(',') : '';
+      if ((canvas.dataset.backgroundTarget ?? '') !== targetAttr) canvas.dataset.backgroundTarget = targetAttr;
       const bgAttr = bgBox ? [bgBox.minX, bgBox.minY, bgBox.maxX, bgBox.maxY].map((v) => v.toFixed(0)).join(',') : '';
       if ((canvas.dataset.backgroundBox ?? '') !== bgAttr) canvas.dataset.backgroundBox = bgAttr;
       const handlesAttr = selected.length ? selectionFrame(selected).handles.map((h) => `${h.kind[0]}${h.dir.x},${h.dir.y}@${h.at.x.toFixed(0)},${h.at.y.toFixed(0)}`).join(' ') : '';
@@ -1329,6 +1335,23 @@ function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[]
   ctx.restore();
 }
 
+/** The box a new background picture will fill, with its size in game pixels. */
+function drawPictureTarget(ctx: CanvasRenderingContext2D, t: { x: number; y: number; w: number; h: number; pixels: { w: number; h: number } }, zoom: number): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(124, 108, 255, 0.10)';
+  ctx.fillRect(t.x, t.y, t.w, t.h);
+  ctx.strokeStyle = theme.select;
+  ctx.lineWidth = 2 / zoom;
+  ctx.setLineDash([10 / zoom, 6 / zoom]);
+  ctx.strokeRect(t.x, t.y, t.w, t.h);
+  ctx.setLineDash([]);
+  ctx.font = `600 ${12 / zoom}px system-ui, sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = theme.select;
+  ctx.fillText(`New picture · ${t.pixels.w} × ${t.pixels.h} pixels`, t.x + 6 / zoom, t.y + 6 / zoom);
+  ctx.restore();
+}
+
 /** The placed background's box with its handles (corners and sides resize it). */
 function drawBackgroundBox(ctx: CanvasRenderingContext2D, box: Rect, zoom: number): void {
   ctx.save();
@@ -1744,8 +1767,4 @@ function drawMarquee(ctx: CanvasRenderingContext2D, a: Vec2, b: Vec2, zoom: numb
 }
 
 /** The zoom Play will use for this level: its camera's, or the one the game's resolution makes (as Play works it out). */
-function playZoom(project: Project, scene: Scene, view: ViewSize): number {
-  const pixels = project.settings.playPixels;
-  if (!pixels) return scene.camera.zoom;
-  return resolutionZoom(scene.camera.zoom, view.height, window.devicePixelRatio || 1, pixels, 32 / (project.settings.spriteResolution ?? 32)).zoom;
-}
+

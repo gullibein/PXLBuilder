@@ -119,6 +119,9 @@ export interface EditorState {
   /** PXLGameSite: putting this game up ('save'), or browsing everyone's games ('view'). */
   gameSite: 'save' | 'view' | null;
   setGameSite(gameSite: 'save' | 'view' | null): void;
+  /** Where a background picture about to be generated goes (level pixels), shown as a box in the level; null when none. */
+  backgroundTarget: { x: number; y: number; w: number; h: number; pixels: { w: number; h: number } } | null;
+  setBackgroundTarget(box: { x: number; y: number; w: number; h: number; pixels: { w: number; h: number } } | null): void;
   /** The Export game window (options, then the HTML file). */
   exportGameOpen: boolean;
   /** The sound editor, open on this sound (an asset id), 'open': on the sound last edited (or the first one), 'none': with no sound in it. */
@@ -243,6 +246,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     saveDialog: false,
     openDialog: false,
     gameSite: null,
+    backgroundTarget: null,
     exportGameOpen: false,
     soundEditor: null,
     flash: null,
@@ -479,6 +483,9 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setGameSite(gameSite) {
       set({ gameSite });
+    },
+    setBackgroundTarget(backgroundTarget) {
+      set({ backgroundTarget });
     },
     setOpenDialog(openDialog) {
       set({ openDialog });

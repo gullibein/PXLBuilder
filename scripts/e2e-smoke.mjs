@@ -1398,11 +1398,23 @@ try {
     await check(async () => (await gen.getByTestId('bg-gen-url').inputValue()) === 'https://pxlbuilder-image.gundur.workers.dev', '(settings show its address, and another can be set)');
     await gen.getByTestId('bg-gen-url').fill('https://pxl-test-image.example.workers.dev/');
     await gen.getByTestId('bg-gen-url-save').click();
-    const defaultSize = [await gen.getByTestId('bg-gen-w').inputValue(), await gen.getByTestId('bg-gen-h').inputValue()].map(Number);
-    const limits = (await canvas.getAttribute('data-camera-frame')) ?? '';
-    await check(defaultSize[0] >= 8 && defaultSize[1] >= 8, `its size (in game pixels) starts as the camera limits box: ${defaultSize.join('×')}`);
+    const targetOf = async () => ((await canvas.getAttribute('data-background-target')) ?? '').split(',').map(Number);
+    const levelText = await gen.getByTestId('bg-gen-size').innerText();
+    const levelBox = await targetOf();
+    await check(levelBox.length === 4 && /^\d+ × \d+ pixels/.test(levelText) && (await gen.getByTestId('bg-gen-size-level').getAttribute('aria-checked')) === 'true', `the picture's size starts as the level (the camera limits box: ${levelText}), and a box in the level shows it`);
+    await gen.getByTestId('bg-gen-size-screen').click();
+    const frame = ((await canvas.getAttribute('data-camera-frame')) ?? '').split(',').map(Number);
+    await check(async () => {
+      const t = await targetOf();
+      return t.length === 4 && t.every((v, i) => Math.abs(v - frame[i]) <= 1) && t.join() !== levelBox.join();
+    }, 'Screen: the box is what the camera shows (its start outline)');
+    await gen.getByTestId('bg-gen-size-custom').click();
     await gen.getByTestId('bg-gen-w').fill('320');
     await gen.getByTestId('bg-gen-h').fill('180');
+    await check(async () => {
+      const t = await targetOf();
+      return t[2] - t[0] === 320 && t[3] - t[1] === 180;
+    }, 'User defined: the box takes the size typed (320 × 180 game pixels)');
     await gen.getByTestId('bg-gen-prompt').fill('a starry night over mountains');
     await gen.getByTestId('bg-gen-go').click();
     await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'the picture is made at the size asked for (320×180 game pixels) and becomes the background');

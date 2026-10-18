@@ -143,6 +143,11 @@ export function setViewportSize(width: number, height: number): void {
   viewSize = { width, height };
 }
 
+/** The editor's visible area (screen px). */
+export function viewportSize(): { width: number; height: number } {
+  return viewSize;
+}
+
 /** Whether any of these entities is at least partly on screen (with the camera given, or the current one). */
 export function anyInView(subset: ResolvedEntity[], camera = useEditor.getState().camera): boolean {
   const hw = viewSize.width / 2 / camera.zoom;

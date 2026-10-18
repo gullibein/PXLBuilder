@@ -4,7 +4,9 @@
  * new size from the original picture, so each picture pixel is always one
  * game pixel, however big it is made.
  */
+import { resolutionZoom } from '../core/model/camera';
 import { replaceImageData, setBackground } from '../core/model/mutations';
+import { viewportSize } from './actions';
 import type { Id, Project, Scene } from '../core/types';
 import { pixelateTo } from './imageWorker';
 import { cameraFrame } from './overlays/cameraFrame';
@@ -13,6 +15,48 @@ import { useEditor } from './store';
 
 /** Level pixels per game pixel (picture pixels are drawn for 32-pixel tiles at the game's sprite size). */
 export const levelPerPixel = (project: Project) => 32 / (project.settings.spriteResolution ?? 32);
+
+/** The zoom Play shows the level at on a screen this size (the game's resolution, or the camera's zoom). */
+export function playZoom(project: Project, scene: Scene, view: { width: number; height: number }): number {
+  const pixels = project.settings.playPixels;
+  if (!pixels) return scene.camera.zoom;
+  return resolutionZoom(scene.camera.zoom, view.height, window.devicePixelRatio || 1, pixels, levelPerPixel(project)).zoom;
+}
+
+/**
+ * What the camera shows when the level starts, in level pixels: in a game with its own resolution, exactly that many
+ * game pixels tall; otherwise the camera's start outline in the editor.
+ */
+export function screenBox(project: Project, scene: Scene): { x: number; y: number; w: number; h: number } {
+  const view = viewportSize();
+  const f = cameraFrame(scene, resolveSceneEntities(project, scene.id), view, playZoom(project, scene, view)).frame;
+  const pixels = project.settings.playPixels;
+  if (pixels) {
+    // The game's own resolution: exactly that many game pixels tall (as wide as the screen's shape gives), around
+    // where the camera starts.
+    const k = levelPerPixel(project);
+    const h = pixels * k;
+    const w = Math.round((pixels * view.width) / Math.max(1, view.height)) * k;
+    const cx = (f.minX + f.maxX) / 2;
+    const cy = (f.minY + f.maxY) / 2;
+    return { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
+  return { x: f.minX, y: f.minY, w: f.maxX - f.minX, h: f.maxY - f.minY };
+}
+
+export type PictureSize = 'level' | 'screen' | 'custom';
+
+/**
+ * Where a new background picture goes and how big it is: the camera limits box (level), what the camera shows
+ * (screen), or a size of the user's (custom: centered on what the camera shows). On whole game pixels.
+ */
+export function pictureBox(project: Project, scene: Scene, size: PictureSize, custom: { w: number; h: number }): { x: number; y: number; w: number; h: number; pixels: { w: number; h: number } } {
+  const k = levelPerPixel(project);
+  const screen = screenBox(project, scene);
+  const box = size === 'level' ? limitsBox(project, scene) : size === 'screen' ? screen : { x: screen.x + screen.w / 2 - (custom.w * k) / 2, y: screen.y + screen.h / 2 - (custom.h * k) / 2, w: custom.w * k, h: custom.h * k };
+  const pixels = size === 'custom' ? { w: clampPixels(custom.w), h: clampPixels(custom.h) } : pixelsFor(project, box);
+  return { x: Math.round(box.x / k) * k, y: Math.round(box.y / k) * k, w: pixels.w * k, h: pixels.h * k, pixels };
+}
 
 /** The camera limits box (or, without limits, the level, or what the camera shows at the start), in level pixels. */
 export function limitsBox(project: Project, scene: Scene): { x: number; y: number; w: number; h: number } {
