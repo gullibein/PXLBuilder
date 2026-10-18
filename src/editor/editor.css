@@ -362,7 +362,12 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .se-new-wrap { position: relative; font-weight: 400; margin-right: 8px; }
 .sprite-editor > .bg-head { gap: 16px; }
 .se-new-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 200px; padding: 8px; border-radius: 10px; background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--line); box-shadow: var(--shadow); }
-.bg-section { display: grid; gap: 8px; }
+.bg-section { display: grid; gap: 8px; min-width: 0; }
+/* Nothing in the card may be wider than the card (a long field or row would push the rest past its right edge). */
+.background-panel { grid-template-columns: minmax(0, 1fr); overflow-x: hidden; }
+.background-panel > * { min-width: 0; }
+/* One scroll bar: the card's (its AI conversation doesn't scroll on its own inside it). */
+.background-panel .prompt-chat { max-height: none; overflow-y: visible; }
 .camera-panel { width: min(340px, calc(100% - 96px)); gap: 10px; }
 .camera-panel .bg-head .muted { font-weight: 500; }
 .cam-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 10px; font-size: 13px; }
@@ -385,9 +390,10 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 .swatch-btn.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .upload { padding: 14px; border: 1.5px dashed rgba(255, 255, 255, 0.2); border-radius: 12px; background: var(--surface-2); color: var(--text); font-weight: 600; }
 .upload:hover { border-color: var(--accent-hi); }
-.bg-image { display: grid; gap: 8px; }
-.bg-image img { width: 100%; max-height: 120px; object-fit: cover; border-radius: 10px; }
-.bg-image-meta { display: flex; gap: 8px; font-size: 12px; }
+.bg-image { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+.bg-image img { width: 100%; max-height: 120px; object-fit: cover; border-radius: 10px; image-rendering: pixelated; }
+.bg-image-meta { display: flex; gap: 8px; font-size: 12px; min-width: 0; }
+.bg-image-meta .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg-image-actions { display: flex; gap: 6px; }
 .chip-btn { border: none; padding: 5px 12px; border-radius: 8px; background: var(--surface-2); font-weight: 600; font-size: 12px; }
 .chip-btn:hover { background: var(--surface-3); }
