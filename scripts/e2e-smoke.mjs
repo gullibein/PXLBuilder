@@ -1362,6 +1362,50 @@ try {
   await check(async () => (await bgPanel.getByTestId('bg-parallax').inputValue()) === '50', 'a background prompt changes how it moves (50%)');
   await check(aiRequests.at(-1).context.scope === 'background' && aiRequests.at(-1).context.level.background.image?.name === 'mountains', 'the AI is told it is editing the background, including the image');
   await page.screenshot({ path: `${OUT}/8-background.png` });
+  {
+    // Generate: the user's own image generator (a stand-in here) makes a big, smooth picture; it comes in at the game's pixels.
+    const genBodies = [];
+    const bigPng = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 1024;
+      c.height = 1024;
+      const g = c.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 1024, 1024);
+      grad.addColorStop(0, '#1b2a6b');
+      grad.addColorStop(0.5, '#e8826a');
+      grad.addColorStop(1, '#2f5d3a');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 1024, 1024);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await page.route('https://pxl-test-image.example.workers.dev/**', (route) => {
+      genBodies.push(route.request().postData());
+      return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: Buffer.from(bigPng, 'base64') });
+    });
+    const gen = bgPanel.getByTestId('bg-generate');
+    await check(async () => (await gen.getByTestId('bg-gen-url').count()) === 1 && (await gen.getByTestId('bg-gen-go').isDisabled()), "Generate first asks for the image generator's address");
+    await gen.getByTestId('bg-gen-url').fill('https://pxl-test-image.example.workers.dev/');
+    await gen.getByTestId('bg-gen-url-save').click();
+    await gen.getByTestId('bg-gen-prompt').fill('a starry night over mountains');
+    await gen.getByTestId('bg-gen-go').click();
+    await check(async () => (await bgPanel.innerText()).includes('720×720') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), "the picture becomes the background, at the game's pixels (720 tall for 32×32 sprites)");
+    await check(genBodies.length === 1 && JSON.parse(genBodies[0]).prompt.startsWith('a starry night over mountains'), '(the description went to the generator)');
+    const colors = await bgPanel.locator('.bg-image img').evaluate(async (img) => {
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      const set = new Set();
+      for (let i = 0; i < d.length; i += 4) set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+      return set.size;
+    });
+    await check(colors <= 32, `(in a small palette, like pixel art: ${colors} colors)`);
+    await page.getByTestId('undo').click();
+    await check(async () => (await bgPanel.innerText()).includes('64×32'), 'Undo takes it back');
+  }
   await page.getByTestId('tool-background').click();
   await check(async () => (await bgPanel.count()) === 0, 'the background card closes again');
 

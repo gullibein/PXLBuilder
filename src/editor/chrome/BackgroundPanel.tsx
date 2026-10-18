@@ -1,7 +1,8 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
+import { backgroundPixels, generateImage, imageWorkerUrl, pixelate, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
 import { PromptBox } from '../prompt/PromptBox';
 import { getActiveScene, useEditor } from '../store';
 
@@ -131,6 +132,8 @@ export function BackgroundPanel() {
         />
       </div>
 
+      <GenerateBackground sceneId={sid} />
+
       {asset && (
         <div className="bg-section">
           <span className="bg-label">Fit</span>
@@ -166,5 +169,82 @@ export function BackgroundPanel() {
         <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Describe the background…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
       </div>
     </section>
+  );
+}
+
+/** Generate: a picture from the user's own image generator, brought down to the game's pixels and set as the background. */
+function GenerateBackground({ sceneId }: { sceneId: string }) {
+  const [prompt, setPrompt] = useState('');
+  const [url, setUrl] = useState(imageWorkerUrl);
+  const [settings, setSettings] = useState(() => !imageWorkerUrl());
+  const [state, setState] = useState<{ busy: boolean; message: string | null; error: boolean }>({ busy: false, message: null, error: false });
+  const run = async () => {
+    const what = prompt.trim();
+    if (!what || state.busy) return;
+    setState({ busy: true, message: 'Making the picture… (this can take half a minute)', error: false });
+    try {
+      const blob = await generateImage(`${what}, pixel art video game background, no characters, no text`);
+      const { project, edit, logMessage } = useEditor.getState();
+      const height = backgroundPixels(project.settings.playPixels, project.settings.spriteResolution);
+      const img = await pixelate(blob, height);
+      const asset = createImageAsset(what.slice(0, 40), img.data, img.width, img.height, 'png');
+      edit('Generate background', (p) => {
+        addAsset(p, asset);
+        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'cover' });
+      });
+      logMessage('info', `Background made: "${what}" (${img.width}×${img.height}, the game's own pixels).`);
+      setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels, at the game's resolution. Undo takes it back.`, error: false });
+    } catch (e) {
+      setState({ busy: false, message: (e as Error).message, error: true });
+    }
+  };
+  return (
+    <div className="bg-section" data-testid="bg-generate">
+      <span className="bg-label">
+        Generate
+        <button className="link small" data-testid="bg-gen-settings" onClick={() => setSettings(!settings)}>
+          {settings ? 'hide settings' : 'settings'}
+        </button>
+      </span>
+      {settings && (
+        <div className="bg-gen-settings">
+          <label className="small muted" htmlFor="bg-gen-url">
+            Your image generator&apos;s address (a Cloudflare Worker). Kept in this browser only.
+          </label>
+          <div className="bg-gen-row">
+            <input id="bg-gen-url" type="url" placeholder="https://….workers.dev" value={url} data-testid="bg-gen-url" onChange={(e) => setUrl(e.target.value)} />
+            <button
+              className="chip-btn"
+              data-testid="bg-gen-url-save"
+              disabled={!validWorkerUrl(url)}
+              onClick={() => {
+                setImageWorkerUrl(url);
+                setSettings(false);
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="bg-gen-row">
+        <input
+          placeholder="e.g. a starry night over mountains"
+          value={prompt}
+          aria-label="Describe the background picture"
+          data-testid="bg-gen-prompt"
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void run()}
+        />
+        <button className="chip-btn" data-testid="bg-gen-go" disabled={!prompt.trim() || state.busy || !validWorkerUrl(imageWorkerUrl())} onClick={() => void run()}>
+          {state.busy ? 'Making…' : 'Generate'}
+        </button>
+      </div>
+      {state.message && (
+        <p className={`small ${state.error ? 'warn' : 'muted'}`} data-testid="bg-gen-status">
+          {state.message}
+        </p>
+      )}
+    </div>
   );
 }
