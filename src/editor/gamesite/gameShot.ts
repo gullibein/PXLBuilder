@@ -55,6 +55,6 @@ export async function gameShot(project: Project): Promise<string | null> {
   runtime.cam.snap();
   const looks = new LookCache(project, componentRegistry);
   const heartDef = project.definitions.find((d) => d.metadata.starter === 'Heart') ?? project.definitions.find((d) => d.name.toLowerCase() === 'heart');
-  drawPlayFrame(ctx, runtime, { project, scene, size: SCREEN, extraZoom, worldPerArt, images: imageLookup(project), looks, heartLook: heartDef ? looks.get(heartDef.id) : null }, null);
+  drawPlayFrame(ctx, runtime, { project, scene, size: SCREEN, extraZoom, worldPerArt, images: imageLookup(project), looks, heartLook: heartDef ? looks.get(heartDef.id) : null, startCamera: { x: runtime.cam.frame().x, y: runtime.cam.frame().y } }, null);
   return canvas.toDataURL('image/png');
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cornerCuts, drawEntities, pixelPerfectZoom, tileCorners } from './renderer';
+import { cornerCuts, drawBackground, drawEntities, pixelPerfectZoom, tileCorners } from './renderer';
 
 
 describe('pixel-perfect zoom', () => {
@@ -97,5 +97,54 @@ describe('rounded corners on objects that are not marked as tiles', () => {
     clips = 0;
     drawEntities(ctx, [dirt(16, 0), dirt(48, 0)], () => null, 0, 0);
     expect(clips).toBe(0);
+  });
+});
+
+describe('a placed background picture', () => {
+  const recorder = () => {
+    const draws: number[][] = [];
+    const ctx = {
+      setTransform() {},
+      fillRect() {},
+      drawImage: (_img: unknown, x: number, y: number, w: number, h: number) => draws.push([x, y, w, h]),
+      save() {},
+      restore() {},
+      beginPath() {},
+      rect() {},
+      clip() {},
+      translate() {},
+      set fillStyle(_v: string) {},
+      set imageSmoothingEnabled(_v: boolean) {},
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, draws };
+  };
+  const world = (parallax: number) =>
+    ({ gravity: { x: 0, y: 0 }, backgroundColor: '#000', background: { imageAssetId: 'bg', fit: 'placed', parallax, rect: { x: 100, y: 50, w: 320, h: 180 } } }) as never;
+  const images = () => ({ source: { width: 320, height: 180 } as unknown as CanvasImageSource });
+  const view = { width: 640, height: 360 };
+  const start = { x: 260, y: 140 };
+
+  it('is exactly where it was put when the level starts, whatever its movement', () => {
+    for (const parallax of [0, 0.5, 1]) {
+      const r = recorder();
+      drawBackground(r.ctx, view, 1, world(parallax), { ...start, zoom: 1 }, images, { startCamera: start });
+      // The picture's top-left corner (100, 50) seen from a camera at (260, 140) with a 640×360 view.
+      expect(r.draws[0]).toEqual([100 - 260 + 320, 50 - 140 + 180, 320, 180]);
+    }
+  });
+
+  it('"stays on the screen" stays put as the camera moves on; "moves with the level" goes along with the level', () => {
+    const fixed = recorder();
+    drawBackground(fixed.ctx, view, 1, world(0), { x: start.x + 500, y: start.y + 40, zoom: 1 }, images, { startCamera: start });
+    expect(fixed.draws[0]).toEqual([160, 90, 320, 180]);
+    const moving = recorder();
+    drawBackground(moving.ctx, view, 1, world(1), { x: start.x + 500, y: start.y + 40, zoom: 1 }, images, { startCamera: start });
+    expect(moving.draws[0]).toEqual([160 - 500, 90 - 40, 320, 180]);
+  });
+
+  it('in the editor it shows where it is in the level (to move and resize it)', () => {
+    const r = recorder();
+    drawBackground(r.ctx, view, 1, world(0), { x: 0, y: 0, zoom: 2 }, images, { editing: true });
+    expect(r.draws[0]).toEqual([100 * 2 + 320, 50 * 2 + 180, 640, 360]);
   });
 });

@@ -69,6 +69,19 @@ function dragSide(box: Rect, dir: Handle['dir'], p: Vec2, min: number): Rect {
   return r;
 }
 
+/** A box resized from a corner to about `free`, with the shape of `box` (the opposite corner stays). */
+function keepShape(box: Rect, dir: Handle['dir'], free: Rect): Rect {
+  const bw = box.maxX - box.minX;
+  const bh = box.maxY - box.minY;
+  // The larger of the two changes decides the scale.
+  const scale = Math.max((free.maxX - free.minX) / bw, (free.maxY - free.minY) / bh);
+  const w = bw * scale;
+  const h = bh * scale;
+  const minX = dir.x > 0 ? box.minX : box.maxX - w;
+  const minY = dir.y > 0 ? box.minY : box.maxY - h;
+  return { minX, minY, maxX: minX + w, maxY: minY + h };
+}
+
 const rectOf = (b: Rect) => ({ x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY });
 
 /** Screen space reserved by floating chrome, so the prompt avoids it. */
@@ -223,7 +236,11 @@ export function Viewport() {
         if (wire) {
           lctx.fillStyle = theme.wire.ground;
           lctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
-        } else drawBackground(lctx, view, dpr, scene.world, state.camera, tracked, true);
+        } else {
+          // (A picture that fills the screen or repeats: shown inside what the camera shows at the start.)
+          const screen = placed.length ? cameraFrame(scene, placed, view, playZoom(state.project, scene, view)).frame : null;
+          drawBackground(lctx, view, dpr, scene.world, state.camera, tracked, { editing: true, screen });
+        }
         applyCamera(lctx, state.camera, view, dpr);
         if (state.layout.showGrid) drawGrid(lctx, state.camera, view, state.project.settings.gridSize, wire);
         // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter
@@ -749,7 +766,11 @@ export function Viewport() {
     if (drag.kind === 'background') {
       const p = toWorld(ev);
       const k = levelPerPixel(state.project);
-      if (drag.dir) drag.rect = dragSide(drag.box, drag.dir, p, 8 * k);
+      if (drag.dir) {
+        const free = dragSide(drag.box, drag.dir, p, 8 * k);
+        // A corner keeps the picture's shape (Shift: any shape); a side stretches it one way.
+        drag.rect = drag.dir.x && drag.dir.y && !ev.shiftKey ? keepShape(drag.box, drag.dir, free) : free;
+      }
       else {
         // Moved in whole game pixels.
         const dx = Math.round((p.x - drag.start.x) / k) * k;

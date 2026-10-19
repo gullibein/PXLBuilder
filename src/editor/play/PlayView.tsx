@@ -164,6 +164,8 @@ export function PlayView(props: PlayViewProps) {
     // Measured now, so the camera starts inside its limits for this screen; then on every resize.
     measure();
     runtime.cam.snap();
+    // Where the camera starts: a placed background is exactly where it was put then.
+    let startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
     const ro = new ResizeObserver(measure);
     ro.observe(canvas);
 
@@ -219,13 +221,14 @@ export function PlayView(props: PlayViewProps) {
           look();
           measure();
           runtime.cam.snap();
+          startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
           banner = null;
         } else if (!nextScene) finished = true;
       }
       canvas.dataset.level = scene.name;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      const grid = drawPlayFrame(ctx, runtime, { project, scene, size, extraZoom, worldPerArt, images, looks, heartLook }, banner);
+      const grid = drawPlayFrame(ctx, runtime, { project, scene, size, extraZoom, worldPerArt, images, looks, heartLook, startCamera }, banner);
       canvas.dataset.grid = String(grid.cell);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       for (const s of runtime.soundQueue.splice(0)) {

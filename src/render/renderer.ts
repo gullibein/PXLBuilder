@@ -70,16 +70,19 @@ export function applyCamera(ctx: CanvasRenderingContext2D, camera: Camera, view:
  * - tile: image repeats in both directions at its own size (scaled with zoom).
  * parallax 0 keeps it fixed on screen; 1 moves it exactly with the level.
  */
-export function drawBackground(
-  ctx: CanvasRenderingContext2D,
-  view: ViewSize,
-  dpr: number,
-  world: WorldSettings,
-  camera: Camera,
-  images: ImageLookup = noImages,
-  /** The editor: a placed picture shows where it is in the level (to move and resize it), however it moves in play. */
-  editing = false,
-): void {
+export interface BackgroundView {
+  /**
+   * The editor: a placed picture shows where it is in the level (to move and resize it), and a picture that fills
+   * the screen or repeats is shown inside `screen` (what the camera shows at the start), as Play shows it then.
+   */
+  editing?: boolean;
+  /** Where the camera is when the level starts: a placed picture is exactly where it was put then. */
+  startCamera?: Vec2 | null;
+  /** editing: what the camera shows at the start, in the level. */
+  screen?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+}
+
+export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dpr: number, world: WorldSettings, camera: Camera, images: ImageLookup = noImages, opts: BackgroundView = {}): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
@@ -89,16 +92,43 @@ export function drawBackground(
   if (fit === 'placed') {
     const r = world.background.rect;
     if (!r) return;
-    // In the level at its place; moving less than the level (parallax below 1) looks farther away.
-    const p = editing ? 1 : parallax;
-    const sx = (r.x - camera.x * p) * camera.zoom + view.width / 2;
-    const sy = (r.y - camera.y * p) * camera.zoom + view.height / 2;
+    // Exactly where it was put when the level starts; as the camera moves on, it follows the level fully (1), not
+    // at all (0: it stays on the screen), or in between (farther away).
+    const p = opts.editing ? 1 : parallax;
+    const start = opts.startCamera ?? { x: camera.x, y: camera.y };
+    const ex = start.x + (camera.x - start.x) * p;
+    const ey = start.y + (camera.y - start.y) * p;
+    const sx = (r.x - ex) * camera.zoom + view.width / 2;
+    const sy = (r.y - ey) * camera.zoom + view.height / 2;
     // On whole canvas pixels, each picture pixel the same size.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(img, Math.round(sx * dpr), Math.round(sy * dpr), Math.round(r.w * camera.zoom * dpr), Math.round(r.h * camera.zoom * dpr));
     return;
   }
+  if (opts.editing) {
+    // In the editor only inside what the camera shows at the start (filling the whole workspace would show nothing
+    // about how it looks in play), drawn as Play shows it then.
+    const sc = opts.screen;
+    if (!sc) return;
+    const x0 = (sc.minX - camera.x) * camera.zoom + view.width / 2;
+    const y0 = (sc.minY - camera.y) * camera.zoom + view.height / 2;
+    const w = (sc.maxX - sc.minX) * camera.zoom;
+    const h = (sc.maxY - sc.minY) * camera.zoom;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, w, h);
+    ctx.clip();
+    ctx.translate(x0, y0);
+    fillWith(ctx, img, fit, parallax, { width: w, height: h }, { x: (sc.minX + sc.maxX) / 2, y: (sc.minY + sc.maxY) / 2, zoom: camera.zoom });
+    ctx.restore();
+    return;
+  }
+  fillWith(ctx, img, fit, parallax, view, camera);
+}
+
+/** A picture filling the view's height and repeating sideways (cover), or repeating at its own size (tile). */
+function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'cover' | 'tile', parallax: number, view: ViewSize, camera: Camera): void {
   const { w: iw, h: ih } = imageSize(img);
   if (!iw || !ih) return;
   const scale = fit === 'cover' ? view.height / ih : camera.zoom;

@@ -23,24 +23,10 @@ export function playZoom(project: Project, scene: Scene, view: { width: number; 
   return resolutionZoom(scene.camera.zoom, view.height, window.devicePixelRatio || 1, pixels, levelPerPixel(project)).zoom;
 }
 
-/**
- * What the camera shows when the level starts, in level pixels: in a game with its own resolution, exactly that many
- * game pixels tall; otherwise the camera's start outline in the editor.
- */
+/** What the camera shows when the level starts (its white outline in the editor), in level pixels. */
 export function screenBox(project: Project, scene: Scene): { x: number; y: number; w: number; h: number } {
   const view = viewportSize();
   const f = cameraFrame(scene, resolveSceneEntities(project, scene.id), view, playZoom(project, scene, view)).frame;
-  const pixels = project.settings.playPixels;
-  if (pixels) {
-    // The game's own resolution: exactly that many game pixels tall (as wide as the screen's shape gives), around
-    // where the camera starts.
-    const k = levelPerPixel(project);
-    const h = pixels * k;
-    const w = Math.round((pixels * view.width) / Math.max(1, view.height)) * k;
-    const cx = (f.minX + f.maxX) / 2;
-    const cy = (f.minY + f.maxY) / 2;
-    return { x: cx - w / 2, y: cy - h / 2, w, h };
-  }
   return { x: f.minX, y: f.minY, w: f.maxX - f.minX, h: f.maxY - f.minY };
 }
 
@@ -54,8 +40,15 @@ export function pictureBox(project: Project, scene: Scene, size: PictureSize, cu
   const k = levelPerPixel(project);
   const screen = screenBox(project, scene);
   const box = size === 'level' ? limitsBox(project, scene) : size === 'screen' ? screen : { x: screen.x + screen.w / 2 - (custom.w * k) / 2, y: screen.y + screen.h / 2 - (custom.h * k) / 2, w: custom.w * k, h: custom.h * k };
-  const pixels = size === 'custom' ? { w: clampPixels(custom.w), h: clampPixels(custom.h) } : pixelsFor(project, box);
-  return { x: Math.round(box.x / k) * k, y: Math.round(box.y / k) * k, w: pixels.w * k, h: pixels.h * k, pixels };
+  if (size === 'custom') {
+    const pixels = { w: clampPixels(custom.w), h: clampPixels(custom.h) };
+    return { x: Math.round(box.x / k) * k, y: Math.round(box.y / k) * k, w: pixels.w * k, h: pixels.h * k, pixels };
+  }
+  // Covering the whole box on whole game pixels (its edges rounded outward, so no strip of it is left uncovered).
+  const x = Math.floor(box.x / k) * k;
+  const y = Math.floor(box.y / k) * k;
+  const pixels = { w: clampPixels(Math.ceil((box.x + box.w) / k) - x / k), h: clampPixels(Math.ceil((box.y + box.h) / k) - y / k) };
+  return { x, y, w: pixels.w * k, h: pixels.h * k, pixels };
 }
 
 /** The camera limits box (or, without limits, the level, or what the camera shows at the start), in level pixels. */

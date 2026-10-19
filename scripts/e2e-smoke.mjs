@@ -1444,14 +1444,28 @@ try {
       const corner = toScreen(b1[2], b1[3]);
       await page.mouse.move(corner.x, corner.y);
       await page.mouse.down();
-      await page.mouse.move(corner.x + 80, corner.y + 40, { steps: 4 });
+      await page.mouse.move(corner.x + 80, corner.y + 10, { steps: 4 });
       await page.mouse.up();
       await check(async () => {
         const b2 = await boxOf();
-        return Math.round((b2[2] - b2[0]) * 1) === Math.round(320 + 80 / zoom) && (await bgPanel.innerText()).includes(`${Math.round(320 + 80 / zoom)}×${Math.round(180 + 40 / zoom)}`);
-      }, 'dragging its corner resizes it, and the picture is drawn again at the new size (each pixel still one game pixel)');
+        const w = b2[2] - b2[0];
+        const h = b2[3] - b2[1];
+        return w > 320 && Math.abs(w / h - 320 / 180) < 0.02 && (await bgPanel.innerText()).includes(`${w}×${h}`);
+      }, 'dragging a corner resizes it keeping its shape (16:9), drawn again at the new size (each pixel still one game pixel)');
       await page.getByTestId('undo').click();
       await check(async () => (await boxOf()).join() === b1.join(), '(a resize is one Undo step)');
+      await page.mouse.move(corner.x, corner.y);
+      await page.keyboard.down('Shift');
+      await page.mouse.down();
+      await page.mouse.move(corner.x + 80, corner.y + 40, { steps: 4 });
+      await page.mouse.up();
+      await page.keyboard.up('Shift');
+      await check(async () => {
+        const b2 = await boxOf();
+        return b2[2] - b2[0] === Math.round(320 + 80 / zoom) && b2[3] - b2[1] === Math.round(180 + 40 / zoom) && (await bgPanel.innerText()).includes(`${Math.round(320 + 80 / zoom)}×${Math.round(180 + 40 / zoom)}`);
+      }, 'with Shift, a corner resizes it to any shape');
+      await page.getByTestId('undo').click();
+      await check(async () => (await boxOf()).join() === b1.join(), '(also one Undo step)');
     }
     await check(genBodies.length === 1 && JSON.parse(genBodies[0]).prompt.startsWith('a starry night over mountains'), '(the description went to the generator)');
     await check(!/pixel art/i.test(JSON.parse(genBodies[0]).prompt) && /detail/i.test(JSON.parse(genBodies[0]).prompt), "(asking for a finely detailed picture, not \"pixel art\": generators draw that as big fake pixels; the app makes the pixels itself)");

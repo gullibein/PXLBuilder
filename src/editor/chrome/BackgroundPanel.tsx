@@ -161,7 +161,7 @@ export function BackgroundPanel() {
               </button>
             ))}
           </div>
-          {bg.fit === 'placed' && <span className="bg-hint">Drag it in the level to move it, its corners and sides to resize it.</span>}
+          {bg.fit === 'placed' && <span className="bg-hint">Drag it in the level to move it, its corners to resize it (Shift: any shape), its sides to stretch it.</span>}
           <label className="bg-label" htmlFor="bg-movement">
             Movement
           </label>
@@ -243,11 +243,12 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
       const img = await pixelateTo(blob, w, h);
       const asset = createImageAsset(what.slice(0, 40), img.data, img.width, img.height, 'png');
       rememberOriginal(asset.id, blob);
-      // In the box shown in the level, each picture pixel one game pixel.
+      // In the box shown in the level, each picture pixel one game pixel. The size of the screen stays on the screen
+      // (the usual background); others move with the level.
       const box = pictureBox(project, scene, sizeMode, size);
       edit('Generate background', (p) => {
         addAsset(p, asset);
-        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: 1, rect: { x: box.x, y: box.y, w: box.w, h: box.h } });
+        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: sizeMode === 'screen' ? 0 : 1, rect: { x: box.x, y: box.y, w: box.w, h: box.h } });
       });
       logMessage('info', `Background made: "${what}" (${img.width}×${img.height}, the game's own pixels).`);
       setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`, error: false });
