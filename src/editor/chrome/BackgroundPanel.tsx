@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
+import { offerFile, slugify } from '../persistence';
 import { DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelateTo, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
 import { limitsBox, pictureBox, pixelsFor, placeBackground, rememberOriginal, type PictureSize } from '../background';
 import { PromptBox } from '../prompt/PromptBox';
+import { ColorButton } from './ColorPicker';
 import { getActiveScene, useEditor } from '../store';
 
 const SWATCHES = [
@@ -82,15 +84,16 @@ export function BackgroundPanel() {
               onClick={() => edit('Set background color', (p) => setWorldSettings(p, sid, { backgroundColor: s.color }))}
             />
           ))}
-          <label className="swatch-btn custom" title="Pick any color">
-            <input
-              type="color"
-              aria-label="Custom background color"
-              data-testid="bg-color"
-              value={/^#[0-9a-f]{6}$/i.test(scene.world.backgroundColor) ? scene.world.backgroundColor : '#000000'}
-              onChange={(e) => edit('Set background color', (p) => setWorldSettings(p, sid, { backgroundColor: e.target.value }), { coalesceKey: `${sid}.background` })}
-            />
-          </label>
+          <ColorButton
+            className="swatch-btn custom"
+            title="Pick any color"
+            ariaLabel="Custom background color"
+            testId="bg-color"
+            value={/^#[0-9a-f]{6}$/i.test(scene.world.backgroundColor) ? scene.world.backgroundColor : '#000000'}
+            onPick={(color) => edit('Set background color', (p) => setWorldSettings(p, sid, { backgroundColor: color }))}
+          >
+            {null}
+          </ColorButton>
         </div>
       </div>
 
@@ -108,6 +111,21 @@ export function BackgroundPanel() {
             <div className="bg-image-actions">
               <button className="chip-btn" onClick={() => fileRef.current?.click()}>
                 Replace
+              </button>
+              <button
+                className="chip-btn"
+                data-testid="bg-download"
+                title="Save the picture as a file, as the game shows it (its own pixels)"
+                onClick={async () => {
+                  const blob = await (await fetch(asset.data)).blob();
+                  const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/svg+xml' ? 'svg' : blob.type === 'image/gif' ? 'gif' : 'png';
+                  const name = `${slugify(asset.name) || 'background'}.${ext}`;
+                  const r = await offerFile(name, blob);
+                  if (r === 'saved') logMessage('info', `Saved the background picture as ${name} (${asset.width}×${asset.height})`);
+                  else if (r === 'failed') logMessage('error', 'Could not save the background picture here.');
+                }}
+              >
+                Download
               </button>
               <button className="chip-btn" data-testid="bg-remove" onClick={() => edit('Remove background image', (p) => setBackground(p, sid, { imageAssetId: null }))}>
                 Remove

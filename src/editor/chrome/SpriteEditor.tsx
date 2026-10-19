@@ -1,4 +1,5 @@
 import { colorAlpha, withAlpha } from '../../core/model/pixelArt';
+import { ColorButton } from './ColorPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { createAnimatedPixelArtAsset, MAX_FRAMES } from '../../core/model/factory';
@@ -736,27 +737,39 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                   {draft.palette.map((p) => (
                     <button key={p.key} className={`se-swatch${p.key === color ? ' on' : ''}`} style={{ backgroundImage: `linear-gradient(${p.color}, ${p.color}), var(--checker)` }} title={p.color} data-testid={`se-color-${p.key}`} onClick={() => setColor(p.key)} />
                   ))}
-                  <label className="se-add" title="Add a color">
+                  <ColorButton
+                    className="se-add as-button"
+                    title="Add a color"
+                    ariaLabel="Add a color"
+                    testId="se-add-color"
+                    value={draft.palette.find((p) => p.key === color)?.color.slice(0, 7) ?? '#ffffff'}
+                    onPick={(c) => {
+                      const r = addColor(draft, c);
+                      if ('error' in r) return setError(r.error);
+                      change(r.draft);
+                      setColor(r.key);
+                      setTool('pencil');
+                    }}
+                  >
                     +
-                    <input
-                      type="color"
-                      data-testid="se-add-color"
-                      onChange={(e) => {
-                        const r = addColor(draft, e.target.value);
-                        if ('error' in r) return setError(r.error);
-                        change(r.draft);
-                        setColor(r.key);
-                        setTool('pencil');
-                      }}
-                    />
-                  </label>
+                  </ColorButton>
                 </div>
                 {swatch && (
                   <>
-                    <label className="se-row">
+                    <div className="se-row">
                       <span>This color</span>
-                      <input type="color" value={swatch.color.slice(0, 7)} data-testid="se-recolor" onChange={(e) => change(recolor(draft, swatch.key, withAlpha(e.target.value, colorAlpha(swatch.color))))} />
-                    </label>
+                      <ColorButton
+                        className="se-recolor-btn"
+                        title="Change this color everywhere it is used"
+                        ariaLabel="Change this color"
+                        testId="se-recolor"
+                        style={{ background: swatch.color.slice(0, 7) }}
+                        value={swatch.color.slice(0, 7)}
+                        onPick={(c) => change(recolor(draft, swatch.key, withAlpha(c, colorAlpha(swatch.color))))}
+                      >
+                        {null}
+                      </ColorButton>
+                    </div>
                     <label className="se-row" title="How solid this color is: lower lets what is under it show through (for shading over a color, glass, shadows). The eraser makes pixels fully clear.">
                       <span>Opacity</span>
                       <input

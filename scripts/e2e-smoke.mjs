@@ -1245,6 +1245,27 @@ try {
   await check(async () => /^#[0-9a-f]{6}80$/.test(await se.getByTestId('se-color-a').getAttribute('title')), "a color's Opacity makes it see-through (#rrggbb80 at 50%)");
   await se.getByTestId('se-opacity').fill('100');
   await check(async () => /^#[0-9a-f]{6}$/.test(await se.getByTestId('se-color-a').getAttribute('title')), '(and solid again at 100%)');
+  {
+    // The color picker (PXLBuilder's own: OK and Cancel).
+    const before = await se.getByTestId('se-color-a').getAttribute('title');
+    await se.getByTestId('se-recolor').click();
+    const cp = page.getByTestId('color-picker');
+    await cp.getByTestId('cp-hex').fill('#22aa55');
+    await check(async () => (await cp.getByTestId('cp-r').inputValue()) === '34' && (await cp.getByTestId('cp-g').inputValue()) === '170' && (await cp.getByTestId('cp-b').inputValue()) === '85', 'the color picker shows the color as hex and as R, G, B');
+    await cp.getByTestId('cp-cancel').click();
+    await check(async () => (await cp.count()) === 0 && (await se.getByTestId('se-color-a').getAttribute('title')) === before, 'Cancel closes it and keeps the color as it was');
+    await se.getByTestId('se-recolor').click();
+    await cp.getByTestId('cp-g').fill('200');
+    await cp.getByTestId('cp-ok').click();
+    await check(async () => (await cp.count()) === 0 && (await se.getByTestId('se-color-a').getAttribute('title')) !== before && /^#[0-9a-f]{2}c8[0-9a-f]{2}$/.test(await se.getByTestId('se-color-a').getAttribute('title')), 'OK changes the color (green 200)');
+    await se.getByTestId('se-undo').click();
+    const colors = await se.locator('.se-swatch').count();
+    await se.getByTestId('se-add-color').click();
+    await cp.getByTestId('cp-hex').fill('#ff8800');
+    await cp.getByTestId('cp-ok').click();
+    await check(async () => (await se.locator('.se-swatch').count()) === colors + 1, '+ adds the color picked (with OK)');
+    await se.getByTestId('se-undo').click();
+  }
   await se.focus(); // (keys go to the editor, as after a click on it)
   await page.keyboard.press('s');
   const sel = async () => (await seCanvas.getAttribute('data-selection')) ?? '';
@@ -1342,6 +1363,20 @@ try {
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Dark (default)' }).getAttribute('aria-checked')) === 'true', 'a new project starts with the dark background');
   await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');
+  {
+    const undoTitle = async () => (await page.getByTestId('undo').getAttribute('title')) ?? '';
+    const t0 = await undoTitle();
+    await bgPanel.getByTestId('bg-color').click();
+    const cp = page.getByTestId('color-picker');
+    await cp.getByTestId('cp-hex').fill('#335577');
+    await page.keyboard.press('Escape');
+    await check(async () => (await cp.count()) === 0 && (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true' && (await undoTitle()) === t0, 'the custom color opens a color picker; Esc (or Cancel) changes nothing');
+    await bgPanel.getByTestId('bg-color').click();
+    await cp.getByTestId('cp-hex').fill('#335577');
+    await cp.getByTestId('cp-ok').click();
+    await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'false' && (await undoTitle()).includes('Set background color'), 'OK sets the background color (one Undo step)');
+    await page.getByTestId('undo').click();
+  }
   // A small generated image stands in for a user's picture.
   const bgPng = await page.evaluate(() => {
     const c = document.createElement('canvas');
@@ -1356,6 +1391,13 @@ try {
   });
   await bgPanel.getByTestId('bg-file').setInputFiles({ name: 'mountains.png', mimeType: 'image/png', buffer: Buffer.from(bgPng, 'base64') });
   await check(async () => (await bgPanel.locator('.bg-image img').count()) === 1 && (await bgPanel.innerText()).includes('64×32'), 'an uploaded image becomes the background');
+  {
+    const [dl] = await Promise.all([page.waitForEvent('download'), bgPanel.getByTestId('bg-download').click()]);
+    const path = await dl.path();
+    const head = readFileSync(path).subarray(0, 24);
+    // A PNG's size is in its header: width and height, big-endian, at bytes 16 and 20.
+    await check(dl.suggestedFilename() === 'mountains.png' && head.readUInt32BE(16) === 64 && head.readUInt32BE(20) === 32, 'Download saves the background picture as a file (mountains.png, 64×32, as the game shows it)');
+  }
   await check(async () => (await bgPanel.getByTestId('bg-fit').count()) === 1 && (await bgPanel.getByTestId('bg-movement').count()) === 1, 'fit and movement controls appear for the image');
   await bgPanel.getByTestId('bg-movement').selectOption('level');
   await check(async () => (await bgPanel.getByTestId('bg-parallax').count()) === 0, '"Moves with the level": no slider');
