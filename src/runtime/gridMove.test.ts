@@ -85,7 +85,8 @@ describe('a player that steps square by square with a script (top-down)', () => 
       expect(r, `seed ${seed}`).toMatchObject({ offSquare: 0, throughWall: 0 });
       expect(r.steps, `seed ${seed}: it really moves around`).toBeGreaterThan(10);
     }
-  });
+    // (Six minutes of play: about 4 s alone, more while the other test files run alongside; vitest's default is 5 s.)
+  }, 30_000);
 
   it('with the controller still walking it too, it drifts off its squares (what the problem checker warns about)', () => {
     const r = play(1, 150);

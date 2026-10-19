@@ -234,7 +234,10 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
     setState({ busy: true, message: 'Making the picture… (this can take half a minute)', error: false });
     try {
       const { w, h } = target.pixels;
-      const blob = await generateImage(`${what}, pixel art video game background, no characters, no text`, { width: w, height: h });
+      // Not "pixel art": image generators draw that as big fake pixels, many real pixels each, which come out far too
+      // coarse once the picture is brought down to the game's pixels. A finely detailed picture, brought down here,
+      // becomes pixel art at the game's own resolution (a small star one or two game pixels).
+      const blob = await generateImage(backgroundPrompt(what), { width: w, height: h });
       const { project, edit, logMessage } = useEditor.getState();
       const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
       const img = await pixelateTo(blob, w, h);
@@ -343,4 +346,9 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
       )}
     </div>
   );
+}
+
+/** What is sent to the image generator for a background described as `what`. */
+export function backgroundPrompt(what: string): string {
+  return `${what}, video game background scenery, finely detailed digital painting with small crisp details, flat even lighting, no characters, no text`;
 }

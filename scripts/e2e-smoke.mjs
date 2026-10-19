@@ -1454,6 +1454,7 @@ try {
       await check(async () => (await boxOf()).join() === b1.join(), '(a resize is one Undo step)');
     }
     await check(genBodies.length === 1 && JSON.parse(genBodies[0]).prompt.startsWith('a starry night over mountains'), '(the description went to the generator)');
+    await check(!/pixel art/i.test(JSON.parse(genBodies[0]).prompt) && /detail/i.test(JSON.parse(genBodies[0]).prompt), "(asking for a finely detailed picture, not \"pixel art\": generators draw that as big fake pixels; the app makes the pixels itself)");
     const colors = await bgPanel.locator('.bg-image img').evaluate(async (img) => {
       await img.decode();
       const c = document.createElement('canvas');
