@@ -118,14 +118,19 @@ export function Thumb({ def, size = 34 }: { def: ObjectDefinition; size?: number
   );
 }
 
-function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnClick?: boolean }) {
+/** What an "AI prompt…" card from the Objects or Sounds tab is about, and the item it was asked from (on screen). */
+type LibraryAsk = { kind: 'object' | 'sound'; id: string; rect: { left: number; top: number; width: number } };
+
+function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; armOnClick?: boolean; onAsk?: (ask: LibraryAsk) => void }) {
   const tool = useEditor((s) => s.tool);
   const armed = tool.kind === 'brush' && tool.definitionId === def.id;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { setTool, setDock, selectDefinition, setInspectorOpen, openSprites } = useEditor.getState();
   const isStarter = starterKeyOf(def, STARTER_NAMES) !== null;
+  const menuAnchor = useRef<HTMLButtonElement>(null);
   return (
     <button
+      ref={menuAnchor}
       className={`tile${armed ? ' armed' : ''}`}
       draggable
       aria-pressed={armed}
@@ -157,6 +162,15 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            ...(onAsk
+              ? [
+                  {
+                    label: 'AI prompt…',
+                    testId: 'menu-ai-prompt',
+                    run: () => onAsk({ kind: 'object', id: def.id, rect: tileRect(menuAnchor.current) }),
+                  },
+                ]
+              : []),
             {
               label: 'Details…',
               testId: 'menu-inspector',
@@ -182,6 +196,60 @@ function ObjectTile({ def, armOnClick = true }: { def: ObjectDefinition; armOnCl
         />
       )}
     </button>
+  );
+}
+
+function tileRect(el: Element | null): LibraryAsk['rect'] {
+  const r = el?.getBoundingClientRect();
+  return r ? { left: r.left, top: r.top, width: r.width } : { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0 };
+}
+
+const ASK_WIDTH = 300;
+
+/**
+ * The AI prompt card for one library object or one sound (right-click → AI prompt…): "make this yellow", "lower in
+ * pitch". It sits just above the item it was asked from; × or Esc closes it (a request still running carries on).
+ */
+function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void }) {
+  const sceneId = useEditor((s) => s.activeSceneId);
+  const def = useEditor((s) => (ask.kind === 'object' ? s.project.definitions.find((d) => d.id === ask.id) : undefined));
+  const sound = useEditor((s) => (ask.kind === 'sound' ? s.project.assets.find((a) => a.id === ask.id && a.kind === 'sound') : undefined));
+  if (!def && !sound) return null;
+  const left = Math.max(12, Math.min(ask.rect.left + ask.rect.width / 2 - ASK_WIDTH / 2, window.innerWidth - ASK_WIDTH - 12));
+  const bottom = Math.max(12, window.innerHeight - ask.rect.top + 8);
+  const header = def ? (
+    <span className="library-ask-head">
+      <Thumb def={def} size={16} />
+      {def.name}
+    </span>
+  ) : (
+    <span className="library-ask-head">
+      <NoteIcon />
+      {sound!.name}
+    </span>
+  );
+  return createPortal(
+    <div className="library-ask" style={{ left, bottom, width: ASK_WIDTH }} data-testid="library-prompt" data-context={ask.kind}>
+      <PromptBox
+        key={`${ask.kind}:${ask.id}`}
+        ctx={def ? { kind: 'object', sceneId, definitionId: def.id } : { kind: 'sound', sceneId, assetId: sound!.id }}
+        header={header}
+        autoFocus
+        placeholder={def ? 'e.g. "make it yellow"' : 'e.g. "lower in pitch"'}
+        onEscape={onClose}
+        onClose={onClose}
+        renderApplied={
+          sound
+            ? () => (
+                <button className="chip-btn small" data-testid="library-prompt-play" onClick={() => sound.synth && playSound(sound.synth)}>
+                  ▶ Play it
+                </button>
+              )
+            : undefined
+        }
+      />
+    </div>,
+    document.body,
   );
 }
 
@@ -289,6 +357,7 @@ function ObjectsPanel() {
   };
   const present = CATEGORIES.filter((c) => definitions.some((d) => categoryOf(d) === c));
   const shown = category === 'All' ? definitions : definitions.filter((d) => categoryOf(d) === category);
+  const [asking, setAsking] = useState<LibraryAsk | null>(null);
   return (
     <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" aria-label="Objects">
       <PanelClose />
@@ -309,11 +378,12 @@ function ObjectsPanel() {
       <div className="objects-main">
         <div className="tiles" data-testid="object-library">
           {shown.map((d) => (
-            <ObjectTile key={d.id} def={d} />
+            <ObjectTile key={d.id} def={d} onAsk={setAsking} />
           ))}
         </div>
         <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
       </div>
+      {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
     </section>
   );
 }
@@ -323,12 +393,24 @@ function SoundsPanel() {
   const assets = useEditor((s) => s.project.assets);
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; row: Element } | null>(null);
+  const [asking, setAsking] = useState<LibraryAsk | null>(null);
+  const menuSound = menu ? sounds.find((a) => a.id === menu.id) : undefined;
   return (
     <section className="dock-panel sounds" data-testid="sounds-panel" aria-label="Sounds">
       <PanelClose />
       <div className="sound-list" data-testid="sound-list">
         {sounds.map((a) => (
-          <div key={a.id} className="sound-row">
+          <div
+            key={a.id}
+            className="sound-row"
+            data-testid={`sound-${a.name}`}
+            title="Right-click for more"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ id: a.id, x: e.clientX, y: e.clientY, row: e.currentTarget });
+            }}
+          >
             <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playSound(a.synth!)}>
               ▶ {a.name}
             </button>
@@ -343,6 +425,20 @@ function SoundsPanel() {
         ))}
         {sounds.length === 0 && <p className="muted small">No sounds yet.</p>}
       </div>
+      {menu && menuSound && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: 'AI prompt…', testId: 'menu-ai-prompt', run: () => setAsking({ kind: 'sound', id: menuSound.id, rect: tileRect(menu.row) }) },
+            { label: 'Play', testId: 'menu-play', run: () => playSound(menuSound.synth!) },
+            { label: 'Edit…', testId: 'menu-edit-sound', run: () => useEditor.getState().setSoundEditor(menuSound.id) },
+            { label: 'Delete…', testId: 'menu-delete-sound', run: () => setDeleting({ id: menuSound.id, name: menuSound.name }) },
+          ]}
+        />
+      )}
+      {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
       <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => void openNewSound()}>
         + New sound
       </button>

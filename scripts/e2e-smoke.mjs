@@ -88,6 +88,23 @@ function stubModel(body) {
   aiRequests.push(body);
   const req = body.request.toLowerCase();
   const t = body.context.targets;
+  if (body.context.scope === 'object' && req.includes('yellow')) {
+    // Right-click → AI prompt… on a library object: redrawn in yellow, the same pixels.
+    const o = body.context.object;
+    const art = o.look.sprite?.pixelArt;
+    if (!art) return { kind: 'apply', message: `Made the ${o.name} yellow.`, changes: [`${o.name}: yellow`], operations: [{ op: 'set_component_field', target: 'definition', id: o.id, component: 'Sprite', field: 'color', valueJson: '"#ffd400"' }] };
+    return {
+      kind: 'apply',
+      message: `Made the ${o.name} yellow.`,
+      changes: [`${o.name}: yellow`],
+      operations: [{ op: 'draw_sprite', target: 'definition', id: o.id, name: `${o.name} (yellow)`, palette: art.palette.map((p) => ({ key: p.key, color: '#ffd400' })), rows: art.rows, frames: null, fps: null, situation: null }],
+    };
+  }
+  if (body.context.scope === 'sound' && req.includes('lower')) {
+    const snd = body.context.sound;
+    const lower = { ...snd.sound, notes: snd.sound.notes.map(([pitch, ...rest]) => [Math.max(0, pitch - 5), ...rest]) };
+    return { kind: 'apply', message: `${snd.name} is lower now.`, changes: [`${snd.name}: 5 semitones lower`], operations: [{ op: 'make_sound', name: snd.name, description: snd.description, soundJson: JSON.stringify(lower), replaceId: snd.id }] };
+  }
   if (req.includes('what does the coin do')) {
     // Other objects' code isn't sent up front: ask for the Coin's, then answer from it.
     const coin = body.context.library.find((d) => d.name === 'Coin');
@@ -886,6 +903,35 @@ try {
     await page.screenshot({ path: `${OUT}/5e-sound-editor.png` });
     await page.getByTestId('sound-editor-close').click();
   }
+  {
+    // Right-click a sound → AI prompt…: "lower in pitch" remakes that sound.
+    const panelWasOpen = (await page.getByTestId('sounds-panel').count()) === 1;
+    if (!panelWasOpen) await page.getByTestId('dock-sounds').click();
+    await page.getByTestId('sound-Quack').click({ button: 'right' });
+    await check(async () => (await page.getByTestId('object-menu').innerText()).startsWith('AI prompt'), 'right-clicking a sound opens a menu, AI prompt… first');
+    await page.getByTestId('menu-ai-prompt').click();
+    const card = page.getByTestId('library-prompt');
+    await check(async () => (await card.getAttribute('data-context')) === 'sound' && (await card.innerText()).includes('Quack') && (await card.getByTestId('prompt-input').evaluate((el) => el === document.activeElement)), 'AI prompt… opens a prompt card about that sound, ready to type in');
+    const row = await page.getByTestId('sound-Quack').boundingBox();
+    const cardBox = await card.boundingBox();
+    await check(cardBox.y + cardBox.height <= row.y + 1, 'the card sits just above the sound');
+    await card.getByTestId('prompt-input').fill('I want this sound to be lower in pitch');
+    await card.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await card.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the AI changes it');
+    const sent = aiRequests.at(-1).context;
+    await check(sent.scope === 'sound' && sent.sound?.name === 'Quack' && Array.isArray(sent.sound?.sound?.notes), 'the AI is told which sound, with its notes');
+    await check(async () => (await card.getByTestId('library-prompt-play').count()) === 1, 'the card has ▶ Play it, to hear the change');
+    await page.getByTestId('sound-edit').first().click();
+    await check(async () => JSON.stringify(JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]')) === JSON.stringify([[17, 2, 6, 0], [15, 2, 5, 1], [13, 2, 3, 5], [0, 0, 0, 0], [16, 2, 5, 0], [12, 2, 3, 5]]), 'the sound itself is lower (its notes, 5 semitones down; the same sound, so scripts still play it)');
+    await page.getByTestId('sound-editor-close').click();
+    await page.getByTestId('undo').click();
+    if ((await page.getByTestId('sounds-panel').count()) === 0) await page.getByTestId('dock-sounds').click();
+    await page.getByTestId('sound-edit').first().click();
+    await check(async () => JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]')[0][0] === 22, 'Undo brings the old sound back');
+    await page.getByTestId('sound-editor-close').click();
+    const openNow = (await page.getByTestId('sounds-panel').count()) === 1;
+    if (openNow !== panelWasOpen) await page.getByTestId('dock-sounds').click();
+  }
   await page.getByTestId('dock-sounds').click();
   await page.getByTestId('play').click();
   await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 2, 'in play, the script plays the sound (twice, as edited)');
@@ -1079,8 +1125,33 @@ try {
   await page.getByTestId('se-close').click();
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
+  {
+    // Right-click an object in the Objects tab → AI prompt…: "make this object yellow" changes that object.
+    const tile = page.getByTestId('definition-Enemy');
+    const look = async () => (await tile.locator('.thumb').screenshot()).toString('base64');
+    const before = await look();
+    await tile.click({ button: 'right' });
+    await page.getByTestId('menu-ai-prompt').click();
+    const card = page.getByTestId('library-prompt');
+    await check(async () => (await card.getAttribute('data-context')) === 'object' && (await card.innerText()).includes('Enemy') && (await page.getByTestId('library-panel').count()) === 1, 'AI prompt… on an object opens a prompt card about it (the Objects tab stays open)');
+    const tileBox = await tile.boundingBox();
+    const cardBox = await card.boundingBox();
+    await check(cardBox.y + cardBox.height <= tileBox.y + 1, 'the card sits just above the object');
+    await card.getByTestId('prompt-input').fill('make this object yellow');
+    await card.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await card.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the AI changes it');
+    const sent = aiRequests.at(-1).context;
+    await check(sent.scope === 'object' && sent.object?.name === 'Enemy' && !!sent.object?.look?.sprite?.pixelArt && sent.object?.spriteGrid?.width > 0, "the AI is told which object, with its drawing and pixel grid");
+    await check(async () => (await look()) !== before, 'the object looks different in the Objects tab (yellow)');
+    await page.screenshot({ path: `${OUT}/9b-object-ai-prompt.png` });
+    await card.getByTestId('prompt-close').click();
+    await check(async () => (await card.count()) === 0, '× closes the card');
+    await page.getByTestId('undo').click();
+    if ((await page.getByTestId('library-panel').count()) === 0) await page.getByTestId('dock-library').click();
+    await check(async () => (await look()) === before, 'Undo brings its old look back');
+  }
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Details…, Edit sprite, Code, Sprites and Reset to default');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'AI prompt… Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers AI prompt…, Details…, Edit sprite, Code, Sprites and Reset to default');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');

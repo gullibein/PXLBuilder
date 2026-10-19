@@ -123,6 +123,10 @@ export function contextName(ctx: AIContext): string {
       return 'Connection';
     case 'editor':
       return 'Editor';
+    case 'object':
+      return project.definitions.find((d) => d.id === ctx.definitionId)?.name ?? 'Object';
+    case 'sound':
+      return project.assets.find((a) => a.id === ctx.assetId)?.name ?? 'Sound';
   }
 }
 

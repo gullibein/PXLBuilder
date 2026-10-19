@@ -801,3 +801,9 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .cp-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .se-add.as-button { background: none; color: var(--muted); padding: 0; }
 .se-recolor-btn { width: 34px; height: 20px; border-radius: 5px; border: 1px solid var(--line); padding: 0; cursor: pointer; }
+
+/* The AI prompt card for a library object or a sound (right-click → AI prompt…), just above the item. */
+.library-ask { position: fixed; z-index: 70; max-width: calc(100vw - 24px); }
+.library-ask .prompt { animation: pop-in 140ms ease-out; }
+.library-ask-head { display: inline-flex; align-items: center; gap: 7px; }
+.library-ask-head .thumb { width: 16px; height: 16px; }

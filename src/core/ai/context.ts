@@ -46,7 +46,11 @@ export type AIContext =
   /** One connection (relationship) the user clicked on, e.g. the line from a switch to a door. */
   | { kind: 'connection'; sceneId: Id; relationshipId: Id }
   /** The editor itself (layout, look, controls), not the game. */
-  | { kind: 'editor'; sceneId: Id };
+  | { kind: 'editor'; sceneId: Id }
+  /** One object in the object library (every copy of it), asked from the Objects tab. */
+  | { kind: 'object'; sceneId: Id; definitionId: Id }
+  /** One of the game's sounds, asked from the Sounds tab. */
+  | { kind: 'sound'; sceneId: Id; assetId: Id };
 
 /** Derives the context from a selection (ordered by selection order). */
 export function contextFromSelection(sceneId: Id, selected: Id[]): AIContext | null {
@@ -75,6 +79,10 @@ export function contextKey(ctx: AIContext): string {
       return 'editor';
     case 'connection':
       return `connection:${ctx.relationshipId}`;
+    case 'object':
+      return `object:${ctx.definitionId}`;
+    case 'sound':
+      return `sound:${ctx.assetId}`;
   }
 }
 
@@ -111,6 +119,22 @@ export interface LookImage {
   pixelArt: { palette: { key: string; color: string }[]; rows: string[]; frames?: string[][] } | null;
   /** For an animation: how many frames and how fast. */
   animation?: { frames: number; fps: number };
+}
+
+/** A library object in full (scope "object"). */
+export interface ObjectDetail {
+  id: Id;
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  /** How many copies of it are placed, in all levels (all of them change with it). */
+  placedCount: number;
+  components: Record<string, Record<string, unknown>>;
+  /** The pixel grid to use when drawing a sprite for it (draw_sprite with target "definition"). */
+  spriteGrid: { width: number; height: number };
+  look: EntityDetail['look'];
+  scripts: BehaviorScript[];
 }
 
 export interface EntityBrief {
@@ -181,6 +205,10 @@ export interface AIPayload {
   };
   /** The selected/target entities, in full. */
   targets: EntityDetail[];
+  /** Scope "object": the library object the user asked about, in full (what every copy of it is). */
+  object?: ObjectDetail;
+  /** Scope "sound": the sound the user asked about, in full. */
+  sound?: { id: Id; name: string; description: string; seconds: number; sound: unknown };
   /** Where the user pointed in the level (world coordinates), if anywhere. */
   point: Vec2 | null;
   /** Asked from the camera outline: the request is about the level's camera (level.camera). */
@@ -255,6 +283,10 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
   connection:
     'The user clicked on a CONNECTION (see connection; its two ends are targets[0] = source and targets[1] = target). The request is about what this connection does: change it with update_relationship (id = connection.id), e.g. for a switch (controls): params.action "open" | "close" | "toggle" | "disappear" | "move", with offset (pixels, one tile = 32, negative y = up) and speed for "move". Replace or remove it only if asked; if what they want cannot be expressed by a connection, a rule may do it.',
+  object:
+    'The user is asking about ONE OBJECT IN THE OBJECT LIBRARY (see `object`, in full), not a placed copy: "this", "it", "this object" mean it. Change the object itself, so every copy of it (object.placedCount, in all levels) changes: every operation with target "definition" and id = object.id (set_component_field, add_component, remove_component, rename, set_tags); draw_sprite with target "definition" and id = object.id for how it looks, on exactly object.spriteGrid. A color change ("make it yellow") is a redraw: draw_sprite with its pixels from object.look.sprite.pixelArt, the colors changed and the shapes kept (when it has no pixel art, set_component_field Sprite.color). Scripts on it with set_script on the definition. Do not place, move or delete copies unless asked.',
+  sound:
+    'The user is asking about ONE SOUND (see `sound`, with its notes in sound.sound): "this", "it", "this sound" mean it. Change it with make_sound replaceId = sound.id, starting from its notes and changing only what was asked ("lower in pitch": every pitch down, e.g. by 5-12 semitones; "longer": a slower speed or more notes; "softer": lower volumes or smooth). Keep its name unless asked. Nothing else changes.',
   editor:
     'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks, what it shows over the level), not the game. Use only editor operations (set_editor_setting, add_editor_overlay, remove_editor_overlay). If the request needs something they cannot do, reply unsupported and say what can be changed instead.',
 };
@@ -354,6 +386,23 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     return { list, copies };
   };
   const others = briefs(scene, new Set(targetIds));
+  const objectDef = ctx.kind === 'object' ? project.definitions.find((d) => d.id === ctx.definitionId) : undefined;
+  const objectDetail = (d: (typeof project.definitions)[number]): ObjectDetail => {
+    const r = resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry);
+    return {
+      id: d.id,
+      name: d.name,
+      description: d.description ?? '',
+      category: typeof d.metadata.category === 'string' ? d.metadata.category : 'Custom',
+      tags: d.tags,
+      placedCount: placed(d.id),
+      components: d.components,
+      spriteGrid: gridFor(getEntitySize(r), project.settings.spriteResolution),
+      look: lookOf(d.components),
+      scripts: d.scripts ?? [],
+    };
+  };
+  const soundAsset = ctx.kind === 'sound' ? project.assets.find((a) => a.id === ctx.assetId && a.kind === 'sound' && a.synth) : undefined;
 
   return {
     scope: ctx.kind,
@@ -392,6 +441,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       },
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
+    ...(objectDef ? { object: objectDetail(objectDef) } : {}),
+    ...(soundAsset ? { sound: { id: soundAsset.id, name: soundAsset.name, description: soundAsset.description ?? '', seconds: Math.round(soundLength(soundAsset.synth!) * 100) / 100, sound: soundAsset.synth } } : {}),
     point: ctx.kind === 'level' ? ctx.point : null,
     ...(ctx.kind === 'level' && ctx.camera ? { aboutCamera: true as const } : {}),
     otherEntities: others.list,
@@ -409,7 +460,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       })(),
       // (The selected things' own scripts are in targets in full: not twice.)
       scripts: (d.scripts ?? []).map((x) => ({ id: x.id, name: x.name, description: firstSentence(x.description) })),
-      ...(fullScripts.has(d.id) ? { codeInTargets: true as const } : {}),
+      ...(fullScripts.has(d.id) || d.id === objectDef?.id ? { codeInTargets: true as const } : {}),
       ...(() => {
         const sprites = getDefinitionSprites(d).map((r) => {
           const a = project.assets.find((x) => x.id === r.assetId);

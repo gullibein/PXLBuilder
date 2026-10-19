@@ -163,6 +163,35 @@ describe('AI context', () => {
     void door;
   });
 
+  it('object context (right-click in the Objects tab) sends that library object in full, with its drawing', () => {
+    const { project, sceneId, def, enemy: placed } = level();
+    const enemy = def('Enemy');
+    const payload = buildAIPayload(project, { kind: 'object', sceneId, definitionId: enemy.id }, registry);
+    expect(payload.scope).toBe('object');
+    expect(payload.scope_note).toMatch(/OBJECT LIBRARY/);
+    expect(payload.object).toMatchObject({ id: enemy.id, name: 'Enemy', placedCount: 2 });
+    expect(payload.object?.components.Damage).toEqual({ amount: 1 });
+    expect(payload.object?.look.sprite?.pixelArt?.rows.length).toBeGreaterThan(0);
+    // The same grid a placed copy would be drawn on.
+    expect(payload.object?.spriteGrid).toEqual(buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [placed.id] }, registry).targets[0].spriteGrid);
+    expect(payload.targets).toEqual([]);
+    expect(payload.sound).toBeUndefined();
+    expect(contextKey({ kind: 'object', sceneId, definitionId: enemy.id })).toBe(`object:${enemy.id}`);
+  });
+
+  it('sound context sends that sound with its notes; a remake keeps the same sound', () => {
+    const { project, sceneId } = level();
+    const made = apply(project, [{ op: 'make_sound', name: 'Boing', description: 'A spring', soundJson: '{"type":"steps","speed":4,"notes":[[24,0,5,0],[36,0,4,1]]}', replaceId: null }]);
+    const boing = made.assets.find((a) => a.name === 'Boing')!;
+    const payload = buildAIPayload(made, { kind: 'sound', sceneId, assetId: boing.id }, registry);
+    expect(payload.scope).toBe('sound');
+    expect(payload.sound).toMatchObject({ id: boing.id, name: 'Boing', sound: { type: 'steps', notes: [[24, 0, 5, 0], [36, 0, 4, 1]] } });
+    expect(payload.object).toBeUndefined();
+    const lower = apply(made, [{ op: 'make_sound', name: 'Boing', description: 'A lower spring', soundJson: '{"type":"steps","speed":4,"notes":[[19,0,5,0],[31,0,4,1]]}', replaceId: boing.id }]);
+    expect(lower.assets.filter((a) => a.kind === 'sound').map((a) => a.id)).toEqual(made.assets.filter((a) => a.kind === 'sound').map((a) => a.id));
+    expect((lower.assets.find((a) => a.id === boing.id)!.synth as { notes: number[][] }).notes[0][0]).toBe(19);
+  });
+
   it('level context carries world settings and the pointed location', () => {
     const { project, sceneId } = level();
     const payload = buildAIPayload(project, { kind: 'level', sceneId, point: { x: 40, y: 80 } }, registry);
