@@ -64,6 +64,8 @@ export interface EditorState {
   worldContext: { point: Vec2 | null } | null;
   /** A camera outline clicked on the level (it glows; the level card asks about the camera). */
   cameraOutline: 'start' | 'limits' | null;
+  /** The level's background picture clicked on the level (with `worldContext`): its box, ✦ and card are the background's. */
+  backgroundSelected: boolean;
   /** The camera's settings card is open (from the Settings button on the camera's prompt card). */
   cameraSettingsOpen: boolean;
   setCameraSettingsOpen(open: boolean): void;
@@ -149,6 +151,8 @@ export interface EditorState {
   setWorldContext(point: Vec2 | null | false): void;
   /** Selects a camera outline (opens the level card there). */
   selectCameraOutline(part: 'start' | 'limits', point: Vec2): void;
+  /** Selects the background picture (clicked at `point`): moved and resized in the level, asked about with ✦. */
+  selectBackground(point: Vec2): void;
   setGlobalPrompt(open: boolean, scope?: 'level' | 'project' | 'editor'): void;
   setCamera(camera: Partial<Camera>): void;
   setShowGrid(show: boolean): void;
@@ -217,6 +221,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedDefinitionId: null,
     worldContext: null,
     cameraOutline: null,
+    backgroundSelected: false,
     cameraSettingsOpen: false,
     globalPrompt: { open: false, scope: 'level' },
     camera: { x: 0, y: 0, zoom: 1 },
@@ -347,6 +352,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ cameraOutline: part });
     },
 
+    selectBackground(point) {
+      // (The Background card stays as it is.)
+      const backgroundOpen = get().backgroundOpen;
+      get().setWorldContext(point);
+      set({ backgroundSelected: true, backgroundOpen });
+    },
+
     selectConnection(id) {
       set({ selectedConnectionId: id, selectedEntityIds: [], worldContext: null, cameraOutline: null, cameraSettingsOpen: false, selectedDefinitionId: null, backgroundOpen: false, logicOpen: false, spritesFor: null });
     },
@@ -373,8 +385,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setWorldContext(point) {
-      if (point === false) set({ worldContext: null, cameraOutline: null, cameraSettingsOpen: false, promptOpen: get().selectedEntityIds.length || get().selectedConnectionId ? get().promptOpen : false });
-      else set({ worldContext: { point }, cameraOutline: null, cameraSettingsOpen: false, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
+      if (point === false) set({ worldContext: null, cameraOutline: null, backgroundSelected: false, cameraSettingsOpen: false, promptOpen: get().selectedEntityIds.length || get().selectedConnectionId ? get().promptOpen : false });
+      else set({ worldContext: { point }, cameraOutline: null, backgroundSelected: false, cameraSettingsOpen: false, selectedConnectionId: null, selectedEntityIds: [], selectedDefinitionId: null, backgroundOpen: false, logicOpen: false });
     },
 
     setGlobalPrompt(open, scope) {
@@ -550,10 +562,12 @@ export function getActiveScene(state: Pick<EditorState, 'project' | 'activeScene
 }
 
 /** The AI context implied by the current selection, or null when nothing is selected. */
-export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext' | 'selectedConnectionId'> & { cameraOutline?: 'start' | 'limits' | null }): AIContext | null {
+export function getSelectionContext(state: Pick<EditorState, 'activeSceneId' | 'selectedEntityIds' | 'worldContext' | 'selectedConnectionId'> & { cameraOutline?: 'start' | 'limits' | null; backgroundSelected?: boolean }): AIContext | null {
   if (state.selectedConnectionId) return { kind: 'connection', sceneId: state.activeSceneId, relationshipId: state.selectedConnectionId };
   const fromSelection = contextFromSelection(state.activeSceneId, state.selectedEntityIds);
   if (fromSelection) return fromSelection;
+  // The background picture: the Background card's conversation.
+  if (state.worldContext && state.backgroundSelected) return { kind: 'background', sceneId: state.activeSceneId };
   // A camera outline: the level's camera, with a conversation of its own.
   if (state.worldContext) return { kind: 'level', sceneId: state.activeSceneId, point: state.worldContext.point, ...(state.cameraOutline ? { camera: state.cameraOutline } : {}) };
   return null;

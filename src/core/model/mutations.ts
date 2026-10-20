@@ -133,7 +133,13 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
   if (patch.parallax !== undefined && !(Number.isFinite(patch.parallax) && patch.parallax >= 0 && patch.parallax <= 1)) {
     throw new ModelError('Background movement must be between 0 and 1');
   }
-  Object.assign(scene.world.background, patch);
+  if (patch.parallaxY !== undefined && patch.parallaxY !== null && !(Number.isFinite(patch.parallaxY) && patch.parallaxY >= 0 && patch.parallaxY <= 1)) {
+    throw new ModelError('Background movement (up and down) must be between 0 and 1');
+  }
+  const bg = scene.world.background;
+  Object.assign(bg, patch);
+  // Up and down the same as left and right: stored once.
+  if (bg.parallaxY === null || bg.parallaxY === undefined || bg.parallaxY === bg.parallax) delete bg.parallaxY;
 }
 
 // ---------------------------------------------------------------- assets

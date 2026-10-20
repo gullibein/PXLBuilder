@@ -180,37 +180,21 @@ export function BackgroundPanel() {
             ))}
           </div>
           {bg.fit === 'placed' && <span className="bg-hint">Drag it in the level to move it, its corners to resize it (Shift: any shape), its sides to stretch it.</span>}
-          <label className="bg-label" htmlFor="bg-movement">
-            Movement
-          </label>
-          <select
-            id="bg-movement"
-            data-testid="bg-movement"
-            value={bg.parallax >= 1 ? 'level' : bg.parallax <= 0 ? 'screen' : 'depth'}
-            onChange={(e) => {
-              const parallax = e.target.value === 'level' ? 1 : e.target.value === 'screen' ? 0 : 0.5;
-              edit('Set background movement', (p) => setBackground(p, sid, { parallax }));
-            }}
-          >
-            <option value="level">Moves with the level</option>
-            <option value="depth">Moves slower (far away)</option>
-            <option value="screen">Stays on the screen</option>
-          </select>
-          {bg.parallax > 0 && bg.parallax < 1 && (
-            <>
-              <label className="bg-label" htmlFor="bg-parallax">
-                How much it moves <span className="muted">{Math.round(bg.parallax * 100)}%</span>
-              </label>
-              <input
-                id="bg-parallax"
-                type="range"
-                min={1}
-                max={99}
-                value={Math.round(bg.parallax * 100)}
-                data-testid="bg-parallax"
-                onChange={(e) => edit('Set background movement', (p) => setBackground(p, sid, { parallax: Number(e.target.value) / 100 }), { coalesceKey: `${sid}.parallax` })}
-              />
-            </>
+          <span className="bg-label">Movement</span>
+          <Movement
+            axis="x"
+            label="Left / right"
+            value={bg.parallax}
+            onChange={(parallax, coalesce) => edit('Set background movement', (p) => setBackground(p, sid, { parallax, parallaxY: bg.parallaxY ?? bg.parallax }), coalesce ? { coalesceKey: `${sid}.parallax` } : undefined)}
+          />
+          {/* (Fill always fills the screen's height: only its sideways movement shows.) */}
+          {bg.fit !== 'cover' && (
+            <Movement
+              axis="y"
+              label="Up / down"
+              value={bg.parallaxY ?? bg.parallax}
+              onChange={(parallaxY, coalesce) => edit('Set background movement', (p) => setBackground(p, sid, { parallaxY }), coalesce ? { coalesceKey: `${sid}.parallaxY` } : undefined)}
+            />
           )}
         </div>
       )}
@@ -370,4 +354,42 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
 /** What is sent to the image generator for a background described as `what`. */
 export function backgroundPrompt(what: string): string {
   return `${what}, video game background scenery, finely detailed digital painting with small crisp details, flat even lighting, no characters, no text`;
+}
+
+/** How the background moves as the camera moves one way (left/right or up/down): with the level, slower, or not at all. */
+function Movement(props: { axis: 'x' | 'y'; label: string; value: number; onChange: (value: number, coalesce: boolean) => void }) {
+  const suffix = props.axis === 'y' ? '-y' : '';
+  const { value } = props;
+  return (
+    <div className="bg-move-row">
+      <label className="bg-move-label" htmlFor={`bg-movement${suffix}`}>
+        {props.label}
+      </label>
+      <select
+        id={`bg-movement${suffix}`}
+        data-testid={`bg-movement${suffix}`}
+        value={value >= 1 ? 'level' : value <= 0 ? 'screen' : 'depth'}
+        onChange={(e) => props.onChange(e.target.value === 'level' ? 1 : e.target.value === 'screen' ? 0 : 0.5, false)}
+      >
+        <option value="level">Moves with the level</option>
+        <option value="depth">Moves slower (far away)</option>
+        <option value="screen">Stays on the screen</option>
+      </select>
+      {value > 0 && value < 1 && (
+        <span className="bg-move-amount">
+          <input
+            id={`bg-parallax${suffix}`}
+            type="range"
+            min={1}
+            max={99}
+            value={Math.round(value * 100)}
+            aria-label={`${props.label}: how much it moves`}
+            data-testid={`bg-parallax${suffix}`}
+            onChange={(e) => props.onChange(Number(e.target.value) / 100, true)}
+          />
+          <span className="muted">{Math.round(value * 100)}%</span>
+        </span>
+      )}
+    </div>
+  );
 }

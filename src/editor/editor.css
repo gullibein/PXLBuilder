@@ -807,3 +807,11 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .library-ask .prompt { animation: pop-in 140ms ease-out; }
 .library-ask-head { display: inline-flex; align-items: center; gap: 7px; }
 .library-ask-head .thumb { width: 16px; height: 16px; }
+
+/* Background movement, one row per direction: "Left / right [select]", the amount below when it moves slower. */
+.bg-move-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 4px 8px; min-width: 0; }
+.bg-move-label { font-size: 12px; color: var(--muted); }
+.bg-move-row select { min-width: 0; width: 100%; }
+.bg-move-amount { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bg-move-amount input { flex: 1; min-width: 0; }
+.bg-move-amount .muted { font-size: 11px; width: 30px; text-align: right; }

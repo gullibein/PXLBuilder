@@ -83,7 +83,8 @@ export const operationSchema = z.union([
     sceneId: z.string(),
     color: z.string().nullable().describe('Background color "#rrggbb", or null to keep'),
     fit: z.enum(['cover', 'tile', 'placed']).nullable().describe('cover: image fills the view height and repeats sideways; tile: repeats at its own size; placed: one picture at a place in the level (moved and resized in the editor)'),
-    parallax: z.number().nullable().describe('0 = background stays fixed on screen, 1 = moves exactly with the level; 0.2-0.6 gives depth'),
+    parallax: z.number().nullable().describe('How much the background moves with the level as the camera moves: 0 = stays fixed on screen, 1 = moves exactly with the level; 0.2-0.6 gives depth. Sets both directions (left/right and up/down) unless parallaxY is given'),
+    parallaxY: z.number().nullable().describe('Only for the camera moving up and down, when that should differ from left and right (e.g. parallax 0, parallaxY 1: stays on screen sideways, moves with the level up and down); null = as parallax'),
     removeImage: z.boolean().describe('true to remove the background image and show only the color'),
   }),
   z.object({
@@ -532,7 +533,7 @@ export function applyOperations(
         if (op.color !== null) m.setWorldSettings(project, op.sceneId, { backgroundColor: op.color });
         m.setBackground(project, op.sceneId, {
           ...(op.fit !== null ? { fit: op.fit } : {}),
-          ...(op.parallax !== null ? { parallax: op.parallax } : {}),
+          ...(op.parallax !== null ? { parallax: op.parallax, parallaxY: op.parallaxY } : op.parallaxY !== null ? { parallaxY: op.parallaxY } : {}),
           ...(op.removeImage ? { imageAssetId: null } : {}),
         });
         break;

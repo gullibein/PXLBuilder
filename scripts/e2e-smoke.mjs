@@ -411,6 +411,10 @@ function stubModel(body) {
       ],
     };
   }
+  if (body.context.scope === 'background' && req.includes('not up')) {
+    // Stays on the screen as the camera goes left and right, moves with the level up and down.
+    return { kind: 'apply', message: 'It stays on the screen sideways and moves with the level up and down.', changes: ['Background: stays on screen left/right, moves with the level up/down'], operations: [{ op: 'set_background', sceneId: body.context.level.id, color: null, fit: null, parallax: 0, parallaxY: 1, removeImage: false }] };
+  }
   if (req.includes('move sideways') || req.includes('background')) {
     return { kind: 'apply', message: 'The background now scrolls slowly with the level.', changes: ['Background moves 50% with the level'], operations: [{ op: 'set_background', sceneId: body.context.level.id, color: null, fit: null, parallax: 0.5, removeImage: false }] };
   }
@@ -1540,14 +1544,17 @@ try {
       const cbox = await canvas.boundingBox();
       const toScreen = (wx, wy) => ({ x: cbox.x + cbox.width / 2 + (wx - cx) * zoom, y: cbox.y + cbox.height / 2 + (wy - cy) * zoom });
       // A spot inside the box with no object on it (there the pointer shows it can be moved).
-      let inside = null;
-      for (let fy = 0.15; fy < 0.9 && !inside; fy += 0.1)
-        for (let fx = 0.1; fx < 0.9 && !inside; fx += 0.1) {
-          const pt = toScreen(b0[0] + (b0[2] - b0[0]) * fx, b0[1] + (b0[3] - b0[1]) * fy);
-          if (pt.x < cbox.x + 80 || pt.y < cbox.y + 20 || pt.x > cbox.x + cbox.width - 20 || pt.y > cbox.y + cbox.height - 90) continue;
-          await page.mouse.move(pt.x, pt.y);
-          if ((await canvas.evaluate((el) => el.style.cursor)) === 'move') inside = pt;
-        }
+      const spotIn = async (b) => {
+        for (let fy = 0.15; fy < 0.9; fy += 0.1)
+          for (let fx = 0.1; fx < 0.9; fx += 0.1) {
+            const pt = toScreen(b[0] + (b[2] - b[0]) * fx, b[1] + (b[3] - b[1]) * fy);
+            if (pt.x < cbox.x + 80 || pt.y < cbox.y + 20 || pt.x > cbox.x + cbox.width - 20 || pt.y > cbox.y + cbox.height - 90) continue;
+            await page.mouse.move(pt.x, pt.y);
+            if ((await canvas.evaluate((el) => el.style.cursor)) === 'move') return pt;
+          }
+        return null;
+      };
+      let inside = await spotIn(b0);
       await check(!!inside, '(over the box where no object is, the pointer shows it can be moved)');
       await page.mouse.down();
       await page.mouse.move(inside.x + 40, inside.y + 20, { steps: 4 });
@@ -1579,6 +1586,44 @@ try {
       }, 'with Shift, a corner resizes it to any shape');
       await page.getByTestId('undo').click();
       await check(async () => (await boxOf()).join() === b1.join(), '(also one Undo step)');
+
+      // With the Background card closed: clicking the picture in the level selects it (its box, to move and resize
+      // it, and ✦ for its AI prompt card).
+      inside = await spotIn(b1);
+      await page.keyboard.press('Escape');
+      await check(async () => (await page.getByTestId('background-panel').count()) === 0 && (await canvas.getAttribute('data-background-box')) === '', '(Background card closed: no box)');
+      await page.mouse.click(inside.x, inside.y);
+      await check(async () => (await canvas.getAttribute('data-context')) === 'background' && (await boxOf()).join() === b1.join(), 'clicking the background picture in the level selects it: its box with handles');
+      await check(async () => (await page.getByTestId('ai-star').isVisible()) && (await page.getByTestId('context-prompt').count()) === 0, 'an AI ✦ appears above it (the card opens only when asked)');
+      const star = await page.getByTestId('ai-star').boundingBox();
+      const top = toScreen(b1[0], b1[1]).y;
+      await check(star.y + star.height <= Math.max(top, cbox.y + 4) + 1 || star.y >= top, '(the ✦ is just above the picture, or inside its top when that is off screen)');
+      await page.mouse.move(inside.x, inside.y);
+      await page.mouse.down();
+      await page.mouse.move(inside.x - 30, inside.y + 10, { steps: 4 });
+      await page.mouse.up();
+      await check(async () => {
+        const b = await boxOf();
+        return Math.round((b[0] - b1[0]) * zoom) === -30 && Math.round((b[1] - b1[1]) * zoom) === 10 && b[2] - b[0] === b1[2] - b1[0];
+      }, 'selected, it is moved by dragging it');
+      await page.getByTestId('undo').click();
+      await check(async () => (await boxOf()).join() === b1.join() && (await canvas.getAttribute('data-context')) === 'background', '(one Undo step; still selected)');
+      await page.getByTestId('ai-star').click();
+      const card = page.getByTestId('context-prompt');
+      await check(async () => (await card.getAttribute('data-context')) === 'background' && (await card.locator('.prompt-header').innerText()).includes('Background'), 'the ✦ opens the background\'s AI prompt card');
+      await check(async () => (await card.innerText()).includes('move sideways along with the level'), "it is the Background card's conversation (the earlier request is there)");
+      await card.getByTestId('prompt-input').fill('Stay on the screen when the camera goes left or right, but not up or down.');
+      await card.getByTestId('prompt-input').press('Enter');
+      await check(async () => (await card.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.scope === 'background', 'asked there, the AI changes the background');
+      await page.screenshot({ path: `${OUT}/8c-background-selected.png` });
+      await card.getByTestId('background-settings-btn').click();
+      await check(async () => (await bgPanel.isVisible()) && (await bgPanel.getByTestId('bg-movement').inputValue()) === 'screen' && (await bgPanel.getByTestId('bg-movement-y').inputValue()) === 'level', "Settings opens the Background card: left/right Stays on the screen, up/down Moves with the level");
+      await page.screenshot({ path: `${OUT}/8d-background-movement.png` });
+      await bgPanel.getByTestId('bg-movement-y').selectOption('depth');
+      await check(async () => (await bgPanel.getByTestId('bg-parallax-y').inputValue()) === '50' && (await bgPanel.getByTestId('bg-movement').inputValue()) === 'screen' && (await bgPanel.getByTestId('bg-parallax').count()) === 0, 'up/down is set on its own (its own slider), left/right stays as it was');
+      await page.getByTestId('undo').click();
+      await page.getByTestId('undo').click();
+      await check(async () => (await bgPanel.getByTestId('bg-movement').inputValue()) === 'level' && (await bgPanel.getByTestId('bg-movement-y').inputValue()) === 'level', '(Undo: both back to moving with the level)');
     }
     await check(genBodies.length === 1 && JSON.parse(genBodies[0]).prompt.startsWith('a starry night over mountains'), '(the description went to the generator)');
     await check(!/pixel art/i.test(JSON.parse(genBodies[0]).prompt) && /detail/i.test(JSON.parse(genBodies[0]).prompt), "(asking for a finely detailed picture, not \"pixel art\": generators draw that as big fake pixels; the app makes the pixels itself)");

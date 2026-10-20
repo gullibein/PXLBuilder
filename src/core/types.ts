@@ -77,8 +77,13 @@ export interface BackgroundSettings {
   fit: 'cover' | 'tile' | 'placed';
   /** placed: where the picture is in the level (top-left corner, size in level pixels). */
   rect?: { x: number; y: number; w: number; h: number } | null;
-  /** How much the background moves with the level: 0 = fixed to the screen, 1 = moves exactly with the level. */
+  /**
+   * How much the background moves with the level as the camera moves left and right (and up and down, unless
+   * `parallaxY` says otherwise): 0 = fixed to the screen, 1 = moves exactly with the level.
+   */
   parallax: number;
+  /** The same for the camera moving up and down, when it differs; missing or null = as `parallax`. */
+  parallaxY?: number | null;
 }
 
 export interface WorldSettings {

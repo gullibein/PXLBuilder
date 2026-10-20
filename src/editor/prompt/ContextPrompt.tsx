@@ -21,6 +21,7 @@ export function ContextPrompt() {
   const worldContext = useEditor((s) => s.worldContext);
   const selectedConnectionId = useEditor((s) => s.selectedConnectionId);
   const cameraOutline = useEditor((s) => s.cameraOutline);
+  const backgroundSelected = useEditor((s) => s.backgroundSelected);
   const cameraSettingsOpen = useEditor((s) => s.cameraSettingsOpen);
   const setCameraSettingsOpen = useEditor((s) => s.setCameraSettingsOpen);
   // Out of the way while objects are moved, stretched or resized; back when they're let go.
@@ -29,8 +30,8 @@ export function ContextPrompt() {
   // Only once asked for: a double-click (or double-tap, or Enter) opens it.
   const promptOpen = useEditor((s) => s.promptOpen);
   const ctx = useMemo(
-    () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline }),
-    [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline],
+    () => getSelectionContext({ activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline, backgroundSelected }),
+    [activeSceneId, selectedEntityIds, worldContext, selectedConnectionId, cameraOutline, backgroundSelected],
   );
   const key = ctx ? contextKey(ctx) : null;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -97,7 +98,23 @@ export function ContextPrompt() {
     return defId ? (project.definitions.find((d) => d.id === defId)?.name ?? null) : null;
   };
   const header =
-    ctx.kind === 'level' ? (
+    ctx.kind === 'background' ? (
+      <>
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+          <path d="m2.5 11.5 3.6-3.8 2.6 2.6 1.8-1.8 3 3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+        </svg>
+        Background
+        <button
+          className="chip-btn small camera-settings-btn"
+          data-testid="background-settings-btn"
+          title="The Background card: the picture, its size, how it fills and moves, the color…"
+          onClick={() => useEditor.getState().setBackgroundOpen(true)}
+        >
+          Settings
+        </button>
+      </>
+    ) : ctx.kind === 'level' ? (
       <>
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
           <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
@@ -144,7 +161,9 @@ export function ContextPrompt() {
           ctx={ctx}
           header={header}
           placeholder={
-            cameraOutline === 'start'
+            ctx.kind === 'background'
+              ? 'e.g. "move slower than the level"'
+              : cameraOutline === 'start'
               ? 'e.g. "zoom out a bit"'
               : cameraOutline === 'limits'
                 ? 'e.g. "no limits"'

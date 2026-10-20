@@ -179,7 +179,7 @@ export interface AIPayload {
     name: string;
     gravity: Vec2;
     backgroundColor: string;
-    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number };
+    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number; parallaxY?: number };
     isStartLevel: boolean;
     /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
@@ -278,7 +278,7 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   group: 'The user selected several entities (see targets) and is addressing them together ("these", "them", "all of them").',
   level: 'The user is addressing the level itself: its world settings and its contents. "here" refers to `point` if set.',
   background:
-    'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth). You cannot create or edit pictures; the user uploads background images themselves.',
+    'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth); parallaxY when up/down should differ from left/right, e.g. "stay on screen left/right but not up/down" = parallax 0, parallaxY 1). You cannot create or edit pictures; the user uploads background images themselves.',
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
   connection:
@@ -421,6 +421,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         })(),
         fit: scene.world.background.fit,
         parallax: scene.world.background.parallax,
+        ...(typeof scene.world.background.parallaxY === 'number' ? { parallaxY: scene.world.background.parallaxY } : {}),
       },
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },

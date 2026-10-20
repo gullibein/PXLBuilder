@@ -38,6 +38,7 @@ export const sceneSchema = z.object({
       imageAssetId: id.nullable(),
       fit: z.enum(['cover', 'tile', 'placed']),
       parallax: z.number().min(0).max(1),
+      parallaxY: z.number().min(0).max(1).nullable().optional(),
       rect: z.object({ x: z.number().finite(), y: z.number().finite(), w: z.number().positive(), h: z.number().positive() }).nullable().optional(),
     }),
   }),

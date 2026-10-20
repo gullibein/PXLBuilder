@@ -142,6 +142,14 @@ describe('a placed background picture', () => {
     expect(moving.draws[0]).toEqual([160 - 500, 90 - 40, 320, 180]);
   });
 
+  it('can stay on the screen as the camera goes left and right, and move with the level up and down', () => {
+    const r = recorder();
+    const w = { gravity: { x: 0, y: 0 }, backgroundColor: '#000', background: { imageAssetId: 'bg', fit: 'placed', parallax: 0, parallaxY: 1, rect: { x: 100, y: 50, w: 320, h: 180 } } } as never;
+    drawBackground(r.ctx, view, 1, w, { x: start.x + 500, y: start.y + 40, zoom: 1 }, images, { startCamera: start });
+    // Sideways where it was on the screen; 40 px higher on the screen, as the level is.
+    expect(r.draws[0]).toEqual([160, 90 - 40, 320, 180]);
+  });
+
   it('in the editor it shows where it is in the level (to move and resize it)', () => {
     const r = recorder();
     drawBackground(r.ctx, view, 1, world(0), { x: 0, y: 0, zoom: 2 }, images, { editing: true });

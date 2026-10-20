@@ -68,7 +68,7 @@ export function applyCamera(ctx: CanvasRenderingContext2D, camera: Camera, view:
  * Background: a color, optionally an image on top.
  * - cover: image fills the view height and repeats sideways.
  * - tile: image repeats in both directions at its own size (scaled with zoom).
- * parallax 0 keeps it fixed on screen; 1 moves it exactly with the level.
+ * parallax 0 keeps it fixed on screen; 1 moves it exactly with the level (parallaxY: up and down, when it differs).
  */
 export interface BackgroundView {
   /**
@@ -87,6 +87,8 @@ export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dp
   ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
   const { imageAssetId, fit, parallax } = world.background;
+  // Up and down can follow the level differently from left and right.
+  const parallaxY = world.background.parallaxY ?? parallax;
   const img = imageAssetId ? images(imageAssetId)?.source : null;
   if (!img) return;
   if (fit === 'placed') {
@@ -94,10 +96,11 @@ export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dp
     if (!r) return;
     // Exactly where it was put when the level starts; as the camera moves on, it follows the level fully (1), not
     // at all (0: it stays on the screen), or in between (farther away).
-    const p = opts.editing ? 1 : parallax;
+    const px = opts.editing ? 1 : parallax;
+    const py = opts.editing ? 1 : parallaxY;
     const start = opts.startCamera ?? { x: camera.x, y: camera.y };
-    const ex = start.x + (camera.x - start.x) * p;
-    const ey = start.y + (camera.y - start.y) * p;
+    const ex = start.x + (camera.x - start.x) * px;
+    const ey = start.y + (camera.y - start.y) * py;
     const sx = (r.x - ex) * camera.zoom + view.width / 2;
     const sy = (r.y - ey) * camera.zoom + view.height / 2;
     // On whole canvas pixels, each picture pixel the same size.
@@ -120,15 +123,15 @@ export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dp
     ctx.rect(x0, y0, w, h);
     ctx.clip();
     ctx.translate(x0, y0);
-    fillWith(ctx, img, fit, parallax, { width: w, height: h }, { x: (sc.minX + sc.maxX) / 2, y: (sc.minY + sc.maxY) / 2, zoom: camera.zoom });
+    fillWith(ctx, img, fit, parallax, parallaxY, { width: w, height: h }, { x: (sc.minX + sc.maxX) / 2, y: (sc.minY + sc.maxY) / 2, zoom: camera.zoom });
     ctx.restore();
     return;
   }
-  fillWith(ctx, img, fit, parallax, view, camera);
+  fillWith(ctx, img, fit, parallax, parallaxY, view, camera);
 }
 
 /** A picture filling the view's height and repeating sideways (cover), or repeating at its own size (tile). */
-function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'cover' | 'tile', parallax: number, view: ViewSize, camera: Camera): void {
+function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'cover' | 'tile', parallax: number, parallaxY: number, view: ViewSize, camera: Camera): void {
   const { w: iw, h: ih } = imageSize(img);
   if (!iw || !ih) return;
   const scale = fit === 'cover' ? view.height / ih : camera.zoom;
@@ -137,7 +140,7 @@ function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'c
   const mod = (a: number, n: number) => ((a % n) + n) % n;
   // Screen position of the world origin, scaled by how much the background follows the level.
   const ox = mod(view.width / 2 - camera.x * camera.zoom * parallax, tw);
-  const oy = fit === 'cover' ? 0 : mod(view.height / 2 - camera.y * camera.zoom * parallax, th);
+  const oy = fit === 'cover' ? 0 : mod(view.height / 2 - camera.y * camera.zoom * parallaxY, th);
   ctx.imageSmoothingEnabled = scale < 1;
   for (let x = ox - tw; x < view.width; x += tw) {
     if (fit === 'cover') ctx.drawImage(img, x, 0, tw, th);

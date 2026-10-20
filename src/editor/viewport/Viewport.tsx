@@ -51,13 +51,37 @@ type Drag =
   /** The placed background picture (its card open): moved (`dir` null) or resized from a corner or side; one Undo step. */
   | { kind: 'background'; sceneId: Id; box: Rect; dir: Handle['dir'] | null; start: Vec2; rect: Rect; key: string };
 
-/** The placed background picture's box, while the Background card is open (it can be moved and resized then). */
+/** The background picture is selected on the level (clicked). */
+function backgroundSelected(state: ReturnType<typeof useEditor.getState>): boolean {
+  return state.backgroundSelected && !!state.worldContext;
+}
+
+/**
+ * The placed background picture's box, while the Background card is open or the picture is selected (it can be moved
+ * and resized then).
+ */
 function backgroundBox(state: ReturnType<typeof useEditor.getState>): Rect | null {
-  if (!state.backgroundOpen) return null;
+  if (!state.backgroundOpen && !backgroundSelected(state)) return null;
   const bg = getActiveScene(state).world.background;
   if (bg.fit !== 'placed' || !bg.rect || !bg.imageAssetId) return null;
   return { minX: bg.rect.x, minY: bg.rect.y, maxX: bg.rect.x + bg.rect.w, maxY: bg.rect.y + bg.rect.h };
 }
+
+/**
+ * Where the background picture is in the editor, to click on: a placed one's box; one that fills the screen or
+ * repeats is shown inside what the camera shows at the start. Null without a picture.
+ */
+function backgroundArea(state: ReturnType<typeof useEditor.getState>, view: ViewSize): { box: Rect; placed: boolean } | null {
+  const scene = getActiveScene(state);
+  const bg = scene.world.background;
+  if (!bg.imageAssetId || !state.project.assets.some((a) => a.id === bg.imageAssetId)) return null;
+  if (bg.fit === 'placed') return bg.rect ? { box: { minX: bg.rect.x, minY: bg.rect.y, maxX: bg.rect.x + bg.rect.w, maxY: bg.rect.y + bg.rect.h }, placed: true } : null;
+  const entities = resolveSceneEntities(state.project, scene.id);
+  if (!entities.length) return null;
+  return { box: cameraFrame(scene, entities, view, playZoom(state.project, scene, view)).frame, placed: false };
+}
+
+const inBox = (b: Rect, p: Vec2) => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
 
 /** A box after dragging one of its corners or sides to a point (the other sides stay), never smaller than `min`. */
 function dragSide(box: Rect, dir: Handle['dir'], p: Vec2, min: number): Rect {
@@ -294,6 +318,9 @@ export function Viewport() {
       drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
       const bgBox = backgroundBox(state);
       if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
+      // A selected picture that fills the screen or repeats: its outline only (it can't be moved or resized).
+      const bgArea = backgroundSelected(state) ? backgroundArea(state, view) : null;
+      if (bgArea && !bgArea.placed) drawBackgroundBox(ctx, bgArea.box, state.camera.zoom, false);
       // Where a picture about to be generated goes, and how big it is.
       const t0 = state.backgroundOpen ? state.backgroundTarget : null;
       // (Not over a picture already made in that very box.)
@@ -409,6 +436,13 @@ export function Viewport() {
         const l = links.find((x) => x.selected);
         const p = l ? toScreen(curveMidpoint(l.a, l.b)) : { x: view.width / 2, y: view.height / 2 };
         publishAnchor({ key: anchorKey, rect: { minX: p.x - 12, minY: p.y - 12, maxX: p.x + 12, maxY: p.y + 12 }, view: viewWH, visible: !!l });
+      } else if (bgArea) {
+        // The background: the ✦ and its card go with the picture's box.
+        const a = toScreen({ x: bgArea.box.minX, y: bgArea.box.minY });
+        const b = toScreen({ x: bgArea.box.maxX, y: bgArea.box.maxY });
+        // (Only the part of it in view: a level-sized picture is mostly off screen.)
+        const r = { minX: Math.max(a.x, 0), minY: Math.max(a.y, CHROME_INSETS.top), maxX: Math.min(b.x, view.width), maxY: Math.min(b.y, view.height - CHROME_INSETS.bottom) };
+        publishAnchor({ key: anchorKey, rect: r, view: viewWH, visible: r.maxX > r.minX && r.maxY > r.minY });
       } else if (state.worldContext) {
         const p = state.worldContext.point ? toScreen(state.worldContext.point) : { x: view.width / 2, y: view.height / 2 };
         // A selected camera outline glows instead (the level's marker is for a spot on the level).
@@ -890,10 +924,14 @@ export function Viewport() {
       const base = drag.baseSelection;
       state.selectEntities(drag.additive ? (base.includes(hit.id) ? base.filter((id) => id !== hit.id) : [...base, hit.id]) : [hit.id]);
     } else if (drag?.kind === 'marquee' && !drag.moved && !drag.additive) {
-      // A plain click on empty space clears the context: clean canvas, no prompt.
+      // A plain click on empty space clears the context: clean canvas, no prompt. On the background picture, it
+      // selects that (its box to move and resize it, ✦ for its card).
       state.selectEntities([]);
       state.setWorldContext(false);
       state.selectConnection(null);
+      const world = toWorld(ev);
+      const area = state.tool.kind === 'select' ? backgroundArea(state, viewRef.current) : null;
+      if (area && inBox(area.box, world)) state.selectBackground(world);
       // Double-tap on empty space: the level's prompt (as a double-click does; touch screens don't always send one).
       if (ev.pointerType === 'touch' && ev.type === 'pointerup') {
         const p = localPoint(canvasRef.current!, ev);
@@ -1374,7 +1412,7 @@ function drawPictureTarget(ctx: CanvasRenderingContext2D, t: { x: number; y: num
 }
 
 /** The placed background's box with its handles (corners and sides resize it). */
-function drawBackgroundBox(ctx: CanvasRenderingContext2D, box: Rect, zoom: number): void {
+function drawBackgroundBox(ctx: CanvasRenderingContext2D, box: Rect, zoom: number, handles = true): void {
   ctx.save();
   ctx.strokeStyle = theme.select;
   ctx.lineWidth = 1.5 / zoom;
@@ -1384,7 +1422,7 @@ function drawBackgroundBox(ctx: CanvasRenderingContext2D, box: Rect, zoom: numbe
   const s = 8 / zoom;
   ctx.fillStyle = theme.handle;
   ctx.lineWidth = 1.25 / zoom;
-  for (const h of handlesFor(box, true)) {
+  for (const h of handles ? handlesFor(box, true) : []) {
     ctx.beginPath();
     ctx.rect(h.at.x - s / 2, h.at.y - s / 2, s, s);
     ctx.fill();
