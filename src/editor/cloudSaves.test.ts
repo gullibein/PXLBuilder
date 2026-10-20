@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 const blobs = new Map<string, string>();
 const docs = new Map<string, Record<string, unknown>>();
@@ -25,6 +25,9 @@ beforeAll(() => {
 describe('saves kept with the app', () => {
   it('one save per game, kept up to date (the file before is removed); listed most recent first', async () => {
     const { saveToCloud, listCloudSaves, deleteCloudSave } = await import('./cloudSaves');
+    // A clock that moves on between saves (two saves in the same millisecond would have no order).
+    let now = 1_700_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1000));
     expect(await saveToCloud('prj_1', 'Mole Mine', '{"a":1}')).toMatchObject({ ok: true });
     expect(await saveToCloud('prj_1', 'Mole Mine', '{"a":2}')).toMatchObject({ ok: true });
     await new Promise((r) => setTimeout(r, 0));
@@ -34,5 +37,6 @@ describe('saves kept with the app', () => {
     expect(list.map((s) => s.name)).toEqual(['Tetris', 'Mole Mine']);
     await deleteCloudSave(list[1]);
     expect((await listCloudSaves()).map((s) => s.name)).toEqual(['Tetris']);
+    clock.mockRestore();
   });
 });

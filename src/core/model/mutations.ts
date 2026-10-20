@@ -193,6 +193,19 @@ export function addEntity(project: Project, sceneId: Id, entity: EntityInstance)
   scene.entities.push(cloneValue(entity));
 }
 
+/** Adds several entities at once (much faster than one by one in a big level: the ids are checked in one go). */
+export function addEntities(project: Project, sceneId: Id, entities: EntityInstance[]): void {
+  if (!entities.length) return;
+  const scene = getScene(project, sceneId);
+  const ids = new Set(scene.entities.map((e) => e.id));
+  for (const entity of entities) {
+    if (ids.has(entity.id)) throw new ModelError(`Entity "${entity.id}" already exists`);
+    ids.add(entity.id);
+    if (entity.definitionId !== null) getDefinition(project, entity.definitionId);
+  }
+  scene.entities.push(...entities.map((e) => cloneValue(e)));
+}
+
 export function removeEntities(project: Project, sceneId: Id, entityIds: Id[]): void {
   const scene = getScene(project, sceneId);
   const ids = new Set(entityIds);

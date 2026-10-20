@@ -368,17 +368,102 @@ function overlapShare(a: Rect, b: Rect): number {
  * What a new object placed in this level would cover, as the editor decides it: other objects sharing at least half a
  * square with it. Floors (drawn under everything) never count, nor does anything when a floor is placed.
  */
-function coveredBy(project: Project, sceneId: Id, entity: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry): { id: Id; isPlayer: boolean }[] {
+function coveredBy(index: CoverIndex, project: Project, entity: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry): { id: Id; isPlayer: boolean }[] {
   const resolved = resolveEntity(project, entity, registry);
-  const under = (c: typeof resolved.components) => Number(c.Sprite?.layer ?? 0) < 0;
-  if (under(resolved.components)) return [];
+  if (isUnder(resolved.components)) return [];
   const box = getWorldBounds(resolved);
-  return m
-    .getScene(project, sceneId)
-    .entities.map((e) => resolveEntity(project, e, registry))
-    .filter((e) => e.definitionId !== entity.definitionId || entity.definitionId === null)
-    .filter((e) => !under(e.components) && overlapShare(getWorldBounds(e), box) >= 0.5)
-    .map((e) => ({ id: e.id, isPlayer: !!e.components.CharacterController }));
+  const out: { id: Id; isPlayer: boolean }[] = [];
+  for (const id of index.near(box)) {
+    const e = index.items.get(id)!;
+    if (e.definitionId === entity.definitionId && entity.definitionId !== null) continue;
+    if (!e.under && overlapShare(e.box, box) >= 0.5) out.push({ id, isPlayer: e.isPlayer });
+  }
+  return out;
+}
+
+/** Changes that never add, remove, move or resize anything placed: what is where stays known across them. */
+const KEEPS_PLACES = new Set<string>([
+  'set_world',
+  'set_background',
+  'create_definition',
+  'create_level',
+  'make_sound',
+  'rename',
+  'set_tags',
+  'create_relationship',
+  'update_relationship',
+  'remove_relationship',
+  'create_rule',
+  'remove_rule',
+  'set_rule_enabled',
+  'set_camera',
+  'set_script',
+  'edit_script',
+  'remove_script',
+  'set_script_enabled',
+]);
+
+/** Drawn under everything (a floor): never covers anything, and is never covered. */
+const isUnder = (c: Record<string, Record<string, unknown>>) => Number(c.Sprite?.layer ?? 0) < 0;
+
+/**
+ * Where everything in one level is, by 32 px cell, to find what a new object covers without going through every
+ * object in the level each time (an answer drawing thousands of tiles would otherwise take minutes). Made once for
+ * an answer's run of placing and drawing, and kept up to date as it adds and removes things.
+ */
+class CoverIndex {
+  readonly items = new Map<Id, { box: Rect; definitionId: Id | null; under: boolean; isPlayer: boolean; cells: string[] }>();
+  private readonly cells = new Map<string, Set<Id>>();
+
+  constructor(
+    readonly sceneId: Id,
+    project: Project,
+    registry: ComponentRegistry,
+  ) {
+    for (const e of m.getScene(project, sceneId).entities) this.add(project, e, registry);
+  }
+
+  private static cellsOf(b: Rect): string[] {
+    const out: string[] = [];
+    const c0 = Math.floor(b.minX / LEVEL_CELL);
+    const c1 = Math.floor(b.maxX / LEVEL_CELL);
+    const r0 = Math.floor(b.minY / LEVEL_CELL);
+    const r1 = Math.floor(b.maxY / LEVEL_CELL);
+    // (Something huge is filed under its corners' cells' span only up to a limit; it is still found, see near.)
+    if ((c1 - c0 + 1) * (r1 - r0 + 1) > 4096) return ['*'];
+    for (let c = c0; c <= c1; c++) for (let r = r0; r <= r1; r++) out.push(`${c},${r}`);
+    return out;
+  }
+
+  add(project: Project, e: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry): void {
+    const r = resolveEntity(project, e, registry);
+    const box = getWorldBounds(r);
+    const cells = CoverIndex.cellsOf(box);
+    this.items.set(e.id, { box, definitionId: e.definitionId, under: isUnder(r.components), isPlayer: !!r.components.CharacterController, cells });
+    for (const k of cells) {
+      let set = this.cells.get(k);
+      if (!set) this.cells.set(k, (set = new Set()));
+      set.add(e.id);
+    }
+  }
+
+  remove(ids: Id[]): void {
+    for (const id of ids) {
+      const item = this.items.get(id);
+      if (!item) continue;
+      for (const k of item.cells) this.cells.get(k)?.delete(id);
+      this.items.delete(id);
+    }
+  }
+
+  /** Everything whose box shares a cell with this one (to be checked for real overlap). */
+  near(b: Rect): Set<Id> {
+    const out = new Set<Id>(this.cells.get('*') ?? []);
+    const keys = CoverIndex.cellsOf(b);
+    if (keys[0] === '*') return new Set(this.items.keys());
+    for (const k of keys) for (const id of this.cells.get(k) ?? []) out.add(id);
+    return out;
+  }
 }
 
 function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
@@ -474,6 +559,9 @@ export function applyOperations(
   const levelRefs = new Map<string, Id>();
   const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [], createdSceneIds: [] };
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
+  // What is where in a level, while placing and drawing (anything else that changes the level drops it).
+  let cover: CoverIndex | null = null;
+  const coverOf = (sceneId: Id) => (cover?.sceneId === sceneId ? cover : (cover = new CoverIndex(sceneId, project, registry)));
 
   const applyOne = (given: Operation): void => {
     // A new object or entity made earlier in this list can be named by its ref ("make a Mushroom and draw it").
@@ -484,6 +572,7 @@ export function applyOperations(
     }
     if (op.op === 'set_transform' && entityRefs.has(op.entityId)) op = { ...op, entityId: entityRefs.get(op.entityId)! };
     if ('sceneId' in op && levelRefs.has(op.sceneId)) op = { ...op, sceneId: levelRefs.get(op.sceneId)! } as Operation;
+    if (op.op !== 'place_instance' && op.op !== 'draw_tiles' && !KEEPS_PLACES.has(op.op)) cover = null;
     switch (op.op) {
       case 'set_component_field': {
         const value = parseJson(op.valueJson, `${op.component}.${op.field} value`);
@@ -574,14 +663,17 @@ export function applyOperations(
         const def = m.getDefinition(project, defId);
         const entity = instantiateDefinition(def, onGrid(def, { x: op.x, y: op.y }), op.name ?? def.name);
         // Over other objects: replaces them (as placing in the editor does), unless onTop. The player is never deleted.
+        const index = coverOf(op.sceneId);
         if (!op.onTop) {
-          const gone = coveredBy(project, op.sceneId, entity, registry).filter((c) => !c.isPlayer).map((c) => c.id);
+          const gone = coveredBy(index, project, entity, registry).filter((c) => !c.isPlayer).map((c) => c.id);
           if (gone.length) {
             m.removeEntities(project, op.sceneId, gone);
+            index.remove(gone);
             result.removedEntityIds.push(...gone);
           }
         }
         m.addEntity(project, op.sceneId, entity);
+        index.add(project, entity, registry);
         if (op.ref) entityRefs.set(op.ref, entity.id);
         result.createdEntityIds.push(entity.id);
         break;
@@ -676,6 +768,9 @@ export function applyOperations(
         // An object bigger than a cell (a 64×32 block, a 32×64 door) takes several cells: copies go side by side
         // every `step` cells, not one per cell on top of each other. Each sits on the bottom of its block of cells.
         const step = { x: Math.max(1, Math.round(size.x / LEVEL_CELL)), y: Math.max(1, Math.round(size.y / LEVEL_CELL)) };
+        const index = coverOf(op.sceneId);
+        // Added together at the end (copies of one object never replace each other, so none of them is removed meanwhile).
+        const fresh: ReturnType<typeof instantiateDefinition>[] = [];
         for (const r of op.rects) {
           const across = Math.max(1, Math.floor(r.width / step.x));
           const down = Math.max(1, Math.floor(r.height / step.y));
@@ -690,18 +785,21 @@ export function applyOperations(
               const entity = instantiateDefinition(def, pos);
               // Over other objects: replaces them, unless onTop; a cell with the player in it is left out (never drawn over).
               if (!op.onTop) {
-                const covered = coveredBy(project, op.sceneId, entity, registry);
+                const covered = coveredBy(index, project, entity, registry);
                 if (covered.some((c) => c.isPlayer)) continue;
                 if (covered.length) {
                   m.removeEntities(project, op.sceneId, covered.map((c) => c.id));
+                  index.remove(covered.map((c) => c.id));
                   result.removedEntityIds.push(...covered.map((c) => c.id));
                 }
               }
-              m.addEntity(project, op.sceneId, entity);
+              fresh.push(entity);
+              index.add(project, entity, registry);
               result.createdEntityIds.push(entity.id);
             }
           }
         }
+        m.addEntities(project, op.sceneId, fresh);
         break;
       }
       case 'build_path': {
@@ -791,6 +889,8 @@ export function applyOperations(
     try {
       applyOne(op);
     } catch (e) {
+      // (It may have stopped halfway: what is where is worked out again.)
+      cover = null;
       if (!(e instanceof m.ModelError)) throw e;
       onInvalid(i, e.message);
     }

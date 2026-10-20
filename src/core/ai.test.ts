@@ -31,6 +31,29 @@ function level() {
 const apply = (project: Project, ops: Operation[]) => produce(project, (d) => void applyOperations(d, ops, registry));
 
 describe('operations', () => {
+  it('a big level (2,160 tiles, then 300 things scattered in it) is built in moments, replacing what each covers', () => {
+    // (Once took minutes, freezing the page: every new tile went through every object in the level.)
+    let project = createProject(registry, 'Big');
+    const sceneId = project.scenes[0].id;
+    const def = (n: string) => project.definitions.find((d) => d.name === n)!;
+    project = produce(project, (d) => m.addEntity(d, sceneId, instantiateDefinition(def('Player'), { x: 16, y: -16 })));
+    const started = performance.now();
+    const dirt = apply(project, [{ op: 'draw_tiles', sceneId, definitionRef: def('Platform').id, rects: [{ col: 0, row: 0, width: 24, height: 90 }], onTop: null }]);
+    const scatter = Array.from({ length: 300 }, (_, i) => [
+      { op: 'place_instance', sceneId, definitionRef: def('Stone').id, x: 16 + 32 * ((i * 7) % 24), y: 16 + 32 * ((i * 13) % 90), name: null, ref: null, onTop: null },
+      { op: 'set_world', sceneId, gravityX: null, gravityY: 980, backgroundColor: null },
+    ]).flat() as Operation[];
+    const done = apply(dirt, scatter);
+    expect(performance.now() - started).toBeLessThan(10000);
+    const count = (p: Project, name: string) => p.scenes[0].entities.filter((e) => e.definitionId === def(name).id).length;
+    expect(count(dirt, 'Platform')).toBe(24 * 90);
+    // Each stone took the place of the dirt in its square (300 placed, some on the same square: those replace the stone there).
+    const stones = new Set(Array.from({ length: 300 }, (_, i) => `${(i * 7) % 24},${(i * 13) % 90}`));
+    expect(count(done, 'Stone')).toBe(stones.size);
+    expect(count(done, 'Platform')).toBe(24 * 90 - stones.size);
+    expect(count(done, 'Player')).toBe(1);
+  }, 60000);
+
   it('"Make the player hurt enemies" -> add Damage on the instance', () => {
     const { project, sceneId, player } = level();
     const next = apply(project, [{ op: 'add_component', target: 'instance', id: player.id, component: 'Damage', propsJson: '{"amount":2}' }]);
