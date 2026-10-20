@@ -9,7 +9,7 @@
  * keeps triggering itself cannot freeze the game. Every event is logged.
  */
 import { itemNameOf } from '../core/graph/graph';
-import { BoxGrid } from './spatialIndex';
+import { LiveGrid } from './spatialIndex';
 import { refMatches, type EventEntities } from '../core/logic/refs';
 import { relationshipRegistry } from '../core/logic/vocabulary';
 import { findSound } from '../core/script/language';
@@ -153,12 +153,15 @@ export class Gameplay {
 
   // ---------------------------------------------------------------- systems
 
+  /** What is where, by grid cell, kept from step to step (only what moved is filed again). */
+  private readonly touchGrid = new LiveGrid<RuntimeEntity>();
+
   private updateTouches(): void {
-    const alive = this.rt.entities.filter((e) => e.alive && e.collider);
     // By grid cell: only what is near each moving thing is looked at (nothing moves during this; events are queued).
-    const grid = new BoxGrid(alive, (o) => this.rt.boxOf(o));
-    for (const e of alive) {
-      if (e.body !== 'dynamic') continue;
+    const grid = this.touchGrid;
+    grid.sync(this.rt.entities, (o) => (o.alive && o.collider ? this.rt.boxOf(o) : null));
+    for (const e of this.rt.entities) {
+      if (!e.alive || !e.collider || e.body !== 'dynamic') continue;
       const box = this.rt.boxOf(e)!;
       const grown: Box = { ...box, hw: box.hw + TOUCH_SLOP, hh: box.hh + TOUCH_SLOP };
       const now = new Set<string>();

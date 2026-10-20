@@ -149,7 +149,7 @@ export function Viewport() {
   /** The camera outline under the mouse (it glows a little). */
   const hoverOutlineRef = useRef<CameraOutline | null>(null);
   /** The level drawn once (see the render loop): redrawn only when the game, the view or a drag changes it. */
-  const layerRef = useRef<{ canvas: HTMLCanvasElement; key: string; entities: ResolvedEntity[] | null; project: unknown; animated: ResolvedEntity[] } | null>(null);
+  const layerRef = useRef<{ canvas: HTMLCanvasElement; key: string; entities: ResolvedEntity[] | null; project: unknown; animated: ResolvedEntity[]; at: Vec2 } | null>(null);
   /** Pointer position in world space (for the brush ghost). */
   const pointerWorldRef = useRef<Vec2 | null>(null);
   const spaceDownRef = useRef(false);
@@ -240,14 +240,25 @@ export function Viewport() {
        * picture that finished loading. Moving the mouse (hover frames, outlines, the prompt anchor) then costs only
        * the overlays, not the whole level again: on a slow laptop on battery that is the difference between the
        * hover frame following the mouse and lagging seconds behind.
+       *
+       * The layer reaches a margin beyond the view on every side, so scrolling (a big level is mostly scrolled
+       * through) only moves it, on whole screen pixels; it is drawn again once the view goes past its edge.
        */
-      const layer = (layerRef.current ??= { canvas: document.createElement('canvas'), key: '', entities: null, project: null, animated: [] });
-      const key = `${scene.id}|${state.camera.x},${state.camera.y},${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}`;
-      if (layer.key !== key || layer.entities !== entities || layer.project !== state.project) {
-        if (layer.canvas.width !== canvas.width || layer.canvas.height !== canvas.height) {
-          layer.canvas.width = canvas.width;
-          layer.canvas.height = canvas.height;
+      const layer = (layerRef.current ??= { canvas: document.createElement('canvas'), key: '', entities: null, project: null, animated: [], at: { x: 0, y: 0 } });
+      const marginCss = Math.min(360, Math.round(Math.min(view.width, view.height) * 0.35));
+      const margin = Math.round(marginCss * dpr);
+      const key = `${scene.id}|${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}`;
+      // How far the view moved since the layer was drawn, in canvas pixels (whole ones: pixel art stays sharp).
+      const shiftX = Math.round((layer.at.x - state.camera.x) * state.camera.zoom * dpr);
+      const shiftY = Math.round((layer.at.y - state.camera.y) * state.camera.zoom * dpr);
+      if (layer.key !== key || layer.entities !== entities || layer.project !== state.project || Math.abs(shiftX) > margin || Math.abs(shiftY) > margin) {
+        if (layer.canvas.width !== canvas.width + 2 * margin || layer.canvas.height !== canvas.height + 2 * margin) {
+          layer.canvas.width = canvas.width + 2 * margin;
+          layer.canvas.height = canvas.height + 2 * margin;
         }
+        layer.at = { x: state.camera.x, y: state.camera.y };
+        // The layer's own view: the canvas's and the margin around it.
+        const lview = { width: layer.canvas.width / dpr, height: layer.canvas.height / dpr };
         const lctx = layer.canvas.getContext('2d')!;
         lctx.setTransform(1, 0, 0, 1, 0, 0);
         lctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
@@ -263,10 +274,10 @@ export function Viewport() {
         } else {
           // (A picture that fills the screen or repeats: shown inside what the camera shows at the start.)
           const screen = placed.length ? cameraFrame(scene, placed, view, playZoom(state.project, scene, view)).frame : null;
-          drawBackground(lctx, view, dpr, scene.world, state.camera, tracked, { editing: true, screen });
+          drawBackground(lctx, lview, dpr, scene.world, state.camera, tracked, { editing: true, screen });
         }
-        applyCamera(lctx, state.camera, view, dpr);
-        if (state.layout.showGrid) drawGrid(lctx, state.camera, view, state.project.settings.gridSize, wire);
+        applyCamera(lctx, state.camera, lview, dpr);
+        if (state.layout.showGrid) drawGrid(lctx, state.camera, lview, state.project.settings.gridSize, wire);
         // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter
         // still. Animated sprites play in the editor too: they are drawn every frame, on top of the layer.
         const shown = entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e));
@@ -284,7 +295,11 @@ export function Viewport() {
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(layer.canvas, 0, 0);
+      {
+        const dx = Math.round((layer.at.x - state.camera.x) * state.camera.zoom * dpr);
+        const dy = Math.round((layer.at.y - state.camera.y) * state.camera.zoom * dpr);
+        ctx.drawImage(layer.canvas, dx - margin, dy - margin);
+      }
       applyCamera(ctx, state.camera, view, dpr);
       if (layer.animated.length) drawEntities(ctx, layer.animated, images, 0.3, time / 1000);
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';

@@ -20,7 +20,7 @@ import type { InputState } from './input';
 import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
-import { byTag, PointGrid } from './spatialIndex';
+import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
 /** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
 const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
@@ -95,7 +95,7 @@ export class ScriptSystem {
 
   before(dt: number, input: InputState): void {
     // While the scripts run, nothing moves but what they move: point and tag questions use an index of the level,
-    // dropped whenever a statement moves, adds, removes or retags something.
+    // brought up to date whenever a statement may have moved, added, removed or retagged something.
     this.indexing = true;
     try {
       this.beforeAll(dt, input);
@@ -106,14 +106,28 @@ export class ScriptSystem {
   }
 
   private indexing = false;
-  private index: { things: PointGrid<RuntimeEntity>; solids: PointGrid<Box>; tags: Map<string, RuntimeEntity[]> } | null = null;
+  /** Null when it may be out of date (it is then brought up to date when next asked). */
+  private index: { things: LiveGrid<RuntimeEntity>; solids: PointGrid<Box>; tags: Map<string, RuntimeEntity[]> } | null = null;
+  // Kept from step to step: what is where (only what moved is filed again), the solids (filed again only when they
+  // change), and the things by tag (made again only when something new appears or a tag changes).
+  private readonly things = new LiveGrid<RuntimeEntity>();
+  private solidGrid: { from: readonly Box[]; grid: PointGrid<Box> } | null = null;
+  private tagMap: { from: readonly RuntimeEntity[]; tags: (readonly string[])[]; map: Map<string, RuntimeEntity[]> } | null = null;
 
   /** The level's index while the scripts' step runs (null at other times, e.g. in events during physics: then everything is looked at). */
   private levelIndex() {
     if (!this.indexing) return null;
     if (!this.index) {
-      const alive = this.rt.entities.filter((o) => o.alive);
-      this.index = { things: new PointGrid(alive, (o) => this.thingBox(o)), solids: new PointGrid(this.rt.solids, (b) => b), tags: byTag(alive) };
+      const entities = this.rt.entities;
+      this.things.sync(entities, (o) => (o.alive ? this.thingBox(o) : null));
+      const solids = this.rt.solids;
+      if (this.solidGrid?.from !== solids) this.solidGrid = { from: solids, grid: new PointGrid(solids, (b) => b) };
+      // (Things that went stay listed under their tags: the one question asking by tag skips them.)
+      const t = this.tagMap;
+      if (!t || t.from !== entities || t.tags.length !== entities.length || entities.some((o, i) => o.tags !== t.tags[i])) {
+        this.tagMap = { from: entities, tags: entities.map((o) => o.tags), map: byTag(entities) };
+      }
+      this.index = { things: this.things, solids: this.solidGrid.grid, tags: this.tagMap!.map };
     }
     return this.index;
   }

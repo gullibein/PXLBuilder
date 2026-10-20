@@ -194,15 +194,15 @@ export function shade(hex: string, amount: number): string {
 }
 
 /**
- * Sets up the entity's own coordinates (its center at 0,0, its sprite size).
+ * Sets up the entity's own coordinates (its center at 0,0, its sprite size), from the level's transform `m`.
  * An unturned thing has its edges rounded to whole screen pixels: at most
  * zoom levels a tile edge falls between pixels, and two half-covered pixels
  * side by side show as a thin seam between tiles that touch. Rounded, tiles
  * that touch share the same pixel edge at every zoom.
  */
-function placeOnScreen(ctx: CanvasRenderingContext2D, position: { x: number; y: number }, rotation: number, scale: { x: number; y: number }, size: { x: number; y: number }): void {
-  const m = ctx.getTransform();
+function placeOnScreen(ctx: CanvasRenderingContext2D, m: DOMMatrix, position: { x: number; y: number }, rotation: number, scale: { x: number; y: number }, size: { x: number; y: number }): void {
   if (rotation % 360 !== 0 || m.b !== 0 || m.c !== 0 || size.x <= 0 || size.y <= 0) {
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
     ctx.translate(position.x, position.y);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(scale.x, scale.y);
@@ -338,31 +338,47 @@ export function drawEntities(
   /** Seconds, for animated sprites (play time in the game; a running clock in the editor). */
   clock = 0,
 ): void {
-  const tiles = new Set<string>();
   // Tiles, and anything with rounded corners (an object the AI made for dirt need not be marked a tile), by cell.
   const rounds = (e: ResolvedEntity) => typeof e.components.Sprite?.roundCorners === 'number' && (e.components.Sprite.roundCorners as number) > 0;
-  for (const e of entities) if (e.tile || rounds(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
   const shown = visibleArea(ctx);
+  // How far around its middle a thing reaches (a turned one at most half its diagonal).
+  const reach = (e: ResolvedEntity, size: Vec2) => {
+    const { rotation, scale } = e.transform;
+    const w = Math.abs(size.x * scale.x);
+    const h = Math.abs(size.y * scale.y);
+    return { hx: (rotation % 360 !== 0 ? Math.hypot(w, h) : w) / 2 + 1, hy: (rotation % 360 !== 0 ? Math.hypot(w, h) : h) / 2 + 1, w, h };
+  };
+  const within = (e: ResolvedEntity, hx: number, hy: number) =>
+    !shown || !(e.transform.position.x + hx < shown.left || e.transform.position.x - hx > shown.right || e.transform.position.y + hy < shown.top || e.transform.position.y - hy > shown.bottom);
+  // Only what is on the canvas, and the tiles right around it (they decide its rounded corners and edges), is
+  // looked at further: a big level otherwise costs as much as if all of it were on screen, every frame.
+  const near = shown
+    ? entities.filter((e) => {
+        const r = reach(e, getEntitySize(e));
+        return within(e, r.hx + r.w, r.hy + r.h);
+      })
+    : entities;
+  const tiles = new Set<string>();
+  for (const e of near) if (e.tile || rounds(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
+  // (Each thing's own drawing state is undone by hand: save and restore for each of thousands of tiles cost more
+  // than drawing them. Only a clipped one, for rounded corners, saves and restores.)
+  const base = ctx.getTransform();
+  const baseAlpha = ctx.globalAlpha;
+  const baseSmoothing = ctx.imageSmoothingEnabled;
 
-  for (const entity of byLayer(entities)) {
+  for (const entity of byLayer(near)) {
     const sprite = entity.components.Sprite;
     const invisible = sprite?.visible === false;
     if (!sprite || (invisible && invisibleAlpha <= 0)) continue;
     const size = getEntitySize(entity);
     const { position, rotation, scale } = entity.transform;
-    // Off the canvas: not drawn (big levels would otherwise cost the same as if all of it were on screen).
-    if (shown) {
-      const w = Math.abs(size.x * scale.x);
-      const h = Math.abs(size.y * scale.y);
-      // A turned thing reaches at most half its diagonal from its center.
-      const hx = (rotation % 360 !== 0 ? Math.hypot(w, h) : w) / 2 + 1;
-      const hy = (rotation % 360 !== 0 ? Math.hypot(w, h) : h) / 2 + 1;
-      if (position.x + hx < shown.left || position.x - hx > shown.right || position.y + hy < shown.top || position.y - hy > shown.bottom) continue;
-    }
+    // Off the canvas: not drawn.
+    const ext = reach(entity, size);
+    if (!within(entity, ext.hx, ext.hy)) continue;
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
-    ctx.save();
-    if (entity.alpha !== undefined || invisible) ctx.globalAlpha = (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1);
-    placeOnScreen(ctx, position, rotation, scale, size);
+    ctx.globalAlpha = entity.alpha !== undefined || invisible ? baseAlpha * (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1) : baseAlpha;
+    // (Placed from the level's own transform: `base`, not whatever the thing before left.)
+    placeOnScreen(ctx, base, position, rotation, scale, size);
     ctx.fillStyle = color;
     const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
     const source = img && sprite.tint === true ? tinted(img.source, color) : img?.source;
@@ -378,6 +394,7 @@ export function drawEntities(
       } else ctx.fillRect(-size.x / 2, y, size.x, size.y);
     };
     // Rounded corners of a tile surface: from the tiles of the same kind around it.
+    let clipped = false;
     const round = rounds(entity) && rotation % 360 === 0;
     if (round) {
       const art = cell ? { w: cell.w, h: cell.h } : source ? imageSize(source) : { w: size.x, h: size.y };
@@ -397,6 +414,8 @@ export function drawEntities(
         ctx.restore();
       }
       if (corners.cut.length && r > 0) {
+        ctx.save();
+        clipped = true;
         ctx.beginPath();
         roundedRectPath(ctx, -size.x / 2, -size.y / 2, size.x, size.y, corners.cut, cuts, px, py);
         ctx.clip();
@@ -425,6 +444,9 @@ export function drawEntities(
     } else {
       ctx.fillRect(-size.x / 2, -size.y / 2, size.x, size.y);
     }
-    ctx.restore();
+    if (clipped) ctx.restore();
   }
+  ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
+  ctx.globalAlpha = baseAlpha;
+  ctx.imageSmoothingEnabled = baseSmoothing;
 }
