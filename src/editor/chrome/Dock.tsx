@@ -118,7 +118,7 @@ export function Thumb({ def, size = 34 }: { def: ObjectDefinition; size?: number
   );
 }
 
-/** What an "AI prompt…" card from the Objects or Sounds tab is about, and the item it was asked from (on screen). */
+/** What an "Ask AI…" card from the Objects or Sounds tab is about, and the item it was asked from (on screen). */
 type LibraryAsk = { kind: 'object' | 'sound'; id: string; rect: { left: number; top: number; width: number } };
 
 function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; armOnClick?: boolean; onAsk?: (ask: LibraryAsk) => void }) {
@@ -165,7 +165,7 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
             ...(onAsk
               ? [
                   {
-                    label: 'AI prompt…',
+                    label: 'Ask AI…',
                     testId: 'menu-ai-prompt',
                     run: () => onAsk({ kind: 'object', id: def.id, rect: tileRect(menuAnchor.current) }),
                   },
@@ -207,7 +207,7 @@ function tileRect(el: Element | null): LibraryAsk['rect'] {
 const ASK_WIDTH = 300;
 
 /**
- * The AI prompt card for one library object or one sound (right-click → AI prompt…): "make this yellow", "lower in
+ * The AI prompt card for one library object or one sound (right-click → Ask AI…): "make this yellow", "lower in
  * pitch". It sits just above the item it was asked from; × or Esc closes it (a request still running carries on).
  */
 function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void }) {
@@ -431,7 +431,7 @@ function SoundsPanel() {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: 'AI prompt…', testId: 'menu-ai-prompt', run: () => setAsking({ kind: 'sound', id: menuSound.id, rect: tileRect(menu.row) }) },
+            { label: 'Ask AI…', testId: 'menu-ai-prompt', run: () => setAsking({ kind: 'sound', id: menuSound.id, rect: tileRect(menu.row) }) },
             { label: 'Play', testId: 'menu-play', run: () => playSound(menuSound.synth!) },
             { label: 'Edit…', testId: 'menu-edit-sound', run: () => useEditor.getState().setSoundEditor(menuSound.id) },
             { label: 'Delete…', testId: 'menu-delete-sound', run: () => setDeleting({ id: menuSound.id, name: menuSound.name }) },

@@ -89,7 +89,7 @@ function stubModel(body) {
   const req = body.request.toLowerCase();
   const t = body.context.targets;
   if (body.context.scope === 'object' && req.includes('yellow')) {
-    // Right-click → AI prompt… on a library object: redrawn in yellow, the same pixels.
+    // Right-click → Ask AI… on a library object: redrawn in yellow, the same pixels.
     const o = body.context.object;
     const art = o.look.sprite?.pixelArt;
     if (!art) return { kind: 'apply', message: `Made the ${o.name} yellow.`, changes: [`${o.name}: yellow`], operations: [{ op: 'set_component_field', target: 'definition', id: o.id, component: 'Sprite', field: 'color', valueJson: '"#ffd400"' }] };
@@ -904,14 +904,14 @@ try {
     await page.getByTestId('sound-editor-close').click();
   }
   {
-    // Right-click a sound → AI prompt…: "lower in pitch" remakes that sound.
+    // Right-click a sound → Ask AI…: "lower in pitch" remakes that sound.
     const panelWasOpen = (await page.getByTestId('sounds-panel').count()) === 1;
     if (!panelWasOpen) await page.getByTestId('dock-sounds').click();
     await page.getByTestId('sound-Quack').click({ button: 'right' });
-    await check(async () => (await page.getByTestId('object-menu').innerText()).startsWith('AI prompt'), 'right-clicking a sound opens a menu, AI prompt… first');
+    await check(async () => (await page.getByTestId('object-menu').innerText()).startsWith('Ask AI'), 'right-clicking a sound opens a menu, Ask AI… first');
     await page.getByTestId('menu-ai-prompt').click();
     const card = page.getByTestId('library-prompt');
-    await check(async () => (await card.getAttribute('data-context')) === 'sound' && (await card.innerText()).includes('Quack') && (await card.getByTestId('prompt-input').evaluate((el) => el === document.activeElement)), 'AI prompt… opens a prompt card about that sound, ready to type in');
+    await check(async () => (await card.getAttribute('data-context')) === 'sound' && (await card.innerText()).includes('Quack') && (await card.getByTestId('prompt-input').evaluate((el) => el === document.activeElement)), 'Ask AI… opens a prompt card about that sound, ready to type in');
     const row = await page.getByTestId('sound-Quack').boundingBox();
     const cardBox = await card.boundingBox();
     await check(cardBox.y + cardBox.height <= row.y + 1, 'the card sits just above the sound');
@@ -1126,14 +1126,14 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('dock-library').click();
   {
-    // Right-click an object in the Objects tab → AI prompt…: "make this object yellow" changes that object.
+    // Right-click an object in the Objects tab → Ask AI…: "make this object yellow" changes that object.
     const tile = page.getByTestId('definition-Enemy');
     const look = async () => (await tile.locator('.thumb').screenshot()).toString('base64');
     const before = await look();
     await tile.click({ button: 'right' });
     await page.getByTestId('menu-ai-prompt').click();
     const card = page.getByTestId('library-prompt');
-    await check(async () => (await card.getAttribute('data-context')) === 'object' && (await card.innerText()).includes('Enemy') && (await page.getByTestId('library-panel').count()) === 1, 'AI prompt… on an object opens a prompt card about it (the Objects tab stays open)');
+    await check(async () => (await card.getAttribute('data-context')) === 'object' && (await card.innerText()).includes('Enemy') && (await page.getByTestId('library-panel').count()) === 1, 'Ask AI… on an object opens a prompt card about it (the Objects tab stays open)');
     const tileBox = await tile.boundingBox();
     const cardBox = await card.boundingBox();
     await check(cardBox.y + cardBox.height <= tileBox.y + 1, 'the card sits just above the object');
@@ -1151,7 +1151,7 @@ try {
     await check(async () => (await look()) === before, 'Undo brings its old look back');
   }
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'AI prompt… Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers AI prompt…, Details…, Edit sprite, Code, Sprites and Reset to default');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Ask AI…, Details…, Edit sprite, Code, Sprites and Reset to default');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
