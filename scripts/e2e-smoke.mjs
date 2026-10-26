@@ -375,6 +375,11 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('make the enemy yellow')) {
+    // Asked on the player's card: the change is to the enemy.
+    const enemy = body.context.otherEntities.find((e) => e.object === 'Enemy');
+    return { kind: 'apply', message: 'The enemy is yellow now.', changes: ['Enemy: yellow'], operations: [{ op: 'set_component_field', target: 'instance', id: enemy.id, component: 'Sprite', field: 'color', valueJson: '"#ffd400"' }] };
+  }
   if (req.includes('mushroom-enemies by jumping')) {
     const mushroom = body.context.library.find((d) => d.name === 'Mushroom');
     if (!mushroom) return { kind: 'answer', message: "There's no mushroom enemy in your library yet. Create one with + Create, place a few, then ask again.", changes: [], operations: [] };
@@ -1132,7 +1137,8 @@ try {
   {
     // Right-click an object in the Objects tab → Ask AI…: "make this object yellow" changes that object.
     const tile = page.getByTestId('definition-Enemy');
-    const look = async () => (await tile.locator('.thumb').screenshot()).toString('base64');
+    // Its thumbnail's own pixels (a screenshot would also catch the Objects tab still fading in).
+    const look = async () => tile.locator('.thumb canvas').evaluate((c) => c.toDataURL());
     const before = await look();
     await tile.click({ button: 'right' });
     await page.getByTestId('menu-ai-prompt').click();
@@ -3542,13 +3548,38 @@ try {
   await kDrop('Enemy', 200, -150);
   await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
-  await changeObject(kPrompt);
-  await check(async () => (await kPrompt.getByTestId('result-as-new').count()) === 1, 'asked on the player, the change goes to the Mushroom object (which could become a new object instead)');
-  await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asked on the player, the change is applied');
-  await check(async () => (await kPrompt.getByTestId('result-message').innerText()).startsWith("I'll add this to the Mushroom enemy"), 'the AI says it put it on the mushroom, not the player');
-  await check(async () => (await kPrompt.getByTestId('result-where').innerText()) === 'Changed: Mushroom (every copy, 2 in this level)', 'the prompt shows which object changed');
-  await check(async () => (await kCanvas.getAttribute('data-flash')) === '2', 'the two mushrooms glow on the level');
+  await kPrompt.locator('[data-testid="prompt-result"][data-status="moved"]').waitFor({ timeout: 10000 });
+  await check(
+    async () => (await kPrompt.getByTestId('result-message').innerText()) === "This changed the Mushroom, not the Player, so it was moved to the Mushroom's prompt card (in Objects).",
+    "asked on the player, a change to the Mushroom object (2 in the level): the player's card says it was moved to the Mushroom's card",
+  );
+  await check(async () => (await kCanvas.getAttribute('data-flash')) === '2', 'the change is made: the two mushrooms glow on the level');
+  await check(async () => (await kPrompt.getByTestId('chat-request').innerText()).startsWith('The player kills mushroom-enemies'), "(the player's card still shows what was asked, with that note)");
   await kp.screenshot({ path: `${OUT}/21-change-elsewhere.png` });
+  await kPrompt.getByTestId('result-go-moved').click();
+  {
+    const lib = kp.getByTestId('library-prompt');
+    await check(async () => (await lib.getAttribute('data-context')) === 'object' && (await lib.locator('.prompt-header').innerText()).includes('Mushroom') && (await kPrompt.count()) === 0, "Go to the Mushroom's card: the Objects tab opens with the Mushroom's card");
+    await check(async () => (await lib.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && (await lib.getByTestId('result-message').innerText()).startsWith("I'll add this to the Mushroom enemy") && (await lib.getByTestId('result-as-new').count()) === 1, "there: the AI's answer, applied, with its Undo and Make it a new object instead");
+    await kp.screenshot({ path: `${OUT}/21b-moved-to-object.png` });
+    await lib.getByTestId('prompt-close').click();
+    await kp.getByTestId('dock-panel-close').click();
+  }
+  // The enemy, placed once: its own card in the level.
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await kAsk('Make the enemy yellow.');
+  await kPrompt.locator('[data-testid="prompt-result"][data-status="moved"]').waitFor({ timeout: 10000 });
+  await check(async () => (await kPrompt.getByTestId('result-message').innerText()) === "This changed the Enemy, not the Player, so it was moved to the Enemy's prompt card.", "asked on the player about the enemy (placed once): moved to that Enemy's card");
+  await check(async () => !(await kPrompt.innerText()).includes('The enemy is yellow now.'), "(the player's conversation doesn't keep it)");
+  await kPrompt.getByTestId('result-go-moved').click();
+  await check(
+    async () => (await kPrompt.getByTestId('entity-header').innerText()).startsWith('Enemy') && (await kp.getByTestId('viewport-canvas').getAttribute('data-context')) === 'entity' && (await kPrompt.getByTestId('result-message').innerText()) === 'The enemy is yellow now.' && (await kPrompt.getByTestId('result-undo').count()) === 1,
+    "Go to the Enemy's card: the enemy is selected, its card open with the answer and its Undo",
+  );
+  await kp.keyboard.press('Escape');
+  await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+  await openCard(kp, kPrompt);
+  await check(async () => (await kPrompt.getByTestId('entity-header').innerText()).startsWith('Player') && !(await kPrompt.innerText()).includes('The enemy is yellow now.') && (await kPrompt.getByTestId('result-go-moved').count()) === 1, "back on the player's card: only the note that it moved (the answer is on the enemy's card)");
   await kp.keyboard.press('Escape');
 
   step = 'AI speed and Gemini';

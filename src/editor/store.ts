@@ -82,6 +82,10 @@ export interface EditorState {
   inspectorOpen: boolean;
   tray: { open: boolean; tab: TrayTab };
   dock: DockPanel;
+  /** An "Ask AI…" card to open in the Objects tab, for this library object (e.g. a prompt moved there). */
+  libraryAsk: Id | null;
+  /** Opens the Objects tab with the "Ask AI…" card of this library object (null: done). */
+  setLibraryAsk(definitionId: Id | null): void;
   tool: Tool;
   /** The object the pen draws with when picked from the tool panel (the last one used). */
   lastBrushId: Id | null;
@@ -233,6 +237,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     inspectorOpen: false,
     tray: { open: false, tab: 'history' },
     dock: null,
+    libraryAsk: null,
     tool: { kind: 'select' },
     lastBrushId: null,
     backgroundOpen: false,
@@ -433,6 +438,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setTray(tray) {
       set((s) => ({ tray: { ...s.tray, ...tray } }));
+    },
+
+    setLibraryAsk(definitionId) {
+      set(definitionId ? { libraryAsk: definitionId, dock: 'library', selectedEntityIds: [], worldContext: null, selectedConnectionId: null, promptOpen: false } : { libraryAsk: null });
     },
 
     setDock(dock) {

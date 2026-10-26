@@ -49,8 +49,9 @@ export type PromptOutcome =
    * `note`: a line worth showing on the card (e.g. that a new object was made).
    * `undone`: the user undid it from the card (it stays in the card's chat, marked).
    */
-  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string; undone?: boolean }
-  | { status: 'message'; message: string; tone: 'info' | 'warn' }
+  | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string; undone?: boolean; movedTo?: AIContext }
+  /** `movedTo`: the exchange was about something else, and went to that one's card (this says so, with a way there). */
+  | { status: 'message'; message: string; tone: 'info' | 'warn'; movedTo?: AIContext }
   | { status: 'error'; message: string };
 
 let override: AIProvider | null = null;
@@ -224,6 +225,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };
   }
+  // Asked on one thing's card about another ("make the enemy faster" on the player's): the exchange goes to that one's card.
+  const elsewhere = aboutSomethingElse(useEditor.getState().project, ctx, response.operations);
+  const moved = (out: PromptOutcome): PromptOutcome => (out.status === 'applied' && elsewhere ? { ...out, movedTo: elsewhere } : out);
   if (!response.operations.some(isEditorOperation)) {
     const now = useEditor.getState();
     const choice = objectChoiceFor(now.project, response.operations, 'entityIds' in ctx ? ctx.entityIds : []);
@@ -231,10 +235,52 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       // A change to what an object is goes to the object (every copy); the card offers "a new object instead".
       const change: ObjectChange = { message: response.message, changes: response.changes, operations: response.operations, choice };
       const out = applyObjectChoice(request, change, 'object');
-      return out.status === 'applied' ? { ...out, asNew: change } : out;
+      return moved(out.status === 'applied' ? { ...out, asNew: change } : out);
     }
   }
-  return applyAIOperations(request, response.message, response.changes, response.operations);
+  return moved(applyAIOperations(request, response.message, response.changes, response.operations));
+}
+
+/** Operations that go with a change to one thing without being about anything else (a sound for it to play). */
+const ALONG = new Set(['make_sound']);
+
+/**
+ * The card an answer belongs on, when it was asked on one thing's card (a placed object, or a library object) and
+ * changes only one other thing: that thing's own card. A placed thing's card, or for a change to a library object
+ * (every copy) its one copy in the level, or with several copies the object's card in Objects. Null when it changes
+ * the thing it was asked about (or its object), several things, or the level (placing, drawing, connecting…).
+ */
+export function aboutSomethingElse(project: Project, ctx: AIContext, operations: Operation[]): AIContext | null {
+  if (ctx.kind !== 'entity' && ctx.kind !== 'object') return null;
+  const scene = project.scenes.find((s) => s.id === ctx.sceneId);
+  if (!scene) return null;
+  const selfEntity = ctx.kind === 'entity' ? ctx.entityIds[0] : null;
+  const selfObject = ctx.kind === 'object' ? ctx.definitionId : (scene.entities.find((e) => e.id === selfEntity)?.definitionId ?? null);
+  const entities = new Set<Id>();
+  const objects = new Set<Id>();
+  for (const op of operations) {
+    if (ALONG.has(op.op)) continue;
+    if (op.op === 'set_transform') entities.add(op.entityId);
+    else if ('target' in op && 'id' in op && typeof op.id === 'string') (op.target === 'definition' ? objects : entities).add(op.id);
+    else return null;
+  }
+  // A placed thing changed together with its own object counts as one thing.
+  for (const id of entities) {
+    const def = scene.entities.find((e) => e.id === id)?.definitionId;
+    if (def) objects.delete(def);
+  }
+  if (entities.size + objects.size !== 1) return null;
+  if (entities.size) {
+    const id = [...entities][0];
+    const entity = scene.entities.find((e) => e.id === id);
+    // (On a library object's card, one of its own copies is still about it.)
+    if (id === selfEntity || !entity || (ctx.kind === 'object' && entity.definitionId === selfObject)) return null;
+    return { kind: 'entity', sceneId: scene.id, entityIds: [id] };
+  }
+  const def = [...objects][0];
+  if (def === selfObject || !project.definitions.some((d) => d.id === def)) return null;
+  const copies = scene.entities.filter((e) => e.definitionId === def);
+  return copies.length === 1 ? { kind: 'entity', sceneId: scene.id, entityIds: [copies[0].id] } : { kind: 'object', sceneId: scene.id, definitionId: def };
 }
 
 /** An object or entity an AI change was made to (shown so the user sees where it went). */

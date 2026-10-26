@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
 import { runPrompt, type PromptOptions, type PromptOutcome } from './runPrompt';
-import { logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
+import { contextName, logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
 import { useEditor } from '../store';
@@ -59,9 +59,22 @@ export function startJob(ctx: AIContext, request: string, options: PromptOptions
     if (controllers.get(key) !== controller) return;
     controllers.delete(key);
     if (outcome.status === 'applied') trace.add('note', `Applied: ${outcome.changes.length} change line(s)${outcome.note ? `; ${outcome.note}` : ''}`);
-    const logId = logExchange(ctx, key, request, outcome, trace.steps);
     // What it built is shown (also when its card was closed meanwhile): a level is framed, something off screen too.
     if (outcome.status === 'applied' && ctx.sceneId === useEditor.getState().activeSceneId) revealCreated(outcome.result.createdEntityIds);
+    // About something else (asked on the player's card, it changed the enemy): the exchange goes to that one's
+    // card, as if asked there (its conversation, its Undo); this card says where it went. (Not while that card has a
+    // prompt of its own running.)
+    const to = outcome.status === 'applied' ? outcome.movedTo : undefined;
+    const toKey = to ? contextKey(to) : null;
+    if (to && toKey && useJobs.getState().jobs[toKey]?.phase !== 'working') {
+      trace.add('note', `About ${contextName(to)}, not ${contextName(ctx)}: moved to ${contextName(to)}'s prompt card`);
+      const logId = logExchange(to, toKey, request, outcome, trace.steps);
+      put(toKey, { key: toKey, ctx: to, request, phase: 'done', outcome, seen: true, logId });
+      const message = `This changed the ${contextName(to)}, not the ${contextName(ctx)}, so it was moved to the ${contextName(to)}'s prompt card${to.kind === 'object' ? ' (in Objects)' : ''}.`;
+      put(key, { key, ctx, request, phase: 'done', outcome: { status: 'message', tone: 'info', message, movedTo: to }, seen: true });
+      return;
+    }
+    const logId = logExchange(ctx, key, request, outcome, trace.steps);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };

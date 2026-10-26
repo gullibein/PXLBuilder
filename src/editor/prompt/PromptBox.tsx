@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } from '../ai/jobs';
-import { chatEntries, useAILog, type AILogEntry } from '../ai/aiLog';
+import { chatEntries, contextName, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { useEditor } from '../store';
 import { playSound } from '../audio/synth';
@@ -363,6 +363,17 @@ function PastOutcome({ entry: outcome }: { entry: AILogEntry }) {
   );
 }
 
+/** Opens the prompt card of a placed thing (selected, its card open) or of a library object (in Objects). */
+function openCardOf(ctx: AIContext): void {
+  const state = useEditor.getState();
+  if (ctx.kind === 'entity') {
+    if (state.activeSceneId !== ctx.sceneId) state.setActiveScene(ctx.sceneId);
+    state.selectEntities(ctx.entityIds);
+    state.setPromptOpen(true);
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
+  } else if (ctx.kind === 'object') state.setLibraryAsk(ctx.definitionId);
+}
+
 /** Changes listed on the card; the rest are a click away (the result dialog). */
 const MAX_CHANGES = 5;
 
@@ -452,6 +463,19 @@ function Outcome(props: {
         </div>
       );
     case 'message':
+      if (outcome.movedTo) {
+        const to = outcome.movedTo;
+        return (
+          <div className="prompt-result note info moved" data-testid="prompt-result" data-status="moved">
+            <p className="result-message" data-testid="result-message">
+              {outcome.message}
+            </p>
+            <button className="text-btn" data-testid="result-go-moved" onClick={() => openCardOf(to)}>
+              Go to the {contextName(to)}'s card →
+            </button>
+          </div>
+        );
+      }
       return (
         <div className={`prompt-result note ${outcome.tone}`} data-testid="prompt-result" data-status="message">
           <p className="result-message">{outcome.message}</p>

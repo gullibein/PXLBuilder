@@ -135,6 +135,7 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
       draggable
       aria-pressed={armed}
       data-testid={`definition-${def.name}`}
+      data-definition={def.id}
       title={`${def.description || def.name}\nClick to draw it onto the level, or drag it in. Right-click for more.`}
       onClick={() => {
         if (!armOnClick) return;
@@ -358,6 +359,19 @@ function ObjectsPanel() {
   const present = CATEGORIES.filter((c) => definitions.some((d) => categoryOf(d) === c));
   const shown = category === 'All' ? definitions : definitions.filter((d) => categoryOf(d) === category);
   const [asking, setAsking] = useState<LibraryAsk | null>(null);
+  // Asked to open an object's card (a prompt was moved there): next to its tile, once the tiles are on screen.
+  const libraryAsk = useEditor((s) => s.libraryAsk);
+  useEffect(() => {
+    if (!libraryAsk) return;
+    if (category !== 'All' && !shown.some((d) => d.id === libraryAsk)) setCategory('All');
+    const frame = requestAnimationFrame(() => {
+      const tile = document.querySelector(`[data-definition="${CSS.escape(libraryAsk)}"]`);
+      tile?.scrollIntoView({ block: 'nearest' });
+      setAsking({ kind: 'object', id: libraryAsk, rect: tileRect(tile) });
+      useEditor.getState().setLibraryAsk(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [libraryAsk, category]);
   return (
     <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" aria-label="Objects">
       <PanelClose />
