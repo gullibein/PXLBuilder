@@ -459,6 +459,27 @@ describe('friction', () => {
     expect(block.x).toBeGreaterThan(350);
   });
 
+  it('the floor counts too: on an icy floor it slides much further, on a rough one it stops sooner', () => {
+    const far = (floor: number) => {
+      const rt = room((d, _s, place) => {
+        const block = { ...d.definitions.find((x) => x.name === 'Stone')!, id: 'def_block', name: 'Block', tags: ['block'] };
+        block.components = { ...block.components, Collider: { ...registry.createDefault('Collider'), size: { x: 30, y: 30 }, matchSprite: false }, PhysicsBody: { ...registry.createDefault('PhysicsBody'), bodyType: 'dynamic', friction: 0.2, velocity: { x: 200, y: 0 } } };
+        d.definitions.push(JSON.parse(JSON.stringify(block)));
+        const stone = d.definitions.find((x) => x.name === 'Stone')!;
+        stone.components.PhysicsBody = { ...(stone.components.PhysicsBody ?? registry.createDefault('PhysicsBody')), friction: floor };
+        for (let x = -64; x <= 1600; x += 32) place('Stone', { x, y: 112 });
+        place('Block', { x: 0, y: 81 });
+      }, 980);
+      run(rt, new InputState(), 3);
+      return rt.find('Block')!.x;
+    };
+    // 200² / (2 × 0.2 × 1000 × floor ÷ 0.2): normal 100 px, ice (0.05) 400 px, rough (0.8) 25 px.
+    expect(far(0.2)).toBeGreaterThan(90);
+    expect(far(0.2)).toBeLessThan(110);
+    expect(far(0.05)).toBeGreaterThan(360);
+    expect(far(0.8)).toBeLessThan(35);
+  });
+
   it('higher friction stops it sooner', () => {
     const far = (f: number) => {
       const rt = slider(f, 980);

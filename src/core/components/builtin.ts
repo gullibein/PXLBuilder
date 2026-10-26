@@ -78,7 +78,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       mass: { kind: 'number', default: 1, min: 0.01, step: 0.1, description: 'How heavy it is (1 = the player). A hit knocks it back less (knockback ÷ mass), a script push moves it less, and pushing a Pushable heavier than yourself is slower (your mass ÷ its mass of full speed); one 10 times heavier than its pusher does not move. Gravity and friction are the same for all masses' },
       velocity: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Initial velocity in pixels/second' },
       gravityScale: { kind: 'number', default: 1, step: 0.1, description: 'Multiplier on world gravity' },
-      friction: { kind: 'number', default: 0.2, min: 0, max: 1, step: 0.05, description: 'How fast it slows down while sliding on the ground (seen from above: on the floor, every way), once nothing keeps it moving: 0 = like ice, never slows; 0.2 = a crate shoved at running speed slides about 3 tiles; 1 = stops almost at once. Not in the air. Things that set their own speed (the player, patrols, wanderers, chasers) are not slowed' },
+      friction: { kind: 'number', default: 0.2, min: 0, max: 1, step: 0.05, description: 'Grip on the ground, its own and (for something solid) what it gives things standing on it; 0.2 is normal. Something sliding (a shoved crate) slows down by its friction times the floor\'s: 0 = like ice, never slows; 0.2 = a crate shoved at running speed slides about 3 tiles on normal ground; 1 = stops almost at once. A character (Character Controller) speeds up, stops and turns on the ground by its acceleration times its grip there: its friction times the floor\'s, each compared to 0.2 (both 0.2: as fast as its acceleration says; an icy floor at 0.05: about 4 times slower, sliding; at most 4 times faster). Not in the air. Things that set their own speed (patrols, wanderers, chasers) are not slowed' },
     },
   },
   {
@@ -90,7 +90,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {
       movement: { kind: 'enum', options: ['platformer', 'topdown'], default: 'platformer', description: 'platformer: run and jump, with gravity. topdown: walk in all directions (diagonals too), seen from above, no gravity or jumping' },
       speed: { kind: 'number', default: 200, min: 0, step: 10, description: 'Max horizontal speed (px/s)' },
-      acceleration: { kind: 'number', default: 1500, min: 0, step: 50, description: 'Horizontal acceleration (px/s²)' },
+      acceleration: { kind: 'number', default: 1500, min: 0, step: 50, description: 'How fast it speeds up, stops and turns (px/s²): from running one way to running the other takes about 2 × speed ÷ acceleration seconds (speed 200, acceleration 1500: about 0.27 s). On the ground times its grip there (PhysicsBody friction, its own and the floor\'s: normal at 0.2); in the air times Air control' },
       jumpForce: { kind: 'number', default: 350, min: 0, step: 5, description: 'Initial jump speed (px/s). Jump height ≈ jumpForce² / (2 × gravity): 350 at gravity 980 is about 1.9 tiles, enough to reach the next row up easily (not two rows)' },
       airControl: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.05, description: 'Fraction of control while airborne' },
     },

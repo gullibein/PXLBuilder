@@ -10,6 +10,8 @@ export interface Box {
   y: number;
   hw: number; // half width
   hh: number; // half height
+  /** A surface's PhysicsBody.friction (how much grip things standing on it get); missing = the default. */
+  friction?: number;
 }
 
 const EPS = 1e-6;
@@ -80,6 +82,18 @@ export function moveAndCollide(box: Box, dx: number, dy: number, solids: readonl
 }
 
 /** True when a solid is directly under the box (within `gap` px), e.g. standing still on a platform. */
+/** What a box stands on: of the surfaces right under it, the one under its middle (else the first). */
+export function groundUnder(box: Box, solids: readonly Box[], gap = 0.5): Box | null {
+  const probe = { ...box, y: box.y + gap };
+  let first: Box | null = null;
+  for (const s of solids) {
+    if (!overlaps(probe, s)) continue;
+    if (Math.abs(box.x - s.x) <= s.hw) return s;
+    first ??= s;
+  }
+  return first;
+}
+
 export function standingOn(box: Box, solids: readonly Box[], gap = 0.5): boolean {
   const probe = { ...box, y: box.y + gap };
   return solids.some((s) => overlaps(probe, s));

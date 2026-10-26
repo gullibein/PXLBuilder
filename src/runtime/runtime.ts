@@ -20,7 +20,7 @@ import { CameraController } from './camera';
 import { Gameplay, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import type { InputState } from './input';
-import { moveAndCollide, overlaps, standingOn, type Box } from './physics';
+import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
@@ -62,6 +62,8 @@ export interface RuntimeEntity {
   /** Ladders, vines…: things a character can climb. */
   climbable: boolean;
   grounded: boolean;
+  /** The friction of what it stands on (as of the last step it was on the ground). */
+  groundFriction: number;
   climbing: boolean;
   /**
    * Characters without a controller (enemies): which way it climbs a ladder (-1 up, 1 down, 0 holds still or
@@ -142,6 +144,17 @@ const MIN_MASS = 0.01;
 export const TOO_HEAVY = 10;
 /** Friction 1 takes this much speed away per second (px/s²); 0.2 takes a fifth of it. */
 const FRICTION_DECEL = 1000;
+/** PhysicsBody.friction when none is set: on such ground, grip is exactly as without friction at all. */
+const DEFAULT_FRICTION = 0.2;
+/**
+ * How much grip a character has on the ground, from its own friction and the surface's, each relative to the
+ * default (both at the default: 1, as it always was). Its acceleration on the ground (speeding up, stopping,
+ * turning) is scaled by this: an icy floor (0.05) or icy shoes make it slow to start and stop; a sticky floor
+ * makes it snappier. Never quite nothing (it can still get going on ice) and at most 4 times.
+ */
+export function groundGrip(own: number, surface: number): number {
+  return Math.min(4, Math.max(0.15, (own / DEFAULT_FRICTION) * (surface / DEFAULT_FRICTION)));
+}
 const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
 /** How much of a character must be inside a ladder (horizontally) to climb it. */
@@ -350,6 +363,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     controller: cc ? { movement: cc.movement === 'topdown' ? 'topdown' : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
     grounded: false,
+    groundFriction: DEFAULT_FRICTION,
     climbing: false,
     climbDir: 0,
     climbSpeed: 80,
@@ -547,7 +561,7 @@ export class Runtime {
     }
     if (this.solidsDirty) {
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
-      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none')).map((e) => boxOf(e)!);
+      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none')).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
       this.rebuildLadders();
       this.solidsDirty = false;
     }
@@ -561,7 +575,7 @@ export class Runtime {
       if (e.body === 'kinematic' && e.alive) {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (this.isSolid(e)) kinematicSolids.push(boxOf(e)!);
+        if (this.isSolid(e)) kinematicSolids.push({ ...boxOf(e)!, friction: e.friction });
       }
     }
     const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
@@ -602,7 +616,7 @@ export class Runtime {
         const ease = pushables.length && !e.pushable ? this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids, pushables) : { x: 1, y: 1 };
         // Ladder tops hold you up unless you are climbing (or already below them).
         const prevBottom = box.y + box.hh;
-        const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => boxOf(p)!) : [];
+        const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => ({ ...boxOf(p)!, friction: p.friction })) : [];
         const base = others.length ? [...solids, ...others] : solids;
         const surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
         const goingDown = e.vy > 0;
@@ -613,6 +627,8 @@ export class Runtime {
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
+        // What it stands on decides its grip (only looked for when something uses it: characters, things sliding).
+        if (e.grounded && (e.controller || (e.vx !== 0 && e.friction > 0))) e.groundFriction = groundUnder(boxOf(e)!, surfaces)?.friction ?? DEFAULT_FRICTION;
         // Climbing down onto the floor (or standing on it) ends the climb.
         // (An enemy lining up with a ladder on the floor hasn't started down or up yet.)
         if (e.climbing && e.grounded && e.vy >= 0 && (e.controller || goingDown || e.climbDir === 0)) {
@@ -689,7 +705,9 @@ export class Runtime {
    */
   private applyFriction(e: RuntimeEntity, dt: number): void {
     if (e.friction <= 0 || e.controller || e.projectile || e.knock || e.climbing) return;
-    const loss = e.friction * FRICTION_DECEL * dt;
+    // On the ground, the surface counts too: on ice (friction near 0) a shoved crate keeps sliding.
+    const surface = this.gravity.x === 0 && this.gravity.y === 0 ? 1 : e.groundFriction / DEFAULT_FRICTION;
+    const loss = e.friction * surface * FRICTION_DECEL * dt;
     if (this.gravity.x === 0 && this.gravity.y === 0) {
       const v = Math.hypot(e.vx, e.vy);
       if (v === 0) return;
@@ -756,7 +774,8 @@ export class Runtime {
     if (e.hanging && this.hang(e, input, dir)) return;
 
     const target = dir * c.speed * e.speedFactor;
-    const rate = c.acceleration * (e.grounded ? 1 : c.airControl);
+    // On the ground, as much as its grip there allows (its own friction and the floor's); in the air, its air control.
+    const rate = c.acceleration * (e.grounded ? groundGrip(e.friction, e.groundFriction) : c.airControl);
     const diff = target - e.vx;
     e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
 

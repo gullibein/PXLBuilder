@@ -471,3 +471,60 @@ describe('runtime', () => {
     expect(start.x).toBeCloseTo((Math.min(...xs) + Math.max(...xs)) / 2, -1);
   });
 });
+
+describe('grip on the ground (friction of the player and of the floor)', () => {
+  /** Seconds from running right at full speed to running left at full speed. */
+  const turnaround = (floorFriction: number | null, playerFriction: number | null) => {
+    const { project, sceneId } = level((d) => {
+      const set = (name: string, friction: number | null) => {
+        if (friction === null) return;
+        const def = d.definitions.find((x) => x.name === name)!;
+        // (A floor without a body gets a static one: the default body falls.)
+        def.components.PhysicsBody = { ...(def.components.PhysicsBody ?? { ...registry.createDefault('PhysicsBody'), bodyType: 'static' }), friction };
+      };
+      set('Platform', floorFriction);
+      set('Player', playerFriction);
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const player = rt.find('Player')!;
+    const input = new InputState();
+    run(rt, input, 1);
+    // Start at the far left, so it never runs off the ground.
+    player.x = -100;
+    input.press('right');
+    // (Long enough to reach full speed even on ice; short enough to stay on the ground.)
+    run(rt, input, 0.6);
+    const speed = player.controller!.speed;
+    expect(player.grounded).toBe(true);
+    input.release('right');
+    input.press('left');
+    let t = 0;
+    const from = player.vx;
+    while (player.vx > -speed + 0.001 && t < 5) {
+      rt.update(1 / 60, input);
+      t += 1 / 60;
+    }
+    expect(player.grounded).toBe(true);
+    return { t, expected: (from + speed) / player.controller!.acceleration };
+  };
+
+  it('both at the default (0.2): exactly as fast as its acceleration says, as always', () => {
+    const { t, expected } = turnaround(null, null);
+    // 2 × speed ÷ acceleration (within a frame or two).
+    expect(t).toBeGreaterThan(expected - 0.01);
+    expect(t).toBeLessThan(expected + 0.04);
+    expect(turnaround(0.2, 0.2).t).toBeCloseTo(t, 5);
+  });
+
+  it('an icy floor makes it slow to turn; more grip (its own friction or the floor\'s) makes it snappier', () => {
+    const normal = turnaround(null, null).t;
+    // An icy floor (0.05): a quarter of the grip, about 4 times as long.
+    expect(turnaround(0.05, null).t).toBeGreaterThan(normal * 3.5);
+    // Three times the friction (0.6), the floor's or its own: about 3 times as quick.
+    expect(turnaround(0.6, null).t).toBeLessThan(normal / 2.5);
+    expect(turnaround(null, 0.6).t).toBeLessThan(normal / 2.5);
+    // At most 4 times as quick.
+    expect(turnaround(1, 1).t).toBeGreaterThan(normal / 4 - 0.02);
+  });
+});
+
