@@ -56,6 +56,21 @@ describe('edit_script: changing part of a script', () => {
     expect(s.handlers[2].when).toMatchObject({ on: 'every', seconds: 1 });
   });
 
+  it('adding at the end of a list: at its length (whatever "was" says: nothing is there), or by naming the list itself', () => {
+    // Both ways an AI added a jump sound to the end of a jump script, refused before this.
+    const g = game();
+    const sound = { do: 'set', var: 'n', value: '7' };
+    const atLength = produce(g.project, (d) => void applyOperations(d, [edit(g, [{ at: 'handlers.1.do.2', action: 'insert', value: sound, was: 'end' }])], registry));
+    expect(scriptOf(atLength, g).handlers[1].do).toMatchObject([{ value: 'n + 1' }, { value: 'n * 2' }, { value: '7' }]);
+    const theList = produce(g.project, (d) => void applyOperations(d, [edit(g, [{ at: 'handlers.1.do', action: 'insert', value: sound }])], registry));
+    expect(scriptOf(theList, g).handlers[1].do).toMatchObject([{ value: 'n + 1' }, { value: 'n * 2' }, { value: '7' }]);
+    // A handler added to the end of the handlers the same way; a whole new list still replaces it.
+    const handler = produce(g.project, (d) => void applyOperations(d, [edit(g, [{ at: 'handlers', action: 'insert', value: { when: { on: 'every', seconds: 2 }, do: [sound] } }])], registry));
+    expect(scriptOf(handler, g).handlers).toHaveLength(3);
+    const list = produce(g.project, (d) => void applyOperations(d, [edit(g, [{ at: 'handlers.1.do', action: 'replace', value: [sound] }])], registry));
+    expect(scriptOf(list, g).handlers[1].do).toMatchObject([{ value: '7' }]);
+  });
+
   it('a wrong position or an unexpected "was" is refused with what is really there (nothing changes)', () => {
     const g = game();
     expect(checkOperations(g.project, [edit(g, [{ at: 'handlers.1.do.0', action: 'remove', was: 'play_sound' }])], registry)).toMatch(/not what was expected \("play_sound"\); it is \{"do":"set"/);

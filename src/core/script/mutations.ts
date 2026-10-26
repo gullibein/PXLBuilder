@@ -82,14 +82,21 @@ export function editScript(project: Project, owner: ScriptOwner, scriptId: Id, e
       parent = (parent as Record<string | number, unknown> | null)?.[key];
       if (parent === undefined || parent === null || typeof parent !== 'object') throw new ModelError(`edit_script ${where}: there is nothing at "${edit.at}" in the script`);
     }
-    const last = path[path.length - 1];
+    let last = path[path.length - 1];
+    // Inserting into a list named by itself ("handlers.0.do"): adds a statement (or handler…) at its end.
+    if (edit.action === 'insert' && !Array.isArray(parent) && Array.isArray((parent as Record<string, unknown>)[last as string]) && !Array.isArray(edit.value)) {
+      parent = (parent as Record<string, unknown>)[last as string];
+      last = (parent as unknown[]).length;
+    }
     const isList = Array.isArray(parent);
     if (isList && typeof last !== 'number') throw new ModelError(`edit_script ${where}: "${last}" is not a position in a list`);
     if (!isList && typeof last === 'number') throw new ModelError(`edit_script ${where}: ${last} is a position, but this is not a list`);
     const list = parent as unknown[];
     const obj = parent as Record<string, unknown>;
     const now = isList ? list[last as number] : obj[last as string];
-    if (edit.was !== undefined && edit.was !== null && !JSON.stringify(now ?? null).includes(String(edit.was))) {
+    // (Adding at a list's end: nothing is there to compare with, whatever "was" says.)
+    const atEnd = edit.action === 'insert' && isList && last === list.length;
+    if (!atEnd && edit.was !== undefined && edit.was !== null && !JSON.stringify(now ?? null).includes(String(edit.was))) {
       throw new ModelError(`edit_script ${where}: what is there now is not what was expected ("${edit.was}"); it is ${JSON.stringify(now ?? null).slice(0, 200)}`);
     }
     if (edit.action === 'replace') {

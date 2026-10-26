@@ -191,7 +191,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         {
           ...body,
           history: [...body.history, { request, reply: first }],
-          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it).${mapText(stuck?.map ?? null)}]`,
+          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
         },
         signal,
         trace,
