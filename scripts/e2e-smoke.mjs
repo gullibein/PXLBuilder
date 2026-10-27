@@ -605,23 +605,29 @@ try {
   await page.getByTestId('definition-Platform').click();
   await check(async () => (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true' && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks up the pen with it and gives the canvas back');
   {
-    // Picked from the Objects menu: its details open, docked at the right edge of the screen, narrow.
+    // Picked from the Objects menu: a small card at the top right (not the full details): its picture and name, then
+    // Edit sprite, Autotile… below it, Details… below that.
     const stage = await canvas.boundingBox();
+    const card = page.getByTestId('object-card');
+    await check(async () => {
+      const b = await card.boundingBox();
+      return (await page.getByTestId('inspector').count()) === 0 && (await page.getByTestId('object-card-name').innerText()) === 'Platform' && b.x + b.width > stage.x + stage.width - 30 && b.y < stage.y + 30 && b.width < 200;
+    }, 'picking an object shows a small card at the top right (picture and name), not the full details');
+    const ys = await Promise.all(['object-card-edit-sprite', 'object-card-autotile', 'object-card-details'].map(async (id) => (await page.getByTestId(id).boundingBox()).y));
+    await check(ys[0] < ys[1] && ys[1] < ys[2] && (await card.locator('.thumb').count()) === 1, 'on it: Edit sprite, Autotile… under it, Details… under that');
+    await page.screenshot({ path: `${OUT}/0b-objects-details.png` });
+    await page.getByTestId('object-card-details').click();
     await check(async () => {
       const d = await page.getByTestId('inspector').boundingBox();
-      return (await page.getByTestId('definition-name').inputValue()) === 'Platform' && Math.abs(d.x + d.width - (stage.x + stage.width)) <= 1 && d.width <= 290 && d.height > stage.height * 0.9;
-    }, "the Platform's details open docked at the right edge of the screen, narrow and full height");
+      return (await page.getByTestId('definition-name').inputValue()) === 'Platform' && Math.abs(d.x + d.width - (stage.x + stage.width)) <= 1 && d.width <= 290 && (await card.count()) === 0;
+    }, "Details… opens the full details (docked at the right edge, narrow) in its place");
     const look = await page.getByTestId('inspector-look').boundingBox();
     const edit = await page.getByTestId('inspector-edit-sprite').boundingBox();
-    await check(async () => (await page.getByTestId('inspector-look').locator('.thumb').count()) === 1 && Math.abs(edit.y + edit.height / 2 - (look.y + look.height / 2)) < 6 && look.y < (await page.getByTestId('definition-name').boundingBox()).y, 'at the top of the details: its picture, with Edit sprite beside it');
-    await check(async () => {
-      const d = await page.getByTestId('inspector').boundingBox();
-      const chips = await page.locator('.tray-chips').boundingBox();
-      return chips.x + chips.width <= d.x + 1;
-    }, '(the AI History / Console / Debug buttons move left of the details)');
-    await page.screenshot({ path: `${OUT}/0b-objects-details.png` });
+    await check(async () => (await page.getByTestId('inspector-look').locator('.thumb').count()) === 1 && Math.abs(edit.y + edit.height / 2 - (look.y + look.height / 2)) < 6, '(the details too start with its picture and Edit sprite)');
     await page.getByTestId('close-details').click();
-    await check(async () => (await page.getByTestId('inspector').count()) === 0 && (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true', '(closed again: still drawing with it)');
+    await check(async () => (await card.count()) === 1, '(closing the details brings the small card back)');
+    await page.getByTestId('object-card-close').click();
+    await check(async () => (await card.count()) === 0 && (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true', '× closes the card (still drawing with it)');
   }
   await check(async () => (await page.locator('.brush-chip').count()) === 0, 'no instructions panel while drawing');
   await check(async () => (await prompts.count()) === 0, 'drawing clears the selection, so no prompt is in the way');
@@ -698,6 +704,10 @@ try {
   const tile = toScreen(-112, 48);
   await page.mouse.click(tile.x, tile.y);
   await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0, 'clicking a drawn tile selects just that tile (no prompt card: a single click only selects)');
+  await check(async () => (await page.getByTestId('object-card').getAttribute('data-about')) === 'entity' && (await page.getByTestId('object-card-name').innerText()).startsWith('Platform'), 'selecting an object in the level shows its small card too');
+  await page.getByTestId('object-card-details').click();
+  await check(async () => (await page.getByTestId('entity-inspector').count()) === 1 && (await canvas.getAttribute('data-context')) === 'entity', "Details… there opens that placed object's own details (it stays selected)");
+  await page.getByTestId('close-details').click();
   await page.mouse.dblclick(tile.x, tile.y);
   await check(async () => (await prompts.count()) === 1 && (await prompts.isVisible()), `double-clicking it opens its AI prompt card (${await prompts.count()} card, visible ${await prompts.isVisible().catch(() => '?')}, context ${await canvas.getAttribute('data-context')}, events ${(await diagnostics()).split('\n').slice(-6).join(' / ')})`);
   await page.mouse.click(emptySpot.x, emptySpot.y);
@@ -4101,16 +4111,16 @@ try {
     const after = await sample();
     await check(after !== before, `the platforms in the level are drawn with their autotile pictures (${before} → ${after})`);
     await ap.screenshot({ path: `${OUT}/31c-autotile-level.png` });
-    // Off again (Details → Autotile…): drawn as before.
+    // Off again (the object's small card → Autotile…): drawn as before.
     await ap.getByTestId('dock-library').click();
     await ap.getByTestId('definition-Platform').click();
-    await ap.getByTestId('inspector-autotile').click();
+    await ap.getByTestId('object-card-autotile').click();
     await ap.getByTestId('autotile-editor').getByTestId('autotile-on').uncheck();
     await ap.getByTestId('autotile-editor').getByTestId('autotile-close').click();
     await ap.keyboard.press('Escape');
     await ap.keyboard.press('Escape');
     await ap.waitForTimeout(300);
-    await check(async () => (await sample()) === before, 'switched off (Details → Autotile…), they look as before');
+    await check(async () => (await sample()) === before, 'switched off (the card → Autotile…), they look as before');
     await ac.close();
   }
 

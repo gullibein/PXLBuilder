@@ -1,4 +1,5 @@
 import { AutotileEditor } from './chrome/AutotileEditor';
+import { ObjectCard } from './chrome/ObjectCard';
 import { GameSite } from './gamesite/GameSite';
 import { OpenDialog } from './chrome/OpenDialog';
 import { quickSave } from './persistence';
@@ -93,6 +94,7 @@ export function App() {
         <Viewport />
         <ContextPrompt />
         <ToolPanel />
+        <ObjectCard />
         <BackgroundPanel />
         <CameraPanel />
         <LogicPanel />

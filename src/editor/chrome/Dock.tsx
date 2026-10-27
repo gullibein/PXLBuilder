@@ -141,15 +141,11 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
         if (!armOnClick) return;
         if (armed) setTool({ kind: 'select' });
         else {
-          // From the Objects menu: its details open, docked at the right of the screen. (The Create card's tiles only pick.)
-          const fromMenu = useEditor.getState().dock === 'library';
           // Already drawing (the Draw tool): go on drawing with this. Else: place it once, then back to selecting.
           setTool({ kind: 'brush', definitionId: def.id, once: tool.kind !== 'brush' || tool.once === true });
           setDock(null);
-          if (fromMenu) {
-            selectDefinition(def.id);
-            setInspectorOpen(true);
-          }
+          // Its small card (picture, Edit sprite, Autotile, Details…) shows at the top right.
+          useEditor.getState().setPickedDefinition(def.id);
         }
       }}
       onDragStart={(e) => {
@@ -402,7 +398,7 @@ function ObjectsPanel() {
             <ObjectTile key={d.id} def={d} onAsk={setAsking} />
           ))}
         </div>
-        <p className="panel-hint">Click an object to draw with it (its details open at the right). Drag across the level to draw a row.</p>
+        <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
       </div>
       {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
     </section>

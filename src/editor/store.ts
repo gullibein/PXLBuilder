@@ -82,6 +82,9 @@ export interface EditorState {
   inspectorOpen: boolean;
   tray: { open: boolean; tab: TrayTab };
   dock: DockPanel;
+  /** The library object last picked in the Objects menu (its small card shows while nothing in the level is selected). */
+  pickedDefinitionId: Id | null;
+  setPickedDefinition(definitionId: Id | null): void;
   /** An "Ask AI…" card to open in the Objects tab, for this library object (e.g. a prompt moved there). */
   libraryAsk: Id | null;
   /** Opens the Objects tab with the "Ask AI…" card of this library object (null: done). */
@@ -241,6 +244,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     tray: { open: false, tab: 'history' },
     dock: null,
     libraryAsk: null,
+    pickedDefinitionId: null,
     tool: { kind: 'select' },
     lastBrushId: null,
     backgroundOpen: false,
@@ -376,6 +380,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       const unique = [...new Set(ids)];
       set({
         selectedEntityIds: unique,
+        // (Selecting, or clicking empty space, ends what was picked from the Objects menu: its card goes.)
+        pickedDefinitionId: null,
         selectedConnectionId: unique.length ? null : get().selectedConnectionId,
         worldContext: unique.length ? null : get().worldContext,
         cameraOutline: unique.length ? null : get().cameraOutline,
@@ -442,6 +448,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setTray(tray) {
       set((s) => ({ tray: { ...s.tray, ...tray } }));
+    },
+
+    setPickedDefinition(pickedDefinitionId) {
+      set({ pickedDefinitionId });
     },
 
     setLibraryAsk(definitionId) {
