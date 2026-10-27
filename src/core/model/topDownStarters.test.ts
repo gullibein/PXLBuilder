@@ -92,8 +92,16 @@ describe('a new top-down game', () => {
     // Stops at the left wall (its right edge is at x = -96).
     expect(hero.x).toBeCloseTo(-96 + 11, 0);
     expect(rt.lookOf(hero).situation).toBe('idle');
+    // (How far it got from where it was: it wanders, so it may turn back; the end point alone could be near the start.
+    // And a fixed sequence of "random" choices, so the test is the same every run.)
+    let seed = 12345;
+    rt.random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
     const start = { x: slime.x, y: slime.y };
-    for (let i = 0; i < 240; i++) rt.update(1 / 60, new InputState());
-    expect(Math.hypot(slime.x - start.x, slime.y - start.y)).toBeGreaterThan(5);
+    let farthest = 0;
+    for (let i = 0; i < 240; i++) {
+      rt.update(1 / 60, new InputState());
+      farthest = Math.max(farthest, Math.hypot(slime.x - start.x, slime.y - start.y));
+    }
+    expect(farthest).toBeGreaterThan(5);
   });
 });
