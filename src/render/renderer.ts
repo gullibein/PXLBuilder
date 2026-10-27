@@ -5,6 +5,7 @@
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
 import { animationFrame, cellRect } from '../core/model/spriteGrid';
+import { autotileIndex } from '../core/model/autotile';
 import type { SpriteAnimation, SpriteGrid, Vec2, WorldSettings } from '../core/types';
 
 /** A decoded image, plus its cell grid when it is a sprite sheet. */
@@ -340,6 +341,7 @@ export function drawEntities(
 ): void {
   // Tiles, and anything with rounded corners (an object the AI made for dirt need not be marked a tile), by cell.
   const rounds = (e: ResolvedEntity) => typeof e.components.Sprite?.roundCorners === 'number' && (e.components.Sprite.roundCorners as number) > 0;
+  const autotiled = (e: ResolvedEntity) => e.components.Sprite?.autotile === true && typeof e.components.Sprite.autotileSheet === 'string';
   const shown = visibleArea(ctx);
   // How far around its middle a thing reaches (a turned one at most half its diagonal).
   const reach = (e: ResolvedEntity, size: Vec2) => {
@@ -359,7 +361,7 @@ export function drawEntities(
       })
     : entities;
   const tiles = new Set<string>();
-  for (const e of near) if (e.tile || rounds(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
+  for (const e of near) if (e.tile || rounds(e) || autotiled(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
   // (Each thing's own drawing state is undone by hand: save and restore for each of thousands of tiles cost more
   // than drawing them. Only a clipped one, for rounded corners, saves and restores.)
   const base = ctx.getTransform();
@@ -380,9 +382,16 @@ export function drawEntities(
     // (Placed from the level's own transform: `base`, not whatever the thing before left.)
     placeOnScreen(ctx, base, position, rotation, scale, size);
     ctx.fillStyle = color;
-    const img = typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
+    // Autotiled: the one of its 16 pictures that fits the tiles of its kind around it.
+    const sheet = autotiled(entity) ? images(sprite.autotileSheet as string) : null;
+    const neighbours = () => {
+      const sx = size.x * Math.abs(scale.x);
+      const sy = size.y * Math.abs(scale.y);
+      return autotileIndex((dx, dy) => tiles.has(tileKey(entity.definitionId, position.x + dx * sx, position.y + dy * sy)));
+    };
+    const img = sheet?.grid ? sheet : typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
     const source = img && sprite.tint === true ? tinted(img.source, color) : img?.source;
-    const cell = img?.grid ? cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1) : null;
+    const cell = img === sheet && sheet ? cellRect(sheet.grid!, neighbours() + 1) : img?.grid ? cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1) : null;
     /** The picture (or, without one, the color) over the tile's own square moved `dy` tiles down. */
     const paint = (dy: number) => {
       const y = -size.y / 2 + dy * size.y;
@@ -395,7 +404,7 @@ export function drawEntities(
     };
     // Rounded corners of a tile surface: from the tiles of the same kind around it.
     let clipped = false;
-    const round = rounds(entity) && rotation % 360 === 0;
+    const round = rounds(entity) && rotation % 360 === 0 && !(sheet && img === sheet);
     if (round) {
       const art = cell ? { w: cell.w, h: cell.h } : source ? imageSize(source) : { w: size.x, h: size.y };
       const px = size.x / (art.w || size.x);

@@ -8,6 +8,7 @@ import { CATEGORIES, categoryOf } from '../categories';
 import { getActiveScene, useEditor } from '../store';
 import { EntityLogic } from '../logic/LogicPanel';
 import { FieldEditor, ListInput, NumberInput, TextInput, Vec2Input } from './FieldEditor';
+import { canAutotile, editSpriteOf, Thumb } from '../chrome/Dock';
 
 /** The details panel: floating over the level (opened on demand), or `docked` as a column beside it (an editor setting). */
 export function Inspector({ docked = false }: { docked?: boolean }) {
@@ -29,8 +30,10 @@ export function Inspector({ docked = false }: { docked?: boolean }) {
   }
   const setInspectorOpen = useEditor((s) => s.setInspectorOpen);
   const setLayout = useEditor((s) => s.setLayout);
+  // Beside the Objects column while it is open (docked at the same side).
+  const besideObjects = useEditor((s) => s.dock === 'library') && !docked;
   return (
-    <aside className={`drawer${docked ? ' docked' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
+    <aside className={`drawer${docked ? ' docked' : ''}${besideObjects ? ' beside-objects' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
       <header className="drawer-head">
         <span className="drawer-title">
           Inspector <span className="muted">(Advanced)</span>
@@ -61,6 +64,28 @@ export function Inspector({ docked = false }: { docked?: boolean }) {
       </header>
       <div className="drawer-body">{body}</div>
     </aside>
+  );
+}
+
+/** At the top of an object's details: its picture, and Edit sprite (the sprite editor on it) beside it. */
+function ObjectLook({ def }: { def: ObjectDefinition }) {
+  return (
+    <div className="inspector-look" data-testid="inspector-look">
+      <Thumb def={def} size={44} />
+      <button className="chip-btn" data-testid="inspector-edit-sprite" title={`Draw ${def.name}'s picture in the sprite editor`} onClick={() => editSpriteOf(def.id)}>
+        Edit sprite
+      </button>
+      {canAutotile(def) && (
+        <button
+          className={`chip-btn${def.components.Sprite?.autotile === true ? ' on' : ''}`}
+          data-testid="inspector-autotile"
+          title="Autotile: each tile drawn with the picture that fits the tiles around it (edges, ends, corners)"
+          onClick={() => useEditor.getState().setAutotileEditor(def.id)}
+        >
+          Autotile…
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -213,6 +238,7 @@ function EntityInspector({ scene, entityId }: { scene: Scene; entityId: Id }) {
 
   return (
     <div data-testid="entity-inspector">
+      {def && <ObjectLook def={def} />}
       <div className="inspector-head">
         <TextInput value={entity.name} testId="entity-name" onCommit={(v) => edit('Rename entity', (p) => m.renameEntity(p, sid, entityId, v))} />
         <code className="id" title="Stable entity id">
@@ -322,6 +348,7 @@ function DefinitionInspector({ def }: { def: ObjectDefinition }) {
   const instances = m.countInstances(project, def.id);
   return (
     <div data-testid="definition-inspector">
+      <ObjectLook def={def} />
       <div className="inspector-head">
         <TextInput value={def.name} testId="definition-name" onCommit={(v) => edit('Rename object', (p) => m.renameDefinition(p, def.id, v))} />
         <code className="id">{def.id}</code>

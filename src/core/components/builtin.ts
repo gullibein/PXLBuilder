@@ -34,6 +34,13 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
         description:
           'For objects laid out in a grid (dirt, rock, grass…; tiles or not): rounds the corners of the surface they make, by this many picture pixels (0 = square). Outside corners (where nothing of the same kind is next to it on two sides) are cut off; inside corners (where a dug tunnel or gap turns) are filled with a little of the tile, so tunnels and edges look rounded. Worked out by the engine from the tiles around, also while tiles are removed in play: no script needed',
       },
+      autotile: {
+        kind: 'boolean',
+        default: false,
+        description:
+          'For objects laid out in a grid (ground, platforms, walls): each tile is drawn with the one of its 16 autotile pictures (autotileSheet) that fits the tiles of the same object around it: ends, edges and corners where nothing is next to it. Worked out by the engine as tiles are placed and removed (also in play). Set up in the Autotile editor (Details → Autotile…)',
+      },
+      autotileSheet: { kind: 'assetRef', assetKind: 'image', default: null, description: "The autotile's 16 pictures (one per combination of neighbours above, right, below and left), made in the Autotile editor" },
       layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
     },
   },

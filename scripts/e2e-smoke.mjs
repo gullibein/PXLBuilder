@@ -588,7 +588,23 @@ try {
   await page.getByTestId('dock-library').click();
   await page.screenshot({ path: `${OUT}/0-objects-panel.png` });
   await page.getByTestId('definition-Platform').click();
-  await check(async () => (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true' && (await page.getByTestId('library-panel').count()) === 0, 'clicking a library object picks up the pen with it and gives the canvas back');
+  await check(async () => (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true' && (await page.getByTestId('library-panel').count()) === 1, 'clicking a library object picks up the pen with it (the Objects column stays open)');
+  {
+    const lib = await page.getByTestId('library-panel').boundingBox();
+    const stage = await canvas.boundingBox();
+    await check(lib.x + lib.width > stage.x + stage.width - 30 && lib.width <= 240 && lib.height > stage.height * 0.6, 'the Objects column is docked to the right, narrow and tall');
+    await check(async () => {
+      const d = await page.getByTestId('inspector').boundingBox();
+      return (await page.getByTestId('definition-inspector').count()) === 1 && (await page.getByTestId('definition-name').inputValue()) === 'Platform' && d.x + d.width <= lib.x + 1 && d.x + d.width > lib.x - 20;
+    }, "its Details open beside it (to its left): the Platform's");
+    const look = await page.getByTestId('inspector-look').boundingBox();
+    const edit = await page.getByTestId('inspector-edit-sprite').boundingBox();
+    await check(async () => (await page.getByTestId('inspector-look').locator('.thumb').count()) === 1 && Math.abs(edit.y + edit.height / 2 - (look.y + look.height / 2)) < 6 && look.y < (await page.getByTestId('definition-name').boundingBox()).y, 'at the top of the details: its picture, with Edit sprite beside it');
+    await page.screenshot({ path: `${OUT}/0b-objects-details.png` });
+    await page.getByTestId('close-details').click();
+    await page.getByTestId('dock-panel-close').click();
+    await check(async () => (await page.getByTestId('library-panel').count()) === 0 && (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true', '(closed again: still drawing with it)');
+  }
   await check(async () => (await page.locator('.brush-chip').count()) === 0, 'no instructions panel while drawing');
   await check(async () => (await prompts.count()) === 0, 'drawing clears the selection, so no prompt is in the way');
   let p0 = toScreen(-250, 40);
@@ -626,6 +642,8 @@ try {
   await check(async () => (await entityCount()) === n7 + 1, `(a platform tile there again: ${n7} -> ${await entityCount()}, pen ${await page.getByTestId('tool-pen').getAttribute('aria-pressed')}, brush ${await page.getByTestId('tool-brush-pick').getAttribute('title').catch(() => '-')}, undo ${await page.getByTestId('undo').getAttribute('title')})`);
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Coin').click();
+  // (The Objects column stays open while drawing; Esc closes it, and the details it opened.)
+  await page.keyboard.press('Escape');
   await page.mouse.click(single.x, single.y, { button: 'right' });
   await check(async () => (await entityCount()) === n7 && (await page.getByTestId('undo').getAttribute('title')).includes('Erase 1 object'), 'drawing with a coin, right-click erases the platform tile there (any object, whatever is drawn with)');
   await page.keyboard.press('Escape');
@@ -643,6 +661,8 @@ try {
   step = 'ladder';
   await page.getByTestId('dock-library').click();
   await page.getByTestId('definition-Ladder').click();
+  await page.keyboard.press('Escape');
+  await check(async () => (await page.getByTestId('library-panel').count()) === 0 && (await page.getByTestId('inspector').count()) === 0 && (await page.getByTestId('tool-pen').getAttribute('aria-pressed')) === 'true', 'Esc closes the Objects column and the details it opened (still drawing with it)');
   const l0 = toScreen(-80, -48);
   const l1 = toScreen(-80, 16);
   await page.mouse.move(l0.x, l0.y);
@@ -972,9 +992,12 @@ try {
     ]) {
       await page.getByTestId(tab).click();
       await page.getByTestId(testId).click();
-      await check(async () => (await page.getByTestId(panel).count()) === 0, `${tab === 'dock-library' ? 'Objects' : 'Sounds'} closes when ${where} is used`);
+      // The Objects column is docked at the side: it stays (objects are picked from it while working); Sounds pops up.
+      if (tab === 'dock-library') await check(async () => (await page.getByTestId(panel).count()) === 1, `Objects (docked at the side) stays open when ${where} is used`);
+      else await check(async () => (await page.getByTestId(panel).count()) === 0, `Sounds closes when ${where} is used`);
       await page.keyboard.press('Escape');
       if (await page.getByTestId('tray-close').count()) await page.getByTestId('tray-close').click();
+      if (await page.getByTestId(panel).count()) await page.getByTestId(panel).getByTestId('dock-panel-close').click();
     }
     // And the × at its top right closes it.
     await page.getByTestId(tab).click();
@@ -1146,7 +1169,7 @@ try {
     await check(async () => (await card.getAttribute('data-context')) === 'object' && (await card.innerText()).includes('Enemy') && (await page.getByTestId('library-panel').count()) === 1, 'Ask AI… on an object opens a prompt card about it (the Objects tab stays open)');
     const tileBox = await tile.boundingBox();
     const cardBox = await card.boundingBox();
-    await check(cardBox.y + cardBox.height <= tileBox.y + 1, 'the card sits just above the object');
+    await check(cardBox.x + cardBox.width <= tileBox.x + 1 && cardBox.y < tileBox.y + tileBox.height && cardBox.y + cardBox.height > tileBox.y, 'the card sits beside the object (to its left)');
     await card.getByTestId('prompt-input').fill('make this object yellow');
     await card.getByTestId('prompt-input').press('Enter');
     await check(async () => (await card.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the AI changes it');
@@ -1411,6 +1434,8 @@ try {
   await page.getByTestId('menu-inspector').click();
   await check(async () => (await page.getByTestId('definition-inspector').isVisible()) && (await page.getByTestId('definition-name').inputValue()) === 'Enemy', 'Inspector opens the object\'s details');
   await page.getByTestId('close-details').click();
+  // (The Objects column stays open beside the level until closed.)
+  if (await page.getByTestId('library-panel').count()) await page.getByTestId('library-panel').getByTestId('dock-panel-close').click();
 
   step = 'history';
   await page.getByTestId('tray-toggle').click();
@@ -1954,7 +1979,7 @@ try {
     const playerAt = { x: box.x + center.x + (-256 - cx) * cz, y: box.y + center.y + (0 - cy) * cz };
     await touch('pointerdown', 1, playerAt);
     await touch('pointerup', 1, playerAt);
-    await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0 && (await entities()) === n0, 'with a brush chosen, tapping a placed object selects it (instead of drawing; no card: a double tap opens it)');
+    await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0 && (await entities()) === n0, `with a brush chosen, tapping a placed object selects it (instead of drawing; no card: a double tap opens it)`);
     // A double tap on empty space opens the level's prompt.
     await page.keyboard.press('Escape');
     await touch('pointerdown', 1, emptySpot);
@@ -3306,6 +3331,7 @@ try {
   };
   await swp.getByTestId('dock-library').click();
   await swp.getByTestId('definition-Platform').click();
+  await swp.keyboard.press('Escape');
   await swp.mouse.move(sw_sAt(-208, 48).x, sw_sAt(-208, 48).y);
   await swp.mouse.down();
   await swp.mouse.move(sw_sAt(208, 48).x, sw_sAt(208, 48).y, { steps: 6 });
@@ -3931,6 +3957,86 @@ try {
   await check(async () => (await ep.getByTestId('inspector').count()) === 0 && (await ep.locator('.topbar [data-testid="play"]').count()) === 1, 'Reset editor layout restores the defaults');
   await check(async () => (await htmlStyle()) === 'classic', '(including the Classic style)');
   await ec.close();
+
+  step = 'autotile';
+  {
+    const ac = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+    const ap = await ac.newPage();
+    ap.on('pageerror', (e) => errors.push(`pageerror (autotile): ${e.message}`));
+    await ap.goto(URL);
+    await startPlatformer(ap);
+    const aCanvas = ap.getByTestId('viewport-canvas');
+    const aBox = await aCanvas.boundingBox();
+    const aAt = (wx, wy) => {
+      return aCanvas.getAttribute('data-camera').then((cam) => {
+        const [cx, cy, z] = (cam ?? '0,0,1').split(',').map(Number);
+        return { x: aBox.x + aBox.width / 2 + (wx - cx) * z, y: aBox.y + aBox.height / 2 + (wy - cy) * z };
+      });
+    };
+    // A row of four platforms, drawn with the pen.
+    await ap.getByTestId('dock-library').click();
+    await ap.getByTestId('definition-Platform').click();
+    await ap.keyboard.press('Escape');
+    await ap.keyboard.press('b');
+    const a0 = await aAt(-48, 16);
+    const a1 = await aAt(48, 16);
+    await ap.mouse.move(a0.x, a0.y);
+    await ap.mouse.down();
+    await ap.mouse.move(a1.x, a1.y, { steps: 8 });
+    await ap.mouse.up();
+    await ap.keyboard.press('Escape');
+    await check(async () => Number(await aCanvas.getAttribute('data-entities')) === 4, '(a row of four platforms)');
+    // The level's pixels at the row's top-left corner and over its middle.
+    const sample = async () => {
+      const corner = await aAt(-63, 1);
+      const middle = await aAt(-16, 2);
+      return aCanvas.evaluate((c, [p, q, r]) => {
+        const g = c.getContext('2d');
+        const k = c.width / c.getBoundingClientRect().width;
+        const px = (pt) => [...g.getImageData(Math.round((pt.x - r.x) * k), Math.round((pt.y - r.y) * k), 1, 1).data].join(',');
+        return px(p) + ' ' + px(q);
+      }, [corner, middle, { x: aBox.x, y: aBox.y }]);
+    };
+    await ap.waitForTimeout(300);
+    const before = await sample();
+    await ap.getByTestId('dock-library').click();
+    await ap.getByTestId('definition-Platform').click({ button: 'right' });
+    await check(async () => (await ap.getByTestId('object-menu').innerText()).includes('Autotile…'), "a platform's right-click menu offers Autotile…");
+    await ap.getByTestId('menu-autotile').click();
+    const at = ap.getByTestId('autotile-editor');
+    await check(async () => (await at.isVisible()) && !(await at.getByTestId('autotile-on').isChecked()) && (await at.getByTestId('autotile-grid').count()) === 0, 'the Autotile editor opens: not autotiling yet, no pictures');
+    await at.getByTestId('autotile-make').click();
+    await check(async () => (await at.getByTestId('autotile-grid').locator('.at-cell').count()) === 16 && (await at.getByTestId('autotile-on').isChecked()), 'Make the 16 pictures: one for each combination of neighbours, and autotiling is on');
+    const preview = at.getByTestId('autotile-preview');
+    const n = Number(await preview.getAttribute('data-tiles'));
+    await preview.click({ position: { x: 4, y: 4 } });
+    await check(async () => Number(await preview.getAttribute('data-tiles')) === n + 1, 'Try it: a click adds a tile to the little level (drawn with the pictures)');
+    await ap.screenshot({ path: `${OUT}/31-autotile-editor.png` });
+    // A picture opens in the sprite editor: the 16 named, no animation controls.
+    await at.getByTestId('autotile-cell-10').click();
+    const se = ap.getByTestId('sprite-editor');
+    await check(async () => (await se.isVisible()) && (await se.getByTestId('se-frame-11').getAttribute('class')).includes('on') && (await se.getByTestId('se-autotile-note').innerText()).includes('joined right and left'), 'a picture opens in the sprite editor on that one (a tile joined right and left)');
+    await check(async () => (await se.getByTestId('se-duplicate-frame').count()) === 0 && (await se.getByTestId('se-fps').count()) === 0 && (await se.locator('.se-frame').count()) === 16, '(always 16 pictures there, not an animation: no adding frames, no speed)');
+    await ap.screenshot({ path: `${OUT}/31b-autotile-sprite-editor.png` });
+    await se.getByTestId('se-close').click();
+    await at.getByTestId('autotile-close').click();
+    await ap.getByTestId('library-panel').getByTestId('dock-panel-close').click();
+    await ap.waitForTimeout(300);
+    const after = await sample();
+    await check(after !== before, `the platforms in the level are drawn with their autotile pictures (${before} → ${after})`);
+    await ap.screenshot({ path: `${OUT}/31c-autotile-level.png` });
+    // Off again (Details → Autotile…): drawn as before.
+    await ap.getByTestId('dock-library').click();
+    await ap.getByTestId('definition-Platform').click();
+    await ap.getByTestId('inspector-autotile').click();
+    await ap.getByTestId('autotile-editor').getByTestId('autotile-on').uncheck();
+    await ap.getByTestId('autotile-editor').getByTestId('autotile-close').click();
+    await ap.keyboard.press('Escape');
+    await ap.keyboard.press('Escape');
+    await ap.waitForTimeout(300);
+    await check(async () => (await sample()) === before, 'switched off (Details → Autotile…), they look as before');
+    await ac.close();
+  }
 
   step = 'phone';
   {

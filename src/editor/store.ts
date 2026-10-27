@@ -101,7 +101,10 @@ export interface EditorState {
   /** "What kind of game?": on the first visit, or for a new game (⋯ → New project); null when closed. */
   gameChooser: 'first' | 'new' | null;
   /** The sprite editor: which object's sprite (an existing picture, or a new one), or null when closed. */
-  spriteEditor: { definitionId: Id; assetId: Id | null } | null;
+  spriteEditor: { definitionId: Id; assetId: Id | null; frame?: number } | null;
+  /** The Autotile editor, open for this library object. */
+  autotileEditor: Id | null;
+  setAutotileEditor(definitionId: Id | null): void;
   /** Objects are being dragged over the trash can (it lights up; dropping them there deletes them). */
   trashHot: boolean;
   /** Objects are being moved, stretched or resized on the level right now (the prompt card steps aside meanwhile). */
@@ -176,7 +179,7 @@ export interface EditorState {
   setAIConnectionOpen(open: boolean): void;
   setStylePickerOpen(open: boolean): void;
   setGameChooser(mode: 'first' | 'new' | null): void;
-  openSpriteEditor(target: { definitionId: Id; assetId: Id | null } | null): void;
+  openSpriteEditor(target: { definitionId: Id; assetId: Id | null; frame?: number } | null): void;
   setExportGameOpen(open: boolean): void;
   setSoundEditor(id: Id | 'open' | 'none' | null): void;
   setSaveDialog(open: boolean): void;
@@ -247,6 +250,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     stylePickerOpen: false,
     gameChooser: null,
     spriteEditor: null,
+    autotileEditor: null,
     trashHot: false,
     objectDrag: false,
     altHeld: false,
@@ -445,7 +449,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setDock(dock) {
-      set({ dock });
+      // Closing the Objects column closes the details it opened beside it (an object's), unless they are docked.
+      const s = get();
+      const closesDetails = s.dock === 'library' && dock !== 'library' && s.inspectorOpen && s.layout.inspector !== 'docked' && !!s.selectedDefinitionId && !s.selectedEntityIds.length;
+      set(closesDetails ? { dock, inspectorOpen: false } : { dock });
     },
 
     setTool(tool) {
@@ -492,6 +499,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     setGameChooser(gameChooser) {
       set({ gameChooser });
     },
+    setAutotileEditor(autotileEditor) {
+      set({ autotileEditor });
+    },
+
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
     },

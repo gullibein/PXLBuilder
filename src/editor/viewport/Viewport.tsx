@@ -597,7 +597,8 @@ export function Viewport() {
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
     canvas.focus();
-    const state = useEditor.getState();
+    // (Read again after the tool changes below: a tap on an object while drawing goes on as a selection.)
+    let state = useEditor.getState();
     longPressRef.current.touch = ev.pointerType === 'touch';
     cancelLongPress();
     if (ev.pointerType === 'touch' && touchRef.current.points.size === 0 && state.tool.kind !== 'brush') {
@@ -628,9 +629,13 @@ export function Viewport() {
         return;
       }
       // Tapping a placed object selects it, also while drawing with an object.
-      if (state.tool.kind === 'brush' && pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))) state.setTool({ kind: 'select' });
+      if (state.tool.kind === 'brush' && pick(resolveSceneEntities(state.project, state.activeSceneId), toWorld(ev))) {
+        state.setTool({ kind: 'select' });
+        state = useEditor.getState();
+      }
     }
-    if (state.dock) state.setDock(null);
+    // Working on the level closes the Create and Sounds pop-ups (the Objects column at the side stays: drawn from).
+    if (state.dock && state.dock !== 'library') state.setDock(null);
     // Working on the level closes the whole-level/game card (its prompt carries on; dots on ✦ show it).
     if (state.globalPrompt.open) state.setGlobalPrompt(false);
     if (ev.button === 0 && !spaceDownRef.current && (state.tool.kind === 'eyedropper' || ev.altKey)) {

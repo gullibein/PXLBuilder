@@ -10,8 +10,11 @@ import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDo
 import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import { createStarterAssets, createStarterDefinitions, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
+import { createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
+import { makeAutotileFrames, solidTile, type AutotileStyle } from './autotile';
+import { getEntitySize } from './geometry';
+import { gridFor } from './spriteResolution';
 import { validateGrid } from './spriteGrid';
 import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
@@ -585,7 +588,8 @@ export function updatePixelArtAsset(project: Project, assetId: Id, palette: Pixe
   asset.pixelArt = fields.pixelArt;
   if (fields.grid) asset.grid = fields.grid;
   else delete asset.grid;
-  if (fields.animation) asset.animation = fields.animation;
+  // (An autotile's pictures are not an animation.)
+  if (fields.animation && !asset.autotile) asset.animation = fields.animation;
   else delete asset.animation;
   // Saved as an SVG file now, whatever it was imported as.
   asset.path = asset.path.replace(/\.[a-z0-9]+$/i, '.svg');
@@ -686,4 +690,44 @@ export function changeSpriteResolution(project: Project, res: SpriteResolution, 
     return { name: d.name, sprite: { width: Number(sprite.width) || 32, assetId: typeof sprite.assetId === 'string' ? sprite.assetId : null }, states, assets };
   });
   return setSpriteResolution(project, res, starters);
+}
+
+// ---------------------------------------------------------------- autotiling
+
+/**
+ * Makes (or makes again) an object's 16 autotile pictures from its own picture (or, without one, its color) in the
+ * given style, and turns autotiling on. The pictures are one pixel-art sheet (kept, and made again in place, so
+ * edits elsewhere to it are replaced).
+ */
+export function makeAutotile(project: Project, definitionId: Id, style: AutotileStyle, registry: ComponentRegistry): Id {
+  const def = getDefinition(project, definitionId);
+  const sprite = def.components.Sprite;
+  if (!sprite) throw new ModelError(`${def.name} has no Sprite to autotile`);
+  const size = getEntitySize(resolveEntity(project, instantiateDefinition(def, { x: 0, y: 0 }), registry));
+  const own = typeof sprite.assetId === 'string' ? project.assets.find((a) => a.id === sprite.assetId) : undefined;
+  const grid = gridFor(size, project.settings.spriteResolution);
+  const base: PixelArt = own?.pixelArt ? { palette: own.pixelArt.palette, rows: own.pixelArt.rows } : solidTile(typeof sprite.color === 'string' ? sprite.color : '#888888', grid.width, grid.height);
+  const { palette, frames } = makeAutotileFrames(base, style);
+  const fields = pixelArtFields(palette, frames);
+  const existing = typeof sprite.autotileSheet === 'string' ? project.assets.find((a) => a.id === sprite.autotileSheet && a.autotile) : undefined;
+  let id: Id;
+  if (existing) {
+    id = existing.id;
+    updatePixelArtAsset(project, id, palette, frames, 8);
+  } else {
+    id = generateId('ast');
+    addAsset(project, { id, name: `${def.name} autotile`, path: `assets/${id}.svg`, kind: fields.kind, data: fields.data, width: fields.width, height: fields.height, grid: fields.grid, pixelArt: fields.pixelArt, autotile: true });
+  }
+  sprite.autotile = true;
+  sprite.autotileSheet = id;
+  return id;
+}
+
+/** Turns an object's autotiling on or off (its pictures stay, to turn it on again). */
+export function setAutotile(project: Project, definitionId: Id, on: boolean): void {
+  const def = getDefinition(project, definitionId);
+  const sprite = def.components.Sprite;
+  if (!sprite) throw new ModelError(`${def.name} has no Sprite`);
+  if (on && !(typeof sprite.autotileSheet === 'string' && project.assets.some((a) => a.id === sprite.autotileSheet))) throw new ModelError(`${def.name} has no autotile pictures yet: make them first`);
+  sprite.autotile = on;
 }

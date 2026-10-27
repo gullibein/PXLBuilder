@@ -3,6 +3,7 @@ import { ColorButton } from './ColorPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { createAnimatedPixelArtAsset, MAX_FRAMES } from '../../core/model/factory';
+import { autotileLabel } from '../../core/model/autotile';
 import * as m from '../../core/model/mutations';
 import { gridFor } from '../../core/model/spriteResolution';
 import {
@@ -133,10 +134,10 @@ function Preview({ draft }: { draft: SpriteDraft }) {
 export function SpriteEditor() {
   const target = useEditor((s) => s.spriteEditor);
   if (!target) return null;
-  return <SpriteEditorDialog key={`${target.definitionId}:${target.assetId ?? 'new'}`} definitionId={target.definitionId} assetId={target.assetId} />;
+  return <SpriteEditorDialog key={`${target.definitionId}:${target.assetId ?? 'new'}:${target.frame ?? 0}`} definitionId={target.definitionId} assetId={target.assetId} startFrame={target.frame ?? 0} />;
 }
 
-function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; assetId: string | null }) {
+function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionId: string; assetId: string | null; startFrame: number }) {
   const def = useEditor((s) => s.project.definitions.find((d) => d.id === definitionId));
   // The sprite being edited; null while drawing a new one (also after "New sprite" here).
   const [editingId, setEditingId] = useState(assetId);
@@ -154,9 +155,11 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
   const [error, setError] = useState<string | null>(null);
   const [past, setPast] = useState<SpriteDraft[]>([]);
   const [future, setFuture] = useState<SpriteDraft[]>([]);
-  const [frame, setFrameState] = useState(0);
+  const [frame, setFrameState] = useState(() => Math.min(startFrame, (draft?.frames.length ?? 1) - 1));
   // The frame being drawn, also between renders (a click right after "Duplicate frame" draws on the new one).
-  const frameRef = useRef(0);
+  const frameRef = useRef(Math.min(startFrame, (draft?.frames.length ?? 1) - 1));
+  // An autotile's 16 pictures: always 16 (one per combination of neighbours), named, not an animation.
+  const autotile = !!asset?.autotile;
   const setFrame = (i: number) => {
     frameRef.current = i;
     setFrameState(i);
@@ -808,12 +811,17 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
             <div className="se-frames">
               <div className="se-strip" data-testid="se-frames">
                 {draft.frames.map((rows, i) => (
-                  <button key={i} className={`se-frame${i === frame ? ' on' : ''}`} data-testid={`se-frame-${i + 1}`} onClick={() => setFrame(i)} title={`Frame ${i + 1}`}>
+                  <button key={i} className={`se-frame${i === frame ? ' on' : ''}`} data-testid={`se-frame-${i + 1}`} onClick={() => setFrame(i)} title={autotile ? `Tile ${autotileLabel(i)}` : `Frame ${i + 1}`}>
                     <FrameCanvas draft={draft} rows={rows} size={40} />
-                    <span>{i + 1}</span>
+                    <span>{autotile ? <AutotileSides index={i} /> : i + 1}</span>
                   </button>
                 ))}
               </div>
+              {autotile ? (
+                <p className="muted small se-autotile-note" data-testid="se-autotile-note">
+                  Autotile: this picture is for a tile {autotileLabel(frame)}. The marks under each picture show which sides have a tile next to them.
+                </p>
+              ) : (
               <div className="se-frame-actions">
                 <button className="chip-btn" data-testid="se-duplicate-frame" disabled={draft.frames.length >= MAX_FRAMES} onClick={() => (change((d) => addFrame(d, frameRef.current, true)), setFrame(frameRef.current + 1))} title="A copy of this frame after it, to change a little">
                   Duplicate frame
@@ -837,7 +845,8 @@ function SpriteEditorDialog({ definitionId, assetId }: { definitionId: string; a
                   </label>
                 )}
               </div>
-              {draft.frames.length > 1 && <Preview draft={draft} />}
+              )}
+              {draft.frames.length > 1 && !autotile && <Preview draft={draft} />}
               <div className="se-finish">
                 <button
                   className="chip-btn"
@@ -899,5 +908,19 @@ function ToleranceRow({ label, value, testId, onChange }: { label: string; value
       <input type="range" min={0} max={100} step={1} value={value} data-testid={testId} onChange={(e) => onChange(Number(e.target.value))} />
       <span className="muted small se-tolerance-value">{value}%</span>
     </label>
+  );
+}
+
+/** Which sides of an autotile picture have a tile next to them: a small square with a mark on each joined side. */
+export function AutotileSides({ index }: { index: number }) {
+  const on = (bit: number) => (index & bit ? 'currentColor' : 'transparent');
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-label={autotileLabel(index)} className="autotile-sides">
+      <rect x="4" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="5" y="0" width="4" height="2.5" fill={on(1)} />
+      <rect x="11.5" y="5" width="2.5" height="4" fill={on(2)} />
+      <rect x="5" y="11.5" width="4" height="2.5" fill={on(4)} />
+      <rect x="0" y="5" width="2.5" height="4" fill={on(8)} />
+    </svg>
   );
 }

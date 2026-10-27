@@ -222,6 +222,8 @@ export interface AssetRecord {
   pixelArt?: { palette: { key: string; color: string }[]; rows: string[]; frames?: string[][] };
   /** Plays as an animation: these cells of the sheet (numbered from 1), at `fps` frames per second, over and over. */
   animation?: SpriteAnimation;
+  /** An autotile's 16 pictures (frames in autotileIndex order): never played as an animation. */
+  autotile?: true;
   /** The recipe, for sounds made by the synthesizer (by the AI): played with the browser's audio, no file needed. */
   synth?: GameSound;
   /** What it is, in plain words ("a duck's quack"), for sounds. */

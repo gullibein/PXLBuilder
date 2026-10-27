@@ -1,3 +1,4 @@
+import { AutotileEditor } from './chrome/AutotileEditor';
 import { GameSite } from './gamesite/GameSite';
 import { OpenDialog } from './chrome/OpenDialog';
 import { quickSave } from './persistence';
@@ -99,6 +100,8 @@ export function App() {
         <AIConnection />
         <StylePicker />
         <GameChooser />
+        {/* (Under the sprite editor: one of its pictures opens there, on top.) */}
+        <AutotileEditor />
         <SpriteEditor />
         <SpriteExport />
         <CodeEditor />

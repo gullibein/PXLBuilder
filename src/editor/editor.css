@@ -243,7 +243,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 .spark-mini { color: var(--accent-hi); }
 .count { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
 .error-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); margin-left: 4px; }
-.tray { position: absolute; right: 16px; bottom: 16px; width: min(440px, calc(100% - 32px)); height: min(320px, 50%); display: flex; flex-direction: column; z-index: 16; animation: rise-in 150ms ease-out; }
+.tray { position: absolute; right: 16px; bottom: 16px; width: min(440px, calc(100% - 32px)); height: min(320px, 50%); display: flex; flex-direction: column; z-index: 19; /* (over the Objects column and details, docked at the same side) */ animation: rise-in 150ms ease-out; }
 .tray-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 0 8px; }
 .tabs { display: flex; gap: 2px; }
 .tabs button { border: none; background: none; padding: 7px 12px; border-radius: 9px; color: var(--muted); font-weight: 600; }
@@ -815,3 +815,52 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .bg-move-amount { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bg-move-amount input { flex: 1; min-width: 0; }
 .bg-move-amount .muted { font-size: 11px; width: 30px; text-align: right; }
+
+/* The Objects column: docked to the right of the level, narrow (three small tiles across), full height between the
+   top and the bottom bar; groups as small chips at its top. Its Details open beside it, to its left. */
+.dock-panel.objects { position: absolute; top: 16px; right: 16px; bottom: 76px; width: 232px; max-height: none; z-index: 17; display: flex; flex-direction: column; overflow: hidden; animation: slide-in 160ms ease-out; }
+.dock-panel.objects .dock-panel-close { top: 6px; right: 6px; }
+.dock-panel.objects .groups-toggle { margin: 8px 8px 0; flex: none; }
+.dock-panel.objects .category-list { flex: none; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 6px 8px 8px; border-right: none; border-bottom: 1px solid var(--line); }
+.dock-panel.objects .category { gap: 5px; padding: 3px 8px; font-size: 11.5px; border-radius: 7px; }
+.dock-panel.objects .objects-main { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+.dock-panel.objects .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.dock-panel.objects .tile { gap: 3px; padding: 6px 2px 5px; border-radius: 10px; }
+.dock-panel.objects .thumb { width: 34px; height: 34px; border-radius: 8px; }
+.dock-panel.objects .tile-name { font-size: 10.5px; }
+.drawer.beside-objects { right: calc(16px + 232px + 8px); }
+.drawer-left .drawer.beside-objects { right: auto; left: 16px; }
+/* On a phone the side is too narrow for a column: a sheet above the bottom bar instead (about a third of the screen),
+   small tiles in rows, the groups one row of chips; its details open as usual. */
+@container stage (max-width: 600px) {
+  .dock-panel.objects { top: auto; left: 8px; right: 8px; bottom: 68px; width: auto; max-height: 36vh; }
+  .dock-panel.objects .category-list { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 8px 6px; }
+  .dock-panel.objects .category { flex: none; }
+  .dock-panel.objects .tiles { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 4px; }
+  .dock-panel.objects .tile { gap: 2px; padding: 4px 2px 3px; border-radius: 9px; }
+  .dock-panel.objects .thumb { width: 32px; height: 32px; border-radius: 7px; }
+  .dock-panel.objects .tile-name { font-size: 10px; }
+  .drawer.beside-objects { right: 16px; }
+}
+
+/* An object's picture at the top of its details, with Edit sprite beside it. */
+.inspector-look { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.inspector-look .thumb { width: 56px; height: 56px; border-radius: 12px; }
+
+/* The Autotile editor: style and the switch on the left; the 16 pictures (4 × 4) and a small level to try them. */
+.autotile-editor { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+.at-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; padding: 14px 18px 18px; overflow: auto; }
+.at-side { display: grid; gap: 10px; align-content: start; }
+.at-on { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.at-style { display: grid; gap: 6px; }
+.at-round { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.at-main { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.at-grid { display: grid; grid-template-columns: repeat(4, max-content); gap: 6px; }
+.at-cell { display: grid; justify-items: center; gap: 3px; padding: 5px 5px 3px; border: 1.5px solid transparent; border-radius: 9px; background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.at-cell:hover { border-color: var(--accent-hi); color: var(--text); }
+.at-cell canvas { image-rendering: pixelated; width: 44px; height: 44px; }
+.at-preview { width: 100%; max-width: 392px; image-rendering: pixelated; background: color-mix(in srgb, var(--surface-2) 70%, #000); border-radius: 8px; cursor: crosshair; }
+.at-empty { margin: 4px 0 8px; }
+.autotile-sides { display: block; }
+.se-autotile-note { margin: 6px 0 0; }
+@media (max-width: 640px) { .at-body { grid-template-columns: 1fr; } }
