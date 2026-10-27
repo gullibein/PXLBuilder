@@ -210,29 +210,29 @@ code { font-family: var(--font-data); font-size: 11px; }
 .dock-btn:hover, .dock-btn.on { background: var(--surface-2); }
 .dock-btn.primary { background: var(--accent); color: #fff; }
 .dock-btn.primary:hover, .dock-btn.primary.on { background: var(--accent-hi); }
-.dock-panel { width: 100%; max-height: min(52vh, 440px); overflow: auto; animation: rise-in 150ms ease-out; }
+.dock-panel { width: 100%; max-height: min(46vh, 360px); overflow: auto; animation: rise-in 150ms ease-out; }
 .dock-panel.create { padding: 0; background: none; box-shadow: none; border: none; backdrop-filter: none; overflow: visible; }
 .dock-panel.create .prompt { padding: 6px 8px 6px 16px; }
 .dock-panel.create .created .panel-hint { color: var(--card-muted); }
 .dock-panel.create .tile { background: #f3f2fa; color: var(--card-text); }
-.dock-panel.objects { display: grid; grid-template-columns: 150px 1fr; grid-template-rows: auto 1fr; }
+.dock-panel.objects { display: grid; grid-template-columns: 128px 1fr; grid-template-rows: auto 1fr; }
 .dock-panel.objects.groups-hidden { grid-template-columns: 1fr; }
-.groups-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; justify-self: start; margin: 8px 8px 0; padding: 3px 9px; border: none; border-radius: 8px; background: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.groups-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; justify-self: start; margin: 4px 6px 0; padding: 2px 8px; border: none; border-radius: 8px; background: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
 .groups-toggle:hover { color: var(--text); background: var(--surface-2); }
 .category-list[hidden] { display: none; }
-.category-list { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--line); }
-.category { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border: none; background: none; border-radius: 9px; color: var(--muted); font-weight: 600; text-align: left; }
+.category-list { display: flex; flex-direction: column; gap: 1px; padding: 6px 6px; border-right: 1px solid var(--line); }
+.category { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border: none; background: none; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12px; text-align: left; }
 .category:hover { color: var(--text); background: var(--surface-2); }
 .category.on { color: #fff; background: var(--accent-soft); }
 .category .n { font-family: var(--font-data); font-size: 11px; opacity: 0.6; }
-.objects-main { padding: 12px; min-width: 0; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
-.tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 6px; border: 1.5px solid transparent; border-radius: 12px; background: var(--surface-2); cursor: pointer; }
+.objects-main { padding: 8px; min-width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 4px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 3px 4px; border: 1.5px solid transparent; border-radius: 10px; background: var(--surface-2); cursor: pointer; }
 .tile:hover { border-color: color-mix(in srgb, var(--accent-hi) 50%, transparent); }
 .tile.armed { border-color: var(--accent-hi); background: var(--accent-soft); }
 .thumb { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: rgba(142, 205, 242, 0.18); }
-.tile-name { font-size: 12px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.panel-hint { margin: 10px 2px 0; font-size: 11.5px; color: var(--muted); }
+.tile-name { font-size: 10.5px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-hint { margin: 6px 2px 0; font-size: 11px; color: var(--muted); }
 .created { margin-top: 10px; display: grid; gap: 8px; }
 .created .panel-hint { margin: 0; }
 
@@ -243,7 +243,7 @@ code { font-family: var(--font-data); font-size: 11px; }
 .spark-mini { color: var(--accent-hi); }
 .count { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
 .error-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); margin-left: 4px; }
-.tray { position: absolute; right: 16px; bottom: 16px; width: min(440px, calc(100% - 32px)); height: min(320px, 50%); display: flex; flex-direction: column; z-index: 19; /* (over the Objects column and details, docked at the same side) */ animation: rise-in 150ms ease-out; }
+.tray { position: absolute; right: 16px; bottom: 16px; width: min(440px, calc(100% - 32px)); height: min(320px, 50%); display: flex; flex-direction: column; z-index: 16; animation: rise-in 150ms ease-out; }
 .tray-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 0 8px; }
 .tabs { display: flex; gap: 2px; }
 .tabs button { border: none; background: none; padding: 7px 12px; border-radius: 9px; color: var(--muted); font-weight: 600; }
@@ -291,10 +291,11 @@ button.history-row:hover { background: var(--surface-2); }
 .check-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; color: var(--muted); font-size: 11.5px; }
 
 /* ---------------------------------------------------------------- inspector drawer */
-.drawer { position: absolute; top: 16px; right: 16px; bottom: 72px; width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; z-index: 18; animation: slide-in 160ms ease-out; }
-.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 8px 18px; border-bottom: 1px solid var(--line); }
+/* The details: docked to the right edge of the screen, full height and narrow (the level keeps the rest). */
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(280px, 100%); display: flex; flex-direction: column; z-index: 18; animation: slide-in 160ms ease-out; border-radius: 14px 0 0 14px; border-right-width: 0; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 6px 14px; border-bottom: 1px solid var(--line); }
 .drawer-title { font-size: 15px; font-weight: 600; }
-.drawer-body { flex: 1; overflow: auto; padding: 12px 12px 16px; }
+.drawer-body { flex: 1; overflow: auto; padding: 10px 10px 14px; }
 .inspector-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .inspector-head input { font-weight: 700; font-size: 15px; background: none; border-color: transparent; padding-left: 2px; }
 .inspector-head input:hover { border-color: var(--line); }
@@ -303,7 +304,7 @@ button.history-row:hover { background: var(--surface-2); }
 .section { border-radius: 12px; margin-bottom: 8px; background: var(--surface-2); }
 .section > header { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .section-body { padding: 2px 10px 8px; }
-.row { display: grid; grid-template-columns: 104px 1fr; align-items: center; gap: 6px; padding: 2px 0; }
+.row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 6px; padding: 2px 0; }
 .row-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 .row.overridden .row-label { color: var(--accent-hi); }
 .override-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hi); flex: none; }
@@ -493,11 +494,11 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .workspace { display: flex; min-height: 0; min-width: 0; }
 .workspace > .stage { flex: 1; min-width: 0; }
 /* Docked details panel: a full-height column beside the level, which makes room for it. */
-.drawer.docked { position: relative; inset: auto; order: 2; flex: none; width: min(340px, 40vw); border-radius: 0; border-width: 0 0 0 1px; box-shadow: none; animation: none; backdrop-filter: none; background: var(--bar); }
+.drawer.docked { position: relative; inset: auto; order: 2; flex: none; width: min(280px, 40vw); border-radius: 0; border-width: 0 0 0 1px; box-shadow: none; animation: none; backdrop-filter: none; background: var(--bar); }
 .docked-left .drawer.docked { order: 0; border-width: 0 1px 0 0; }
 .workspace > .stage { order: 1; }
 /* Floating details panel on the left, clear of a left tool panel. */
-.drawer-left .drawer { right: auto; left: 16px; animation-name: slide-in-left; }
+.drawer-left .drawer { right: auto; left: 0; border-radius: 0 14px 14px 0; border-right-width: 1px; border-left-width: 0; animation-name: slide-in-left; }
 .tools-left.drawer-left .drawer { left: 80px; }
 .tools-right.drawer-right .drawer { right: 80px; }
 @keyframes slide-in-left { from { opacity: 0; transform: translateX(-12px); } }
@@ -554,11 +555,11 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 
 /* A narrow level view: the History/Console chips must not run into the centered bottom bar.
    First they shrink to icons; narrower still, they move up above the bar. */
-@container stage (max-width: 1100px) {
+@container stage (max-width: 1180px) {
   .tray-chip { padding: 0 12px; }
   .tray-chip .chip-label { display: none; }
 }
-@container stage (max-width: 600px) {
+@container stage (max-width: 720px) {
   .tray-chips { bottom: 72px; }
 }
 /* Narrower: Objects and Sounds in the bottom bar become icons (their names show on hover). */
@@ -816,36 +817,10 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .bg-move-amount input { flex: 1; min-width: 0; }
 .bg-move-amount .muted { font-size: 11px; width: 30px; text-align: right; }
 
-/* The Objects column: docked to the right of the level, narrow (three small tiles across), full height between the
-   top and the bottom bar; groups as small chips at its top. Its Details open beside it, to its left. */
-.dock-panel.objects { position: absolute; top: 16px; right: 16px; bottom: 76px; width: 232px; max-height: none; z-index: 17; display: flex; flex-direction: column; overflow: hidden; animation: slide-in 160ms ease-out; }
-.dock-panel.objects .dock-panel-close { top: 6px; right: 6px; }
-.dock-panel.objects .groups-toggle { margin: 8px 8px 0; flex: none; }
-.dock-panel.objects .category-list { flex: none; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 6px 8px 8px; border-right: none; border-bottom: 1px solid var(--line); }
-.dock-panel.objects .category { gap: 5px; padding: 3px 8px; font-size: 11.5px; border-radius: 7px; }
-.dock-panel.objects .objects-main { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
-.dock-panel.objects .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
-.dock-panel.objects .tile { gap: 3px; padding: 6px 2px 5px; border-radius: 10px; }
-.dock-panel.objects .thumb { width: 34px; height: 34px; border-radius: 8px; }
-.dock-panel.objects .tile-name { font-size: 10.5px; }
-.drawer.beside-objects { right: calc(16px + 232px + 8px); }
-.drawer-left .drawer.beside-objects { right: auto; left: 16px; }
-/* On a phone the side is too narrow for a column: a sheet above the bottom bar instead (about a third of the screen),
-   small tiles in rows, the groups one row of chips; its details open as usual. */
-@container stage (max-width: 600px) {
-  .dock-panel.objects { top: auto; left: 8px; right: 8px; bottom: 68px; width: auto; max-height: 36vh; }
-  .dock-panel.objects .category-list { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 8px 6px; }
-  .dock-panel.objects .category { flex: none; }
-  .dock-panel.objects .tiles { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 4px; }
-  .dock-panel.objects .tile { gap: 2px; padding: 4px 2px 3px; border-radius: 9px; }
-  .dock-panel.objects .thumb { width: 32px; height: 32px; border-radius: 7px; }
-  .dock-panel.objects .tile-name { font-size: 10px; }
-  .drawer.beside-objects { right: 16px; }
-}
-
 /* An object's picture at the top of its details, with Edit sprite beside it. */
-.inspector-look { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.inspector-look .thumb { width: 56px; height: 56px; border-radius: 12px; }
+.inspector-look { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.inspector-look .thumb { flex: none; width: 48px; height: 48px; border-radius: 10px; }
+.inspector-look .chip-btn { white-space: nowrap; padding: 4px 9px; font-size: 12px; }
 
 /* The Autotile editor: style and the switch on the left; the 16 pictures (4 × 4) and a small level to try them. */
 .autotile-editor { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
@@ -864,3 +839,12 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .autotile-sides { display: block; }
 .se-autotile-note { margin: 6px 0 0; }
 @media (max-width: 640px) { .at-body { grid-template-columns: 1fr; } }
+
+/* Small object pictures in the Objects menu (the menu stays compact). */
+.dock-panel.objects .thumb { width: 32px; height: 32px; border-radius: 8px; }
+/* While the details are open at the right edge, the AI History / Console / Debug buttons sit to their left, as icons,
+   just above the bottom bar (so they never run into it). */
+.stage:has(> .drawer:not(.docked)) .tray-chips { right: calc(min(280px, 100%) + 12px); bottom: 72px; }
+.stage:has(> .drawer:not(.docked)) .tray-chip { padding: 0 12px; }
+.stage:has(> .drawer:not(.docked)) .tray-chip .chip-label { display: none; }
+.drawer-left .stage:has(> .drawer:not(.docked)) .tray-chips { right: 16px; }

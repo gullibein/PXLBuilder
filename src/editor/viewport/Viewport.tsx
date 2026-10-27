@@ -634,8 +634,7 @@ export function Viewport() {
         state = useEditor.getState();
       }
     }
-    // Working on the level closes the Create and Sounds pop-ups (the Objects column at the side stays: drawn from).
-    if (state.dock && state.dock !== 'library') state.setDock(null);
+    if (state.dock) state.setDock(null);
     // Working on the level closes the whole-level/game card (its prompt carries on; dots on ✦ show it).
     if (state.globalPrompt.open) state.setGlobalPrompt(false);
     if (ev.button === 0 && !spaceDownRef.current && (state.tool.kind === 'eyedropper' || ev.altKey)) {

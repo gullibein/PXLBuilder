@@ -30,10 +30,8 @@ export function Inspector({ docked = false }: { docked?: boolean }) {
   }
   const setInspectorOpen = useEditor((s) => s.setInspectorOpen);
   const setLayout = useEditor((s) => s.setLayout);
-  // Beside the Objects column while it is open (docked at the same side).
-  const besideObjects = useEditor((s) => s.dock === 'library') && !docked;
   return (
-    <aside className={`drawer${docked ? ' docked' : ''}${besideObjects ? ' beside-objects' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
+    <aside className={`drawer${docked ? ' docked' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
       <header className="drawer-head">
         <span className="drawer-title">
           Inspector <span className="muted">(Advanced)</span>

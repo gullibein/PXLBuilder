@@ -449,10 +449,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     setDock(dock) {
-      // Closing the Objects column closes the details it opened beside it (an object's), unless they are docked.
-      const s = get();
-      const closesDetails = s.dock === 'library' && dock !== 'library' && s.inspectorOpen && s.layout.inspector !== 'docked' && !!s.selectedDefinitionId && !s.selectedEntityIds.length;
-      set(closesDetails ? { dock, inspectorOpen: false } : { dock });
+      set({ dock });
     },
 
     setTool(tool) {

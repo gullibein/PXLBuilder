@@ -28,10 +28,10 @@ export function Dock() {
   const dock = useEditor((s) => s.dock);
   const setDock = useEditor((s) => s.setDock);
   const playHere = useEditor((s) => s.layout.playButton === 'bottom');
-  // The Sounds tab closes as soon as the top bar, the tool bar or the AI History / Console / Debug buttons are used.
-  // (The Objects column, docked at the side, stays until closed: objects are picked from it while working.)
+  // The Objects and Sounds tabs close as soon as the top bar, the tool bar or the AI History / Console / Debug
+  // buttons are used.
   useEffect(() => {
-    if (dock !== 'sounds') return;
+    if (dock !== 'library' && dock !== 'sounds') return;
     const away = (e: PointerEvent) => {
       if ((e.target as Element | null)?.closest?.('.topbar, .tool-panel, .tray-chips')) useEditor.getState().setDock(null);
     };
@@ -39,11 +39,9 @@ export function Dock() {
     return () => window.removeEventListener('pointerdown', away, true);
   }, [dock]);
   return (
-    <>
-    {/* Objects: a column docked to the right of the level (its Details beside it). */}
-    {dock === 'library' && <ObjectsPanel />}
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
+      {dock === 'library' && <ObjectsPanel />}
       {dock === 'sounds' && <SoundsPanel />}
       <nav className="dock" aria-label="Create and objects">
         <button className={`dock-btn primary job-anchor${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
@@ -67,7 +65,6 @@ export function Dock() {
         {playHere && <PlayButton />}
       </nav>
     </div>
-    </>
   );
 }
 
@@ -143,13 +140,17 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
       onClick={() => {
         if (!armOnClick) return;
         if (armed) setTool({ kind: 'select' });
-        // Already drawing (the Draw tool): go on drawing with this. Else: place it once, then back to selecting.
-        else setTool({ kind: 'brush', definitionId: def.id, once: tool.kind !== 'brush' || tool.once === true });
-        // In the Objects column (docked at the side): its Details open beside it. (The Create card's tiles only pick.)
-        if (useEditor.getState().dock === 'library') {
-          selectDefinition(def.id);
-          setInspectorOpen(true);
-        } else setDock(null);
+        else {
+          // From the Objects menu: its details open, docked at the right of the screen. (The Create card's tiles only pick.)
+          const fromMenu = useEditor.getState().dock === 'library';
+          // Already drawing (the Draw tool): go on drawing with this. Else: place it once, then back to selecting.
+          setTool({ kind: 'brush', definitionId: def.id, once: tool.kind !== 'brush' || tool.once === true });
+          setDock(null);
+          if (fromMenu) {
+            selectDefinition(def.id);
+            setInspectorOpen(true);
+          }
+        }
       }}
       onDragStart={(e) => {
         e.dataTransfer.setData(DEFINITION_DRAG_TYPE, def.id);
@@ -181,9 +182,9 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
               label: 'Details…',
               testId: 'menu-inspector',
               run: () => {
-                // (Beside the Objects column, which stays open.)
                 selectDefinition(def.id);
                 setInspectorOpen(true);
+                setDock(null);
               },
             },
             { label: 'Edit sprite', testId: 'menu-edit-sprite', run: () => editSpriteOf(def.id) },
@@ -215,19 +216,15 @@ const ASK_WIDTH = 300;
 
 /**
  * The AI prompt card for one library object or one sound (right-click → Ask AI…): "make this yellow", "lower in
- * pitch". It sits beside the object's tile (above a sound); × or Esc closes it (a request still running carries on).
+ * pitch". It sits just above the item it was asked from; × or Esc closes it (a request still running carries on).
  */
 function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void }) {
   const sceneId = useEditor((s) => s.activeSceneId);
   const def = useEditor((s) => (ask.kind === 'object' ? s.project.definitions.find((d) => d.id === ask.id) : undefined));
   const sound = useEditor((s) => (ask.kind === 'sound' ? s.project.assets.find((a) => a.id === ask.id && a.kind === 'sound') : undefined));
   if (!def && !sound) return null;
-  // An object (in the Objects column at the side): beside its tile, to the left; a sound (in the bottom dock): above it.
-  const beside = ask.kind === 'object';
-  const left = beside
-    ? Math.max(12, ask.rect.left - ASK_WIDTH - 12)
-    : Math.max(12, Math.min(ask.rect.left + ask.rect.width / 2 - ASK_WIDTH / 2, window.innerWidth - ASK_WIDTH - 12));
-  const place = beside ? { top: Math.max(64, Math.min(ask.rect.top - 20, window.innerHeight - 420)) } : { bottom: Math.max(12, window.innerHeight - ask.rect.top + 8) };
+  const left = Math.max(12, Math.min(ask.rect.left + ask.rect.width / 2 - ASK_WIDTH / 2, window.innerWidth - ASK_WIDTH - 12));
+  const bottom = Math.max(12, window.innerHeight - ask.rect.top + 8);
   const header = def ? (
     <span className="library-ask-head">
       <Thumb def={def} size={16} />
@@ -240,7 +237,7 @@ function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void 
     </span>
   );
   return createPortal(
-    <div className="library-ask" style={{ left, ...place, width: ASK_WIDTH }} data-testid="library-prompt" data-context={ask.kind}>
+    <div className="library-ask" style={{ left, bottom, width: ASK_WIDTH }} data-testid="library-prompt" data-context={ask.kind}>
       <PromptBox
         key={`${ask.kind}:${ask.id}`}
         ctx={def ? { kind: 'object', sceneId, definitionId: def.id } : { kind: 'sound', sceneId, assetId: sound!.id }}
@@ -405,7 +402,7 @@ function ObjectsPanel() {
             <ObjectTile key={d.id} def={d} onAsk={setAsking} />
           ))}
         </div>
-        <p className="panel-hint">Click an object to draw with it (its details open beside this). Drag across the level to draw a row.</p>
+        <p className="panel-hint">Click an object to draw with it (its details open at the right). Drag across the level to draw a row.</p>
       </div>
       {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
     </section>
