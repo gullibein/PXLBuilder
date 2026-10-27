@@ -100,6 +100,21 @@ function stubModel(body) {
       operations: [{ op: 'draw_sprite', target: 'definition', id: o.id, name: `${o.name} (yellow)`, palette: art.palette.map((p) => ({ key: p.key, color: '#ffd400' })), rows: art.rows, frames: null, fps: null, situation: null }],
     };
   }
+  if (body.context.scope === 'autotile' && req.includes('stone')) {
+    // The Autotile editor's prompt: all 16 pictures as stone bricks (mortar lines; darker where a side is open).
+    const a = body.context.autotile;
+    const { width: w, height: h } = a.grid;
+    const tiles = Array.from({ length: 16 }, (_, index) => ({
+      index,
+      rows: Array.from({ length: h }, (_, y) =>
+        Array.from({ length: w }, (_, x) => {
+          const open = (!(index & 1) && y === 0) || (!(index & 4) && y === h - 1) || (!(index & 8) && x === 0) || (!(index & 2) && x === w - 1);
+          return open ? 'd' : y % 4 === 3 || (x + (Math.floor(y / 4) % 2) * 4) % 8 === 7 ? 'm' : 's';
+        }).join(''),
+      ),
+    }));
+    return { kind: 'apply', message: `The ${a.object.name} tiles are stone bricks now.`, changes: ['Autotile: 16 stone-brick pictures'], operations: [{ op: 'draw_autotile', id: a.object.id, palette: [{ key: 's', color: '#8a8f9c' }, { key: 'm', color: '#5a5f6c' }, { key: 'd', color: '#3a3e48' }], tiles }] };
+  }
   if (body.context.scope === 'sound' && req.includes('lower')) {
     const snd = body.context.sound;
     const lower = { ...snd.sound, notes: snd.sound.notes.map(([pitch, ...rest]) => [Math.max(0, pitch - 5), ...rest]) };
@@ -3968,6 +3983,7 @@ try {
     const ac = await browser.newContext({ viewport: { width: 1400, height: 860 } });
     const ap = await ac.newPage();
     ap.on('pageerror', (e) => errors.push(`pageerror (autotile): ${e.message}`));
+    await ap.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
     await ap.goto(URL);
     await startPlatformer(ap);
     const aCanvas = ap.getByTestId('viewport-canvas');
@@ -4019,6 +4035,21 @@ try {
     await preview.click({ position: { x: 4, y: 4 } });
     await check(async () => Number(await preview.getAttribute('data-tiles')) === n + 1, 'Try it: a click adds a tile to the little level (drawn with the pictures)');
     await ap.screenshot({ path: `${OUT}/31-autotile-editor.png` });
+    // The Autotile editor's own AI prompt: "stone bricks" redraws the pictures.
+    {
+      const cell = () => at.getByTestId('autotile-cell-10').locator('canvas').evaluate((c) => c.toDataURL());
+      const before = await cell();
+      const input = at.getByTestId('autotile-prompt').getByTestId('prompt-input');
+      await input.fill('Make them look like stone bricks.');
+      await input.press('Enter');
+      await check(async () => (await at.getByTestId('autotile-prompt').getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the Autotile editor has its own AI prompt: "stone bricks" is applied');
+      const sent = aiRequests.at(-1).context;
+      await check(sent.scope === 'autotile' && sent.autotile.tiles.length === 16 && sent.autotile.tiles[10].joined === 'joined right and left' && sent.autotile.grid.width > 0, 'the AI is given the 16 pictures (which sides each joins) and their pixel size');
+      await check(async () => (await cell()) !== before, 'the pictures change (and so do the tiles in the level)');
+      await ap.screenshot({ path: `${OUT}/31a-autotile-prompt.png` });
+      await ap.getByTestId('undo').evaluate((b) => b.click());
+      await check(async () => (await cell()) === before, '(one Undo step)');
+    }
     // A picture opens in the sprite editor: the 16 named, no animation controls.
     await at.getByTestId('autotile-cell-10').click();
     const se = ap.getByTestId('sprite-editor');

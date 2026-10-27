@@ -116,6 +116,14 @@ export const operationSchema = z.union([
     onTop: z.boolean().nullable().describe('Where other objects already are: null/false replaces them (deletes what it covers, as placing in the editor does); true puts it on top and keeps them, only when both must really share the square'),
   }),
   z.object({
+    op: z.literal('draw_autotile'),
+    id: z.string().describe('The library object (definition id) whose autotile pictures these are'),
+    palette: z.array(z.object({ key: z.string().describe('One letter or digit'), color: z.string().describe('"#rrggbb"') })).describe('Colors of the tiles sent ("." is transparent and is not listed)'),
+    tiles: z
+      .array(z.object({ index: z.number().int().describe('Which of the 16 pictures: up 1 + right 2 + down 4 + left 8 for the sides joined to a tile of the same object (0 alone, 15 joined all round)'), rows: z.array(z.string()).describe('Its pixel rows, exactly the autotile grid size') }))
+      .describe('The pictures to draw (all 16, or only the ones to change; the others stay)'),
+  }),
+  z.object({
     op: z.literal('draw_sprite'),
     target,
     id: z.string().describe('Entity id (instance) or object definition id (definition) whose look this becomes'),
@@ -698,6 +706,11 @@ export function applyOperations(
           m.addAsset(project, { id, name, kind: 'sound', path: `assets/${id}.sound.json`, data: soundDataUrl(parsed.sound), width: 0, height: 0, synth: parsed.sound, description: op.description });
           result.createdAssetIds.push(id);
         }
+        break;
+      }
+      case 'draw_autotile': {
+        const defId = refs.get(op.id) ?? op.id;
+        m.drawAutotileTiles(project, defId, op.palette, op.tiles, registry);
         break;
       }
       case 'draw_sprite': {

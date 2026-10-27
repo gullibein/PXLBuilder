@@ -5,6 +5,7 @@ import * as m from '../../core/model/mutations';
 import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
 import { AutotileSides } from './SpriteEditor';
+import { PromptBox } from '../prompt/PromptBox';
 
 type Art = NonNullable<AssetRecord['pixelArt']>;
 
@@ -43,6 +44,7 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
     return typeof ref === 'string' ? s.project.assets.find((a) => a.id === ref) : undefined;
   });
   const [style, setStyle] = useState<AutotileStyle>(DEFAULT_AUTOTILE_STYLE);
+  const sceneId = useEditor((s) => s.activeSceneId);
   const [cells, setCells] = useState(() => PREVIEW.map((r) => [...r].map((c) => c === '#')));
   const close = () => useEditor.getState().setAutotileEditor(null);
   if (!def) return null;
@@ -69,7 +71,8 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
         data-testid="autotile-editor"
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === 'Escape') close();
+          // (Esc in the prompt clears it there, not the editor.)
+          if (e.key === 'Escape' && !(e.target as HTMLElement).closest('.at-prompt')) close();
         }}
       >
         <header className="bg-head">
@@ -108,6 +111,11 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
               {art ? 'Make the 16 pictures again' : 'Make the 16 pictures'}
             </button>
             <p className="muted small">Made from {def.name}'s picture (or its color). Click a picture to draw it by hand.</p>
+            {/* Ask the AI for a kind of tile ("stone bricks", "ice") or a change ("rounder corners", "moss on top"). */}
+            <span className="bg-label">Ask the AI</span>
+            <div className="at-prompt">
+              <PromptBox ctx={{ kind: 'autotile', sceneId, definitionId: def.id }} placeholder={'e.g. "stone bricks", "moss on top"'} testId="autotile-prompt" />
+            </div>
           </div>
           <div className="at-main">
             <span className="bg-label">The 16 pictures</span>

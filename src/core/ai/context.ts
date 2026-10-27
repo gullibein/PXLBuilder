@@ -13,6 +13,7 @@ import { diagnoseLevel, type Problem } from '../debug/diagnose';
 import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
 import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camera';
 import { describeRelationship, describeRule } from '../logic/describe';
+import { autotileLabel } from '../model/autotile';
 import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
 import { levelMap, type LevelMap } from '../model/levelMap';
@@ -50,7 +51,9 @@ export type AIContext =
   /** One object in the object library (every copy of it), asked from the Objects tab. */
   | { kind: 'object'; sceneId: Id; definitionId: Id }
   /** One of the game's sounds, asked from the Sounds tab. */
-  | { kind: 'sound'; sceneId: Id; assetId: Id };
+  | { kind: 'sound'; sceneId: Id; assetId: Id }
+  /** A library object's 16 autotile pictures, asked from the Autotile editor. */
+  | { kind: 'autotile'; sceneId: Id; definitionId: Id };
 
 /** Derives the context from a selection (ordered by selection order). */
 export function contextFromSelection(sceneId: Id, selected: Id[]): AIContext | null {
@@ -83,6 +86,8 @@ export function contextKey(ctx: AIContext): string {
       return `object:${ctx.definitionId}`;
     case 'sound':
       return `sound:${ctx.assetId}`;
+    case 'autotile':
+      return `autotile:${ctx.definitionId}`;
   }
 }
 
@@ -207,6 +212,17 @@ export interface AIPayload {
   targets: EntityDetail[];
   /** Scope "object": the library object the user asked about, in full (what every copy of it is). */
   object?: ObjectDetail;
+  /** Scope "autotile": the object's 16 autotile pictures (or none yet), their size, and its own picture. */
+  autotile?: {
+    object: { id: Id; name: string; description: string };
+    /** Every autotile picture is this many pixels. */
+    grid: { width: number; height: number };
+    /** The object's own picture (made into the pictures when there are none yet), or its color. */
+    look: { pixelArt: { palette: { key: string; color: string }[]; rows: string[] } | null; color: string };
+    on: boolean;
+    palette: { key: string; color: string }[];
+    tiles: { index: number; joined: string; rows: string[] }[];
+  };
   /** Scope "sound": the sound the user asked about, in full. */
   sound?: { id: Id; name: string; description: string; seconds: number; sound: unknown };
   /** Where the user pointed in the level (world coordinates), if anywhere. */
@@ -285,6 +301,8 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
     'The user clicked on a CONNECTION (see connection; its two ends are targets[0] = source and targets[1] = target). The request is about what this connection does: change it with update_relationship (id = connection.id), e.g. for a switch (controls): params.action "open" | "close" | "toggle" | "disappear" | "move", with offset (pixels, one tile = 32, negative y = up) and speed for "move". Replace or remove it only if asked; if what they want cannot be expressed by a connection, a rule may do it.',
   object:
     'The user is asking about ONE OBJECT IN THE OBJECT LIBRARY (see `object`, in full), not a placed copy: "this", "it", "this object" mean it. Change the object itself, so every copy of it (object.placedCount, in all levels) changes: every operation with target "definition" and id = object.id (set_component_field, add_component, remove_component, rename, set_tags); draw_sprite with target "definition" and id = object.id for how it looks, on exactly object.spriteGrid. A color change ("make it yellow") is a redraw: draw_sprite with its pixels from object.look.sprite.pixelArt, the colors changed and the shapes kept (when it has no pixel art, set_component_field Sprite.color). Scripts on it with set_script on the definition. Do not place, move or delete copies unless asked.',
+  autotile:
+    'The user is in the AUTOTILE EDITOR of one object (see `autotile`): its 16 autotile pictures, one per combination of neighbours of the same object: index = up 1 + right 2 + down 4 + left 8 for the sides that HAVE a tile next to them (0 = a tile on its own, 5 = joined up and down (a column\'s middle), 10 = joined left and right (a platform\'s middle), 15 = joined all round (inside a block)); tiles[].joined says it in words. A side that is NOT joined is an open edge of the surface: that is where edges, outlines, grass, highlights, shadows and rounded corners go; a joined side must continue seamlessly into the neighbour (the same pattern, no edge). Change them with draw_autotile (id = autotile.object.id): every picture exactly autotile.grid.width × grid.height pixels, palette keys single letters or digits, "." transparent; send all 16 for a new look ("stone bricks", "a grassy dirt platform", "ice"), or only the ones that change ("rounder corners" -> the pictures with two open sides meeting). Start from the pictures there are now (tiles[].rows) when changing them; with none yet, from autotile.look. Keep them consistent (the same material, light from the top, the same edge thickness) so tiles join without seams. Not draw_sprite (that changes the object\'s own picture). Say in one sentence what the tiles look like now.',
   sound:
     'The user is asking about ONE SOUND (see `sound`, with its notes in sound.sound): "this", "it", "this sound" mean it. Change it with make_sound replaceId = sound.id, starting from its notes and changing only what was asked ("lower in pitch": every pitch down, e.g. by 5-12 semitones; "longer": a slower speed or more notes; "softer": lower volumes or smooth). Keep its name unless asked. Nothing else changes.',
   editor:
@@ -402,6 +420,23 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       scripts: d.scripts ?? [],
     };
   };
+  const autotileDef = ctx.kind === 'autotile' ? project.definitions.find((d) => d.id === ctx.definitionId) : undefined;
+  const autotilePayload = (d: (typeof project.definitions)[number]): NonNullable<AIPayload['autotile']> => {
+    const sp = d.components.Sprite ?? {};
+    const sheet = typeof sp.autotileSheet === 'string' ? project.assets.find((a) => a.id === sp.autotileSheet && a.autotile) : undefined;
+    const frames = sheet?.pixelArt?.frames?.length === 16 ? sheet.pixelArt.frames : null;
+    const own = typeof sp.assetId === 'string' ? project.assets.find((a) => a.id === sp.assetId) : undefined;
+    const size = getEntitySize(resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry));
+    const grid = frames ? { width: frames[0][0].length, height: frames[0].length } : gridFor(size, project.settings.spriteResolution);
+    return {
+      object: { id: d.id, name: d.name, description: d.description ?? '' },
+      grid,
+      look: { pixelArt: own?.pixelArt ? { palette: own.pixelArt.palette, rows: own.pixelArt.rows } : null, color: typeof sp.color === 'string' ? sp.color : '#888888' },
+      on: sp.autotile === true,
+      palette: frames ? sheet!.pixelArt!.palette : [],
+      tiles: frames ? frames.map((rows, index) => ({ index, joined: autotileLabel(index), rows })) : [],
+    };
+  };
   const soundAsset = ctx.kind === 'sound' ? project.assets.find((a) => a.id === ctx.assetId && a.kind === 'sound' && a.synth) : undefined;
 
   return {
@@ -443,6 +478,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     },
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     ...(objectDef ? { object: objectDetail(objectDef) } : {}),
+    ...(autotileDef ? { autotile: autotilePayload(autotileDef) } : {}),
     ...(soundAsset ? { sound: { id: soundAsset.id, name: soundAsset.name, description: soundAsset.description ?? '', seconds: Math.round(soundLength(soundAsset.synth!) * 100) / 100, sound: soundAsset.synth } } : {}),
     point: ctx.kind === 'level' ? ctx.point : null,
     ...(ctx.kind === 'level' && ctx.camera ? { aboutCamera: true as const } : {}),

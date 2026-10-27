@@ -68,4 +68,30 @@ describe('autotiling', () => {
     expect(off.definitions.find((d) => d.id === platform)!.components.Sprite.autotile).toBe(false);
     expect(() => produce(createProject(registry), (d) => m.setAutotile(d, d.definitions.find((x) => x.name === 'Platform')!.id, true))).toThrow(/no autotile pictures/);
   });
+
+  it('the AI draws some or all of the pictures (draw_autotile): the others stay, colors merge, it turns on', () => {
+    let project = createProject(registry);
+    const platform = project.definitions.find((d) => d.name === 'Platform')!.id;
+    project = produce(project, (d) => void m.makeAutotile(d, platform, { edge: 'outline', top: 'light', round: true }, registry));
+    const sheetOf = (p: typeof project) => p.assets.find((a) => a.id === p.definitions.find((d) => d.id === platform)!.components.Sprite.autotileSheet)!;
+    const before = sheetOf(project).pixelArt!;
+    const size = before.rows[0].length;
+    // Picture 10 (joined left and right) as stone: two colors, one of them under a key the sheet uses for another color.
+    const stone = Array.from({ length: before.rows.length }, (_, y) => (y % 4 === 0 ? 'b' : 'a').repeat(size));
+    const after = produce(project, (d) => m.drawAutotileTiles(d, platform, [{ key: 'a', color: '#777788' }, { key: 'b', color: '#444455' }], [{ index: 10, rows: stone }], registry));
+    const art = sheetOf(after).pixelArt!;
+    const color = (frame: number, x: number, y: number) => art.palette.find((p) => p.key === art.frames![frame][y][x])?.color;
+    expect(color(10, 0, 1)).toBe('#777788');
+    expect(color(10, 0, 0)).toBe('#444455');
+    // The others as they were.
+    expect(art.frames![15]).toEqual(before.frames![15].map((r) => [...r].map((ch) => art.palette.find((p) => p.color === before.palette.find((q) => q.key === ch)!.color)!.key).join('')));
+    expect(sheetOf(after).animation).toBeUndefined();
+    // Wrong size: refused with the size to use.
+    expect(() => produce(project, (d) => m.drawAutotileTiles(d, platform, [{ key: 'a', color: '#777788' }], [{ index: 0, rows: ['aa', 'aa'] }], registry))).toThrow(new RegExp(`${size}×${size} pixels`));
+    // An object without pictures yet: made first, then drawn; autotiling on.
+    const fresh = createProject(registry);
+    const stoneDef = fresh.definitions.find((d) => d.name === 'Stone')!.id;
+    const drawn = produce(fresh, (d) => m.drawAutotileTiles(d, stoneDef, [{ key: 'a', color: '#777788' }], [{ index: 0, rows: Array.from({ length: size }, () => 'a'.repeat(size)) }], registry));
+    expect(drawn.definitions.find((d) => d.id === stoneDef)!.components.Sprite.autotile).toBe(true);
+  });
 });

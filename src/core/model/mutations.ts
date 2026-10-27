@@ -12,7 +12,7 @@ import { validateField } from '../components/schema';
 import { generateId } from '../ids';
 import { createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
-import { makeAutotileFrames, solidTile, type AutotileStyle } from './autotile';
+import { DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, solidTile, type AutotileStyle } from './autotile';
 import { getEntitySize } from './geometry';
 import { gridFor } from './spriteResolution';
 import { validateGrid } from './spriteGrid';
@@ -730,4 +730,62 @@ export function setAutotile(project: Project, definitionId: Id, on: boolean): vo
   if (!sprite) throw new ModelError(`${def.name} has no Sprite`);
   if (on && !(typeof sprite.autotileSheet === 'string' && project.assets.some((a) => a.id === sprite.autotileSheet))) throw new ModelError(`${def.name} has no autotile pictures yet: make them first`);
   sprite.autotile = on;
+}
+
+/**
+ * Draws some (or all 16) of an object's autotile pictures (the AI, from the Autotile editor's prompt); the others stay.
+ * Without pictures yet, they are made first (in the default style). Colors are merged into the sheet's palette.
+ * Autotiling is turned on.
+ */
+export function drawAutotileTiles(project: Project, definitionId: Id, palette: PixelArt['palette'], tiles: { index: number; rows: string[] }[], registry: ComponentRegistry): void {
+  const def = getDefinition(project, definitionId);
+  if (!def.components.Sprite) throw new ModelError(`${def.name} has no Sprite to autotile`);
+  if (!tiles.length) throw new ModelError('draw_autotile needs at least one tile');
+  let sheet = typeof def.components.Sprite.autotileSheet === 'string' ? project.assets.find((a) => a.id === def.components.Sprite.autotileSheet && a.autotile) : undefined;
+  if (!sheet?.pixelArt?.frames || sheet.pixelArt.frames.length !== 16) {
+    makeAutotile(project, definitionId, DEFAULT_AUTOTILE_STYLE, registry);
+    sheet = project.assets.find((a) => a.id === def.components.Sprite.autotileSheet)!;
+  }
+  const art = sheet.pixelArt!;
+  const w = art.rows[0].length;
+  const h = art.rows.length;
+  // The sheet's palette, with the new colors added (a color it has keeps its key; a key it uses for another color is
+  // given a free one).
+  const merged = art.palette.map((p) => ({ ...p }));
+  const byColor = new Map(merged.map((p) => [p.color.toLowerCase(), p.key]));
+  const used = new Set(merged.map((p) => p.key));
+  const FREE = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const remap = new Map<string, string>([['.', '.']]);
+  for (const p of palette) {
+    const err = checkPixelArt({ palette: [p], rows: [p.key] });
+    if (err) throw new ModelError(`Autotile palette: ${err}`);
+    const known = byColor.get(p.color.toLowerCase());
+    if (known) remap.set(p.key, known);
+    else {
+      const key = used.has(p.key) ? [...FREE].find((c) => !used.has(c)) : p.key;
+      if (!key) throw new ModelError('Autotile: too many colors (at most 62)');
+      used.add(key);
+      byColor.set(p.color.toLowerCase(), key);
+      merged.push({ key, color: p.color });
+      remap.set(p.key, key);
+    }
+  }
+  const frames = art.frames!.map((f) => [...f]);
+  for (const t of tiles) {
+    if (!Number.isInteger(t.index) || t.index < 0 || t.index > 15) throw new ModelError(`Autotile picture ${t.index}: the index is 0 to 15 (up 1 + right 2 + down 4 + left 8)`);
+    if (t.rows.length !== h || t.rows.some((r) => r.length !== w)) throw new ModelError(`Autotile picture ${t.index} is ${t.rows[0]?.length ?? 0}×${t.rows.length}; the autotile pictures are ${w}×${h} pixels: draw it that size`);
+    frames[t.index] = t.rows.map((r) => {
+      let out = '';
+      for (const ch of r) {
+        const k = remap.get(ch);
+        if (k === undefined) throw new ModelError(`Autotile picture ${t.index}: "${ch}" is used in the rows but not in the palette`);
+        out += k;
+      }
+      return out;
+    });
+  }
+  // (Colors no picture uses any more are left out.)
+  const inUse = new Set(frames.flat().join(''));
+  updatePixelArtAsset(project, sheet.id, merged.filter((p) => inUse.has(p.key)), frames, 8);
+  def.components.Sprite.autotile = true;
 }

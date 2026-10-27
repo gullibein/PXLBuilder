@@ -824,7 +824,7 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 
 /* The Autotile editor: style and the switch on the left; the 16 pictures (4 × 4) and a small level to try them. */
 .autotile-editor { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
-.at-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; padding: 14px 18px 18px; overflow: auto; }
+.at-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; padding: 14px 18px 18px; overflow: auto; }
 .at-side { display: grid; gap: 10px; align-content: start; }
 .at-on { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .at-style { display: grid; gap: 6px; }
@@ -848,3 +848,9 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .stage:has(> .drawer:not(.docked)) .tray-chip { padding: 0 12px; }
 .stage:has(> .drawer:not(.docked)) .tray-chip .chip-label { display: none; }
 .drawer-left .stage:has(> .drawer:not(.docked)) .tray-chips { right: 16px; }
+/* The Autotile editor's AI prompt: across the bottom, under the pictures and the level to try them on. */
+.at-side { min-width: 0; }
+.at-side > * { min-width: 0; }
+.at-prompt { min-width: 0; }
+.at-prompt .prompt { width: 100%; min-width: 0; box-sizing: border-box; }
+.at-prompt .prompt-chat { max-height: 200px; }
