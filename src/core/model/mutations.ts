@@ -12,7 +12,7 @@ import { validateField } from '../components/schema';
 import { generateId } from '../ids';
 import { createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
-import { DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, solidTile, type AutotileStyle } from './autotile';
+import { applyEdgeStrip, DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, solidTile, type AutotileEdge, type AutotileStyle } from './autotile';
 import { getEntitySize } from './geometry';
 import { gridFor } from './spriteResolution';
 import { validateGrid } from './spriteGrid';
@@ -788,4 +788,19 @@ export function drawAutotileTiles(project: Project, definitionId: Id, palette: P
   const inUse = new Set(frames.flat().join(''));
   updatePixelArtAsset(project, sheet.id, merged.filter((p) => inUse.has(p.key)), frames, 8);
   def.components.Sprite.autotile = true;
+}
+
+/** Draws one edge (the top or bottom of every picture with that side open) of an object's autotile, in its palette. */
+export function setAutotileEdge(project: Project, definitionId: Id, edge: AutotileEdge, strip: string[], palette: PixelArt['palette']): void {
+  const def = getDefinition(project, definitionId);
+  const sheet = typeof def.components.Sprite?.autotileSheet === 'string' ? project.assets.find((a) => a.id === def.components.Sprite!.autotileSheet && a.autotile) : undefined;
+  const frames = sheet?.pixelArt?.frames;
+  if (!sheet || !frames || frames.length !== 16) throw new ModelError(`${def.name} has no autotile pictures yet: make them first`);
+  const w = frames[0][0].length;
+  if (!strip.length || strip.length > frames[0].length || strip.some((r) => r.length !== w)) throw new ModelError(`The ${edge} edge must be ${w} pixels wide and 1 to ${frames[0].length} rows high`);
+  const keys = new Set(palette.map((p) => p.key));
+  for (const r of strip) for (const ch of r) if (ch !== '.' && !keys.has(ch)) throw new ModelError(`"${ch}" is used in the edge but not in the palette`);
+  const next = applyEdgeStrip(frames, edge, strip);
+  const inUse = new Set(next.flat().join(''));
+  updatePixelArtAsset(project, sheet.id, palette.filter((p) => inUse.has(p.key)), next, 8);
 }

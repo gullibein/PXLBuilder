@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { AUTOTILE_COUNT, autotileIndex, autotileLabel, DEFAULT_AUTOTILE_STYLE, pictureEdges, type AutotileStyle } from '../../core/model/autotile';
+import { applyEdgeStrip, AUTOTILE_COUNT, autotileIndex, autotileLabel, DEFAULT_AUTOTILE_STYLE, edgeStrip, pictureEdges, picturesWithOpen, type AutotileEdge, type AutotileStyle } from '../../core/model/autotile';
+import { ColorButton } from './ColorPicker';
 import * as m from '../../core/model/mutations';
 import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
@@ -47,6 +48,8 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
   const [style, setStyle] = useState<AutotileStyle>(DEFAULT_AUTOTILE_STYLE);
   const sceneId = useEditor((s) => s.activeSceneId);
   const [cells, setCells] = useState(() => PREVIEW.map((r) => [...r].map((c) => c === '#')));
+  // The edge being drawn (the top or bottom of every picture with that side open), until applied or cancelled.
+  const [edge, setEdge] = useState<EdgeDraft | null>(null);
   const close = () => useEditor.getState().setAutotileEditor(null);
   if (!def) return null;
   const on = def.components.Sprite?.autotile === true;
@@ -54,7 +57,19 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
   const ownArt = typeof def.components.Sprite?.assetId === 'string' ? project.assets.find((a) => a.id === def.components.Sprite!.assetId)?.pixelArt : undefined;
   const found = ownArt ? pictureEdges({ palette: ownArt.palette, rows: ownArt.rows }) : null;
   const ownEdges = found ? (['top', 'bottom', 'left', 'right'] as const).filter((k) => found[k] > 0).join(', ').replace(/, ([^,]*)$/, ' and $1') : '';
-  const art = sheet?.pixelArt?.frames?.length === AUTOTILE_COUNT ? sheet.pixelArt : null;
+  const stored = sheet?.pixelArt?.frames?.length === AUTOTILE_COUNT ? sheet.pixelArt : null;
+  // While an edge is drawn, everything here shows the pictures with it.
+  const art = stored && edge ? { ...stored, palette: edge.palette, frames: applyEdgeStrip(stored.frames!, edge.side, edge.strip) } : stored;
+  const startEdge = (side: AutotileEdge) => {
+    if (!stored) return;
+    const h = stored.frames![0].length;
+    const rows = Math.max(1, Math.min(Math.floor(h / 2), found?.[side] || Math.max(2, Math.round(h / 5))));
+    setEdge({ side, rows, strip: edgeStrip(stored.frames!, side, rows), palette: stored.palette.map((p) => ({ ...p })), key: stored.palette[0]?.key ?? '.' });
+  };
+  const applyEdge = () => {
+    if (!edge) return;
+    if (useEditor.getState().edit(`Draw the ${edge.side} edge of ${def.name}'s autotile`, (p) => m.setAutotileEdge(p, def.id, edge.side, edge.strip, edge.palette))) setEdge(null);
+  };
   const make = () =>
     useEditor.getState().edit(`${art ? 'Make the autotile pictures again for' : 'Autotile'} ${def.name}`, (p) => void m.makeAutotile(p, def.id, style, componentRegistry));
   const toggle = (value: boolean) => {
@@ -129,10 +144,28 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
           </div>
           <div className="at-main">
             <span className="bg-label">The 16 pictures</span>
+            {stored && !edge && (
+              <div className="at-edge-buttons">
+                <button className="chip-btn" data-testid="at-edit-top" title="Draw the top once, for the 8 pictures with nothing above them" onClick={() => startEdge('top')}>
+                  Edit the top edge
+                </button>
+                <button className="chip-btn" data-testid="at-edit-bottom" title="Draw the bottom once, for the 8 pictures with nothing below them" onClick={() => startEdge('bottom')}>
+                  Edit the bottom edge
+                </button>
+              </div>
+            )}
+            {edge && stored && <EdgeEditor draft={edge} frames={stored.frames!} onChange={setEdge} onCancel={() => setEdge(null)} onApply={applyEdge} />}
             {art ? (
               <div className="at-grid" data-testid="autotile-grid">
                 {art.frames!.map((rows, i) => (
-                  <button key={i} className="at-cell" data-testid={`autotile-cell-${i}`} title={`A tile ${autotileLabel(i)}: click to draw it`} onClick={() => editPicture(i)}>
+                  <button
+                    key={i}
+                    className={`at-cell${edge && picturesWithOpen(edge.side).includes(i) ? ' with-edge' : ''}`}
+                    data-testid={`autotile-cell-${i}`}
+                    title={`A tile ${autotileLabel(i)}: click to draw it`}
+                    disabled={!!edge}
+                    onClick={() => editPicture(i)}
+                  >
                     <ArtCanvas palette={art.palette} rows={rows} size={44} />
                     <AutotileSides index={i} />
                   </button>
@@ -205,3 +238,117 @@ function PreviewLevel({ art, cells, onToggle }: { art: Art | null; cells: boolea
     />
   );
 }
+
+/** An edge being drawn: which side, how many rows, its pixels (top to bottom), the colors, the color drawn with. */
+interface EdgeDraft {
+  side: AutotileEdge;
+  rows: number;
+  strip: string[];
+  palette: Art['palette'];
+  key: string;
+}
+
+const FREE_KEYS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+/**
+ * Draws one edge for all the pictures with that side open: the rows along the top (or bottom), shown as on a
+ * platform's middle; the left button draws with the chosen color, the right one erases (see-through).
+ */
+function EdgeEditor({ draft, frames, onChange, onCancel, onApply }: { draft: EdgeDraft; frames: string[][]; onChange: (d: EdgeDraft) => void; onCancel: () => void; onApply: () => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const w = draft.strip[0].length;
+  const h = frames[0].length;
+  const scale = Math.max(4, Math.min(24, Math.floor(360 / w)));
+  const painting = useRef<string | null>(null);
+  const latest = useRef(draft);
+  latest.current = draft;
+  useEffect(() => {
+    const c = ref.current!;
+    c.width = w * scale;
+    c.height = draft.strip.length * scale;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, c.width, c.height);
+    // See-through shown as a checkerboard.
+    for (let y = 0; y < draft.strip.length; y++)
+      for (let x = 0; x < w; x++) {
+        g.fillStyle = (x + y) % 2 ? '#2a2f3d' : '#232836';
+        g.fillRect(x * scale, y * scale, scale, scale);
+      }
+    paintArt(g, draft.palette, draft.strip, 0, 0, scale);
+    g.strokeStyle = 'rgba(255,255,255,0.08)';
+    for (let x = 0; x <= w; x++) g.strokeRect(x * scale, 0, 0, c.height);
+    for (let y = 0; y <= draft.strip.length; y++) g.strokeRect(0, y * scale, c.width, 0);
+    c.dataset.strip = draft.strip.join('/');
+  }, [draft, w, scale]);
+  const paintAt = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const key = painting.current;
+    if (key === null) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - r.left) / r.width) * w);
+    const y = Math.floor(((e.clientY - r.top) / r.height) * latest.current.strip.length);
+    const d = latest.current;
+    if (x < 0 || y < 0 || x >= w || y >= d.strip.length || d.strip[y][x] === key) return;
+    const strip = d.strip.map((row, ry) => (ry === y ? row.slice(0, x) + key + row.slice(x + 1) : row));
+    onChange({ ...d, strip });
+  };
+  const setRows = (n: number) => {
+    const rows = Math.max(1, Math.min(Math.floor(h / 2), n));
+    // Rows already drawn stay (nearest the edge); new ones start as the picture is there now.
+    const fresh = edgeStrip(frames, draft.side, rows);
+    const kept = draft.side === 'top' ? draft.strip.slice(0, rows) : draft.strip.slice(Math.max(0, draft.strip.length - rows));
+    const strip = draft.side === 'top' ? [...kept, ...fresh.slice(kept.length)] : [...fresh.slice(0, rows - kept.length), ...kept];
+    onChange({ ...draft, rows, strip });
+  };
+  const addColor = (color: string) => {
+    const known = draft.palette.find((p) => p.color.toLowerCase() === color.toLowerCase());
+    if (known) return onChange({ ...draft, key: known.key });
+    const key = [...FREE_KEYS].find((k) => !draft.palette.some((p) => p.key === k));
+    if (key) onChange({ ...draft, palette: [...draft.palette, { key, color }], key });
+  };
+  const used = new Set(draft.strip.join('') + frames.flat().join(''));
+  return (
+    <div className="at-edge" data-testid="autotile-edge-editor" data-side={draft.side}>
+      <div className="at-edge-head">
+        <strong>{draft.side === 'top' ? 'Top edge' : 'Bottom edge'}</strong>
+        <span className="muted small">on the 8 pictures with nothing {draft.side === 'top' ? 'above' : 'below'} them</span>
+        <label className="at-edge-rows">
+          Rows
+          <input type="number" min={1} max={Math.floor(h / 2)} value={draft.strip.length} data-testid="at-edge-rows" onChange={(e) => setRows(Number(e.target.value) || 1)} />
+        </label>
+      </div>
+      <canvas
+        ref={ref}
+        className="at-edge-canvas"
+        data-testid="at-edge-canvas"
+        onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          painting.current = e.button === 2 ? '.' : draft.key;
+          paintAt(e);
+        }}
+        onPointerMove={paintAt}
+        onPointerUp={() => (painting.current = null)}
+      />
+      <div className="at-edge-colors">
+        {draft.palette
+          .filter((p) => used.has(p.key) || p.key === draft.key)
+          .map((p) => (
+            <button key={p.key} className={`at-swatch${p.key === draft.key ? ' on' : ''}`} style={{ background: p.color }} title={p.color} aria-label={`Draw with ${p.color}`} data-testid={`at-edge-color-${p.key}`} onClick={() => onChange({ ...draft, key: p.key })} />
+          ))}
+        <ColorButton className="at-swatch add" testId="at-edge-add-color" value={draft.palette.find((p) => p.key === draft.key)?.color ?? '#5bbd4a'} onPick={addColor} title="Another color">
+          +
+        </ColorButton>
+      </div>
+      <p className="muted small">Left button draws, right button erases. Drawn once, it goes on all 8; the ends keep their rounded corners and darker sides.</p>
+      <div className="at-edge-actions">
+        <button className="chip-btn" data-testid="at-edge-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="chip-btn primary" data-testid="at-edge-apply" onClick={onApply}>
+          Apply to the 8 pictures
+        </button>
+      </div>
+    </div>
+  );
+}
+

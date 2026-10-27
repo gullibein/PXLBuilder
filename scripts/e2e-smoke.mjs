@@ -4050,6 +4050,44 @@ try {
       await ap.getByTestId('undo').evaluate((b) => b.click());
       await check(async () => (await cell()) === before, '(one Undo step)');
     }
+    // The edge editor: the top drawn once for the 8 pictures with nothing above.
+    {
+      const pic = (i) => at.getByTestId(`autotile-cell-${i}`).locator('canvas').evaluate((c) => c.toDataURL());
+      const before = { 0: await pic(0), 10: await pic(10), 1: await pic(1), 15: await pic(15) };
+      await at.getByTestId('at-edit-top').click();
+      const ed = at.getByTestId('autotile-edge-editor');
+      await check(async () => (await ed.isVisible()) && (await ed.getAttribute('data-side')) === 'top' && (await at.locator('.at-cell.with-edge').count()) === 8, 'Edit the top edge: an editor for the top, which goes on the 8 pictures with nothing above (marked)');
+      // A new color, then a stroke across the top row.
+      const canvasEl = ed.getByTestId('at-edge-canvas');
+      const strip0 = await canvasEl.getAttribute('data-strip');
+      const box = await canvasEl.boundingBox();
+      // (Another of the colors there are: the last swatch.)
+      await ed.locator('.at-swatch:not(.add)').last().click();
+      await ap.mouse.move(box.x + 2, box.y + 2);
+      await ap.mouse.down();
+      await ap.mouse.move(box.x + box.width - 2, box.y + 2, { steps: 12 });
+      await ap.mouse.up();
+      await check(async () => (await canvasEl.getAttribute('data-strip')) !== strip0, '(drawn on the edge)');
+      await check(async () => (await pic(0)) !== before[0] && (await pic(10)) !== before[10] && (await pic(1)) === before[1] && (await pic(15)) === before[15], 'it shows at once on the pictures with an open top (on its own, a platform middle), not on those with a tile above');
+      await ed.getByTestId('at-edge-cancel').click();
+      await check(async () => (await at.getByTestId('autotile-edge-editor').count()) === 0 && (await pic(10)) === before[10], 'Cancel leaves the pictures as they were');
+      await at.getByTestId('at-edit-top').click();
+      const ed2 = at.getByTestId('autotile-edge-editor');
+      const box2 = await ed2.getByTestId('at-edge-canvas').boundingBox();
+      await ed2.locator('.at-swatch:not(.add)').last().click();
+      await ap.mouse.move(box2.x + 2, box2.y + 2);
+      await ap.mouse.down();
+      await ap.mouse.move(box2.x + box2.width - 2, box2.y + 2, { steps: 12 });
+      await ap.mouse.up();
+      await ap.screenshot({ path: `${OUT}/31d-autotile-edge.png` });
+      await ed2.getByTestId('at-edge-apply').click();
+      await check(async () => (await at.getByTestId('autotile-edge-editor').count()) === 0 && (await pic(10)) !== before[10] && (await pic(1)) === before[1], 'Apply stores it on the 8 pictures');
+      await ap.getByTestId('undo').evaluate((b) => b.click());
+      await check(async () => (await pic(10)) === before[10] && (await pic(0)) === before[0], '(one Undo step)');
+      await at.getByTestId('at-edit-bottom').click();
+      await check(async () => (await at.getByTestId('autotile-edge-editor').getAttribute('data-side')) === 'bottom' && (await at.locator('.at-cell.with-edge').count()) === 8, 'Edit the bottom edge: the same for the 8 pictures with nothing below');
+      await at.getByTestId('at-edge-cancel').click();
+    }
     // A picture opens in the sprite editor: the 16 named, no animation controls.
     await at.getByTestId('autotile-cell-10').click();
     const se = ap.getByTestId('sprite-editor');

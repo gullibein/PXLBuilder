@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from './factory';
 import * as m from './mutations';
-import { AUTOTILE_COUNT, autotileIndex, autotileLabel, makeAutotileFrames, pictureEdges, solidTile } from './autotile';
+import { applyEdgeStrip, AUTOTILE_COUNT, autotileIndex, autotileLabel, edgeStrip, makeAutotileFrames, pictureEdges, picturesWithOpen, solidTile } from './autotile';
 
 const registry = createBuiltinRegistry();
 
@@ -125,4 +125,43 @@ describe('autotiling', () => {
     expect(frames[15][0]).toBe(frames[15][8]);
     expect(frames[15][2]).toBe(frames[15][10]);
   });
+
+  it('one top (or bottom) edge drawn for all the pictures with that side open; the ends keep their corners', () => {
+    const { frames } = makeAutotileFrames(solidTile('#808080', 8, 8), { edge: 'outline', top: 'light', round: true });
+    // Two rows of grass ("g") along the top.
+    const strip = ['gggggggg', 'gGgGgGgG'];
+    const out = applyEdgeStrip(frames, 'top', strip);
+    expect(picturesWithOpen('top')).toEqual([0, 2, 4, 6, 8, 10, 12, 14]);
+    // A platform's middle (10): exactly the strip.
+    expect(out[10].slice(0, 2)).toEqual(strip);
+    // On its own (0): grass too, but its top-left corner stays cut and its darker left side stays.
+    expect(out[0][0][0]).toBe('.');
+    expect(out[0][0][3]).toBe('g');
+    expect(out[0][1][0]).toBe(frames[0][1][0]);
+    // A tile above (1, 15): unchanged; the rest of every picture unchanged.
+    expect(out[1]).toEqual(frames[1]);
+    expect(out[15]).toEqual(frames[15]);
+    expect(out[10].slice(2)).toEqual(frames[10].slice(2));
+    // The bottom: only the 8 with nothing below, along their last rows.
+    const bottom = applyEdgeStrip(frames, 'bottom', ['dddddddd']);
+    expect(bottom[10][7]).toBe('dddddddd');
+    expect(bottom[4]).toEqual(frames[4]);
+    expect(edgeStrip(bottom, 'bottom', 1)).toEqual(['dddddddd']);
+  });
+
+  it('stored with the object (setAutotileEdge): one Undo step, the colors kept, a wrong size refused', () => {
+    let project = createProject(registry);
+    const platform = project.definitions.find((d) => d.name === 'Platform')!.id;
+    project = produce(project, (d) => void m.makeAutotile(d, platform, { edge: 'none', top: 'none', round: false }, registry));
+    const sheet = () => project.assets.find((a) => a.id === project.definitions.find((d) => d.id === platform)!.components.Sprite.autotileSheet)!;
+    const art = sheet().pixelArt!;
+    const w = art.rows[0].length;
+    const palette = [...art.palette, { key: 'z', color: '#5bbd4a' }];
+    project = produce(project, (d) => m.setAutotileEdge(d, platform, 'top', ['z'.repeat(w)], palette));
+    const after = sheet().pixelArt!;
+    expect(after.palette.find((p) => p.key === after.frames![0][0][0])!.color).toBe('#5bbd4a');
+    expect(after.frames![1][0]).toBe(art.frames![1][0]);
+    expect(() => produce(project, (d) => m.setAutotileEdge(d, platform, 'top', ['zz'], palette))).toThrow(new RegExp(`${w} pixels wide`));
+  });
 });
+

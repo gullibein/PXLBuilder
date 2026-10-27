@@ -246,3 +246,44 @@ function withoutEdges(px: string[][], edges: PictureEdges, joined: { up: boolean
   }
   return out;
 }
+
+// ---------------------------------------------------------------- one edge for all open sides
+
+/** An edge drawn once for every picture with that side open: the top of tiles with nothing above, the bottom… */
+export type AutotileEdge = 'top' | 'bottom';
+
+/** The picture the edge is taken from: joined left and right, open at the top and bottom (a platform's middle). */
+export const EDGE_REFERENCE = AUTOTILE_LEFT | AUTOTILE_RIGHT;
+
+/** Which pictures have this side open (they show the edge). */
+export function picturesWithOpen(edge: AutotileEdge): number[] {
+  const bit = edge === 'top' ? AUTOTILE_UP : AUTOTILE_DOWN;
+  return Array.from({ length: AUTOTILE_COUNT }, (_, i) => i).filter((i) => !(i & bit));
+}
+
+/** The edge as it is now: `rows` rows along that side of the reference picture (top to bottom). */
+export function edgeStrip(frames: string[][], edge: AutotileEdge, rows: number): string[] {
+  const ref = frames[EDGE_REFERENCE];
+  return edge === 'top' ? ref.slice(0, rows) : ref.slice(ref.length - rows);
+}
+
+/**
+ * Draws one edge on every picture with that side open: the strip's rows go along that side. Where a picture differs
+ * from the reference picture there (its corner cut off, a darker side), that stays: an end's rounded corner stays
+ * round under the new grass. Pictures with a tile on that side are left as they are.
+ */
+export function applyEdgeStrip(frames: string[][], edge: AutotileEdge, strip: string[]): string[][] {
+  const ref = frames[EDGE_REFERENCE];
+  const h = ref.length;
+  const n = Math.min(strip.length, h);
+  const out = frames.map((f) => [...f]);
+  for (const i of picturesWithOpen(edge)) {
+    for (let s = 0; s < n; s++) {
+      const y = edge === 'top' ? s : h - n + s;
+      const row = [...frames[i][y]];
+      for (let x = 0; x < row.length; x++) if (frames[i][y][x] === ref[y][x] || i === EDGE_REFERENCE) row[x] = strip[s][x] ?? row[x];
+      out[i][y] = row.join('');
+    }
+  }
+  return out;
+}
