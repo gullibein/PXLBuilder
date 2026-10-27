@@ -73,12 +73,15 @@ export function makeAutotileFrames(base: PixelArt, style: AutotileStyle = DEFAUL
     return free;
   };
   const colorAt = (ch: string) => colors.get(ch) ?? null;
+  // Edges the picture already has (grass painted along its top, a dark bottom, rounded corners): kept where that side
+  // is open, and where a tile is next to it replaced by the tile's middle (its pattern continued).
+  const edges = pictureEdges(base);
   const frames: string[][] = [];
   for (let index = 0; index < AUTOTILE_COUNT; index++) {
     const open = { up: !(index & AUTOTILE_UP), right: !(index & AUTOTILE_RIGHT), down: !(index & AUTOTILE_DOWN), left: !(index & AUTOTILE_LEFT) };
-    const px = base.rows.map((r) => [...r]);
-    // The top: a lighter band or grass where nothing is above.
-    if (open.up && style.top !== 'none') {
+    const px = withoutEdges(base.rows.map((r) => [...r]), edges, { up: !open.up, right: !open.right, down: !open.down, left: !open.left });
+    // The top: a lighter band or grass where nothing is above (unless the picture has a top edge of its own).
+    if (open.up && style.top !== 'none' && !edges.top) {
       const band = style.top === 'grass' ? t * 2 : t;
       for (let y = 0; y < Math.min(band, h); y++)
         for (let x = 0; x < w; x++) {
@@ -138,4 +141,108 @@ function mix(a: string, b: string, amount: number): string {
   const [r2, g2, b2] = p(b);
   const ch = (x: number, y: number) => Math.round(x + (y - x) * amount).toString(16).padStart(2, '0');
   return `#${ch(r1, r2)}${ch(g1, g2)}${ch(b1, b2)}${a.length === 9 ? a.slice(7) : ''}`;
+}
+
+/** How many rows (top, bottom) and columns (left, right) of a tile picture are an edge painted into it, not its middle. */
+export interface PictureEdges {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * The edges a tile picture has of its own: rows along the top (or bottom) and columns along a side that are mostly
+ * colors its middle doesn't have (grass on dirt, a dark outline), or that are cut away (rounded corners). At most a
+ * third of the picture each way.
+ */
+export function pictureEdges(art: PixelArt): PictureEdges {
+  const rows = art.rows;
+  const h = rows.length;
+  const w = rows[0].length;
+  const color = new Map(art.palette.map((p) => [p.key, p.color.toLowerCase()]));
+  const at = (x: number, y: number) => (rows[y][x] === '.' ? null : (color.get(rows[y][x]) ?? null));
+  // The middle's colors (and whether it has see-through pixels of its own).
+  const middle = new Set<string>();
+  let middleClear = false;
+  for (let y = Math.floor(h / 3); y < Math.ceil((2 * h) / 3); y++)
+    for (let x = Math.floor(w / 3); x < Math.ceil((2 * w) / 3); x++) {
+      const c = at(x, y);
+      if (c) middle.add(c);
+      else middleClear = true;
+    }
+  /** A line of pixels is edge when most of it is colors the middle hasn't, or any of it is cut away (a rounded corner). */
+  const isEdge = (pixels: (string | null)[]) => {
+    let foreign = 0;
+    let clear = 0;
+    for (const c of pixels) {
+      if (c === null) clear++;
+      else if (!middle.has(c)) foreign++;
+    }
+    return foreign > pixels.length / 2 || (!middleClear && clear > 0) || clear > pixels.length / 2;
+  };
+  const row = (y: number) => Array.from({ length: w }, (_, x) => at(x, y));
+  const count = (n: number, line: (i: number) => (string | null)[]) => {
+    let k = 0;
+    while (k < Math.floor(n / 3) && isEdge(line(k))) k++;
+    return k;
+  };
+  const top = count(h, (i) => row(i));
+  const bottom = count(h, (i) => row(h - 1 - i));
+  // Columns between the top and bottom edges (their corners belong to those).
+  const col = (x: number) => Array.from({ length: h - top - bottom }, (_, i) => at(x, top + i));
+  return { top, bottom, left: count(w, (i) => col(i)), right: count(w, (i) => col(w - 1 - i)) };
+}
+
+/**
+ * The picture with its own edges taken off the joined sides: those rows (columns) are filled with the middle's,
+ * continuing its pattern (the same distance further in as the pattern repeats, so a checkerboard stays a checkerboard).
+ */
+function withoutEdges(px: string[][], edges: PictureEdges, joined: { up: boolean; right: boolean; down: boolean; left: boolean }): string[][] {
+  const h = px.length;
+  const w = px[0].length;
+  const inner = { y0: edges.top, y1: h - edges.bottom, x0: edges.left, x1: w - edges.right };
+  const sameRow = (a: number, b: number) => px[a].join('') === px[b].join('');
+  // How often the middle repeats, down and across (the whole middle when it doesn't).
+  const period = (n0: number, n1: number, same: (a: number, b: number) => boolean) => {
+    // (Up to all but a few rows: a pattern that repeats every 8 rows shows in a 13-row middle.)
+    for (let p = 1; p <= n1 - n0 - 3; p++) {
+      let ok = true;
+      for (let i = n0; i + p < n1 && ok; i++) ok = same(i, i + p);
+      if (ok) return p;
+    }
+    return Math.max(1, n1 - n0);
+  };
+  const py = period(inner.y0, inner.y1, sameRow);
+  const fromInside = (i: number, lo: number, hi: number, p: number) => {
+    let j = i;
+    while (j < lo) j += p;
+    while (j >= hi) j -= p;
+    return Math.min(hi - 1, Math.max(lo, j));
+  };
+  const out = px.map((r) => [...r]);
+  if (joined.up) for (let y = 0; y < edges.top; y++) out[y] = [...px[fromInside(y, inner.y0, inner.y1, py)]];
+  if (joined.down) for (let y = h - edges.bottom; y < h; y++) out[y] = [...px[fromInside(y, inner.y0, inner.y1, py)]];
+  // Columns from the picture as it is now (its top and bottom already done).
+  const now = out.map((r) => [...r]);
+  const sameCol = (a: number, b: number) => now.slice(inner.y0, inner.y1).every((r) => r[a] === r[b]);
+  const px_ = period(inner.x0, inner.x1, sameCol);
+  if (joined.left) for (let x = 0; x < edges.left; x++) for (let y = 0; y < h; y++) out[y][x] = now[y][fromInside(x, inner.x0, inner.x1, px_)];
+  if (joined.right) for (let x = w - edges.right; x < w; x++) for (let y = 0; y < h; y++) out[y][x] = now[y][fromInside(x, inner.x0, inner.x1, px_)];
+  // Corners cut away in the picture (rounded) on a joined side: filled from the same row (a grass top runs on into
+  // the next tile's).
+  const reach = Math.floor(w / 3);
+  for (const r of out) {
+    if (joined.left) {
+      let k = 0;
+      while (k < reach && r[k] === '.') k++;
+      if (k > 0 && k < reach) for (let x = 0; x < k; x++) r[x] = r[k];
+    }
+    if (joined.right) {
+      let k = 0;
+      while (k < reach && r[w - 1 - k] === '.') k++;
+      if (k > 0 && k < reach) for (let x = 0; x < k; x++) r[w - 1 - x] = r[w - 1 - k];
+    }
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { AUTOTILE_COUNT, autotileIndex, autotileLabel, DEFAULT_AUTOTILE_STYLE, type AutotileStyle } from '../../core/model/autotile';
+import { AUTOTILE_COUNT, autotileIndex, autotileLabel, DEFAULT_AUTOTILE_STYLE, pictureEdges, type AutotileStyle } from '../../core/model/autotile';
 import * as m from '../../core/model/mutations';
 import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
@@ -39,6 +39,7 @@ export function AutotileEditor() {
 
 function AutotileDialog({ definitionId }: { definitionId: string }) {
   const def = useEditor((s) => s.project.definitions.find((d) => d.id === definitionId));
+  const project = useEditor((s) => s.project);
   const sheet = useEditor((s) => {
     const ref = s.project.definitions.find((d) => d.id === definitionId)?.components.Sprite?.autotileSheet;
     return typeof ref === 'string' ? s.project.assets.find((a) => a.id === ref) : undefined;
@@ -49,6 +50,10 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
   const close = () => useEditor.getState().setAutotileEditor(null);
   if (!def) return null;
   const on = def.components.Sprite?.autotile === true;
+  // Edges painted into the object's own picture (grass on top, a dark bottom…).
+  const ownArt = typeof def.components.Sprite?.assetId === 'string' ? project.assets.find((a) => a.id === def.components.Sprite!.assetId)?.pixelArt : undefined;
+  const found = ownArt ? pictureEdges({ palette: ownArt.palette, rows: ownArt.rows }) : null;
+  const ownEdges = found ? (['top', 'bottom', 'left', 'right'] as const).filter((k) => found[k] > 0).join(', ').replace(/, ([^,]*)$/, ' and $1') : '';
   const art = sheet?.pixelArt?.frames?.length === AUTOTILE_COUNT ? sheet.pixelArt : null;
   const make = () =>
     useEditor.getState().edit(`${art ? 'Make the autotile pictures again for' : 'Autotile'} ${def.name}`, (p) => void m.makeAutotile(p, def.id, style, componentRegistry));
@@ -111,6 +116,11 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
               {art ? 'Make the 16 pictures again' : 'Make the 16 pictures'}
             </button>
             <p className="muted small">Made from {def.name}'s picture (or its color). Click a picture to draw it by hand.</p>
+            {ownEdges && (
+              <p className="muted small" data-testid="autotile-own-edges">
+                {def.name}'s picture has its own {ownEdges} edge: kept where that side is open, and left out (the middle's pattern continued) where a tile is next to it.
+              </p>
+            )}
             {/* Ask the AI for a kind of tile ("stone bricks", "ice") or a change ("rounder corners", "moss on top"). */}
             <span className="bg-label">Ask the AI</span>
             <div className="at-prompt">

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from './factory';
 import * as m from './mutations';
-import { AUTOTILE_COUNT, autotileIndex, autotileLabel, makeAutotileFrames, solidTile } from './autotile';
+import { AUTOTILE_COUNT, autotileIndex, autotileLabel, makeAutotileFrames, pictureEdges, solidTile } from './autotile';
 
 const registry = createBuiltinRegistry();
 
@@ -93,5 +93,36 @@ describe('autotiling', () => {
     const stoneDef = fresh.definitions.find((d) => d.name === 'Stone')!.id;
     const drawn = produce(fresh, (d) => m.drawAutotileTiles(d, stoneDef, [{ key: 'a', color: '#777788' }], [{ index: 0, rows: Array.from({ length: size }, () => 'a'.repeat(size)) }], registry));
     expect(drawn.definitions.find((d) => d.id === stoneDef)!.components.Sprite.autotile).toBe(true);
+  });
+
+  it("a picture with its own grass on top: the grass only where the top is open, the dirt's pattern continued where a tile is above", () => {
+    // 16×16 dirt in a checkerboard of 4-pixel squares, grass painted along the top 3 rows, the top corners rounded.
+    const rows = Array.from({ length: 16 }, (_, y) =>
+      Array.from({ length: 16 }, (_, x) => {
+        if (y < 3) return (y === 0 && (x === 0 || x === 15)) ? '.' : y === 0 ? 'g' : 'G';
+        return (Math.floor(x / 4) + Math.floor(y / 4)) % 2 ? 'b' : 'B';
+      }).join(''),
+    );
+    const base = { palette: [{ key: 'g', color: '#7ad05a' }, { key: 'G', color: '#4caf3c' }, { key: 'b', color: '#a0522d' }, { key: 'B', color: '#c06a30' }], rows };
+    expect(pictureEdges(base)).toMatchObject({ top: 3, bottom: 0, left: 0, right: 0 });
+    // (Even with "grass" chosen: the picture's own grass is the top.)
+    const { palette, frames } = makeAutotileFrames(base, { edge: 'none', top: 'grass', round: false });
+    const colorOf = (f: number, x: number, y: number) => palette.find((p) => p.key === frames[f][y][x])?.color ?? null;
+    const green = (c: string | null) => c === '#7ad05a' || c === '#4caf3c' || c === '#5bbd4a' || (c !== null && c.startsWith('#8'));
+    // Open top (0: alone, 10: a platform's middle): its grass.
+    expect(colorOf(10, 5, 1)).toBe('#4caf3c');
+    expect(colorOf(0, 5, 0)).toBe('#7ad05a');
+    // A tile above (1, 5, 15): no grass anywhere, and no cut corners at the top.
+    for (const f of [1, 5, 11, 15]) {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) expect(green(colorOf(f, x, y)), `picture ${f} at ${x},${y}`).toBe(false);
+      expect(colorOf(f, 0, 0)).not.toBeNull();
+    }
+    // A platform's middle (10, joined left and right): its grass runs from edge to edge (no cut corners between tiles);
+    // on its own (0) the corners stay round.
+    expect(frames[10][0]).toMatch(/^g+$/);
+    expect(frames[0][0][0]).toBe('.');
+    // The checkerboard carries on through where the grass was: row 0 is like row 8 (it repeats every 8 rows).
+    expect(frames[15][0]).toBe(frames[15][8]);
+    expect(frames[15][2]).toBe(frames[15][10]);
   });
 });
