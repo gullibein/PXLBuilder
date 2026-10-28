@@ -438,36 +438,46 @@ function useKeyLabels(): (code: string) => string {
   return (code) => (map?.get(code) ?? usLabel(code)).toUpperCase();
 }
 
-function Keyboard({ inst }: { inst: Instrument }) {
+/** Notes being played by hand (computer keys, the mouse on a keyboard), with the octave the computer keys play in. */
+export interface NotePlayer {
+  octave: number;
+  setOctave: (o: number | ((o: number) => number)) => void;
+  /** Pitches sounding now. */
+  down: Set<number>;
+  /** Starts a note for a key (a computer key's code, or a name for the mouse); a key already held does nothing. */
+  press: (key: string, pitch: number) => void;
+  /** Lets go of the note a key started (the one it started, even if the octave changed since): it fades as the instrument's release says. */
+  letGo: (key: string) => void;
+}
+
+/**
+ * Plays an instrument by hand: the computer keys by where they are (any layout), ← → for the octave, and press /
+ * letGo for the mouse. `instrument` is asked at each note, so it follows the instrument (or channel) chosen now.
+ */
+function useNotePlayer(instrument: () => Instrument | null): NotePlayer {
   const [octave, setOctave] = useState(4);
   const [down, setDown] = useState<Set<number>>(new Set());
   const held = useRef(new Map<string, { note: { release(): void } | null; pitch: number }>());
-  const label = useKeyLabels();
-  const instRef = useRef(inst);
-  instRef.current = inst;
-  const base = (octave + 1) * 12;
-  const press = (key: string | number, pitch: number) => {
-    if (held.current.has(String(key))) return;
-    held.current.set(String(key), { note: playNote(instRef.current, pitch, 3), pitch });
+  const get = useRef(instrument);
+  get.current = instrument;
+  const press = (key: string, pitch: number) => {
+    if (held.current.has(key)) return;
+    const inst = get.current();
+    held.current.set(key, { note: inst ? playNote(inst, pitch, 4) : null, pitch });
     setDown((d) => new Set(d).add(pitch));
   };
-  /** Lets go of the note a key started (the one it started, even if the octave changed since). */
-  const let_go = (key: string | number) => {
-    const h = held.current.get(String(key));
+  const letGo = (key: string) => {
+    const h = held.current.get(key);
     if (!h) return;
     h.note?.release();
-    held.current.delete(String(key));
-    const pitch = h.pitch;
-    setDown((d) => {
-      const n = new Set(d);
-      n.delete(pitch);
-      return n;
-    });
+    held.current.delete(key);
+    setDown(new Set([...held.current.values()].map((x) => x.pitch)));
   };
+  const base = (octave + 1) * 12;
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (e.ctrlKey || e.metaKey || e.altKey || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) && (t as HTMLInputElement).type !== 'range')) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) && !['range', 'checkbox'].includes((t as HTMLInputElement).type))) return;
       if (e.code in KEY_NOTES) {
         e.preventDefault();
         if (!e.repeat) press(e.code, base + KEY_NOTES[e.code]);
@@ -477,10 +487,10 @@ function Keyboard({ inst }: { inst: Instrument }) {
       }
     };
     const onUp = (e: KeyboardEvent) => {
-      if (e.code in KEY_NOTES) let_go(e.code);
+      if (e.code in KEY_NOTES) letGo(e.code);
     };
     // Switching to another window with a key held: it is let go.
-    const onBlur = () => [...held.current.keys()].forEach(let_go);
+    const onBlur = () => [...held.current.keys()].forEach(letGo);
     window.addEventListener('blur', onBlur);
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
@@ -490,6 +500,30 @@ function Keyboard({ inst }: { inst: Instrument }) {
       window.removeEventListener('blur', onBlur);
     };
   }, [base]);
+  // Closing (or switching tabs) lets go of everything.
+  useEffect(() => () => [...held.current.keys()].forEach(letGo), []);
+  return { octave, setOctave, down, press, letGo };
+}
+
+function OctaveControl({ player, testId }: { player: NotePlayer; testId: string }) {
+  return (
+    <span className="ms-octave">
+      <button className="icon-btn small" aria-label="Octave down" data-testid={`${testId}-octave-down`} onClick={() => player.setOctave((o) => Math.max(1, o - 1))}>
+        ◀
+      </button>
+      <span data-testid={`${testId}-octave`}>Octave {player.octave}</span>
+      <button className="icon-btn small" aria-label="Octave up" data-testid={`${testId}-octave-up`} onClick={() => player.setOctave((o) => Math.min(7, o + 1))}>
+        ▶
+      </button>
+    </span>
+  );
+}
+
+function Keyboard({ inst }: { inst: Instrument }) {
+  const player = useNotePlayer(() => inst);
+  const { down, press, letGo } = player;
+  const label = useKeyLabels();
+  const base = (player.octave + 1) * 12;
   const whites = [];
   const blacks = [];
   let wi = 0;
@@ -506,10 +540,17 @@ function Keyboard({ inst }: { inst: Instrument }) {
         // (A touch holds on to the key it started on: let go of it, so sliding a finger along plays other keys.)
         const el = e.currentTarget as HTMLElement;
         if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
-        press(`m${pitch}`, pitch);
+        press(`pointer${e.pointerId}`, pitch);
       },
-      onPointerUp: () => let_go(`m${pitch}`),
-      onPointerLeave: () => let_go(`m${pitch}`),
+      // Sliding along with the button held: the key left fades out, the key reached plays.
+      onPointerEnter: (e: React.PointerEvent) => {
+        if (e.pointerType === 'mouse' ? !(e.buttons & 1) : e.pressure === 0) return;
+        letGo(`pointer${e.pointerId}`);
+        press(`pointer${e.pointerId}`, pitch);
+      },
+      onPointerLeave: (e: React.PointerEvent) => letGo(`pointer${e.pointerId}`),
+      onPointerUp: (e: React.PointerEvent) => letGo(`pointer${e.pointerId}`),
+      onPointerCancel: (e: React.PointerEvent) => letGo(`pointer${e.pointerId}`),
     };
     if (black)
       blacks.push(
@@ -529,20 +570,12 @@ function Keyboard({ inst }: { inst: Instrument }) {
   }
   return (
     <div className="ms-keyboard-wrap">
-      <div className="ms-octave">
-        <button className="icon-btn small" aria-label="Octave down" data-testid="ins-octave-down" onClick={() => setOctave((o) => Math.max(1, o - 1))}>
-          ◀
-        </button>
-        <span>Octave {octave}</span>
-        <button className="icon-btn small" aria-label="Octave up" data-testid="ins-octave-up" onClick={() => setOctave((o) => Math.min(7, o + 1))}>
-          ▶
-        </button>
-      </div>
+      <OctaveControl player={player} testId="ins" />
       <div className="ms-keyboard" data-testid="ins-keyboard">
         {whites}
         {blacks}
       </div>
-      <p className="panel-hint">Play with the mouse or your computer's keys: each piano key shows the key that plays it (the bottom letter row and the row above it are the lower octave, the top letter row and the number row the upper one). ← → change the octave.</p>
+      <p className="panel-hint">Play with the mouse (hold the button and slide along the keys) or your computer's keys: each piano key shows the key that plays it (the bottom letter row and the row above it are the lower octave, the top letter row and the number row the upper one). ← → change the octave.</p>
     </div>
   );
 }
@@ -606,6 +639,9 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
   const player = useRef<SongPlayer | null>(null);
   const p = Math.min(pattern, song.patterns.length - 1);
   const ch = Math.min(channel, song.channels.length - 1);
+  // The computer keys (and the roll's keys) play the chosen channel's instrument.
+  const hand = useNotePlayer(() => instruments(song.channels[ch]?.instrument ?? null));
+  const handName = instrumentList.find((a) => a.id === song.channels[ch]?.instrument)?.name ?? null;
 
   const change = (label: string, recipe: (s: Song) => void, key?: string) => {
     const next = structuredClone(song);
@@ -939,6 +975,10 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
               ))}
             </select>
           </label>
+          <div className="ms-hand" data-testid="music-hand">
+            <span className="muted small">{handName ? `Your keys play ${handName}` : 'This channel is silent'}</span>
+            <OctaveControl player={hand} testId="song" />
+          </div>
         </div>
         <PianoRoll
           song={song}
@@ -947,20 +987,23 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
           pen={pen}
           head={headStep}
           instrument={instruments(song.channels[ch]?.instrument ?? null)}
+          hand={hand}
           onNotes={(next) => change('Notes', (s) => void (s.patterns[p].notes = next))}
         />
       </div>
-      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. Space plays and stops the song. Undo works on everything.</p>
+      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. The keys at the left, and your computer's keys, play the chosen channel's instrument (hold the mouse and slide along the keys). Space plays and stops the song. Undo works on everything.</p>
     </div>
   );
 }
 
-function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: { song: Song; pattern: number; channel: number; pen: number; head: number | null; instrument: Instrument | null; onNotes: (notes: SongNote[]) => void }) {
+function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNotes }: { song: Song; pattern: number; channel: number; pen: number; head: number | null; instrument: Instrument | null; hand: NotePlayer; onNotes: (notes: SongNote[]) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const notes = song.patterns[pattern].notes;
   // A note being drawn (dragged longer) before it is kept.
   const [draft, setDraft] = useState<SongNote | null>(null);
+  // The roll's key held with the mouse (sliding up and down plays the keys passed over).
+  const keyHeld = useRef<number | null>(null);
   // Columns as wide as the space allows (at least COL_W).
   const [room, setRoom] = useState(0);
   useEffect(() => {
@@ -993,7 +1036,7 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: {
       const black = BLACK.has(pitch % 12);
       ctx.fillStyle = black ? '#1b1e27' : '#232733';
       ctx.fillRect(KEYS_W, y, width - KEYS_W, ROW_H);
-      ctx.fillStyle = black ? '#2a2d36' : '#d9dce3';
+      ctx.fillStyle = hand.down.has(pitch) ? '#9d91ff' : black ? '#2a2d36' : '#d9dce3';
       ctx.fillRect(0, y, KEYS_W - 2, ROW_H - 1);
       if (pitch % 12 === 0) {
         ctx.fillStyle = '#5a6070';
@@ -1030,7 +1073,7 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(KEYS_W + head * COL_W, 0, 2, height);
     }
-  }, [notes, draft, channel, head, song.steps, width, height, COL_W]);
+  }, [notes, draft, channel, head, song.steps, width, height, COL_W, hand.down]);
 
   const cellAt = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
@@ -1048,13 +1091,16 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: {
         style={{ width, height }}
         data-testid="music-roll"
         data-notes={notes.length}
+        data-playing-keys={[...hand.down].sort((a, b) => a - b).join(',')}
         data-note-steps={notes.reduce((n, x) => n + x[3], 0)}
         aria-label="Piano roll"
         onPointerDown={(e) => {
           const { x, step, pitch } = cellAt(e);
           if (pitch < LOW || pitch > HIGH) return;
           if (x < KEYS_W) {
-            if (instrument) playNote(instrument, pitch, 0.3);
+            e.currentTarget.setPointerCapture(e.pointerId);
+            keyHeld.current = pitch;
+            hand.press('roll', pitch);
             return;
           }
           if (step < 0 || step >= song.steps) return;
@@ -1068,19 +1114,37 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: {
           if (instrument) playNote(instrument, pitch, 0.25);
         }}
         onPointerMove={(e) => {
+          if (keyHeld.current !== null) {
+            const { pitch } = cellAt(e);
+            if (pitch === keyHeld.current || pitch < LOW || pitch > HIGH) return;
+            // Slid onto another key: the one left fades out, this one plays.
+            keyHeld.current = pitch;
+            hand.letGo('roll');
+            hand.press('roll', pitch);
+            return;
+          }
           if (!draft) return;
           const { step } = cellAt(e);
           const len = Math.max(1, Math.min(song.steps - draft[1], step - draft[1] + 1));
           if (len !== draft[3] && step > draft[1]) setDraft([draft[0], draft[1], draft[2], len, draft[4]]);
         }}
         onPointerUp={() => {
+          if (keyHeld.current !== null) {
+            keyHeld.current = null;
+            hand.letGo('roll');
+            return;
+          }
           if (!draft) return;
           // A new note replaces any other note of the channel it covers at the same pitch.
           const keep = notes.filter((n) => !(n[0] === draft[0] && n[2] === draft[2] && n[1] < draft[1] + draft[3] && draft[1] < n[1] + n[3]));
           onNotes([...keep, draft].sort((a, b) => a[1] - b[1] || a[0] - b[0]));
           setDraft(null);
         }}
-        onPointerCancel={() => setDraft(null)}
+        onPointerCancel={() => {
+          setDraft(null);
+          keyHeld.current = null;
+          hand.letGo('roll');
+        }}
       />
     </div>
   );

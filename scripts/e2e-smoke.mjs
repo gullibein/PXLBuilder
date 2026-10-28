@@ -4179,6 +4179,23 @@ try {
     await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await mp.getByTestId('music-pattern-1').count()) === 1, 'Copy makes pattern B with the same notes');
     await mp.getByTestId('music-order-add').click();
     await check(async () => (await mp.getByTestId('music-order-1').textContent()) === 'B', 'B is added to the order after A');
+    // The computer keys play the chosen channel's instrument here too (octave 4: Z = C4 = 60).
+    await mp.keyboard.down('z');
+    await check(async () => (await roll.getAttribute('data-playing-keys')) === '60' && (await mp.getByTestId('music-hand').innerText()).includes('Square lead'), "in the song, the computer keys play the chosen channel's instrument");
+    await mp.keyboard.up('z');
+    await check(async () => (await roll.getAttribute('data-playing-keys')) === '', 'and let go');
+    // The roll's keys: held and slid along, each key reached plays and the one left stops.
+    {
+      const k1 = await cell(-1, 72);
+      await mp.mouse.move(k1.x + 10, k1.y);
+      await mp.mouse.down();
+      await check(async () => (await roll.getAttribute('data-playing-keys')) === '72', "the roll's keys play when held");
+      const k2 = await cell(-1, 69);
+      await mp.mouse.move(k2.x + 10, k2.y, { steps: 3 });
+      await check(async () => (await roll.getAttribute('data-playing-keys')) === '69', 'sliding down the keys plays the key reached and lets go of the one left');
+      await mp.mouse.up();
+      await check(async () => (await roll.getAttribute('data-playing-keys')) === '', 'letting go of the mouse stops it');
+    }
     await mp.getByTestId('music-level').check();
     await mp.screenshot({ path: `${OUT}/32-music-song.png` });
     // Instruments: shaped, and saved with the game.
@@ -4194,8 +4211,21 @@ try {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await check(async () => (await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL())) !== before, 'shaping the instrument redraws its sound');
-    await mp.getByTestId('key-C4').dispatchEvent('pointerdown');
-    await mp.getByTestId('key-C4').dispatchEvent('pointerup');
+    // Held and slid along the keyboard: each key reached plays, the one left stops.
+    {
+      const c4 = await mp.getByTestId('key-C4').boundingBox();
+      const e4 = await mp.getByTestId('key-E4').boundingBox();
+      await mp.mouse.move(c4.x + c4.width / 2, c4.y + c4.height - 10);
+      await mp.mouse.down();
+      await check(async () => (await mp.getByTestId('key-C4').getAttribute('class')).includes('down'), 'a held key plays');
+      await mp.mouse.move(e4.x + e4.width / 2, e4.y + e4.height - 10, { steps: 6 });
+      await check(async () => (await mp.getByTestId('key-E4').getAttribute('class')).includes('down') && !(await mp.getByTestId('key-C4').getAttribute('class')).includes('down'), 'sliding along with the button held plays the keys reached and lets go of the ones left');
+      await mp.mouse.up();
+      await check(async () => !(await mp.getByTestId('key-E4').getAttribute('class')).includes('down'), 'letting go stops it');
+      // Just passing over the keys without the button plays nothing.
+      await mp.mouse.move(c4.x + c4.width / 2, c4.y + c4.height - 10, { steps: 6 });
+      await check(async () => (await mp.getByTestId('ins-keyboard').locator('.down').count()) === 0, 'moving over the keys without holding the button plays nothing');
+    }
     await mp.keyboard.down('z');
     await check(async () => (await mp.getByTestId('key-C4').getAttribute('class')).includes('down'), 'the computer keys play the keyboard (Z = C)');
     await mp.keyboard.up('z');
