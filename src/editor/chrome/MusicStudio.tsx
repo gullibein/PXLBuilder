@@ -408,25 +408,56 @@ function SoundPicture({ inst }: { inst: Instrument }) {
   return <canvas ref={ref} className="ms-picture" width={560} height={64} data-testid="ins-picture" aria-label="The sound over time" />;
 }
 
-/** The computer keys of the keyboard: Z…M the lower octave, Q…U the upper one (black keys on the row above). */
-const KEY_NOTES: Record<string, number> = { z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12, q: 12, '2': 13, w: 14, '3': 15, e: 16, r: 17, '5': 18, t: 19, '6': 20, y: 21, '7': 22, u: 23, i: 24 };
+/**
+ * The computer keys of the keyboard, by where they are (not what they type, so any layout works, Icelandic too):
+ * the bottom letter row is the lower octave (black keys on the row above it), the top letter row the upper one
+ * (black keys on the number row), like a tracker's.
+ */
+const KEY_NOTES: Record<string, number> = {
+  KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyV: 5, KeyG: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11,
+  Comma: 12, KeyL: 13, Period: 14, Semicolon: 15, Slash: 16,
+  KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, KeyR: 17, Digit5: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23,
+  KeyI: 24, Digit9: 25, KeyO: 26, Digit0: 27, KeyP: 28, BracketLeft: 29, Equal: 30, BracketRight: 31,
+};
+/** The keys the keyboard shows (two and a half octaves, as far as the computer keys reach). */
+const SHOWN_KEYS = 31;
+/** What the keys print on a US keyboard (until the browser says what they print on this one). */
+const US_KEYS: Record<string, string> = { Comma: ',', Period: '.', Semicolon: ';', Slash: '/', BracketLeft: '[', BracketRight: ']', Equal: '=' };
+const usLabel = (code: string) => US_KEYS[code] ?? code.replace(/^(Key|Digit)/, '');
 const BLACK = new Set([1, 3, 6, 8, 10]);
+
+/** What each key prints on this computer's keyboard (Chrome and Edge know it; elsewhere the US letters). */
+function useKeyLabels(): (code: string) => string {
+  const [map, setMap] = useState<Map<string, string> | null>(null);
+  useEffect(() => {
+    const kb = (navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }).keyboard;
+    kb?.getLayoutMap?.()
+      .then((m) => setMap(new Map(m)))
+      .catch(() => undefined);
+  }, []);
+  return (code) => (map?.get(code) ?? usLabel(code)).toUpperCase();
+}
 
 function Keyboard({ inst }: { inst: Instrument }) {
   const [octave, setOctave] = useState(4);
   const [down, setDown] = useState<Set<number>>(new Set());
-  const held = useRef(new Map<string | number, { release(): void } | null>());
+  const held = useRef(new Map<string, { note: { release(): void } | null; pitch: number }>());
+  const label = useKeyLabels();
   const instRef = useRef(inst);
   instRef.current = inst;
   const base = (octave + 1) * 12;
   const press = (key: string | number, pitch: number) => {
-    if (held.current.has(key)) return;
-    held.current.set(key, playNote(instRef.current, pitch, 3));
+    if (held.current.has(String(key))) return;
+    held.current.set(String(key), { note: playNote(instRef.current, pitch, 3), pitch });
     setDown((d) => new Set(d).add(pitch));
   };
-  const let_go = (key: string | number, pitch: number) => {
-    held.current.get(key)?.release();
-    held.current.delete(key);
+  /** Lets go of the note a key started (the one it started, even if the octave changed since). */
+  const let_go = (key: string | number) => {
+    const h = held.current.get(String(key));
+    if (!h) return;
+    h.note?.release();
+    held.current.delete(String(key));
+    const pitch = h.pitch;
     setDown((d) => {
       const n = new Set(d);
       n.delete(pitch);
@@ -437,35 +468,39 @@ function Keyboard({ inst }: { inst: Instrument }) {
     const onDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.ctrlKey || e.metaKey || e.altKey || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) && (t as HTMLInputElement).type !== 'range')) return;
-      const k = e.key.toLowerCase();
-      if (k in KEY_NOTES) {
+      if (e.code in KEY_NOTES) {
         e.preventDefault();
-        if (!e.repeat) press(k, base + KEY_NOTES[k]);
-      } else if (k === 'arrowleft' || k === 'arrowright') {
+        if (!e.repeat) press(e.code, base + KEY_NOTES[e.code]);
+      } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
         e.preventDefault();
-        setOctave((o) => Math.max(1, Math.min(7, o + (k === 'arrowleft' ? -1 : 1))));
+        setOctave((o) => Math.max(1, Math.min(7, o + (e.code === 'ArrowLeft' ? -1 : 1))));
       }
     };
     const onUp = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k in KEY_NOTES) let_go(k, base + KEY_NOTES[k]);
+      if (e.code in KEY_NOTES) let_go(e.code);
     };
+    // Switching to another window with a key held: it is let go.
+    const onBlur = () => [...held.current.keys()].forEach(let_go);
+    window.addEventListener('blur', onBlur);
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
     return () => {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [base]);
   const whites = [];
   const blacks = [];
   let wi = 0;
-  for (let i = 0; i <= 24; i++) {
+  for (let i = 0; i <= SHOWN_KEYS; i++) {
     const pitch = base + i;
     const black = BLACK.has(i % 12);
+    const keys = Object.keys(KEY_NOTES).filter((c) => KEY_NOTES[c] === i);
+    const keyText = <span className="ms-key-letters">{keys.map(label).join('\n')}</span>;
     const props = {
       'data-testid': `key-${noteName(pitch)}`,
-      title: noteName(pitch),
+      title: `${noteName(pitch)}${keys.length ? ` (${keys.map(label).join(' or ')})` : ''}`,
       className: `ms-key${black ? ' black' : ''}${down.has(pitch) ? ' down' : ''}`,
       onPointerDown: (e: React.PointerEvent) => {
         // (A touch holds on to the key it started on: let go of it, so sliding a finger along plays other keys.)
@@ -473,12 +508,22 @@ function Keyboard({ inst }: { inst: Instrument }) {
         if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
         press(`m${pitch}`, pitch);
       },
-      onPointerUp: () => let_go(`m${pitch}`, pitch),
-      onPointerLeave: () => held.current.has(`m${pitch}`) && let_go(`m${pitch}`, pitch),
+      onPointerUp: () => let_go(`m${pitch}`),
+      onPointerLeave: () => let_go(`m${pitch}`),
     };
-    if (black) blacks.push(<button key={pitch} {...props} style={{ left: `calc(${wi} * var(--wkey) - var(--bkey) / 2)` }} />);
+    if (black)
+      blacks.push(
+        <button key={pitch} {...props} style={{ left: `calc(${wi} * var(--wkey) - var(--bkey) / 2)` }}>
+          {keyText}
+        </button>,
+      );
     else {
-      whites.push(<button key={pitch} {...props}>{i % 12 === 0 ? <span>{noteName(pitch)}</span> : null}</button>);
+      whites.push(
+        <button key={pitch} {...props}>
+          {keyText}
+          {i % 12 === 0 ? <span>{noteName(pitch)}</span> : null}
+        </button>,
+      );
       wi++;
     }
   }
@@ -497,7 +542,7 @@ function Keyboard({ inst }: { inst: Instrument }) {
         {whites}
         {blacks}
       </div>
-      <p className="panel-hint">Play with the mouse or the keys Z S X D C V… and Q 2 W 3 E R… (← → change the octave).</p>
+      <p className="panel-hint">Play with the mouse or your computer's keys: each piano key shows the key that plays it (the bottom letter row and the row above it are the lower octave, the top letter row and the number row the upper one). ← → change the octave.</p>
     </div>
   );
 }
@@ -600,6 +645,26 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
     setPlaying(player.current ? mode : null);
   };
 
+  // Space starts and stops the song (from the chosen place in the order), wherever the focus is but in a text box.
+  const toggle = useRef<() => void>(() => undefined);
+  toggle.current = () => (playing ? stop() : play('song'));
+  useEffect(() => {
+    const typing = (t: EventTarget | null) => t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && !['range', 'checkbox'].includes(t.type));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      // (Not also a click on the focused button, nor a scroll.)
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === 'keydown' && !e.repeat) toggle.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKey, true);
+    };
+  }, []);
+
   const notes = song.patterns[p].notes;
   const isLevelMusic = scene.music === asset.id;
   // The playhead, when what plays is the pattern on screen.
@@ -609,12 +674,12 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
     <div className="ms-song" data-testid="song-editor">
       <div className="ms-row ms-transport">
         {playing ? (
-          <button className="chip-btn" data-testid="music-stop" onClick={stop}>
+          <button className="chip-btn" data-testid="music-stop" onClick={stop} title="Stop (Space)">
             ■ Stop
           </button>
         ) : (
           <>
-            <button className="chip-btn primary" data-testid="music-play" onClick={() => play('song')} title="Play the song from the chosen place in the order">
+            <button className="chip-btn primary" data-testid="music-play" onClick={() => play('song')} title="Play the song from the chosen place in the order (Space)">
               ▶ Song
             </button>
             <button className="chip-btn" data-testid="music-play-pattern" onClick={() => play('pattern')} title="Play this pattern over and over">
@@ -885,7 +950,7 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
           onNotes={(next) => change('Notes', (s) => void (s.patterns[p].notes = next))}
         />
       </div>
-      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. Undo works on everything.</p>
+      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. Space plays and stops the song. Undo works on everything.</p>
     </div>
   );
 }

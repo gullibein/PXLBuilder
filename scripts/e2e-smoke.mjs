@@ -4169,6 +4169,12 @@ try {
     await check(async () => await mp.getByTestId('music-stop').isVisible(), 'the pattern plays (Stop shows)');
     await mp.waitForTimeout(400);
     await mp.getByTestId('music-stop').click();
+    // Space plays and stops the song, even with a button focused (it isn't also a click on it).
+    await mp.getByTestId('music-pattern-0').focus();
+    await mp.keyboard.press('Space');
+    await check(async () => await mp.getByTestId('music-stop').isVisible(), 'Space plays the song');
+    await mp.keyboard.press('Space');
+    await check(async () => await mp.getByTestId('music-play').isVisible(), 'Space again stops it');
     await mp.getByTestId('music-pattern-copy').click();
     await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await mp.getByTestId('music-pattern-1').count()) === 1, 'Copy makes pattern B with the same notes');
     await mp.getByTestId('music-order-add').click();
@@ -4193,6 +4199,12 @@ try {
     await mp.keyboard.down('z');
     await check(async () => (await mp.getByTestId('key-C4').getAttribute('class')).includes('down'), 'the computer keys play the keyboard (Z = C)');
     await mp.keyboard.up('z');
+    // Any keyboard layout: the keys count by where they are. On an Icelandic keyboard the key right of L types Æ.
+    await mp.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'æ', code: 'Semicolon', bubbles: true })));
+    await check(async () => (await mp.getByTestId('key-D#5').getAttribute('class')).includes('down'), 'the key right of L (Æ on an Icelandic keyboard) plays D#, wherever the letters are');
+    await mp.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'æ', code: 'Semicolon', bubbles: true })));
+    await check(async () => !(await mp.getByTestId('key-D#5').getAttribute('class')).includes('down'), 'and lets go of it');
+    await check(async () => (await mp.getByTestId('key-C4').innerText()).includes('Z'), 'each piano key shows the computer key that plays it');
     await mp.getByTestId('ins-filter').selectOption('lowpass');
     await check(async () => await mp.getByTestId('ins-cutoff').isVisible(), 'a filter shows its cutoff');
     await mp.screenshot({ path: `${OUT}/33-music-instrument.png` });

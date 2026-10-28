@@ -939,7 +939,9 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .ms-keyboard-wrap { display: flex; flex-direction: column; gap: 4px; }
 .ms-octave { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .ms-keyboard { --wkey: 30px; --bkey: 20px; position: relative; display: flex; height: 96px; user-select: none; }
-.ms-key { width: var(--wkey); height: 100%; border: 1px solid #666; border-radius: 0 0 5px 5px; background: #f2f2f2; color: #444; font-size: 9px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; cursor: pointer; touch-action: none; }
+.ms-key { width: var(--wkey); height: 100%; border: 1px solid #666; border-radius: 0 0 5px 5px; background: #f2f2f2; color: #444; font-size: 9px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; padding: 0 0 4px; cursor: pointer; touch-action: none; }
+.ms-key-letters { font-family: var(--font-data); font-size: 10px; font-weight: 700; color: #7b6cf6; line-height: 1.1; white-space: pre-line; text-align: center; }
+.ms-key.black .ms-key-letters { color: #c9c3ff; }
 .ms-key.black { position: absolute; top: 0; width: var(--bkey); height: 60%; background: #222; border-color: #000; z-index: 1; }
 .ms-key.down { background: var(--accent-hi); }
 .ms-key.black.down { background: var(--accent); }
