@@ -108,6 +108,9 @@ export interface EditorState {
   /** The Autotile editor, open for this library object. */
   autotileEditor: Id | null;
   setAutotileEditor(definitionId: Id | null): void;
+  /** The music machine: which tab, and the song and instrument open in it (null: closed). */
+  musicStudio: { tab: 'songs' | 'instruments'; songId: Id | null; instrumentId: Id | null } | null;
+  setMusicStudio(open: Partial<{ tab: 'songs' | 'instruments'; songId: Id | null; instrumentId: Id | null }> | null): void;
   /** Objects are being dragged over the trash can (it lights up; dropping them there deletes them). */
   trashHot: boolean;
   /** Objects are being moved, stretched or resized on the level right now (the prompt card steps aside meanwhile). */
@@ -255,6 +258,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     gameChooser: null,
     spriteEditor: null,
     autotileEditor: null,
+    musicStudio: null,
     trashHot: false,
     objectDrag: false,
     altHeld: false,
@@ -505,6 +509,9 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setGameChooser(gameChooser) {
       set({ gameChooser });
+    },
+    setMusicStudio(open) {
+      set((s) => ({ musicStudio: open === null ? null : { tab: 'songs', songId: null, instrumentId: null, ...s.musicStudio, ...open } }));
     },
     setAutotileEditor(autotileEditor) {
       set({ autotileEditor });

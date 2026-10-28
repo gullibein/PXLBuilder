@@ -878,3 +878,73 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .object-card .chip-btn { width: 100%; justify-content: center; font-size: 12px; padding: 5px 8px; }
 .object-card-close { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; }
 .tools-right .object-card { right: 80px; }
+
+/* The music machine. */
+.dialog.music-studio { width: min(1180px, calc(100% - 24px)); height: min(820px, calc(100% - 24px)); max-height: none; grid-template-rows: auto 1fr; overflow: hidden; padding: 12px 14px; gap: 8px; }
+.music-studio select { width: auto; }
+.ms-head { display: flex; align-items: center; gap: 12px; }
+.ms-title { font-weight: 700; font-size: 15px; }
+.ms-tabs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-2); }
+.ms-tab { border: none; background: none; color: var(--muted); padding: 5px 14px; border-radius: 8px; font-weight: 600; font-size: 12.5px; cursor: pointer; }
+.ms-tab.on { color: var(--text); background: var(--surface-3); }
+.ms-body { display: grid; grid-template-columns: 180px 1fr; gap: 12px; min-height: 0; }
+.ms-list { display: flex; flex-direction: column; gap: 6px; min-height: 0; border-right: 1px solid var(--line); padding-right: 10px; }
+.ms-items { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.ms-item { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; border-radius: 8px; }
+.ms-item.on { background: var(--accent-soft); }
+.ms-item-name { flex: 1; min-width: 0; text-align: left; border: none; background: none; color: var(--text); padding: 6px 8px; font-size: 12.5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-rename { flex: 1; min-width: 0; font-size: 12.5px; }
+.ms-confirm { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 6px; font-size: 12px; }
+.ms-problem { margin: 0; color: var(--danger); font-size: 12px; }
+.ms-new { display: flex; flex-direction: column; gap: 4px; }
+.ms-select { font-size: 12px; max-width: 100%; }
+.ms-empty { align-self: center; justify-self: center; max-width: 360px; text-align: center; font-size: 13px; }
+.ms-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ms-row-label { font-size: 11px; color: var(--muted); width: 52px; text-transform: uppercase; letter-spacing: 0.04em; }
+.ms-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ms-field input[type='number'] { width: 58px; }
+.ms-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.ms-song, .ms-instrument { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow: auto; }
+.ms-order, .ms-patterns { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.ms-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 7px; padding: 3px 9px; font-family: var(--font-data); font-size: 12px; cursor: pointer; }
+.ms-chip.on { border-color: var(--accent-hi); background: var(--accent-soft); }
+.ms-chip.now { box-shadow: 0 0 0 2px #fff inset; }
+.ms-editor { display: grid; grid-template-columns: 300px 1fr; gap: 10px; min-height: 0; flex: 1; }
+.ms-channels { display: flex; flex-direction: column; gap: 4px; }
+.ms-channel { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; }
+.ms-channel.on { border-color: var(--accent-hi); background: var(--accent-soft); }
+.ms-channel.muted { opacity: 0.55; }
+.ms-channel .ms-select { flex: 1 1 100px; min-width: 0; }
+.ms-channel .icon-btn, .ms-item .icon-btn, .ms-arrange .icon-btn { width: 24px; height: 24px; min-width: 24px; padding: 0; font-size: 12px; }
+.ms-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.ms-channel input.ms-vol { width: 48px; min-width: 0; flex: none; }
+.icon-btn.small.on { color: var(--warn-dark); }
+.ms-roll { overflow: auto; min-height: 220px; max-height: 100%; border-radius: 8px; border: 1px solid var(--line); background: #1b1e27; }
+.ms-roll canvas { display: block; cursor: crosshair; touch-action: none; }
+.ms-seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-2); }
+.ms-seg-btn { border: none; background: none; color: var(--muted); padding: 5px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.ms-seg-btn.on { color: var(--text); background: var(--accent-soft); }
+.ms-waves { display: flex; gap: 4px; flex-wrap: wrap; }
+.ms-wave { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 5px 9px; font-size: 12px; cursor: pointer; }
+.ms-wave.on { border-color: var(--accent-hi); background: var(--accent-soft); }
+.ms-picture { width: 100%; height: 64px; border-radius: 8px; background: #1b1e27; border: 1px solid var(--line); }
+.ms-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.ms-group { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px 8px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ms-group legend { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 0 4px; }
+.ms-knob { display: grid; grid-template-columns: 72px 1fr 58px; align-items: center; gap: 6px; font-size: 12px; }
+.ms-knob-label { color: var(--muted); }
+.ms-knob-value { font-family: var(--font-data); font-size: 11px; text-align: right; }
+.ms-knob input[type='range'] { width: 100%; }
+.ms-arp { grid-column: span 2; font-family: var(--font-data); font-size: 12px; }
+.ms-keyboard-wrap { display: flex; flex-direction: column; gap: 4px; }
+.ms-octave { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ms-keyboard { --wkey: 30px; --bkey: 20px; position: relative; display: flex; height: 96px; user-select: none; }
+.ms-key { width: var(--wkey); height: 100%; border: 1px solid #666; border-radius: 0 0 5px 5px; background: #f2f2f2; color: #444; font-size: 9px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; cursor: pointer; touch-action: none; }
+.ms-key.black { position: absolute; top: 0; width: var(--bkey); height: 60%; background: #222; border-color: #000; z-index: 1; }
+.ms-key.down { background: var(--accent-hi); }
+.ms-key.black.down { background: var(--accent); }
+@media (max-width: 720px) {
+  .ms-body { grid-template-columns: 1fr; }
+  .ms-list { border-right: none; padding-right: 0; max-height: 140px; }
+  .ms-editor { grid-template-columns: 1fr; }
+}

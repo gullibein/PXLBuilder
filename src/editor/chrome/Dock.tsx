@@ -61,6 +61,14 @@ export function Dock() {
           <NoteIcon />
           <span className="dock-label">Sounds</span>
         </button>
+        <button className="dock-btn" title="Music: instruments and songs" aria-label="Music" data-testid="dock-music" onClick={() => (setDock(null), useEditor.getState().setMusicStudio({}))}>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5.5 12.5V3.5l8-1.8v9M5.5 6.2l8-1.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <circle cx="3.8" cy="12.6" r="1.8" fill="currentColor" />
+            <circle cx="11.8" cy="10.8" r="1.8" fill="currentColor" />
+          </svg>
+          <span className="dock-label">Music</span>
+        </button>
         <TrashButton />
         {playHere && <PlayButton />}
       </nav>

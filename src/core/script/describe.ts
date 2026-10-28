@@ -70,6 +70,10 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(s.id ? `erase "${s.id}"` : 'erase everything it drew');
     case 'play_sound':
       return one(`play sound "${s.sound}"${s.volume !== '1' ? ` at volume ${x(s.volume)}` : ''}${s.pitch !== '1' ? `, pitch ${x(s.pitch)}` : ''}`);
+    case 'play_music':
+      return one(`play music "${s.music}"`);
+    case 'stop_music':
+      return one('stop the music');
     case 'builtin_display':
       return one(`${s.show ? 'show' : 'hide'} the built-in ${s.what === 'all' ? 'display' : s.what}`);
     case 'velocity':

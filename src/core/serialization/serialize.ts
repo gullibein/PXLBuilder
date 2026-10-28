@@ -26,6 +26,7 @@ import { validateRelationship, validateRule } from '../logic/mutations';
 import { FORMAT_VERSION } from './version';
 import { pixelArtFields } from '../model/factory';
 import { soundDataUrl } from '../audio/sound';
+import { musicDataUrl } from '../audio/music';
 import type { AssetRecord, EntityInstance } from '../types';
 
 export type ProjectFiles = Record<string, unknown>;
@@ -74,8 +75,10 @@ export function projectToFiles(project: Project): ProjectFiles {
 }
 
 /** The file a pixel-art picture or a step sound makes from its pixels or notes (undefined for other assets). */
-function madeFile(asset: Pick<AssetRecord, 'kind' | 'pixelArt' | 'synth'>): string | undefined {
+function madeFile(asset: Pick<AssetRecord, 'kind' | 'pixelArt' | 'synth' | 'instrument' | 'song'>): string | undefined {
   try {
+    if (asset.kind === 'instrument' && asset.instrument) return musicDataUrl(asset.instrument);
+    if (asset.kind === 'music' && asset.song) return musicDataUrl(asset.song);
     if (asset.kind === 'sound' && asset.synth) return soundDataUrl(asset.synth);
     if ((asset.kind === 'image' || asset.kind === 'spritesheet') && asset.pixelArt) {
       const art = asset.pixelArt;

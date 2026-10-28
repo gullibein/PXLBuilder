@@ -1,0 +1,1022 @@
+/**
+ * The music machine: shape instruments on an 8-bit or a 16-bit synthesizer and write songs with them.
+ *
+ * Instruments: a wave, an envelope, pitch moves (a slide, vibrato, an arpeggio) and on the 16-bit chip a filter,
+ * FM and echo; tried on a keyboard (the mouse, or the computer's keys). Songs: channels (one instrument each),
+ * patterns of notes drawn on a piano roll, and the order the patterns play in; a song can be a level's music, or
+ * be played by a script (play_music). Everything is saved with the game, and every change is one Undo step.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CHIPS,
+  emptySong,
+  FILTER_TYPES,
+  INSTRUMENT_PRESETS,
+  MAX_CHANNELS,
+  MAX_ORDER,
+  MAX_PATTERNS,
+  noteName,
+  preset,
+  renderNote,
+  STARTER_KITS,
+  WAVE_LABELS,
+  WAVES_16BIT,
+  WAVES_8BIT,
+  waveFits,
+  type Chip,
+  type Instrument,
+  type MusicWave,
+  type Song,
+  type SongNote,
+} from '../../core/audio/music';
+import { addInstrumentAsset, addSongAsset, musicAssets, removeMusicAsset, renameMusicAsset, setInstrument, setLevelMusic, setSong } from '../../core/model/music';
+import type { AssetRecord, Id, Project } from '../../core/types';
+import { instrumentsOf, playNote, playSong, type SongPlayer } from '../audio/musicPlayer';
+import { useEditor } from '../store';
+
+export const CHANNEL_COLORS = ['#ff5d73', '#4cc9f0', '#ffd166', '#06d6a0', '#c77dff', '#ff9f1c', '#a3e635', '#f472b6'];
+
+const close = () => useEditor.getState().setMusicStudio(null);
+
+export function MusicStudio() {
+  const open = useEditor((s) => s.musicStudio);
+  if (!open) return null;
+  const tab = open.tab;
+  return (
+    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <section className="dialog music-studio" role="dialog" aria-label="Music machine" data-testid="music-studio">
+        <header className="ms-head">
+          <span className="ms-title">Music</span>
+          <div className="ms-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'songs'} className={`ms-tab${tab === 'songs' ? ' on' : ''}`} data-testid="music-tab-songs" onClick={() => useEditor.getState().setMusicStudio({ tab: 'songs' })}>
+              Songs
+            </button>
+            <button role="tab" aria-selected={tab === 'instruments'} className={`ms-tab${tab === 'instruments' ? ' on' : ''}`} data-testid="music-tab-instruments" onClick={() => useEditor.getState().setMusicStudio({ tab: 'instruments' })}>
+              Instruments
+            </button>
+          </div>
+          <span className="grow" />
+          <button className="icon-btn" aria-label="Close" title="Close (Esc)" data-testid="music-close" onClick={close}>
+            ×
+          </button>
+        </header>
+        {tab === 'songs' ? <SongsTab /> : <InstrumentsTab />}
+      </section>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------------------------------------------
+ * The list on the left: pick, rename (double-click), delete.
+ */
+
+function AssetList({ kind, items, selected, onSelect, children }: { kind: 'music' | 'instrument'; items: AssetRecord[]; selected: Id | null; onSelect: (id: Id) => void; children: React.ReactNode }) {
+  const [renaming, setRenaming] = useState<Id | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Id | null>(null);
+  const what = kind === 'music' ? 'song' : 'instrument';
+  return (
+    <aside className="ms-list" data-testid={`music-list-${what}s`}>
+      <div className="ms-items">
+        {items.map((a) => (
+          <div key={a.id} className={`ms-item${a.id === selected ? ' on' : ''}`} data-testid={`music-item-${a.name}`}>
+            {renaming === a.id ? (
+              <input
+                className="ms-rename"
+                autoFocus
+                defaultValue={a.name}
+                aria-label={`Rename ${what}`}
+                data-testid="music-rename-input"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setRenaming(null);
+                    setProblem(null);
+                  }
+                  if (e.key !== 'Enter') return;
+                  let err: string | null = null;
+                  const name = e.currentTarget.value;
+                  useEditor.getState().edit(`Rename ${what} ${a.name}`, (p) => void (err = renameMusicAsset(p, a.id, name)));
+                  if (err) setProblem(err);
+                  else {
+                    setRenaming(null);
+                    setProblem(null);
+                  }
+                }}
+                onBlur={() => {
+                  setRenaming(null);
+                  setProblem(null);
+                }}
+              />
+            ) : (
+              <button className="ms-item-name" onClick={() => onSelect(a.id)} onDoubleClick={() => setRenaming(a.id)} title="Double-click to rename">
+                {a.name}
+              </button>
+            )}
+            {a.id === selected && renaming !== a.id && (
+              <>
+                <button className="icon-btn small" aria-label={`Rename ${a.name}`} title="Rename" data-testid="music-rename" onClick={() => setRenaming(a.id)}>
+                  ✎
+                </button>
+                <button className="icon-btn small" aria-label={`Delete ${a.name}`} title="Delete" data-testid="music-delete" onClick={() => setDeleting(a.id)}>
+                  🗑
+                </button>
+              </>
+            )}
+            {deleting === a.id && (
+              <div className="ms-confirm" data-testid="music-delete-confirm">
+                Delete “{a.name}”?
+                <button className="danger-btn small" data-testid="music-delete-yes" onClick={() => (setDeleting(null), useEditor.getState().edit(`Delete ${what} ${a.name}`, (p) => removeMusicAsset(p, a.id)))}>
+                  Delete
+                </button>
+                <button className="chip-btn small" onClick={() => setDeleting(null)}>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {!items.length && <p className="muted small">No {what}s yet.</p>}
+      </div>
+      {problem && <p className="ms-problem">{problem}</p>}
+      <div className="ms-new">{children}</div>
+    </aside>
+  );
+}
+
+/* ----------------------------------------------------------------------------------------------------------------
+ * Instruments.
+ */
+
+/** Adds an instrument from a preset (one Undo step) and opens it. */
+function newInstrument(presetName: string): Id {
+  let id = '';
+  useEditor.getState().edit(`New instrument ${presetName}`, (p) => void (id = addInstrumentAsset(p, presetName, preset(presetName))));
+  useEditor.getState().setMusicStudio({ tab: 'instruments', instrumentId: id });
+  return id;
+}
+
+function PresetSelect({ label, testId, onPick }: { label: string; testId: string; onPick: (name: string) => void }) {
+  return (
+    <select className="ms-select" aria-label={label} data-testid={testId} value="" onChange={(e) => e.target.value && onPick(e.target.value)}>
+      <option value="">{label}</option>
+      {CHIPS.map((chip) => (
+        <optgroup key={chip} label={chip === '8bit' ? '8-bit' : '16-bit'}>
+          {INSTRUMENT_PRESETS.filter((p) => p.instrument.chip === chip).map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+function InstrumentsTab() {
+  const project = useEditor((s) => s.project);
+  const wanted = useEditor((s) => s.musicStudio?.instrumentId ?? null);
+  const items = musicAssets(project, 'instrument');
+  const asset = items.find((a) => a.id === wanted) ?? items[0];
+  return (
+    <div className="ms-body">
+      <AssetList kind="instrument" items={items} selected={asset?.id ?? null} onSelect={(id) => useEditor.getState().setMusicStudio({ instrumentId: id })}>
+        <PresetSelect label="+ New instrument…" testId="music-new-instrument" onPick={newInstrument} />
+      </AssetList>
+      {asset ? <InstrumentEditor key={asset.id} asset={asset} /> : <p className="ms-empty muted">Make an instrument from one of the ready ones (+ New instrument), then shape it.</p>}
+    </div>
+  );
+}
+
+interface KnobProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  testId: string;
+  onChange: (v: number) => void;
+  /** Slider moves on a log scale (frequencies). */
+  log?: boolean;
+}
+
+function Knob({ label, value, min, max, step, unit = '', testId, onChange, log }: KnobProps) {
+  const toSlider = (v: number) => (log ? (Math.log(v / min) / Math.log(max / min)) * 1000 : v);
+  const fromSlider = (x: number) => (log ? Math.round(min * (max / min) ** (x / 1000)) : x);
+  const shown = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 1000) / 1000;
+  return (
+    <label className="ms-knob">
+      <span className="ms-knob-label">{label}</span>
+      <input type="range" data-testid={testId} min={log ? 0 : min} max={log ? 1000 : max} step={log ? 1 : step} value={toSlider(value)} onChange={(e) => onChange(fromSlider(Number(e.target.value)))} />
+      <span className="ms-knob-value">
+        {shown}
+        {unit}
+      </span>
+    </label>
+  );
+}
+
+function InstrumentEditor({ asset }: { asset: AssetRecord }) {
+  const inst = asset.instrument!;
+  const change = (patch: Partial<Instrument>, key: string) => {
+    const next = { ...inst, ...patch };
+    useEditor.getState().edit(`Shape instrument ${asset.name}`, (p) => setInstrument(p, asset.id, next), { coalesceKey: `instrument:${asset.id}:${key}` });
+  };
+  const knob = (field: keyof Instrument, label: string, min: number, max: number, step: number, unit = '', log = false) => (
+    <Knob key={field} label={label} value={inst[field] as number} min={min} max={max} step={step} unit={unit} log={log} testId={`ins-${field}`} onChange={(v) => change({ [field]: v } as Partial<Instrument>, field)} />
+  );
+  const setChip = (chip: Chip) => {
+    if (chip === inst.chip) return;
+    const wave: MusicWave = waveFits(chip, inst.wave) ? inst.wave : ({ pulse50: 'square', pulse25: 'square', pulse12: 'square', metal: 'noise', saw: 'pulse25', fm: 'pulse50', pluck: 'pulse25', supersaw: 'pulse50', sine: 'triangle', square: 'pulse50' } as Record<string, MusicWave>)[inst.wave] ?? 'pulse50';
+    change({ chip, wave }, 'chip');
+  };
+  const sixteen = inst.chip === '16bit';
+  return (
+    <div className="ms-instrument" data-testid="instrument-editor">
+      <div className="ms-row">
+        <div className="ms-seg" role="group" aria-label="Chip">
+          {CHIPS.map((c) => (
+            <button key={c} className={`ms-seg-btn${inst.chip === c ? ' on' : ''}`} data-testid={`ins-chip-${c}`} onClick={() => setChip(c)}>
+              {c === '8bit' ? '8-bit' : '16-bit'}
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
+        <PresetSelect
+          label="Start over from…"
+          testId="ins-load-preset"
+          onPick={(name) => useEditor.getState().edit(`Instrument ${asset.name} from ${name}`, (p) => setInstrument(p, asset.id, preset(name)))}
+        />
+      </div>
+      <div className="ms-waves" role="group" aria-label="Wave">
+        {(sixteen ? WAVES_16BIT : WAVES_8BIT).map((w) => (
+          <button key={w} className={`ms-wave${inst.wave === w ? ' on' : ''}`} data-testid={`ins-wave-${w}`} onClick={() => change({ wave: w }, 'wave')}>
+            <WaveIcon wave={w} />
+            {WAVE_LABELS[w]}
+          </button>
+        ))}
+      </div>
+      <SoundPicture inst={inst} />
+      <div className="ms-groups">
+        <fieldset className="ms-group">
+          <legend>Volume</legend>
+          {knob('volume', 'Volume', 0, 1, 0.01)}
+          {knob('attack', 'Attack', 0, 2, 0.005, ' s')}
+          {knob('decay', 'Decay', 0, 2, 0.01, ' s')}
+          {knob('sustain', 'Sustain', 0, 1, 0.01)}
+          {knob('release', 'Release', 0, 2, 0.01, ' s')}
+        </fieldset>
+        <fieldset className="ms-group">
+          <legend>Pitch</legend>
+          {knob('pitchDrop', 'Slide from', -36, 36, 1, ' st')}
+          {knob('pitchTime', 'Slide time', 0, 1, 0.005, ' s')}
+          {knob('vibratoRate', 'Vibrato', 0, 16, 0.5, ' /s')}
+          {knob('vibratoDepth', 'Depth', 0, 2, 0.05, ' st')}
+          {knob('vibratoDelay', 'Delay', 0, 1, 0.05, ' s')}
+          <label className="ms-knob">
+            <span className="ms-knob-label">Arpeggio</span>
+            <input
+              className="ms-arp"
+              data-testid="ins-arp"
+              placeholder="e.g. 0 4 7"
+              defaultValue={inst.arp.join(' ')}
+              key={inst.arp.join(' ')}
+              onBlur={(e) => {
+                const arp = e.target.value
+                  .split(/[\s,]+/)
+                  .filter(Boolean)
+                  .map(Number)
+                  .filter((n) => Number.isInteger(n) && Math.abs(n) <= 24)
+                  .slice(0, 8);
+                change({ arp }, 'arp');
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            />
+          </label>
+          {inst.arp.length > 0 && knob('arpSpeed', 'Arp speed', 1, 60, 1, ' /s')}
+        </fieldset>
+        {sixteen && (
+          <fieldset className="ms-group">
+            <legend>Filter</legend>
+            <label className="ms-knob">
+              <span className="ms-knob-label">Type</span>
+              <select className="ms-select" data-testid="ins-filter" value={inst.filter ?? ''} onChange={(e) => change({ filter: (e.target.value || null) as Instrument['filter'] }, 'filter')}>
+                <option value="">None</option>
+                {FILTER_TYPES.map((f) => (
+                  <option key={f} value={f}>
+                    {f === 'lowpass' ? 'Low-pass (darker)' : f === 'highpass' ? 'High-pass (thinner)' : 'Band-pass (nasal)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {inst.filter && (
+              <>
+                {knob('cutoff', 'Cutoff', 40, 16000, 1, ' Hz', true)}
+                {knob('resonance', 'Resonance', 0, 0.95, 0.01)}
+                {knob('filterEnv', 'Sweep', 0, 1, 0.01)}
+              </>
+            )}
+          </fieldset>
+        )}
+        {sixteen && (inst.wave === 'fm' || inst.wave === 'supersaw') && (
+          <fieldset className="ms-group">
+            <legend>{inst.wave === 'fm' ? 'FM' : 'Supersaw'}</legend>
+            {inst.wave === 'fm' ? (
+              <>
+                {knob('fmRatio', 'Ratio', 0.25, 16, 0.25)}
+                {knob('fmIndex', 'Brightness', 0, 20, 0.1)}
+              </>
+            ) : (
+              knob('detune', 'Detune', 0, 50, 1, ' ct')
+            )}
+          </fieldset>
+        )}
+        {sixteen && (
+          <fieldset className="ms-group">
+            <legend>Echo</legend>
+            {knob('echoTime', 'Time', 0, 1, 0.01, ' s')}
+            {inst.echoTime > 0 && (
+              <>
+                {knob('echoFeedback', 'Repeats', 0, 0.9, 0.01)}
+                {knob('echoMix', 'Mix', 0, 1, 0.01)}
+              </>
+            )}
+          </fieldset>
+        )}
+      </div>
+      <Keyboard inst={inst} />
+    </div>
+  );
+}
+
+function WaveIcon({ wave }: { wave: MusicWave }) {
+  const paths: Record<string, string> = {
+    pulse50: 'M1 9V3h6v6h6V3h6',
+    square: 'M1 9V3h6v6h6V3h6',
+    pulse25: 'M1 9V3h3v6h7V3h3v6h5',
+    pulse12: 'M1 9V3h2v6h8V3h2v6h6',
+    triangle: 'M1 9 5.5 3 10 9l4.5-6L19 9',
+    saw: 'M1 9 10 3v6l9-6v6',
+    sine: 'M1 6c2-5 4-5 5 0s3 5 5 0 3-5 5 0 2 3 3 2',
+    fm: 'M1 6c1-5 2 4 3 0s2 5 3 0 2-6 3 0 2 5 3 0 2-5 3 0 2 2 3 1',
+    pluck: 'M1 6c1-6 2 6 3 0s2 4 3 0 2-3 3 0 2 2 3 0 2-1 3 0 2 0 3 0',
+    supersaw: 'M1 9 8 3v6l7-6v6l4-3M3 9l7-6',
+    noise: 'M1 6l1-3 1 5 1-6 1 7 1-4 1 2 1-5 1 6 1-3 1 2 1-4 1 5 1-6 1 4 1-2 1 1',
+    metal: 'M1 6l2-3 2 6 2-6 2 6 2-6 2 6 2-6 2 6 1-3',
+  };
+  return (
+    <svg width="20" height="12" viewBox="0 0 20 12" aria-hidden="true">
+      <path d={paths[wave]} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The instrument's sound drawn: a middle C held for half a second and let go (how loud, over time). */
+function SoundPicture({ inst }: { inst: Instrument }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const samples = useMemo(() => renderNote(inst, 60, 0.5, 12000), [inst]);
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    const w = c.width;
+    const h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    const seconds = samples.length / 12000;
+    const per = Math.max(1, Math.floor(samples.length / w));
+    // Drawn as tall as it fits (how loud it is shows in the volume slider).
+    let peak = 0.0001;
+    for (const v of samples) peak = Math.max(peak, Math.abs(v));
+    ctx.fillStyle = inst.chip === '8bit' ? '#4cc9f0' : '#c77dff';
+    for (let x = 0; x < w; x++) {
+      let lo = 0;
+      let hi = 0;
+      for (let i = x * per; i < Math.min(samples.length, (x + 1) * per); i++) {
+        lo = Math.min(lo, samples[i]);
+        hi = Math.max(hi, samples[i]);
+      }
+      const y0 = h / 2 - (hi / peak) * (h / 2 - 2);
+      const y1 = h / 2 - (lo / peak) * (h / 2 - 2);
+      ctx.fillRect(x, Math.max(0, y0), 1, Math.max(1, Math.min(h, y1) - Math.max(0, y0)));
+    }
+    // Where the key is let go.
+    const off = (0.5 / seconds) * w;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(Math.round(off), 0, 1, h);
+  }, [samples]);
+  return <canvas ref={ref} className="ms-picture" width={560} height={64} data-testid="ins-picture" aria-label="The sound over time" />;
+}
+
+/** The computer keys of the keyboard: Z…M the lower octave, Q…U the upper one (black keys on the row above). */
+const KEY_NOTES: Record<string, number> = { z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12, q: 12, '2': 13, w: 14, '3': 15, e: 16, r: 17, '5': 18, t: 19, '6': 20, y: 21, '7': 22, u: 23, i: 24 };
+const BLACK = new Set([1, 3, 6, 8, 10]);
+
+function Keyboard({ inst }: { inst: Instrument }) {
+  const [octave, setOctave] = useState(4);
+  const [down, setDown] = useState<Set<number>>(new Set());
+  const held = useRef(new Map<string | number, { release(): void } | null>());
+  const instRef = useRef(inst);
+  instRef.current = inst;
+  const base = (octave + 1) * 12;
+  const press = (key: string | number, pitch: number) => {
+    if (held.current.has(key)) return;
+    held.current.set(key, playNote(instRef.current, pitch, 3));
+    setDown((d) => new Set(d).add(pitch));
+  };
+  const let_go = (key: string | number, pitch: number) => {
+    held.current.get(key)?.release();
+    held.current.delete(key);
+    setDown((d) => {
+      const n = new Set(d);
+      n.delete(pitch);
+      return n;
+    });
+  };
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) && (t as HTMLInputElement).type !== 'range')) return;
+      const k = e.key.toLowerCase();
+      if (k in KEY_NOTES) {
+        e.preventDefault();
+        if (!e.repeat) press(k, base + KEY_NOTES[k]);
+      } else if (k === 'arrowleft' || k === 'arrowright') {
+        e.preventDefault();
+        setOctave((o) => Math.max(1, Math.min(7, o + (k === 'arrowleft' ? -1 : 1))));
+      }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k in KEY_NOTES) let_go(k, base + KEY_NOTES[k]);
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [base]);
+  const whites = [];
+  const blacks = [];
+  let wi = 0;
+  for (let i = 0; i <= 24; i++) {
+    const pitch = base + i;
+    const black = BLACK.has(i % 12);
+    const props = {
+      'data-testid': `key-${noteName(pitch)}`,
+      title: noteName(pitch),
+      className: `ms-key${black ? ' black' : ''}${down.has(pitch) ? ' down' : ''}`,
+      onPointerDown: (e: React.PointerEvent) => {
+        // (A touch holds on to the key it started on: let go of it, so sliding a finger along plays other keys.)
+        const el = e.currentTarget as HTMLElement;
+        if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
+        press(`m${pitch}`, pitch);
+      },
+      onPointerUp: () => let_go(`m${pitch}`, pitch),
+      onPointerLeave: () => held.current.has(`m${pitch}`) && let_go(`m${pitch}`, pitch),
+    };
+    if (black) blacks.push(<button key={pitch} {...props} style={{ left: `calc(${wi} * var(--wkey) - var(--bkey) / 2)` }} />);
+    else {
+      whites.push(<button key={pitch} {...props}>{i % 12 === 0 ? <span>{noteName(pitch)}</span> : null}</button>);
+      wi++;
+    }
+  }
+  return (
+    <div className="ms-keyboard-wrap">
+      <div className="ms-octave">
+        <button className="icon-btn small" aria-label="Octave down" data-testid="ins-octave-down" onClick={() => setOctave((o) => Math.max(1, o - 1))}>
+          ◀
+        </button>
+        <span>Octave {octave}</span>
+        <button className="icon-btn small" aria-label="Octave up" data-testid="ins-octave-up" onClick={() => setOctave((o) => Math.min(7, o + 1))}>
+          ▶
+        </button>
+      </div>
+      <div className="ms-keyboard" data-testid="ins-keyboard">
+        {whites}
+        {blacks}
+      </div>
+      <p className="panel-hint">Play with the mouse or the keys Z S X D C V… and Q 2 W 3 E R… (← → change the octave).</p>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------------------------------------------
+ * Songs.
+ */
+
+/** A new song with a starter kit of the chip's instruments (made, or reused when the game has them). */
+function newSong(chip: Chip): void {
+  let id = '';
+  useEditor.getState().edit(`New ${chip === '8bit' ? '8-bit' : '16-bit'} song`, (p) => {
+    const kit = STARTER_KITS[chip].map((name) => {
+      const have = p.assets.find((a) => a.kind === 'instrument' && a.name === name && a.instrument?.chip === chip);
+      return { id: have ? have.id : addInstrumentAsset(p, name, preset(name)), name };
+    });
+    id = addSongAsset(p, 'Song', emptySong(kit, chip === '8bit' ? 140 : 120));
+  });
+  useEditor.getState().setMusicStudio({ tab: 'songs', songId: id });
+}
+
+function SongsTab() {
+  const project = useEditor((s) => s.project);
+  const wanted = useEditor((s) => s.musicStudio?.songId ?? null);
+  const items = musicAssets(project, 'music');
+  const asset = items.find((a) => a.id === wanted) ?? items[0];
+  return (
+    <div className="ms-body">
+      <AssetList kind="music" items={items} selected={asset?.id ?? null} onSelect={(id) => useEditor.getState().setMusicStudio({ songId: id })}>
+        <button className="chip-btn small" data-testid="music-new-song-8bit" onClick={() => newSong('8bit')}>
+          + 8-bit song
+        </button>
+        <button className="chip-btn small" data-testid="music-new-song-16bit" onClick={() => newSong('16bit')}>
+          + 16-bit song
+        </button>
+      </AssetList>
+      {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with a lead, a bass and drums to write with.</p>}
+    </div>
+  );
+}
+
+const ROW_H = 12;
+const MIN_COL_W = 22;
+const KEYS_W = 38;
+const LOW = 24;
+const HIGH = 96;
+const ROWS = HIGH - LOW + 1;
+const patternName = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `P${i + 1}`);
+
+function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }) {
+  const song = asset.song!;
+  const instruments = useMemo(() => instrumentsOf(project), [project.assets]);
+  const instrumentList = musicAssets(project, 'instrument');
+  const scene = useEditor((s) => s.project.scenes.find((x) => x.id === s.activeSceneId)!);
+  const [pattern, setPattern] = useState(Math.min(song.order[0] ?? 0, song.patterns.length - 1));
+  const [slot, setSlot] = useState(0);
+  const [channel, setChannel] = useState(0);
+  const [pen, setPen] = useState(1);
+  const [playing, setPlaying] = useState<'song' | 'pattern' | null>(null);
+  const [pos, setPos] = useState<{ order: number; step: number } | null>(null);
+  const player = useRef<SongPlayer | null>(null);
+  const p = Math.min(pattern, song.patterns.length - 1);
+  const ch = Math.min(channel, song.channels.length - 1);
+
+  const change = (label: string, recipe: (s: Song) => void, key?: string) => {
+    const next = structuredClone(song);
+    recipe(next);
+    useEditor.getState().edit(`${label} (${asset.name})`, (d) => setSong(d, asset.id, next), key ? { coalesceKey: `song:${asset.id}:${key}` } : undefined);
+  };
+
+  // Edits are heard while it plays.
+  useEffect(() => player.current?.update(song, instruments), [song, instruments]);
+  useEffect(() => () => player.current?.stop(), []);
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      const pl = player.current;
+      if (pl?.done) {
+        setPlaying(null);
+        setPos(null);
+        return;
+      }
+      setPos(pl?.position() ?? null);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
+
+  const stop = () => {
+    player.current?.stop();
+    player.current = null;
+    setPlaying(null);
+    setPos(null);
+  };
+  const play = (mode: 'song' | 'pattern') => {
+    player.current?.stop();
+    player.current = playSong(song, instruments, mode === 'song' ? { from: slot } : { only: p });
+    setPlaying(player.current ? mode : null);
+  };
+
+  const notes = song.patterns[p].notes;
+  const isLevelMusic = scene.music === asset.id;
+  // The playhead, when what plays is the pattern on screen.
+  const headStep = pos && (playing === 'pattern' || song.order[pos.order] === p) ? pos.step : null;
+
+  return (
+    <div className="ms-song" data-testid="song-editor">
+      <div className="ms-row ms-transport">
+        {playing ? (
+          <button className="chip-btn" data-testid="music-stop" onClick={stop}>
+            ■ Stop
+          </button>
+        ) : (
+          <>
+            <button className="chip-btn primary" data-testid="music-play" onClick={() => play('song')} title="Play the song from the chosen place in the order">
+              ▶ Song
+            </button>
+            <button className="chip-btn" data-testid="music-play-pattern" onClick={() => play('pattern')} title="Play this pattern over and over">
+              ▶ Pattern
+            </button>
+          </>
+        )}
+        <label className="ms-field">
+          BPM
+          <input
+            type="number"
+            min={40}
+            max={300}
+            data-testid="music-bpm"
+            value={song.bpm}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (v >= 40 && v <= 300) change('Tempo', (s) => void (s.bpm = v), 'bpm');
+            }}
+          />
+        </label>
+        <label className="ms-field">
+          Steps
+          <select
+            data-testid="music-steps"
+            value={song.steps}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              change('Pattern length', (s) => {
+                s.steps = v;
+                for (const pt of s.patterns) pt.notes = pt.notes.filter((n) => n[1] < v);
+              });
+            }}
+          >
+            {[8, 12, 16, 24, 32, 48, 64].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="ms-check">
+          <input type="checkbox" data-testid="music-loop" checked={song.loop} onChange={(e) => change(e.target.checked ? 'Loop' : 'Play once', (s) => void (s.loop = e.target.checked))} />
+          Loop
+        </label>
+        <span className="grow" />
+        <label className="ms-check" title="Plays while this level is played">
+          <input
+            type="checkbox"
+            data-testid="music-level"
+            checked={isLevelMusic}
+            onChange={(e) => useEditor.getState().edit(e.target.checked ? `Music for ${scene.name}: ${asset.name}` : `No music for ${scene.name}`, (d) => setLevelMusic(d, scene.id, e.target.checked ? asset.id : null))}
+          />
+          Music of level “{scene.name}”
+        </label>
+      </div>
+
+      <div className="ms-row ms-arrange" aria-label="Order">
+        <span className="ms-row-label">Order</span>
+        <div className="ms-order" data-testid="music-order">
+          {song.order.map((pi, i) => (
+            <button
+              key={i}
+              className={`ms-chip${i === slot ? ' on' : ''}${pos && playing === 'song' && pos.order === i ? ' now' : ''}`}
+              data-testid={`music-order-${i}`}
+              onClick={() => {
+                setSlot(i);
+                setPattern(pi);
+              }}
+            >
+              {song.patterns[pi]?.name || patternName(pi)}
+            </button>
+          ))}
+        </div>
+        <button className="icon-btn small" title="Play this pattern next (after the chosen place)" aria-label="Add to the order" data-testid="music-order-add" disabled={song.order.length >= MAX_ORDER} onClick={() => (change('Add to the order', (s) => void s.order.splice(slot + 1, 0, p)), setSlot(slot + 1))}>
+          +
+        </button>
+        <button className="icon-btn small" title="Take the chosen place out of the order" aria-label="Remove from the order" data-testid="music-order-remove" disabled={song.order.length <= 1} onClick={() => (change('Remove from the order', (s) => void s.order.splice(slot, 1)), setSlot(Math.max(0, slot - 1)))}>
+          −
+        </button>
+        <button className="icon-btn small" aria-label="Move earlier" data-testid="music-order-left" disabled={slot === 0} onClick={() => (change('Move in the order', (s) => void s.order.splice(slot - 1, 2, s.order[slot], s.order[slot - 1])), setSlot(slot - 1))}>
+          ◀
+        </button>
+        <button className="icon-btn small" aria-label="Move later" data-testid="music-order-right" disabled={slot >= song.order.length - 1} onClick={() => (change('Move in the order', (s) => void s.order.splice(slot, 2, s.order[slot + 1], s.order[slot])), setSlot(slot + 1))}>
+          ▶
+        </button>
+      </div>
+
+      <div className="ms-row" aria-label="Patterns">
+        <span className="ms-row-label">Pattern</span>
+        <div className="ms-patterns">
+          {song.patterns.map((pt, i) => (
+            <button key={i} className={`ms-chip${i === p ? ' on' : ''}`} data-testid={`music-pattern-${i}`} onClick={() => setPattern(i)}>
+              {pt.name || patternName(i)}
+            </button>
+          ))}
+        </div>
+        <button
+          className="chip-btn small"
+          data-testid="music-pattern-new"
+          disabled={song.patterns.length >= MAX_PATTERNS}
+          onClick={() => {
+            const i = song.patterns.length;
+            change('New pattern', (s) => void s.patterns.push({ name: patternName(i), notes: [] }));
+            setPattern(i);
+          }}
+        >
+          + New
+        </button>
+        <button
+          className="chip-btn small"
+          data-testid="music-pattern-copy"
+          disabled={song.patterns.length >= MAX_PATTERNS}
+          onClick={() => {
+            const i = song.patterns.length;
+            change('Copy pattern', (s) => void s.patterns.push({ name: patternName(i), notes: structuredClone(s.patterns[p].notes) }));
+            setPattern(i);
+          }}
+        >
+          Copy
+        </button>
+        <button className="chip-btn small" data-testid="music-pattern-clear" disabled={!notes.length} onClick={() => change('Clear pattern', (s) => void (s.patterns[p].notes = []))}>
+          Clear
+        </button>
+        <button
+          className="chip-btn small"
+          data-testid="music-pattern-delete"
+          disabled={song.patterns.length <= 1}
+          onClick={() => {
+            change('Delete pattern', (s) => {
+              s.patterns.splice(p, 1);
+              s.order = s.order.filter((i) => i !== p).map((i) => (i > p ? i - 1 : i));
+              if (!s.order.length) s.order = [0];
+            });
+            setPattern(Math.max(0, p - 1));
+            setSlot(0);
+          }}
+        >
+          Delete
+        </button>
+      </div>
+
+      <div className="ms-editor">
+        <div className="ms-channels" aria-label="Channels">
+          {song.channels.map((c, i) => (
+            <div key={i} className={`ms-channel${i === ch ? ' on' : ''}${c.mute ? ' muted' : ''}`} data-testid={`music-channel-${i}`} onClick={() => setChannel(i)}>
+              <span className="ms-dot" style={{ background: CHANNEL_COLORS[i] }} />
+              <select
+                className="ms-select"
+                aria-label={`Channel ${i + 1} instrument`}
+                data-testid="music-channel-instrument"
+                value={c.instrument ?? ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith('+')) {
+                    let id = '';
+                    const name = v.slice(1);
+                    useEditor.getState().edit(`New instrument ${name}`, (d) => {
+                      id = addInstrumentAsset(d, name, preset(name));
+                      const s = structuredClone(song);
+                      s.channels[i].instrument = id;
+                      s.channels[i].name = d.assets.find((a) => a.id === id)!.name;
+                      setSong(d, asset.id, s);
+                    });
+                  } else
+                    change('Channel instrument', (s) => {
+                      s.channels[i].instrument = v || null;
+                      s.channels[i].name = instrumentList.find((a) => a.id === v)?.name ?? '';
+                    });
+                }}
+              >
+                <option value="">(silent)</option>
+                {instrumentList.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+                <optgroup label="New instrument">
+                  {INSTRUMENT_PRESETS.map((pr) => (
+                    <option key={pr.name} value={`+${pr.name}`}>
+                      + {pr.name} ({pr.instrument.chip === '8bit' ? '8-bit' : '16-bit'})
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input
+                type="range"
+                className="ms-vol"
+                min={0}
+                max={1}
+                step={0.01}
+                value={c.volume}
+                aria-label={`Channel ${i + 1} volume`}
+                data-testid="music-channel-volume"
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => change('Channel volume', (s) => void (s.channels[i].volume = Number(e.target.value)), `vol${i}`)}
+              />
+              <button
+                className={`icon-btn small${c.mute ? ' on' : ''}`}
+                title={c.mute ? 'Unmute' : 'Mute'}
+                aria-label={`Mute channel ${i + 1}`}
+                data-testid="music-channel-mute"
+                onClick={(e) => (e.stopPropagation(), change(c.mute ? 'Unmute channel' : 'Mute channel', (s) => void (s.channels[i].mute = !c.mute)))}
+              >
+                M
+              </button>
+              {c.instrument && (
+                <button
+                  className="icon-btn small"
+                  title="Shape this instrument"
+                  aria-label={`Shape channel ${i + 1} instrument`}
+                  data-testid="music-channel-shape"
+                  onClick={(e) => (e.stopPropagation(), useEditor.getState().setMusicStudio({ tab: 'instruments', instrumentId: c.instrument }))}
+                >
+                  ✎
+                </button>
+              )}
+              <button
+                className="icon-btn small"
+                title="Remove this channel (and its notes)"
+                aria-label={`Remove channel ${i + 1}`}
+                data-testid="music-channel-remove"
+                disabled={song.channels.length <= 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  change('Remove channel', (s) => {
+                    s.channels.splice(i, 1);
+                    for (const pt of s.patterns) pt.notes = pt.notes.filter((n) => n[0] !== i).map((n) => (n[0] > i ? [n[0] - 1, n[1], n[2], n[3], n[4]] : n) as SongNote);
+                  });
+                  setChannel(Math.max(0, i - 1));
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            className="chip-btn small"
+            data-testid="music-channel-add"
+            disabled={song.channels.length >= MAX_CHANNELS}
+            onClick={() => {
+              const first = instrumentList[0];
+              change('Add channel', (s) => void s.channels.push({ name: first?.name ?? '', instrument: first?.id ?? null, volume: 0.8, pan: 0, mute: false }));
+              setChannel(song.channels.length);
+            }}
+          >
+            + Channel
+          </button>
+          <label className="ms-field">
+            Note length
+            <select data-testid="music-pen" value={pen} onChange={(e) => setPen(Number(e.target.value))}>
+              {[1, 2, 3, 4, 6, 8, 12, 16].map((n) => (
+                <option key={n} value={n}>
+                  {n} step{n > 1 ? 's' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <PianoRoll
+          song={song}
+          pattern={p}
+          channel={ch}
+          pen={pen}
+          head={headStep}
+          instrument={instruments(song.channels[ch]?.instrument ?? null)}
+          onNotes={(next) => change('Notes', (s) => void (s.patterns[p].notes = next))}
+        />
+      </div>
+      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. Undo works on everything.</p>
+    </div>
+  );
+}
+
+function PianoRoll({ song, pattern, channel, pen, head, instrument, onNotes }: { song: Song; pattern: number; channel: number; pen: number; head: number | null; instrument: Instrument | null; onNotes: (notes: SongNote[]) => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const notes = song.patterns[pattern].notes;
+  // A note being drawn (dragged longer) before it is kept.
+  const [draft, setDraft] = useState<SongNote | null>(null);
+  // Columns as wide as the space allows (at least COL_W).
+  const [room, setRoom] = useState(0);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setRoom(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const COL_W = Math.max(MIN_COL_W, Math.floor((room - KEYS_W) / song.steps));
+  const width = KEYS_W + song.steps * COL_W;
+  const height = ROWS * ROW_H;
+  const yOf = (pitch: number) => (HIGH - pitch) * ROW_H;
+
+  // Opens around the chosen channel's notes (or middle C).
+  useEffect(() => {
+    const mine = notes.filter((n) => n[0] === channel);
+    const mid = mine.length ? mine.reduce((s, n) => s + n[2], 0) / mine.length : 60;
+    const el = scroller.current;
+    if (el) el.scrollTop = Math.max(0, yOf(mid) - el.clientHeight / 2);
+  }, [channel, pattern]);
+
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    ctx.clearRect(0, 0, width, height);
+    for (let pitch = LOW; pitch <= HIGH; pitch++) {
+      const y = yOf(pitch);
+      const black = BLACK.has(pitch % 12);
+      ctx.fillStyle = black ? '#1b1e27' : '#232733';
+      ctx.fillRect(KEYS_W, y, width - KEYS_W, ROW_H);
+      ctx.fillStyle = black ? '#2a2d36' : '#d9dce3';
+      ctx.fillRect(0, y, KEYS_W - 2, ROW_H - 1);
+      if (pitch % 12 === 0) {
+        ctx.fillStyle = '#5a6070';
+        ctx.fillRect(KEYS_W, y + ROW_H - 1, width - KEYS_W, 1);
+        ctx.fillStyle = '#20232c';
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.fillText(noteName(pitch), 3, y + ROW_H - 3);
+      }
+    }
+    for (let s = 0; s <= song.steps; s++) {
+      ctx.fillStyle = s % 16 === 0 ? '#7a8090' : s % 4 === 0 ? '#4a5060' : '#30343f';
+      ctx.fillRect(KEYS_W + s * COL_W, 0, 1, height);
+    }
+    const all = draft ? [...notes, draft] : notes;
+    for (const mineFirst of [false, true]) {
+      for (const n of all) {
+        const mine = n[0] === channel;
+        if (mine !== mineFirst) continue;
+        const x = KEYS_W + n[1] * COL_W + 1;
+        const w = Math.min(n[3], song.steps - n[1]) * COL_W - 2;
+        ctx.globalAlpha = mine ? 0.6 + 0.4 * n[4] : 0.28;
+        ctx.fillStyle = CHANNEL_COLORS[n[0]] ?? '#fff';
+        ctx.fillRect(x, yOf(n[2]) + 1, w, ROW_H - 2);
+        if (mine) {
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(x + w - 3, yOf(n[2]) + 1, 3, ROW_H - 2);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (head !== null) {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(KEYS_W + head * COL_W, 0, COL_W, height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(KEYS_W + head * COL_W, 0, 2, height);
+    }
+  }, [notes, draft, channel, head, song.steps, width, height, COL_W]);
+
+  const cellAt = (e: React.PointerEvent) => {
+    const r = ref.current!.getBoundingClientRect();
+    const x = ((e.clientX - r.left) * width) / r.width;
+    const y = ((e.clientY - r.top) * height) / r.height;
+    return { x, step: Math.floor((x - KEYS_W) / COL_W), pitch: HIGH - Math.floor(y / ROW_H) };
+  };
+
+  return (
+    <div className="ms-roll" ref={scroller}>
+      <canvas
+        ref={ref}
+        width={width}
+        height={height}
+        style={{ width, height }}
+        data-testid="music-roll"
+        data-notes={notes.length}
+        data-note-steps={notes.reduce((n, x) => n + x[3], 0)}
+        aria-label="Piano roll"
+        onPointerDown={(e) => {
+          const { x, step, pitch } = cellAt(e);
+          if (pitch < LOW || pitch > HIGH) return;
+          if (x < KEYS_W) {
+            if (instrument) playNote(instrument, pitch, 0.3);
+            return;
+          }
+          if (step < 0 || step >= song.steps) return;
+          const hit = notes.findIndex((n) => n[0] === channel && n[2] === pitch && step >= n[1] && step < n[1] + n[3]);
+          if (hit >= 0) {
+            onNotes(notes.filter((_, i) => i !== hit));
+            return;
+          }
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setDraft([channel, step, pitch, Math.min(pen, song.steps - step), 0.8]);
+          if (instrument) playNote(instrument, pitch, 0.25);
+        }}
+        onPointerMove={(e) => {
+          if (!draft) return;
+          const { step } = cellAt(e);
+          const len = Math.max(1, Math.min(song.steps - draft[1], step - draft[1] + 1));
+          if (len !== draft[3] && step > draft[1]) setDraft([draft[0], draft[1], draft[2], len, draft[4]]);
+        }}
+        onPointerUp={() => {
+          if (!draft) return;
+          // A new note replaces any other note of the channel it covers at the same pitch.
+          const keep = notes.filter((n) => !(n[0] === draft[0] && n[2] === draft[2] && n[1] < draft[1] + draft[3] && draft[1] < n[1] + n[3]));
+          onNotes([...keep, draft].sort((a, b) => a[1] - b[1] || a[0] - b[0]));
+          setDraft(null);
+        }}
+        onPointerCancel={() => setDraft(null)}
+      />
+    </div>
+  );
+}

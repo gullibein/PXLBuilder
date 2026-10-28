@@ -6,6 +6,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import { LookCache } from '../../render/screen';
 import { drawPlayFrame } from './playFrame';
 import { audio, playSound } from '../audio/synth';
+import { instrumentsOf, playSong, songAsset, type SongPlayer } from '../audio/musicPlayer';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
@@ -94,6 +95,18 @@ export function PlayView(props: PlayViewProps) {
     if (sounds.size) audio();
     // Play starts at the level being edited; a won level goes on to the next one (in the levels' order).
     let scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
+    // Music: the level's song, or the one a script asked for (a level with the same song goes on playing it).
+    const instruments = instrumentsOf(project);
+    let music: { id: string; player: SongPlayer | null } | null = null;
+    const playMusic = (id: string | null | undefined) => {
+      if ((music?.id ?? null) === (id ?? null)) return;
+      music?.player?.stop();
+      music = null;
+      const song = songAsset(project, id);
+      if (song) music = { id: song.id, player: playSong(song.song!, instruments) };
+      canvas.dataset.music = music?.id ?? '';
+    };
+    playMusic(scene.music);
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
     let runtime = new Runtime(project, scene.id, componentRegistry);
     // What happens is recorded for the Debug tab and the AI ("why did the player die?").
@@ -217,6 +230,7 @@ export function PlayView(props: PlayViewProps) {
           recorder.stop();
           scene = nextScene;
           runtime = new Runtime(project, scene.id, componentRegistry);
+          playMusic(scene.music);
           recorder = new PlayRecorder(runtime);
           look();
           measure();
@@ -236,6 +250,10 @@ export function PlayView(props: PlayViewProps) {
         if (recipe) playSound(recipe, { volume: s.volume, pitch: s.pitch });
       }
       canvas.dataset.sounds = String(runtime.soundsPlayed);
+      if (runtime.musicRequest) {
+        playMusic(runtime.musicRequest.assetId);
+        runtime.musicRequest = null;
+      }
       const flash = runtime.cam.flash();
       if (flash) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -272,6 +290,7 @@ export function PlayView(props: PlayViewProps) {
 
     return () => {
       cancelAnimationFrame(frame);
+      music?.player?.stop();
       const report = recorder.report();
       recorder.stop();
       props.onEnd?.(report, project);

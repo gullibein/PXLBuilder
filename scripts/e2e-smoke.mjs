@@ -4124,6 +4124,93 @@ try {
     await ac.close();
   }
 
+  step = 'music machine';
+  {
+    const mc = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const mp = await mc.newPage();
+    mp.on('pageerror', (e) => errors.push(`pageerror (music): ${e.message}`));
+    mp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console (music): ${m.text()}`));
+    await mp.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await mp.goto(URL);
+    await startPlatformer(mp);
+    await mp.getByTestId('dock-music').click();
+    await check(async () => await mp.getByTestId('music-studio').isVisible(), 'the Music button opens the music machine');
+    await mp.getByTestId('music-new-song-8bit').click();
+    await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 5, 'a new 8-bit song comes with five channels (lead, bass, kick, snare, hi-hat)');
+    await check(async () => (await mp.getByTestId('music-channel-instrument').first().locator('option:checked').textContent()) === 'Square lead', 'the first channel plays the Square lead');
+    const roll = mp.getByTestId('music-roll');
+    /** A cell of the piano roll on screen (scrolled into view first). */
+    const cell = async (step, pitch) => {
+      const { steps, width } = await roll.evaluate((c) => ({ steps: 16, width: c.width }));
+      const col = (width - 38) / steps;
+      const y = (96 - pitch) * 12 + 6;
+      await mp.evaluate((top) => (document.querySelector('.ms-roll').scrollTop = top), y - 100);
+      const b = await roll.boundingBox();
+      return { x: b.x + 38 + step * col + col / 2, y: b.y + y };
+    };
+    for (const [s, pitch] of [[0, 72], [2, 76]]) {
+      const at = await cell(s, pitch);
+      await mp.mouse.click(at.x, at.y);
+    }
+    // Drawn longer: dragged from step 4 to step 7.
+    const from = await cell(4, 79);
+    const to = await cell(7, 79);
+    await mp.mouse.move(from.x, from.y);
+    await mp.mouse.down();
+    await mp.mouse.move(to.x, to.y, { steps: 4 });
+    await mp.mouse.up();
+    await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await roll.getAttribute('data-note-steps')) === '6', 'notes are drawn on the piano roll, one dragged 4 steps long');
+    const again = await cell(2, 76);
+    await mp.mouse.click(again.x, again.y);
+    await check(async () => (await roll.getAttribute('data-notes')) === '2', 'clicking a note takes it away');
+    await mp.keyboard.press('Control+z');
+    await check(async () => (await roll.getAttribute('data-notes')) === '3', 'undo brings it back');
+    await mp.getByTestId('music-play-pattern').click();
+    await check(async () => await mp.getByTestId('music-stop').isVisible(), 'the pattern plays (Stop shows)');
+    await mp.waitForTimeout(400);
+    await mp.getByTestId('music-stop').click();
+    await mp.getByTestId('music-pattern-copy').click();
+    await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await mp.getByTestId('music-pattern-1').count()) === 1, 'Copy makes pattern B with the same notes');
+    await mp.getByTestId('music-order-add').click();
+    await check(async () => (await mp.getByTestId('music-order-1').textContent()) === 'B', 'B is added to the order after A');
+    await mp.getByTestId('music-level').check();
+    await mp.screenshot({ path: `${OUT}/32-music-song.png` });
+    // Instruments: shaped, and saved with the game.
+    await mp.getByTestId('music-tab-instruments').click();
+    await check(async () => (await mp.getByTestId('music-list-instruments').locator('.ms-item').count()) === 5, 'the song\'s five instruments are in the Instruments list');
+    await mp.getByTestId('ins-chip-16bit').click();
+    await check(async () => await mp.getByTestId('ins-wave-fm').isVisible(), 'the 16-bit chip has FM, pluck and supersaw waves');
+    await mp.getByTestId('ins-wave-fm').click();
+    const before = await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL());
+    // (A slider moved the way a hand does: React hears the input event.)
+    await mp.getByTestId('ins-fmIndex').evaluate((el) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '12');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await check(async () => (await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL())) !== before, 'shaping the instrument redraws its sound');
+    await mp.getByTestId('key-C4').dispatchEvent('pointerdown');
+    await mp.getByTestId('key-C4').dispatchEvent('pointerup');
+    await mp.keyboard.down('z');
+    await check(async () => (await mp.getByTestId('key-C4').getAttribute('class')).includes('down'), 'the computer keys play the keyboard (Z = C)');
+    await mp.keyboard.up('z');
+    await mp.getByTestId('ins-filter').selectOption('lowpass');
+    await check(async () => await mp.getByTestId('ins-cutoff').isVisible(), 'a filter shows its cutoff');
+    await mp.screenshot({ path: `${OUT}/33-music-instrument.png` });
+    await mp.getByTestId('music-rename').click();
+    await mp.getByTestId('music-rename-input').fill('Bell lead');
+    await mp.getByTestId('music-rename-input').press('Enter');
+    await check(async () => (await mp.getByTestId('music-item-Bell lead').count()) === 1, 'an instrument is renamed');
+    await mp.getByTestId('music-tab-songs').click();
+    await check(async () => (await mp.getByTestId('music-channel-instrument').first().locator('option:checked').textContent()) === 'Bell lead', 'the song plays it under its new name');
+    await mp.keyboard.press('Escape');
+    await check(async () => (await mp.getByTestId('music-studio').count()) === 0, 'Esc closes the music machine');
+    // The level's music plays in Play.
+    await mp.getByTestId('play').click();
+    await check(async () => ((await mp.getByTestId('play-canvas').getAttribute('data-music')) ?? '').startsWith('mus_'), 'in Play, the level\'s song plays');
+    await mp.keyboard.press('Escape');
+    await mc.close();
+  }
+
   step = 'phone';
   {
     const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });

@@ -242,7 +242,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
 }
 
 /** Operations that go with a change to one thing without being about anything else (a sound for it to play). */
-const ALONG = new Set(['make_sound']);
+const ALONG = new Set(['make_sound', 'make_instrument', 'make_song']);
 
 /**
  * The card an answer belongs on, when it was asked on one thing's card (a placed object, or a library object) and

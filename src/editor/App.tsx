@@ -7,6 +7,7 @@ import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
 import { ExportGameDialog } from './chrome/ExportGameDialog';
 import { SoundEditor } from './chrome/SoundEditor';
+import { MusicStudio } from './chrome/MusicStudio';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
@@ -112,6 +113,7 @@ export function App() {
         <GameSite />
         <ExportGameDialog />
         <SoundEditor />
+        <MusicStudio />
         <GlobalPrompt />
         <Dock />
         <Tray />
@@ -163,6 +165,8 @@ function useGlobalShortcuts() {
         return;
       }
       if (typing) return;
+      // The music machine has its own keys (a piano on the keyboard): only undo, redo and Esc reach the editor.
+      if (state.musicStudio && !(mod && (key === 'z' || key === 'y')) && e.key !== 'Escape') return;
       if (mod && key === 'z') {
         e.preventDefault();
         if (e.shiftKey) state.redo();
@@ -193,7 +197,8 @@ function useGlobalShortcuts() {
         state.setPromptOpen(true);
         requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="context-prompt"] textarea')?.focus());
       } else if (e.key === 'Escape') {
-        if (state.soundEditor) state.setSoundEditor(null);
+        if (state.musicStudio) state.setMusicStudio(null);
+        else if (state.soundEditor) state.setSoundEditor(null);
         else if (state.dock) state.setDock(null);
         else if (state.globalPrompt.open) state.setGlobalPrompt(false);
         else if (state.backgroundOpen) state.setBackgroundOpen(false);

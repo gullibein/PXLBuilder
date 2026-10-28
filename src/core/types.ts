@@ -4,6 +4,7 @@
  * from and writes to these structures; nothing here depends on React or the DOM.
  */
 
+import type { Instrument, Song } from './audio/music';
 import type { GameSound } from './audio/sound';
 import type { CameraSettings } from './model/camera';
 import type { BehaviorScript } from './script/language';
@@ -179,9 +180,12 @@ export interface Scene {
   rules: Rule[];
   /** How the camera behaves in play (zoom, look-ahead, limits…). */
   camera: CameraSettings;
+  /** The song (a music asset's id) that plays while this level is played. */
+  music?: Id | null;
 }
 
-export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music';
+/** music: a song from the music machine; instrument: a sound shaped in it (played by songs). */
+export type AssetKind = 'image' | 'spritesheet' | 'sound' | 'music' | 'instrument';
 
 /** How a sprite sheet is cut into numbered cells (numbered from 1, left to right, then top to bottom). */
 export interface SpriteAnimation {
@@ -226,6 +230,10 @@ export interface AssetRecord {
   autotile?: true;
   /** The recipe, for sounds made by the synthesizer (by the AI): played with the browser's audio, no file needed. */
   synth?: GameSound;
+  /** The instrument, for instruments shaped in the music machine. */
+  instrument?: Instrument;
+  /** The song, for music written in the music machine. */
+  song?: Song;
   /** What it is, in plain words ("a duck's quack"), for sounds. */
   description?: string;
 }

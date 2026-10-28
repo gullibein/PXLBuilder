@@ -6,6 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { songSeconds, type Instrument } from '../audio/music';
 import { soundLength } from '../audio/sound';
 import { audibleNotes, isStepSound, type StepSound } from '../audio/steps';
 import type { ComponentRegistry } from '../components/registry';
@@ -267,6 +268,12 @@ export interface AIPayload {
   /** Sounds made so far (play them by name with play_sound; remake one with make_sound replaceId). */
   /** The game's sounds; step sounds with their notes (`sound`), to remake one starting from what it is now. */
   sounds: { id: Id; name: string; description: string; seconds: number; sound?: StepSound }[];
+  /** The music machine's instruments and songs (songs with their JSON, channels naming instruments), and this level's music. */
+  music: {
+    levelMusic: string | null;
+    instruments: { id: Id; name: string; description: string; instrument: Instrument }[];
+    songs: { id: Id; name: string; description: string; seconds: number; playsIn: string[]; song?: unknown; note?: string }[];
+  };
   /** Other levels (project scope only lists their contents). */
   otherLevels: { id: Id; name: string; map?: LevelMap | null; entities?: EntityBrief[]; otherCopies?: Record<string, number> }[];
   coordinateSystem: string;
@@ -523,6 +530,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     sounds: project.assets
       .filter((a) => a.kind === 'sound' && a.synth)
       .map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(soundLength(a.synth!) * 100) / 100, ...(isStepSound(a.synth) ? { sound: { ...a.synth, notes: a.synth.notes.slice(0, audibleNotes(a.synth)) } } : {}) })),
+    music: musicPayload(project, scene),
     otherLevels: project.scenes
       .filter((s) => s.id !== scene.id)
       .map((s) => {
@@ -589,4 +597,31 @@ export function codeFor(project: Project, ids: string[]): { id: Id; name: string
     if (d && !out.some((o) => o.id === d.id)) out.push({ id: d.id, name: d.name, scripts: d.scripts ?? [] });
   }
   return out;
+}
+
+/** The game's instruments and songs for the AI (a long song's notes are left out). */
+function musicPayload(project: Project, scene: Project['scenes'][number]): AIPayload['music'] {
+  const instruments = project.assets.filter((a) => a.kind === 'instrument' && a.instrument);
+  const nameOf = (id: Id | null) => instruments.find((a) => a.id === id)?.name ?? null;
+  let budget = 3000;
+  return {
+    levelMusic: project.assets.find((a) => a.id === scene.music && a.kind === 'music')?.name ?? null,
+    instruments: instruments.map((a) => ({ id: a.id, name: a.name, description: a.description ?? '', instrument: a.instrument! })),
+    songs: project.assets
+      .filter((a) => a.kind === 'music' && a.song)
+      .map((a) => {
+        const s = a.song!;
+        const notes = s.patterns.reduce((n, p) => n + p.notes.length, 0);
+        const fits = notes <= budget;
+        if (fits) budget -= notes;
+        return {
+          id: a.id,
+          name: a.name,
+          description: a.description ?? '',
+          seconds: Math.round(songSeconds(s)),
+          playsIn: project.scenes.filter((x) => x.music === a.id).map((x) => x.name),
+          ...(fits ? { song: { ...s, channels: s.channels.map((c) => ({ ...c, instrument: nameOf(c.instrument) })) } } : { note: `${notes} notes: too long to show here` }),
+        };
+      }),
+  };
 }

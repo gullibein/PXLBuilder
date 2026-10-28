@@ -446,6 +446,8 @@ export class Runtime {
   readonly builtinHidden = new Set<'hearts' | 'items'>();
   /** Sounds to play (the play view plays and empties it every frame; the runtime itself makes no sound). */
   readonly soundQueue: { assetId: Id; volume: number; pitch: number }[] = [];
+  /** A song a script asked for (null = stop the music); the play view takes it. */
+  musicRequest: { assetId: Id | null } | null = null;
   /** How many sounds were played since the level started (for tests and the play log). */
   soundsPlayed = 0;
   /** The play screen's size in px (set by the play view; scripts read screen_w / screen_h). */

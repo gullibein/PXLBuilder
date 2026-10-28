@@ -15,6 +15,9 @@ import { createAnimatedPixelArtAsset, createDefinition, createLevelFor, instanti
 import { buildPath } from './buildPath';
 import { soundDataUrl } from '../audio/sound';
 import { parseSteps } from '../audio/steps';
+import { parseInstrument, parseNoteName, parseSong } from '../audio/music';
+import * as music from '../model/music';
+import { findSong } from '../script/language';
 import { generateId } from '../ids';
 import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
@@ -146,6 +149,25 @@ export const operationSchema = z.union([
     description: z.string().describe('What it sounds like, in plain words'),
     soundJson: z.string().describe('The sound as JSON: {"type":"steps","speed":8,"notes":[[pitch,wave,volume,effect],…]} (see "Sounds")'),
     replaceId: z.string().nullable().describe('An existing sound asset id to remake (keeps its name unless a new one is given, so scripts playing it keep working); null for a new sound'),
+  }),
+  z.object({
+    op: z.literal('make_instrument'),
+    name: z.string().describe('Short name, e.g. "Lead", "Bass", "Kick" (unique among instruments)'),
+    description: z.string().describe('What it sounds like, in plain words'),
+    instrumentJson: z.string().describe('The instrument as JSON: {"chip":"8bit","wave":"pulse25","attack":0.01,"decay":0.2,"sustain":0.5,"release":0.1,…} (see "Music")'),
+    replaceId: z.string().nullable().describe('An existing instrument asset id to reshape (keeps its name unless a new one is given); null for a new instrument'),
+  }),
+  z.object({
+    op: z.literal('make_song'),
+    name: z.string().describe('Short name, e.g. "Level 1 theme" (unique among songs); scripts play it by this name'),
+    description: z.string().describe('What it is like, in plain words'),
+    songJson: z.string().describe('The song as JSON: {"bpm":120,"steps":16,"loop":true,"channels":[{"instrument":"Lead"},…],"patterns":[{"name":"A","notes":[[channel,step,pitch,length,velocity],…]}],"order":[0,0,1]} (see "Music")'),
+    replaceId: z.string().nullable().describe('An existing song asset id to rewrite; null for a new song'),
+  }),
+  z.object({
+    op: z.literal('set_level_music'),
+    sceneId: z.string(),
+    music: z.string().nullable().describe('The song (name, id, or the name of a make_song earlier in this list) that plays while the level is played; null for none'),
   }),
   z.object({
     op: z.literal('draw_tiles'),
@@ -396,6 +418,9 @@ const KEEPS_PLACES = new Set<string>([
   'create_definition',
   'create_level',
   'make_sound',
+  'make_instrument',
+  'make_song',
+  'set_level_music',
   'rename',
   'set_tags',
   'create_relationship',
@@ -708,6 +733,56 @@ export function applyOperations(
         }
         break;
       }
+      case 'make_instrument': {
+        const parsed = parseInstrument(op.instrumentJson);
+        if ('error' in parsed) throw new m.ModelError(parsed.error);
+        const name = op.name.trim() || 'Instrument';
+        if (op.replaceId) {
+          const old = project.assets.find((a) => a.id === op.replaceId && a.kind === 'instrument');
+          if (!old) throw new m.ModelError(`There is no instrument "${op.replaceId}" to reshape`);
+          music.setInstrument(project, old.id, parsed.instrument);
+          const problem = name !== old.name ? music.renameMusicAsset(project, old.id, name) : null;
+          if (problem) throw new m.ModelError(problem);
+          old.description = op.description;
+          result.createdAssetIds.push(old.id);
+        } else {
+          const problem = music.musicNameProblem(project, 'instrument', name);
+          if (problem) throw new m.ModelError(`${problem}: reshape it with replaceId, or give the new one another name`);
+          result.createdAssetIds.push(music.addInstrumentAsset(project, name, parsed.instrument, op.description));
+        }
+        break;
+      }
+      case 'make_song': {
+        const raw = readSongJson(op.songJson, project);
+        if ('error' in raw) throw new m.ModelError(raw.error);
+        const parsed = parseSong(raw.value);
+        if ('error' in parsed) throw new m.ModelError(parsed.error);
+        const name = op.name.trim() || 'Song';
+        if (op.replaceId) {
+          const old = project.assets.find((a) => a.id === op.replaceId && a.kind === 'music');
+          if (!old) throw new m.ModelError(`There is no song "${op.replaceId}" to rewrite`);
+          music.setSong(project, old.id, parsed.song);
+          const problem = name !== old.name ? music.renameMusicAsset(project, old.id, name) : null;
+          if (problem) throw new m.ModelError(problem);
+          old.description = op.description;
+          result.createdAssetIds.push(old.id);
+        } else {
+          const problem = music.musicNameProblem(project, 'music', name);
+          if (problem) throw new m.ModelError(`${problem}: rewrite it with replaceId, or give the new one another name`);
+          result.createdAssetIds.push(music.addSongAsset(project, name, parsed.song, op.description));
+        }
+        break;
+      }
+      case 'set_level_music': {
+        if (op.music === null) {
+          music.setLevelMusic(project, op.sceneId, null);
+          break;
+        }
+        const song = findSong(project, op.music);
+        if (!song) throw new m.ModelError(`There is no song "${op.music}" (make one with make_song first)`);
+        music.setLevelMusic(project, op.sceneId, song.id);
+        break;
+      }
       case 'draw_autotile': {
         const defId = refs.get(op.id) ?? op.id;
         m.drawAutotileTiles(project, defId, op.palette, op.tiles, registry);
@@ -922,4 +997,47 @@ export function pruneOperations(project: Project, ops: Operation[], registry: Co
     applyOperations(d, ops, registry, (i, message) => bad.set(i, message));
   });
   return { kept: ops.filter((_, i) => !bad.has(i)), skipped: [...bad.values()] };
+}
+
+/**
+ * A song from the AI: its channels name their instruments (by name or id), and pitches may be note names ("C4").
+ * Returns the song with instrument ids and MIDI pitches, ready to check.
+ */
+function readSongJson(text: string, project: Project): { value: unknown } | { error: string } {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { error: 'Song: not valid JSON' };
+  }
+  if (!value || typeof value !== 'object') return { error: 'Song: expected an object' };
+  const song = value as { channels?: unknown; patterns?: unknown };
+  const instruments = project.assets.filter((a) => a.kind === 'instrument' && a.instrument);
+  if (Array.isArray(song.channels)) {
+    for (const [i, c] of song.channels.entries()) {
+      if (!c || typeof c !== 'object') continue;
+      const ch = c as { instrument?: unknown; name?: unknown };
+      if (typeof ch.instrument !== 'string') continue;
+      const want = ch.instrument.trim().toLowerCase();
+      const inst = instruments.find((a) => a.id === ch.instrument) ?? instruments.find((a) => a.name.toLowerCase() === want);
+      if (!inst) return { error: `Song: channel ${i} plays instrument "${ch.instrument}", but there is none (instruments: ${instruments.map((a) => a.name).join(', ') || 'none yet: make them with make_instrument first'})` };
+      ch.instrument = inst.id;
+      if (typeof ch.name !== 'string' || !ch.name) ch.name = inst.name;
+    }
+  }
+  if (Array.isArray(song.patterns)) {
+    for (const p of song.patterns) {
+      const notes = (p as { notes?: unknown })?.notes;
+      if (!Array.isArray(notes)) continue;
+      for (const n of notes) {
+        if (!Array.isArray(n)) continue;
+        if (n.length === 4) n.push(0.8);
+        if (typeof n[2] !== 'string') continue;
+        const pitch = parseNoteName(n[2]);
+        if (pitch === null) return { error: `Song: "${n[2]}" is not a note (use MIDI numbers, 60 = C4, or names like "C4", "F#3", "Bb2")` };
+        n[2] = pitch;
+      }
+    }
+  }
+  return { value };
 }

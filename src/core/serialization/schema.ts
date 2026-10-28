@@ -1,3 +1,4 @@
+import { instrumentSchema, songSchema } from '../audio/music';
 import { gameSoundSchema } from '../audio/sound';
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
@@ -45,6 +46,7 @@ export const sceneSchema = z.object({
   entities: z.array(entitySchema),
   relationships: z.array(relationshipSchema),
   rules: z.array(ruleSchema),
+  music: id.nullable().optional(),
   camera: cameraSchema,
 });
 
@@ -61,7 +63,7 @@ export const definitionSchema = z.object({
 export const assetSchema = z.object({
   id,
   name: z.string(),
-  kind: z.enum(['image', 'spritesheet', 'sound', 'music']),
+  kind: z.enum(['image', 'spritesheet', 'sound', 'music', 'instrument']),
   path: z.string(),
   data: z.string().startsWith('data:'),
   width: z.number().nonnegative(),
@@ -82,6 +84,8 @@ export const assetSchema = z.object({
   animation: z.object({ frames: z.array(z.number().int().positive()).min(1), fps: z.number().positive() }).optional(),
   autotile: z.literal(true).optional(),
   synth: gameSoundSchema.optional(),
+  instrument: instrumentSchema.optional(),
+  song: songSchema.optional(),
   description: z.string().optional(),
 });
 

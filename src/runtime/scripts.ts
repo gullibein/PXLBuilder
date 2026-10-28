@@ -13,7 +13,7 @@
  * `errors` and in the event log as "script_error"; the game keeps going.
  */
 import { parseExpr, type Expr } from '../core/script/expr';
-import { checkScript, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
+import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
 import type { GameEvent } from './gameplay';
 import type { InputState } from './input';
@@ -23,7 +23,7 @@ import { addComponent, readField, removeComponent, setTag, writeField } from './
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
 /** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
-const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
+const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
 
 export interface ScriptInstance {
   script: BehaviorScript;
@@ -551,6 +551,15 @@ export class ScriptSystem {
         }
         break;
       }
+      case 'play_music': {
+        const song = findSong(this.project, s.music);
+        if (!song) this.report(e, ctx.inst, `play_music: there is no song "${s.music}"`);
+        else this.rt.musicRequest = { assetId: song.id };
+        break;
+      }
+      case 'stop_music':
+        this.rt.musicRequest = { assetId: null };
+        break;
       case 'builtin_display': {
         const parts: ('hearts' | 'items')[] = s.what === 'all' ? ['hearts', 'items'] : [s.what];
         for (const part of parts) {

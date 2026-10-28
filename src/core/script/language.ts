@@ -88,6 +88,8 @@ export type Stmt =
   | { do: 'erase'; id: string | null }
   | { do: 'builtin_display'; what: 'hearts' | 'items' | 'all'; show: boolean }
   | { do: 'play_sound'; sound: string; volume: string; pitch: string }
+  | { do: 'play_music'; music: string }
+  | { do: 'stop_music' }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
   | { do: 'complete_level' }
@@ -294,6 +296,8 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     example: '{"do":"play_sound","sound":"Quack","volume":"1","pitch":"1"}',
     doc: 'play a sound from the sound list (by its name or id; make one with make_sound). volume 0..1 (an expression: "0.5"); pitch 1 = as made, 2 = an octave higher, 0.5 lower ("rand(0.9, 1.1)" varies it a little each time)',
   },
+  play_music: { example: '{"do":"play_music","music":"Boss theme"}', doc: 'play a song from the music list (by name or id) instead of the music playing now (the level\'s music, or another song); it loops if the song is set to loop' },
+  stop_music: { example: '{"do":"stop_music"}', doc: 'stop the music' },
   builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'hide or show the built-in display (hearts, items, or all of it), e.g. when scripts draw their own' },
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
@@ -405,6 +409,8 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('erase'), id: z.string().min(1).nullable().default(null) }),
     z.object({ do: z.literal('builtin_display'), what: z.enum(['hearts', 'items', 'all']), show: z.boolean() }),
     z.object({ do: z.literal('play_sound'), sound: z.string().min(1), volume: expr.default('1'), pitch: expr.default('1') }),
+    z.object({ do: z.literal('play_music'), music: z.string().min(1) }),
+    z.object({ do: z.literal('stop_music') }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('complete_level') }),
@@ -544,6 +550,9 @@ export function exprSlots(s: Stmt): string[] {
       return [];
     case 'play_sound':
       return [s.volume, s.pitch];
+    case 'play_music':
+    case 'stop_music':
+      return [];
     case 'camera_shake':
       return [s.strength, s.seconds];
     case 'camera_flash':
@@ -558,6 +567,12 @@ export function exprSlots(s: Stmt): string[] {
 }
 
 /** The {expression} parts of a message text. */
+/** A song by id, or by name (any case). */
+export function findSong(project: Project, idOrName: string): Project['assets'][number] | undefined {
+  const songs = project.assets.filter((a) => a.kind === 'music' && a.song);
+  return songs.find((a) => a.id === idOrName) ?? songs.find((a) => a.name.toLowerCase() === idOrName.trim().toLowerCase());
+}
+
 /** A sound by id, or by name (any case). */
 export function findSound(project: Project, idOrName: string): Project['assets'][number] | undefined {
   const sounds = project.assets.filter((a) => a.kind === 'sound');
@@ -637,6 +652,10 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
         if (s.do === 'play_sound' && !findSound(project, s.sound)) {
           const names = project.assets.filter((a) => a.kind === 'sound').map((a) => a.name);
           return `${at}: there is no sound "${s.sound}"${names.length ? ` (sounds: ${names.join(', ')})` : ' (make one with make_sound first)'}`;
+        }
+        if (s.do === 'play_music' && !findSong(project, s.music)) {
+          const names = project.assets.filter((a) => a.kind === 'music' && a.song).map((a) => a.name);
+          return `${at}: there is no song "${s.music}"${names.length ? ` (songs: ${names.join(', ')})` : ' (write one in the music machine, or with make_song)'}`;
         }
         if (s.do === 'set_field') {
           const target = resolveField(componentRegistry, s.component, s.field);
