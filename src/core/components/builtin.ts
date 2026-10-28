@@ -218,7 +218,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Patrol',
     label: 'Patrol',
-    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Can climb ladders on its way (climbLadders) and chase the player once it sees it (chaseRange). Without gravity (gravityScale 0, or a level with no gravity) it flies back and forth. startDirection up or down: it goes up and down instead (only without gravity, e.g. in a top-down level).',
+    description: 'Walks back and forth on its own (needs a dynamic Physics Body). Turns at walls, at ledges (if turnAtLedges), and after `distance` pixels from where it started. Can climb ladders on its way (climbLadders) and chase the player once it sees it (chaseRange, at chaseSpeed; with reaction it slows down before turning back, so a player can jump over it and get away). Without gravity (gravityScale 0, or a level with no gravity) it flies back and forth. startDirection up or down: it goes up and down instead (only without gravity, e.g. in a top-down level).',
     category: 'Behavior',
     fields: {
       speed: { kind: 'number', default: 60, min: 0, step: 10, description: 'Pixels per second (the player runs at 200)' },
@@ -227,6 +227,8 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       startDirection: { kind: 'enum', options: ['right', 'left', 'up', 'down'], default: 'right', description: 'right/left: back and forth sideways; up/down: up and down (without gravity only)' },
       climbLadders: { kind: 'boolean', default: false, description: 'Now and then climbs a ladder it walks past (up or down, lined up with the ladder), then patrols on that floor' },
       chaseRange: { kind: 'number', default: 0, min: 0, step: 32, description: 'Chases the player when it sees it (no wall between) within this many pixels, using ladders; goes back to patrolling after losing sight of it for a few seconds. 0 = never chases' },
+      chaseSpeed: { kind: 'number', default: 0, min: 0, step: 10, description: 'Pixels per second while chasing; 0 = its speed' },
+      reaction: { kind: 'number', default: 0, min: 0, step: 0.05, description: 'Seconds it takes to turn while chasing: when the player gets past it, it slows down over this time (stopping at walls and ledges), then turns. 0 = turns at once' },
     },
   },
   {

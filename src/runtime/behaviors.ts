@@ -80,6 +80,34 @@ export class BehaviorSystem {
   }
 
   /**
+   * A walker chasing on the ground: it stops at walls and (with turnAtLedges) ledges instead of running into them or
+   * off them, and with reaction, when the player gets behind it, it slows down for that long before it turns.
+   */
+  private chaseOnFoot(e: RuntimeEntity, box: Box | null, speed: number, dt: number): void {
+    const p = e.beh.patrol!;
+    const want = Math.sign(e.vx) as -1 | 0 | 1;
+    if (want !== 0 && want !== p.dir) {
+      if (p.reaction > 0 && (p.turnT += dt) < p.reaction) {
+        // Still going the old way, slower and slower.
+        e.vx = p.dir * speed * (1 - p.turnT / p.reaction);
+        e.facing = p.dir;
+      } else {
+        p.dir = want;
+        p.turnT = 0;
+      }
+    } else p.turnT = 0;
+    const dir = Math.sign(e.vx);
+    if (!box || dir === 0) return;
+    const front: Box = { x: box.x + dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 };
+    let blocked = this.rt.solids.some((s) => overlaps(front, s));
+    if (!blocked && p.turnAtLedges && e.grounded) {
+      const below: Box = { x: box.x + dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 };
+      blocked = !this.rt.floorIn(below);
+    }
+    if (blocked) e.vx = 0;
+  }
+
+  /**
    * Walks (or flies) back and forth: turns at walls, at ledges and after `distance` from its start. With
    * climbLadders it now and then climbs a ladder it walks past; with chaseRange it chases the player once it sees
    * it, and patrols again after losing sight of it for a while.
@@ -104,10 +132,13 @@ export class BehaviorSystem {
         if (!target || p.lost > LOSE_SIGHT || d > p.chaseRange * 2) p.hunting = false;
       }
       if (p.hunting && target) {
-        this.rt.chase(e, target, p.speed * e.speedFactor);
+        const speed = (p.chaseSpeed > 0 ? p.chaseSpeed : p.speed) * e.speedFactor;
+        this.rt.chase(e, target, speed);
+        if (!floats && !e.climbing && e.climbDir === 0) this.chaseOnFoot(e, box, speed, dt);
         e.heading = { x: e.facing, y: 0 };
         return;
       }
+      p.turnT = 0;
     }
     if (p.vertical && floats) return this.patrolUpDown(e, box);
     if (e.climbing) {

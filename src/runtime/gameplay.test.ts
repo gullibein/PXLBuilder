@@ -392,11 +392,11 @@ describe('gameplay', () => {
     expect(p.x).toBeCloseTo(-120, 0);
   });
 
-  /** An enemy standing on the ground at x=60; `stompable` adds Stompable to this enemy. */
+  /** An enemy standing on the ground at x=60; without `stompable` this one has its Stompable taken off. */
   function enemyLevel(stompable: boolean, player: Vec2) {
     return level((b) => {
       const e = b.place('Enemy', { x: 60, y: 17 }, stompable ? 'Mushroom' : 'Enemy');
-      if (stompable) m.addEntityComponent(b.d, b.sceneId, e, 'Stompable', registry);
+      if (!stompable) m.removeEntityComponent(b.d, b.sceneId, e, 'Stompable');
       b.d.scenes[0].entities.find((x) => x.name === 'Player')!.transform.position = player;
     });
   }
@@ -1302,6 +1302,47 @@ describe('enemies on ladders', () => {
     p.y = -2000;
     run(rt, input, 0.1);
     expect(e.beh.patrol!.hunting).toBe(false);
+  });
+
+  it('when the player gets past a chasing enemy, it slows down for its reaction time before it turns', () => {
+    const { rt, input } = level((b) => {
+      builtin(b);
+      b.place('Enemy', { x: 120, y: 17 });
+    });
+    const e = rt.find('Enemy')!;
+    const p = rt.find('Player')!;
+    run(rt, input, 0.5);
+    expect(e.vx).toBeCloseTo(-ENEMY_PATROL.chaseSpeed, 5);
+    // The player jumps over it: now behind it.
+    p.x = e.x + 60;
+    const speeds: number[] = [];
+    run(rt, input, 0.6, () => speeds.push(e.vx));
+    const turned = speeds.findIndex((v) => v > 0);
+    // Still going left, slower every step, for about 0.3 s; then right.
+    expect(turned * (1 / 60)).toBeGreaterThan(ENEMY_PATROL.reaction - 0.05);
+    expect(turned * (1 / 60)).toBeLessThan(ENEMY_PATROL.reaction + 0.05);
+    for (let i = 1; i < turned; i++) expect(speeds[i]).toBeGreaterThanOrEqual(speeds[i - 1]);
+    expect(speeds[turned - 1]).toBeGreaterThan(-20);
+    expect(e.vx).toBeGreaterThan(0);
+    expect(e.facing).toBe(1);
+  });
+
+  it('a chasing enemy stops at the ledge instead of running off it', () => {
+    const { rt, input } = level((b) => {
+      builtin(b);
+      b.place('Enemy', { x: 120, y: 17 });
+    });
+    const e = rt.find('Enemy')!;
+    const p = rt.find('Player')!;
+    run(rt, input, 0.3);
+    // The player stands on a ledge out past the right end of the floor, lower down: in sight but no floor between.
+    p.x = 230;
+    p.y = 40;
+    p.body = 'kinematic';
+    run(rt, input, 3);
+    expect(e.beh.patrol!.hunting).toBe(true);
+    expect(e.grounded).toBe(true);
+    expect(e.x).toBeLessThan(160);
   });
 });
 

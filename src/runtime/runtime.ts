@@ -236,6 +236,10 @@ export interface Behaviors {
     /** Chasing the player it saw, and for how long it has been out of sight. */
     hunting: boolean;
     lost: number;
+    chaseSpeed: number;
+    /** Seconds to turn while chasing; turnT is how long it has been slowing down to turn. */
+    reaction: number;
+    turnT: number;
   } | null;
   jumper: { interval: number; jumpForce: number; t: number } | null;
   shooter: { trigger: 'auto' | 'key'; interval: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number } | null;
@@ -270,6 +274,9 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
           lastLadder: null,
           hunting: false,
           lost: 0,
+          chaseSpeed: num(p.chaseSpeed, 0),
+          reaction: num(p.reaction, 0),
+          turnT: 0,
         }
       : null,
     jumper: j ? { interval: num(j.interval, 2), jumpForce: num(j.jumpForce, 300), t: 0 } : null,
