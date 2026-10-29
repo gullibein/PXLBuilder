@@ -11,6 +11,7 @@ import { Runtime } from '../../runtime/runtime';
 import { createProject, instantiateDefinition } from './factory';
 import { addEntity } from './mutations';
 import { removeMusicAsset, renameMusicAsset } from './music';
+import { emptySong, STARTER_KITS } from '../audio/music';
 import type { Project } from '../types';
 
 const registry = createBuiltinRegistry();
@@ -117,5 +118,66 @@ describe('music in the game', () => {
     expect(payload.music.levelMusic).toBe('Theme');
     expect(payload.music.instruments.map((i) => i.name)).toEqual(['Lead', 'Kick']);
     expect(payload.music.songs[0]).toMatchObject({ name: 'Theme', playsIn: [project.scenes[0].name], song: { bpm: 130, channels: [{ instrument: 'Lead' }, { instrument: 'Kick' }] } });
+  });
+
+  it('edit_song changes only what it names: the drums of one pattern, leaving the melody as it was', () => {
+    const { project, song } = withMusic();
+    // Channel 1 (Kick) becomes a drum channel, and gets a new beat in pattern 0; the lead's notes stay.
+    const changed = apply(project, [{ op: 'edit_song', id: song.id, changesJson: JSON.stringify({ channels: [{ index: 1, drum: true }], patterns: [{ index: 0, channels: [1], notes: [[1, 0, 36, 1, 1], [1, 4, 36, 1], [1, 8, 'C2', 1, 1], [1, 12, 36, 1, 1]] }] }) }]);
+    const s = changed.assets.find((a) => a.id === song.id)!.song!;
+    expect(s.channels[1].drum).toBe(true);
+    expect(s.patterns[0].notes.filter((n) => n[0] === 1).map((n) => n[1])).toEqual([0, 4, 8, 12]);
+    expect(s.patterns[0].notes.filter((n) => n[0] === 0)).toEqual(song.song!.patterns[0].notes.filter((n) => n[0] === 0));
+    expect(s.patterns[1]).toEqual(song.song!.patterns[1]);
+    expect(s.bpm).toBe(130);
+  });
+
+  it('edit_song adds channels and patterns, changes the order and tempo, and removes things', () => {
+    const { project, song } = withMusic();
+    const changed = apply(project, [
+      { op: 'edit_song', id: 'Theme', changesJson: JSON.stringify({ bpm: 100, channels: [{ instrument: 'lead', volume: 0.5 }, { index: 1, remove: true }], patterns: [{ index: 2, name: 'C', notes: [[0, 0, 'E5', 4, 1]] }, { index: 1, remove: true }], order: [0, 1, 2, 0] }) },
+    ]);
+    const s = changed.assets.find((a) => a.id === song.id)!.song!;
+    expect(s.bpm).toBe(100);
+    // The kick channel went: the new lead channel (added at the end) moved up to 1.
+    expect(s.channels.map((c) => c.name)).toEqual(['Lead', 'Lead']);
+    expect(s.channels[1].volume).toBe(0.5);
+    expect(s.patterns.map((p) => p.name)).toEqual(['A', 'C']);
+    // Pattern 1 (B) went: the order loses it and C is now 1.
+    expect(s.order).toEqual([0, 1, 0]);
+    expect(s.patterns[0].notes.every((n) => n[0] === 0)).toBe(true);
+  });
+
+  it('edit_song says what is wrong', () => {
+    const { project, song } = withMusic();
+    const tryEdit = (changes: unknown) => () => apply(project, [{ op: 'edit_song', id: song.id, changesJson: JSON.stringify(changes) }]);
+    expect(tryEdit({ patterns: [{ index: 0, channels: [1], notes: [[0, 0, 60, 1, 1]] }] })).toThrow(/only for channels 1/);
+    expect(tryEdit({ channels: [{ index: 7, volume: 1 }] })).toThrow(/no channel 7/);
+    expect(tryEdit({ channels: [{ instrument: 'Tuba' }] })).toThrow(/no instrument "Tuba"/);
+    expect(tryEdit({ patterns: [{ index: 0, notes: [[0, 0, 'H9', 1, 1]] }] })).toThrow(/not a note/);
+  });
+
+  it('reshaping an instrument keeps every setting it does not mention', () => {
+    const { project } = withMusic();
+    const lead = project.assets.find((a) => a.name === 'Lead')!;
+    const changed = apply(project, [{ op: 'make_instrument', name: 'Lead', description: 'with vibrato', instrumentJson: '{"vibratoRate":6,"vibratoDepth":0.3}', replaceId: lead.id }]);
+    const inst = changed.assets.find((a) => a.id === lead.id)!.instrument!;
+    expect(inst).toMatchObject({ chip: '8bit', wave: 'pulse25', sustain: 0.5, vibratoRate: 6, vibratoDepth: 0.3 });
+  });
+
+  it('the song and instrument prompts send the open one in full (channels by index and instrument name)', () => {
+    const { project, sceneId, song } = withMusic();
+    const p = buildAIPayload(project, { kind: 'song', sceneId, assetId: song.id }, registry);
+    expect(p.scope).toBe('song');
+    expect(p.song).toMatchObject({ id: song.id, name: 'Theme', song: { channels: [{ index: 0, instrument: 'Lead' }, { index: 1, instrument: 'Kick' }] } });
+    const lead = project.assets.find((a) => a.name === 'Lead')!;
+    const q = buildAIPayload(project, { kind: 'instrument', sceneId, assetId: lead.id }, registry);
+    expect(q.instrument).toMatchObject({ id: lead.id, playedBy: ['Theme'], instrument: { wave: 'pulse25' } });
+    expect(buildAIPayload(project, { kind: 'song', sceneId, assetId: null }, registry).song).toBeNull();
+  });
+
+  it('a new song has three instrument channels and three drum channels', () => {
+    const kit = [...STARTER_KITS['8bit'].instruments.map((name) => ({ id: name, name })), ...STARTER_KITS['8bit'].drums.map((name) => ({ id: name, name, drum: true }))];
+    expect(emptySong(kit).channels.map((c) => c.drum)).toEqual([false, false, false, true, true, true]);
   });
 });

@@ -54,7 +54,11 @@ export type AIContext =
   /** One of the game's sounds, asked from the Sounds tab. */
   | { kind: 'sound'; sceneId: Id; assetId: Id }
   /** A library object's 16 autotile pictures, asked from the Autotile editor. */
-  | { kind: 'autotile'; sceneId: Id; definitionId: Id };
+  | { kind: 'autotile'; sceneId: Id; definitionId: Id }
+  /** One song in the music machine's Songs tab (null: none yet, a new one is asked for). */
+  | { kind: 'song'; sceneId: Id; assetId: Id | null }
+  /** One instrument in the music machine's Instruments tab (null: none yet). */
+  | { kind: 'instrument'; sceneId: Id; assetId: Id | null };
 
 /** Derives the context from a selection (ordered by selection order). */
 export function contextFromSelection(sceneId: Id, selected: Id[]): AIContext | null {
@@ -89,6 +93,10 @@ export function contextKey(ctx: AIContext): string {
       return `sound:${ctx.assetId}`;
     case 'autotile':
       return `autotile:${ctx.definitionId}`;
+    case 'song':
+      return `song:${ctx.assetId ?? 'new'}`;
+    case 'instrument':
+      return `instrument:${ctx.assetId ?? 'new'}`;
   }
 }
 
@@ -227,6 +235,10 @@ export interface AIPayload {
   };
   /** Scope "sound": the sound the user asked about, in full. */
   sound?: { id: Id; name: string; description: string; seconds: number; sound: unknown };
+  /** The song open in the music machine (song scope): all of it, its channels naming their instruments. */
+  song?: { id: Id; name: string; description: string; seconds: number; playsIn: string[]; song: unknown } | null;
+  /** The instrument open in the music machine (instrument scope), every setting, and the songs that play it. */
+  instrument?: { id: Id; name: string; description: string; instrument: Instrument; playedBy: string[] } | null;
   /** Where the user pointed in the level (world coordinates), if anywhere. */
   point: Vec2 | null;
   /** Asked from the camera outline: the request is about the level's camera (level.camera). */
@@ -313,6 +325,10 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
     'The user is in the AUTOTILE EDITOR of one object (see `autotile`): its 16 autotile pictures, one per combination of neighbours of the same object: index = up 1 + right 2 + down 4 + left 8 for the sides that HAVE a tile next to them (0 = a tile on its own, 5 = joined up and down (a column\'s middle), 10 = joined left and right (a platform\'s middle), 15 = joined all round (inside a block)); tiles[].joined says it in words. A side that is NOT joined is an open edge of the surface: that is where edges, outlines, grass, highlights, shadows and rounded corners go; a joined side must continue seamlessly into the neighbour (the same pattern, no edge). Change them with draw_autotile (id = autotile.object.id): every picture exactly autotile.grid.width × grid.height pixels, palette keys single letters or digits, "." transparent; send all 16 for a new look ("stone bricks", "a grassy dirt platform", "ice"), or only the ones that change ("rounder corners" -> the pictures with two open sides meeting). Start from the pictures there are now (tiles[].rows) when changing them; with none yet, from autotile.look. Keep them consistent (the same material, light from the top, the same edge thickness) so tiles join without seams. EDGES BELONG ONLY ON OPEN SIDES (tiles[].open): grass, snow, moss or a highlight along the top goes ONLY on the pictures whose open sides include "up" (index 0, 2, 4, 6, 8, 10, 12, 14); the pictures with a tile above (index 1, 3, 5, 7, 9, 11, 13, 15) show the plain material at the top, continuing seamlessly from the tile above (no grass, no highlight, no outline, no cut corners there). The same for the bottom ("down": 0-3 and 8-11 open), left ("left": 0-7 open) and right ("right": 0, 1, 4, 5, 8, 9, 12, 13 open). Check every picture against its open list before answering. Not draw_sprite (that changes the object\'s own picture). Say in one sentence what the tiles look like now.',
   sound:
     'The user is asking about ONE SOUND (see `sound`, with its notes in sound.sound): "this", "it", "this sound" mean it. Change it with make_sound replaceId = sound.id, starting from its notes and changing only what was asked ("lower in pitch": every pitch down, e.g. by 5-12 semitones; "longer": a slower speed or more notes; "softer": lower volumes or smooth). Keep its name unless asked. Nothing else changes.',
+  song:
+    'The user is in the MUSIC MACHINE\'s Songs tab, working on ONE SONG (see `song`, all of it: bpm, steps per pattern, channels (each plays one instrument; channels with drum true are the drum kit, shown apart below the others), patterns of notes [channel, step, pitch, length, velocity], and the order the patterns play in). "this", "it", "the song", "the drums", "the melody", "the bass" mean its parts. CHANGE ONLY WHAT IS ASKED with edit_song (id = song.id): "only the drum beat" / "a busier beat" -> edit_song patterns with channels = the drum channels\' indexes and their new notes, in every pattern that should change; "a new melody" -> the lead channel only; "faster" -> bpm only; "add a chorus" -> new patterns and the order. Leave every other note exactly as it is. A melody described in words ("rising, hopeful, ends on a high note", "like a lullaby", "da-da-DUM") -> real notes in a key that suits the feel (major: happy/heroic; minor: sad/spooky/tense; pentatonic: playful; a steady bass on the chord roots). A feel ("dreamy", "aggressive", "8-bit adventure", "jazzy swing") -> tempo, instruments (make_instrument for new sounds, and change a channel\'s instrument with edit_song channels), rhythm and chords. New instruments go on new channels with edit_song (drum: true for drums), or replace a channel\'s instrument. With song null, or when the user asks for a NEW song, write one with make_song (instruments first with make_instrument, reusing context.music.instruments when they fit; drum channels with "drum":true, after the other channels, usually 3 instruments + 3 drums). Say in one or two sentences what you wrote or changed (key, tempo, what each channel plays).',
+  instrument:
+    'The user is in the MUSIC MACHINE\'s Instruments tab, shaping ONE INSTRUMENT (see `instrument`, with every setting in instrument.instrument). "this", "it", "the sound" mean it. Change it with make_instrument replaceId = instrument.id, giving only the settings that change (the rest stay); you can use every setting (see "Music"): chip (8bit/16bit) and its waves, volume, attack, decay, sustain, release, pitchDrop/pitchTime, vibratoRate/vibratoDepth/vibratoDelay, arp/arpSpeed, and on 16bit filter/cutoff/resonance/filterEnv, fmRatio/fmIndex, detune, echoTime/echoFeedback/echoMix. Describing words to settings: brighter = higher cutoff or fmIndex, or saw/pulse; darker/warmer/softer = lowpass with a lower cutoff, triangle or sine; punchier/snappier = attack 0, short decay, low sustain, maybe a small pitchDrop; plucky = sustain 0 with a medium decay or the pluck wave; longer/swelling = slow attack, long release; spacey/dreamy = echo and slow vibrato, supersaw pads; metallic/bell = fm with a ratio of 3.5-7; wobbly = vibrato; a drum: kick = pitchDrop 24-30 over 0.05-0.08 s on sine or triangle with sustain 0; snare = noise (bandpass ~2500 on 16bit); hi-hat = metal (8bit) or noise with highpass ~7000 (16bit), very short. Songs that play it (instrument.playedBy) change with it. With instrument null, or when a NEW instrument is asked for, make one with make_instrument (replaceId null) and a short fitting name. Say in one sentence how it sounds now.',
   editor:
     'The user is changing the PXLBuilder EDITOR itself (where things are, how it looks, what it shows over the level), not the game. Use only editor operations (set_editor_setting, add_editor_overlay, remove_editor_overlay). If the request needs something they cannot do, reply unsupported and say what can be changed instead.',
 };
@@ -487,6 +503,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     targets: targetIds.map(detail).filter((d): d is EntityDetail => d !== null),
     ...(objectDef ? { object: objectDetail(objectDef) } : {}),
     ...(autotileDef ? { autotile: autotilePayload(autotileDef) } : {}),
+    ...(ctx.kind === 'song' ? { song: songFocus(project, ctx.assetId) } : {}),
+    ...(ctx.kind === 'instrument' ? { instrument: instrumentFocus(project, ctx.assetId) } : {}),
     ...(soundAsset ? { sound: { id: soundAsset.id, name: soundAsset.name, description: soundAsset.description ?? '', seconds: Math.round(soundLength(soundAsset.synth!) * 100) / 100, sound: soundAsset.synth } } : {}),
     point: ctx.kind === 'level' ? ctx.point : null,
     ...(ctx.kind === 'level' && ctx.camera ? { aboutCamera: true as const } : {}),
@@ -624,4 +642,18 @@ function musicPayload(project: Project, scene: Project['scenes'][number]): AIPay
         };
       }),
   };
+}
+
+function songFocus(project: Project, id: Id | null): AIPayload['song'] {
+  const a = id ? project.assets.find((x) => x.id === id && x.kind === 'music' && x.song) : undefined;
+  if (!a) return null;
+  const s = a.song!;
+  const nameOf = (i: Id | null) => project.assets.find((x) => x.id === i)?.name ?? null;
+  return { id: a.id, name: a.name, description: a.description ?? '', seconds: Math.round(songSeconds(s)), playsIn: project.scenes.filter((x) => x.music === a.id).map((x) => x.name), song: { ...s, channels: s.channels.map((c, index) => ({ index, ...c, instrument: nameOf(c.instrument) })) } };
+}
+
+function instrumentFocus(project: Project, id: Id | null): AIPayload['instrument'] {
+  const a = id ? project.assets.find((x) => x.id === id && x.kind === 'instrument' && x.instrument) : undefined;
+  if (!a) return null;
+  return { id: a.id, name: a.name, description: a.description ?? '', instrument: a.instrument!, playedBy: project.assets.filter((x) => x.kind === 'music' && x.song?.channels.some((c) => c.instrument === a.id)).map((x) => x.name) };
 }

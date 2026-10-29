@@ -115,6 +115,34 @@ function stubModel(body) {
     }));
     return { kind: 'apply', message: `The ${a.object.name} tiles are stone bricks now.`, changes: ['Autotile: 16 stone-brick pictures'], operations: [{ op: 'draw_autotile', id: a.object.id, palette: [{ key: 's', color: '#8a8f9c' }, { key: 'm', color: '#5a5f6c' }, { key: 'd', color: '#3a3e48' }], tiles }] };
   }
+  if (body.context.scope === 'song' && req.includes('busier') && body.context.song) {
+    // "Only the drums": the drum channels' notes of every pattern, nothing else.
+    const song = body.context.song.song;
+    const drums = song.channels.filter((c) => c.drum).map((c) => c.index);
+    const [kick, snare, hat] = drums;
+    const notes = [];
+    for (let st = 0; st < song.steps; st++) {
+      if (st % 4 === 0) notes.push([kick, st, 36, 1, 1]);
+      if (st % 8 === 4) notes.push([snare, st, 38, 1, 0.9]);
+      notes.push([hat, st, 42, 1, 0.6]);
+    }
+    return { kind: 'apply', message: 'A busier beat: kick on every beat, hats on every step.', changes: ['Drums: busier beat'], operations: [{ op: 'edit_song', id: body.context.song.id, changesJson: JSON.stringify({ patterns: song.patterns.map((_, index) => ({ index, channels: drums, notes })) }) }] };
+  }
+  if (body.context.scope === 'song' && req.includes('spooky')) {
+    return {
+      kind: 'apply',
+      message: 'A spooky waltz in A minor.',
+      changes: ['New song: Spooky waltz'],
+      operations: [
+        { op: 'make_instrument', name: 'Ghost organ', description: 'a wobbly organ', instrumentJson: JSON.stringify({ chip: '16bit', wave: 'square', vibratoRate: 5, vibratoDepth: 0.3, filter: 'lowpass', cutoff: 1500 }), replaceId: null },
+        { op: 'make_song', name: 'Spooky waltz', description: 'slow, minor', songJson: JSON.stringify({ bpm: 90, steps: 12, channels: [{ instrument: 'Ghost organ' }], patterns: [{ name: 'A', notes: [[0, 0, 'A4', 4, 1], [0, 4, 'C5', 4, 0.8], [0, 8, 'E5', 4, 0.8]] }], order: [0, 0] }), replaceId: null },
+      ],
+    };
+  }
+  if (body.context.scope === 'instrument' && req.includes('wobbly') && body.context.instrument) {
+    const i = body.context.instrument;
+    return { kind: 'apply', message: `${i.name} wobbles now.`, changes: [`${i.name}: vibrato`], operations: [{ op: 'make_instrument', name: i.name, description: 'wobbly', instrumentJson: JSON.stringify({ vibratoRate: 7, vibratoDepth: 0.8, vibratoDelay: 0 }), replaceId: i.id }] };
+  }
   if (body.context.scope === 'sound' && req.includes('lower')) {
     const snd = body.context.sound;
     const lower = { ...snd.sound, notes: snd.sound.notes.map(([pitch, ...rest]) => [Math.max(0, pitch - 5), ...rest]) };
@@ -4136,7 +4164,16 @@ try {
     await mp.getByTestId('dock-music').click();
     await check(async () => await mp.getByTestId('music-studio').isVisible(), 'the Music button opens the music machine');
     await mp.getByTestId('music-new-song-8bit').click();
-    await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 5, 'a new 8-bit song comes with five channels (lead, bass, kick, snare, hi-hat)');
+    await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 6, 'a new 8-bit song comes with six channels');
+    await check(async () => (await mp.locator('.ms-drum-sep ~ .ms-channel').count()) === 3 && (await mp.locator('.ms-drum-sep ~ .ms-channel').first().locator('option:checked').textContent()) === 'Chip kick', 'three instruments, then the three drums below a line');
+    await mp.getByTestId('music-drum-add').click();
+    await check(async () => (await mp.locator('.ms-drum-sep ~ .ms-channel').count()) === 4, '+ Drum channel adds one with the drums');
+    await mp.getByTestId('music-channel-add').click();
+    await check(async () => (await mp.locator('.ms-drum-sep ~ .ms-channel').count()) === 4 && (await mp.getByTestId('music-channel-instrument').count()) === 8, '+ Channel adds one with the instruments, above the line');
+    await mp.keyboard.press('Control+z');
+    await mp.keyboard.press('Control+z');
+    await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 6, '(undone)');
+    await mp.getByTestId('music-channel-0').locator('.ms-dot').click();
     await check(async () => (await mp.getByTestId('music-channel-instrument').first().locator('option:checked').textContent()) === 'Square lead', 'the first channel plays the Square lead');
     const roll = mp.getByTestId('music-roll');
     /** A cell of the piano roll on screen (scrolled into view first). */
@@ -4200,7 +4237,7 @@ try {
     await mp.screenshot({ path: `${OUT}/32-music-song.png` });
     // Instruments: shaped, and saved with the game.
     await mp.getByTestId('music-tab-instruments').click();
-    await check(async () => (await mp.getByTestId('music-list-instruments').locator('.ms-item').count()) === 5, 'the song\'s five instruments are in the Instruments list');
+    await check(async () => (await mp.getByTestId('music-list-instruments').locator('.ms-item').count()) === 6, 'the song\'s six instruments are in the Instruments list');
     await mp.getByTestId('ins-chip-16bit').click();
     await check(async () => await mp.getByTestId('ins-wave-fm').isVisible(), 'the 16-bit chip has FM, pluck and supersaw waves');
     await mp.getByTestId('ins-wave-fm').click();
@@ -4244,6 +4281,28 @@ try {
     await check(async () => (await mp.getByTestId('music-item-Bell lead').count()) === 1, 'an instrument is renamed');
     await mp.getByTestId('music-tab-songs').click();
     await check(async () => (await mp.getByTestId('music-channel-instrument').first().locator('option:checked').textContent()) === 'Bell lead', 'the song plays it under its new name');
+    // Asking the AI in the Songs tab: only the drums change.
+    const notesBefore = await roll.getAttribute('data-notes');
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('make the drums busier');
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
+    await check(async () => Number(await roll.getAttribute('data-notes')) === Number(notesBefore) + 16 + 4 + 2, "the Songs tab's prompt changes only the drums (the melody's notes stay)");
+    {
+      const sent = aiRequests.at(-1).context;
+      await check(sent.scope === 'song' && sent.song.song.channels.filter((c) => c.drum).length === 3 && sent.song.song.patterns.length === 2, 'the AI is told the whole song, its drum channels marked');
+    }
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('a new spooky song');
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
+    await check(async () => (await mp.getByTestId('music-item-Spooky waltz').count()) === 1 && (await mp.getByTestId('music-item-Spooky waltz').getAttribute('class')).includes('on'), "a song the AI writes opens in the Songs tab");
+    // And in the Instruments tab: the open instrument is reshaped.
+    await mp.getByTestId('music-tab-instruments').click();
+    await mp.getByTestId('music-item-Ghost organ').locator('.ms-item-name').click();
+    const pictureBefore = await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL());
+    await mp.getByTestId('music-instrument-prompt').getByTestId('prompt-input').fill('make it wobbly');
+    await mp.getByTestId('music-instrument-prompt').getByTestId('prompt-input').press('Enter');
+    await check(async () => (await mp.getByTestId('ins-vibratoDepth').inputValue()) === '0.8' && (await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL())) !== pictureBefore, "the Instruments tab's prompt reshapes the instrument (its sliders move)");
+    await check(aiRequests.at(-1).context.scope === 'instrument' && aiRequests.at(-1).context.instrument.instrument.filter === 'lowpass', 'the AI is told every setting of the instrument');
+    await mp.getByTestId('music-tab-songs').click();
+    await mp.getByTestId('music-item-Song').locator('.ms-item-name').click();
     await mp.keyboard.press('Escape');
     await check(async () => (await mp.getByTestId('music-studio').count()) === 0, 'Esc closes the music machine');
     // The level's music plays in Play.

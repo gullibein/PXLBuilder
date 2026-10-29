@@ -33,8 +33,9 @@ import { addInstrumentAsset, addSongAsset, musicAssets, removeMusicAsset, rename
 import type { AssetRecord, Id, Project } from '../../core/types';
 import { instrumentsOf, playNote, playSong, type SongPlayer } from '../audio/musicPlayer';
 import { useEditor } from '../store';
+import { PromptBox } from '../prompt/PromptBox';
 
-export const CHANNEL_COLORS = ['#ff5d73', '#4cc9f0', '#ffd166', '#06d6a0', '#c77dff', '#ff9f1c', '#a3e635', '#f472b6'];
+export const CHANNEL_COLORS = ['#ff5d73', '#4cc9f0', '#ffd166', '#06d6a0', '#c77dff', '#ff9f1c', '#a3e635', '#f472b6', '#60a5fa', '#fb7185', '#facc15', '#2dd4bf'];
 
 const close = () => useEditor.getState().setMusicStudio(null);
 
@@ -62,6 +63,33 @@ export function MusicStudio() {
         </header>
         {tab === 'songs' ? <SongsTab /> : <InstrumentsTab />}
       </section>
+    </div>
+  );
+}
+
+/**
+ * The AI prompt of a tab: about the open song or instrument (or a new one when there is none). What it makes
+ * opens in the tab.
+ */
+function MusicPrompt({ kind, assetId }: { kind: 'song' | 'instrument'; assetId: Id | null }) {
+  const sceneId = useEditor((s) => s.activeSceneId);
+  const assetKind = kind === 'song' ? 'music' : 'instrument';
+  const ids = useEditor((s) => s.project.assets.filter((a) => a.kind === assetKind).map((a) => a.id).join(','));
+  const known = useRef(new Set(ids.split(',')));
+  useEffect(() => {
+    // A song or instrument the AI just made opens here.
+    const now = ids.split(',').filter(Boolean);
+    const fresh = now.find((id) => !known.current.has(id));
+    known.current = new Set(now);
+    if (fresh) useEditor.getState().setMusicStudio(kind === 'song' ? { songId: fresh } : { instrumentId: fresh });
+  }, [ids]);
+  return (
+    <div className="ms-ask">
+      <PromptBox
+        ctx={{ kind, sceneId, assetId }}
+        placeholder={kind === 'song' ? 'Describe a song, a melody, a feel, or just the drum beat: "a spooky castle theme", "make the drums busier"' : 'Describe a sound: "a fat wobbly bass", "a soft flute", "a punchy 8-bit kick"'}
+        testId={`music-${kind}-prompt`}
+      />
     </div>
   );
 }
@@ -183,7 +211,10 @@ function InstrumentsTab() {
       <AssetList kind="instrument" items={items} selected={asset?.id ?? null} onSelect={(id) => useEditor.getState().setMusicStudio({ instrumentId: id })}>
         <PresetSelect label="+ New instrument…" testId="music-new-instrument" onPick={newInstrument} />
       </AssetList>
-      {asset ? <InstrumentEditor key={asset.id} asset={asset} /> : <p className="ms-empty muted">Make an instrument from one of the ready ones (+ New instrument), then shape it.</p>}
+      <div className="ms-main">
+        <MusicPrompt kind="instrument" assetId={asset?.id ?? null} />
+        {asset ? <InstrumentEditor key={asset.id} asset={asset} /> : <p className="ms-empty muted">Make an instrument from one of the ready ones (+ New instrument), or describe the sound you want above, then shape it.</p>}
+      </div>
     </div>
   );
 }
@@ -588,9 +619,9 @@ function Keyboard({ inst }: { inst: Instrument }) {
 function newSong(chip: Chip): void {
   let id = '';
   useEditor.getState().edit(`New ${chip === '8bit' ? '8-bit' : '16-bit'} song`, (p) => {
-    const kit = STARTER_KITS[chip].map((name) => {
+    const kit = [...STARTER_KITS[chip].instruments.map((name) => ({ name, drum: false })), ...STARTER_KITS[chip].drums.map((name) => ({ name, drum: true }))].map(({ name, drum }) => {
       const have = p.assets.find((a) => a.kind === 'instrument' && a.name === name && a.instrument?.chip === chip);
-      return { id: have ? have.id : addInstrumentAsset(p, name, preset(name)), name };
+      return { id: have ? have.id : addInstrumentAsset(p, name, preset(name)), name, drum };
     });
     id = addSongAsset(p, 'Song', emptySong(kit, chip === '8bit' ? 140 : 120));
   });
@@ -612,7 +643,10 @@ function SongsTab() {
           + 16-bit song
         </button>
       </AssetList>
-      {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with a lead, a bass and drums to write with.</p>}
+      <div className="ms-main">
+        <MusicPrompt kind="song" assetId={asset?.id ?? null} />
+        {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with three instruments (a lead, a second voice and a bass) and three drums (kick, snare, hi-hat). Or describe the song you want above.</p>}
+      </div>
     </div>
   );
 }
@@ -700,6 +734,110 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
       window.removeEventListener('keyup', onKey, true);
     };
   }, []);
+
+  /** One channel's row: its instrument, volume, mute, ✎ shape, × remove. */
+  const channelRow = (c: Song['channels'][number], i: number) => (
+            <div key={i} className={`ms-channel${i === ch ? ' on' : ''}${c.mute ? ' muted' : ''}`} data-testid={`music-channel-${i}`} onClick={() => setChannel(i)}>
+              <span className="ms-dot" style={{ background: CHANNEL_COLORS[i] }} />
+              <select
+                className="ms-select"
+                aria-label={`Channel ${i + 1} instrument`}
+                data-testid="music-channel-instrument"
+                value={c.instrument ?? ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith('+')) {
+                    let id = '';
+                    const name = v.slice(1);
+                    useEditor.getState().edit(`New instrument ${name}`, (d) => {
+                      id = addInstrumentAsset(d, name, preset(name));
+                      const s = structuredClone(song);
+                      s.channels[i].instrument = id;
+                      s.channels[i].name = d.assets.find((a) => a.id === id)!.name;
+                      setSong(d, asset.id, s);
+                    });
+                  } else
+                    change('Channel instrument', (s) => {
+                      s.channels[i].instrument = v || null;
+                      s.channels[i].name = instrumentList.find((a) => a.id === v)?.name ?? '';
+                    });
+                }}
+              >
+                <option value="">(silent)</option>
+                {instrumentList.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+                <optgroup label="New instrument">
+                  {INSTRUMENT_PRESETS.map((pr) => (
+                    <option key={pr.name} value={`+${pr.name}`}>
+                      + {pr.name} ({pr.instrument.chip === '8bit' ? '8-bit' : '16-bit'})
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input
+                type="range"
+                className="ms-vol"
+                min={0}
+                max={1}
+                step={0.01}
+                value={c.volume}
+                aria-label={`Channel ${i + 1} volume`}
+                data-testid="music-channel-volume"
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => change('Channel volume', (s) => void (s.channels[i].volume = Number(e.target.value)), `vol${i}`)}
+              />
+              <button
+                className={`icon-btn small${c.mute ? ' on' : ''}`}
+                title={c.mute ? 'Unmute' : 'Mute'}
+                aria-label={`Mute channel ${i + 1}`}
+                data-testid="music-channel-mute"
+                onClick={(e) => (e.stopPropagation(), change(c.mute ? 'Unmute channel' : 'Mute channel', (s) => void (s.channels[i].mute = !c.mute)))}
+              >
+                M
+              </button>
+              {c.instrument && (
+                <button
+                  className="icon-btn small"
+                  title="Shape this instrument"
+                  aria-label={`Shape channel ${i + 1} instrument`}
+                  data-testid="music-channel-shape"
+                  onClick={(e) => (e.stopPropagation(), useEditor.getState().setMusicStudio({ tab: 'instruments', instrumentId: c.instrument }))}
+                >
+                  ✎
+                </button>
+              )}
+              <button
+                className="icon-btn small"
+                title="Remove this channel (and its notes)"
+                aria-label={`Remove channel ${i + 1}`}
+                data-testid="music-channel-remove"
+                disabled={song.channels.length <= 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  change('Remove channel', (s) => {
+                    s.channels.splice(i, 1);
+                    for (const pt of s.patterns) pt.notes = pt.notes.filter((n) => n[0] !== i).map((n) => (n[0] > i ? [n[0] - 1, n[1], n[2], n[3], n[4]] : n) as SongNote);
+                  });
+                  setChannel(Math.max(0, i - 1));
+                }}
+              >
+                ×
+              </button>
+            </div>
+  );
+
+  /** A new channel, in the instruments or with the drums (its instrument: the group's last one). */
+  const addChannel = (drum: boolean) => {
+    const same = song.channels.filter((c) => c.drum === drum && c.instrument);
+    const guess = drum ? instrumentList.find((a) => /kick|snare|hat|drum|cymbal|clap|tom/i.test(a.name)) : instrumentList.find((a) => !/kick|snare|hat|drum|cymbal|clap|tom/i.test(a.name));
+    const id = same.at(-1)?.instrument ?? guess?.id ?? null;
+    change(drum ? 'Add drum channel' : 'Add channel', (s) => void s.channels.push({ name: instrumentList.find((a) => a.id === id)?.name ?? '', instrument: id, volume: 0.8, pan: 0, mute: false, drum }));
+    setChannel(song.channels.length);
+  };
 
   const notes = song.patterns[p].notes;
   const isLevelMusic = scene.music === asset.id;
@@ -860,112 +998,23 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
 
       <div className="ms-editor">
         <div className="ms-channels" aria-label="Channels">
-          {song.channels.map((c, i) => (
-            <div key={i} className={`ms-channel${i === ch ? ' on' : ''}${c.mute ? ' muted' : ''}`} data-testid={`music-channel-${i}`} onClick={() => setChannel(i)}>
-              <span className="ms-dot" style={{ background: CHANNEL_COLORS[i] }} />
-              <select
-                className="ms-select"
-                aria-label={`Channel ${i + 1} instrument`}
-                data-testid="music-channel-instrument"
-                value={c.instrument ?? ''}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v.startsWith('+')) {
-                    let id = '';
-                    const name = v.slice(1);
-                    useEditor.getState().edit(`New instrument ${name}`, (d) => {
-                      id = addInstrumentAsset(d, name, preset(name));
-                      const s = structuredClone(song);
-                      s.channels[i].instrument = id;
-                      s.channels[i].name = d.assets.find((a) => a.id === id)!.name;
-                      setSong(d, asset.id, s);
-                    });
-                  } else
-                    change('Channel instrument', (s) => {
-                      s.channels[i].instrument = v || null;
-                      s.channels[i].name = instrumentList.find((a) => a.id === v)?.name ?? '';
-                    });
-                }}
-              >
-                <option value="">(silent)</option>
-                {instrumentList.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-                <optgroup label="New instrument">
-                  {INSTRUMENT_PRESETS.map((pr) => (
-                    <option key={pr.name} value={`+${pr.name}`}>
-                      + {pr.name} ({pr.instrument.chip === '8bit' ? '8-bit' : '16-bit'})
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <input
-                type="range"
-                className="ms-vol"
-                min={0}
-                max={1}
-                step={0.01}
-                value={c.volume}
-                aria-label={`Channel ${i + 1} volume`}
-                data-testid="music-channel-volume"
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => change('Channel volume', (s) => void (s.channels[i].volume = Number(e.target.value)), `vol${i}`)}
-              />
-              <button
-                className={`icon-btn small${c.mute ? ' on' : ''}`}
-                title={c.mute ? 'Unmute' : 'Mute'}
-                aria-label={`Mute channel ${i + 1}`}
-                data-testid="music-channel-mute"
-                onClick={(e) => (e.stopPropagation(), change(c.mute ? 'Unmute channel' : 'Mute channel', (s) => void (s.channels[i].mute = !c.mute)))}
-              >
-                M
-              </button>
-              {c.instrument && (
-                <button
-                  className="icon-btn small"
-                  title="Shape this instrument"
-                  aria-label={`Shape channel ${i + 1} instrument`}
-                  data-testid="music-channel-shape"
-                  onClick={(e) => (e.stopPropagation(), useEditor.getState().setMusicStudio({ tab: 'instruments', instrumentId: c.instrument }))}
-                >
-                  ✎
-                </button>
-              )}
-              <button
-                className="icon-btn small"
-                title="Remove this channel (and its notes)"
-                aria-label={`Remove channel ${i + 1}`}
-                data-testid="music-channel-remove"
-                disabled={song.channels.length <= 1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  change('Remove channel', (s) => {
-                    s.channels.splice(i, 1);
-                    for (const pt of s.patterns) pt.notes = pt.notes.filter((n) => n[0] !== i).map((n) => (n[0] > i ? [n[0] - 1, n[1], n[2], n[3], n[4]] : n) as SongNote);
-                  });
-                  setChannel(Math.max(0, i - 1));
-                }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          {song.channels.map((c, i) => (c.drum ? null : channelRow(c, i)))}
           <button
             className="chip-btn small"
             data-testid="music-channel-add"
             disabled={song.channels.length >= MAX_CHANNELS}
-            onClick={() => {
-              const first = instrumentList[0];
-              change('Add channel', (s) => void s.channels.push({ name: first?.name ?? '', instrument: first?.id ?? null, volume: 0.8, pan: 0, mute: false }));
-              setChannel(song.channels.length);
-            }}
+            onClick={() => addChannel(false)}
           >
             + Channel
           </button>
-          <label className="ms-field">
+          <div className="ms-drum-sep" role="separator">
+            <span>Drums</span>
+          </div>
+          {song.channels.map((c, i) => (c.drum ? channelRow(c, i) : null))}
+          <button className="chip-btn small" data-testid="music-drum-add" disabled={song.channels.length >= MAX_CHANNELS} onClick={() => addChannel(true)}>
+            + Drum channel
+          </button>
+                    <label className="ms-field">
             Note length
             <select data-testid="music-pen" value={pen} onChange={(e) => setPen(Number(e.target.value))}>
               {[1, 2, 3, 4, 6, 8, 12, 16].map((n) => (

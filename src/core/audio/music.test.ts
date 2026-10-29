@@ -128,7 +128,7 @@ describe('music', () => {
 
   it('renders a busy pattern quickly enough to stream while playing', () => {
     for (const chip of ['8bit', '16bit'] as const) {
-      const kit = STARTER_KITS[chip].map((name) => ({ id: name, name }));
+      const kit = [...STARTER_KITS[chip].instruments, ...STARTER_KITS[chip].drums].map((name) => ({ id: name, name }));
       const insts = new Map(kit.map((k) => [k.id, preset(k.name)]));
       const song = emptySong(kit, 140);
       for (let s = 0; s < 16; s++) for (let c = 0; c < kit.length; c++) song.patterns[0].notes.push([c, s, 48 + c * 5, 1, 0.8]);

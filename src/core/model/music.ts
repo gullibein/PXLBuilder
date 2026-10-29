@@ -2,7 +2,7 @@
  * Changes to the game's music: instruments and songs are assets (kind "instrument" and "music"), and a level can
  * have a song that plays while it is played. Used by the music machine and the AI's operations, on a project draft.
  */
-import { musicDataUrl, type Instrument, type Song } from '../audio/music';
+import { musicDataUrl, type Instrument, type Song, type SongChannel, type SongNote } from '../audio/music';
 import { generateId } from '../ids';
 import type { AssetRecord, Id, Project } from '../types';
 
@@ -100,4 +100,93 @@ export function renameMusicAsset(project: Project, id: Id, name: string): string
     for (const s of project.scenes) for (const e of s.entities) rename(e.scripts ?? []);
   }
   return null;
+}
+
+/**
+ * A change to part of a song (the AI's edit_song): only what it names changes, so "only the drums" or "a new
+ * melody" leaves the rest exactly as it was.
+ * - bpm, steps, loop, order: replaced when given.
+ * - channels: each {index, …fields} changes that channel; without an index it is a new channel (at the end);
+ *   {index, remove: true} takes one away with its notes (later channels move up one).
+ * - patterns: each {index, name?, channels?, notes?}: with `channels`, the notes of just those channels are replaced
+ *   by `notes` (the other channels' notes stay); without, all its notes are. index = the number of patterns adds
+ *   one; {index, remove: true} takes it out (and out of the order).
+ * Instruments are named (or given by id); pitches can be MIDI numbers or names like "C4". Indexes count from 0, as
+ * the song is now, before this change.
+ */
+export interface SongEdit {
+  bpm?: number;
+  steps?: number;
+  loop?: boolean;
+  order?: number[];
+  channels?: { index?: number; remove?: boolean; instrument?: string | null; name?: string; volume?: number; pan?: number; mute?: boolean; drum?: boolean }[];
+  patterns?: { index: number; remove?: boolean; name?: string; channels?: number[]; notes?: unknown[] }[];
+}
+
+/** Applies an edit to a copy of the song; the result still needs checking (parseSong). Throws with what is wrong. */
+export function editSong(song: Song, edit: SongEdit, instrumentId: (ref: string) => string | null, pitchOf: (x: unknown) => number | null): Song {
+  const s = JSON.parse(JSON.stringify(song)) as Song;
+  const fail = (m: string): never => {
+    throw new Error(`edit_song: ${m}`);
+  };
+  if (edit.bpm !== undefined) s.bpm = edit.bpm;
+  if (edit.steps !== undefined) s.steps = edit.steps;
+  if (edit.loop !== undefined) s.loop = edit.loop;
+  const removedChannels: number[] = [];
+  for (const c of edit.channels ?? []) {
+    const fields = { ...c } as Record<string, unknown>;
+    delete fields.index;
+    delete fields.remove;
+    if (typeof fields.instrument === 'string') {
+      const id = instrumentId(fields.instrument);
+      if (!id) fail(`there is no instrument "${fields.instrument}"`);
+      fields.instrument = id;
+    }
+    if (c.index === undefined) {
+      s.channels.push({ name: '', instrument: null, volume: 0.8, pan: 0, mute: false, drum: false, ...fields } as SongChannel);
+      continue;
+    }
+    if (!s.channels[c.index]) fail(`there is no channel ${c.index} (the song has ${song.channels.length}, numbered from 0)`);
+    if (c.remove) removedChannels.push(c.index);
+    else Object.assign(s.channels[c.index], fields);
+  }
+  const removedPatterns: number[] = [];
+  for (const pe of edit.patterns ?? []) {
+    if (pe.index > s.patterns.length) fail(`pattern ${pe.index}: patterns are numbered from 0, and a new one is number ${s.patterns.length}`);
+    if (pe.remove) {
+      if (pe.index >= song.patterns.length) fail(`there is no pattern ${pe.index} to remove`);
+      removedPatterns.push(pe.index);
+      continue;
+    }
+    if (pe.index === s.patterns.length) s.patterns.push({ name: pe.name ?? '', notes: [] });
+    const pattern = s.patterns[pe.index];
+    if (pe.name !== undefined) pattern.name = pe.name;
+    if (pe.notes === undefined) continue;
+    const only = pe.channels ? new Set(pe.channels) : null;
+    const notes: SongNote[] = [];
+    for (const raw of pe.notes) {
+      if (!Array.isArray(raw) || raw.length < 4) fail(`pattern ${pe.index}: a note is [channel, step, pitch, length, velocity]`);
+      const n = raw as unknown[];
+      const pitch = pitchOf(n[2]);
+      if (pitch === null) fail(`pattern ${pe.index}: "${String(n[2])}" is not a note (MIDI numbers, 60 = C4, or names like "C4", "F#3")`);
+      const ch = Number(n[0]);
+      if (only && !only.has(ch)) fail(`pattern ${pe.index}: a note on channel ${ch}, but this change is only for channels ${[...only].join(', ')}`);
+      notes.push([ch, Number(n[1]), pitch!, Number(n[3]), n[4] === undefined ? 0.8 : Number(n[4])]);
+    }
+    pattern.notes = [...(only ? pattern.notes.filter((n) => !only.has(n[0])) : []), ...notes].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  }
+  if (edit.order !== undefined) s.order = [...edit.order];
+  // Removals last, from the highest index down, so the indexes above meant the song as it was.
+  for (const i of [...new Set(removedPatterns)].sort((a, b) => b - a)) {
+    s.patterns.splice(i, 1);
+    s.order = s.order.filter((o) => o !== i).map((o) => (o > i ? o - 1 : o));
+  }
+  if (!s.order.length) s.order = [0];
+  for (const i of [...new Set(removedChannels)].sort((a, b) => b - a)) {
+    s.channels.splice(i, 1);
+    for (const p of s.patterns) p.notes = p.notes.filter((n) => n[0] !== i).map((n) => (n[0] > i ? [n[0] - 1, n[1], n[2], n[3], n[4]] : n) as SongNote);
+  }
+  // Notes past a shorter pattern length are dropped.
+  for (const p of s.patterns) p.notes = p.notes.filter((n) => n[1] < s.steps);
+  return s;
 }

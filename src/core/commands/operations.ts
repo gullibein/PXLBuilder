@@ -154,8 +154,8 @@ export const operationSchema = z.union([
     op: z.literal('make_instrument'),
     name: z.string().describe('Short name, e.g. "Lead", "Bass", "Kick" (unique among instruments)'),
     description: z.string().describe('What it sounds like, in plain words'),
-    instrumentJson: z.string().describe('The instrument as JSON: {"chip":"8bit","wave":"pulse25","attack":0.01,"decay":0.2,"sustain":0.5,"release":0.1,…} (see "Music")'),
-    replaceId: z.string().nullable().describe('An existing instrument asset id to reshape (keeps its name unless a new one is given); null for a new instrument'),
+    instrumentJson: z.string().describe('The instrument as JSON: {"chip":"8bit","wave":"pulse25","attack":0.01,"decay":0.2,"sustain":0.5,"release":0.1,…} (see "Music"). With replaceId, only the fields that change are needed (the rest stay as they are)'),
+    replaceId: z.string().nullable().describe('An existing instrument asset id to reshape (keeps its name unless a new one is given, and every field not in instrumentJson); null for a new instrument'),
   }),
   z.object({
     op: z.literal('make_song'),
@@ -163,6 +163,15 @@ export const operationSchema = z.union([
     description: z.string().describe('What it is like, in plain words'),
     songJson: z.string().describe('The song as JSON: {"bpm":120,"steps":16,"loop":true,"channels":[{"instrument":"Lead"},…],"patterns":[{"name":"A","notes":[[channel,step,pitch,length,velocity],…]}],"order":[0,0,1]} (see "Music")'),
     replaceId: z.string().nullable().describe('An existing song asset id to rewrite; null for a new song'),
+  }),
+  z.object({
+    op: z.literal('edit_song'),
+    id: z.string().describe('The song asset id'),
+    changesJson: z
+      .string()
+      .describe(
+        'Only what changes, as JSON: {"bpm":…, "steps":…, "loop":…, "order":[…], "channels":[{"index":3,"volume":0.6} (change one), {"instrument":"Cowbell","drum":true} (a new one, at the end), {"index":5,"remove":true}], "patterns":[{"index":0,"channels":[3,4,5],"notes":[[3,0,36,1,1],…]} (replaces the notes of just channels 3-5 in pattern 0; the other channels keep theirs), {"index":2,"notes":[…]} (all of pattern 2\'s notes), {"index":<number of patterns>,"name":"C","notes":[…]} (a new pattern), {"index":1,"remove":true}]}. Indexes count from 0 in the song as it is now',
+      ),
   }),
   z.object({
     op: z.literal('set_level_music'),
@@ -420,6 +429,7 @@ const KEEPS_PLACES = new Set<string>([
   'make_sound',
   'make_instrument',
   'make_song',
+  'edit_song',
   'set_level_music',
   'rename',
   'set_tags',
@@ -734,7 +744,17 @@ export function applyOperations(
         break;
       }
       case 'make_instrument': {
-        const parsed = parseInstrument(op.instrumentJson);
+        // Reshaping one: the fields not given stay as they are.
+        const base = op.replaceId ? project.assets.find((a) => a.id === op.replaceId && a.kind === 'instrument')?.instrument : undefined;
+        let given: unknown = op.instrumentJson;
+        if (base) {
+          try {
+            given = { ...base, ...(JSON.parse(op.instrumentJson) as object) };
+          } catch {
+            throw new m.ModelError('Instrument: not valid JSON');
+          }
+        }
+        const parsed = parseInstrument(given);
         if ('error' in parsed) throw new m.ModelError(parsed.error);
         const name = op.name.trim() || 'Instrument';
         if (op.replaceId) {
@@ -771,6 +791,28 @@ export function applyOperations(
           if (problem) throw new m.ModelError(`${problem}: rewrite it with replaceId, or give the new one another name`);
           result.createdAssetIds.push(music.addSongAsset(project, name, parsed.song, op.description));
         }
+        break;
+      }
+      case 'edit_song': {
+        const asset = findSong(project, op.id);
+        if (!asset) throw new m.ModelError(`There is no song "${op.id}"`);
+        let changes: music.SongEdit;
+        try {
+          changes = JSON.parse(op.changesJson) as music.SongEdit;
+        } catch {
+          throw new m.ModelError('edit_song: changesJson is not valid JSON');
+        }
+        let edited;
+        try {
+          edited = music.editSong(asset.song!, changes, (ref) => instrumentByRef(project, ref)?.id ?? null, (x) => (typeof x === 'number' ? x : typeof x === 'string' ? parseNoteName(x) : null));
+        } catch (e) {
+          throw new m.ModelError(e instanceof Error ? e.message : String(e));
+        }
+        const parsed = parseSong(edited);
+        if ('error' in parsed) throw new m.ModelError(parsed.error);
+        for (const c of parsed.song.channels) if (!c.name) c.name = project.assets.find((a) => a.id === c.instrument)?.name ?? '';
+        music.setSong(project, asset.id, parsed.song);
+        result.createdAssetIds.push(asset.id);
         break;
       }
       case 'set_level_music': {
@@ -1018,8 +1060,7 @@ function readSongJson(text: string, project: Project): { value: unknown } | { er
       if (!c || typeof c !== 'object') continue;
       const ch = c as { instrument?: unknown; name?: unknown };
       if (typeof ch.instrument !== 'string') continue;
-      const want = ch.instrument.trim().toLowerCase();
-      const inst = instruments.find((a) => a.id === ch.instrument) ?? instruments.find((a) => a.name.toLowerCase() === want);
+      const inst = instrumentByRef(project, ch.instrument);
       if (!inst) return { error: `Song: channel ${i} plays instrument "${ch.instrument}", but there is none (instruments: ${instruments.map((a) => a.name).join(', ') || 'none yet: make them with make_instrument first'})` };
       ch.instrument = inst.id;
       if (typeof ch.name !== 'string' || !ch.name) ch.name = inst.name;
@@ -1040,4 +1081,10 @@ function readSongJson(text: string, project: Project): { value: unknown } | { er
     }
   }
   return { value };
+}
+
+/** An instrument by id, or by name (any case). */
+function instrumentByRef(project: Project, ref: string): Project['assets'][number] | undefined {
+  const instruments = project.assets.filter((a) => a.kind === 'instrument' && a.instrument);
+  return instruments.find((a) => a.id === ref) ?? instruments.find((a) => a.name.toLowerCase() === ref.trim().toLowerCase());
 }

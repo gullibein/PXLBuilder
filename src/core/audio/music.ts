@@ -69,7 +69,7 @@ export const instrumentSchema = z.object({
 export type Instrument = z.infer<typeof instrumentSchema>;
 export type InstrumentInput = z.input<typeof instrumentSchema>;
 
-export const MAX_CHANNELS = 8;
+export const MAX_CHANNELS = 12;
 export const MAX_PATTERNS = 64;
 export const MAX_ORDER = 256;
 /** Steps per beat: a step is a 16th note. */
@@ -85,6 +85,8 @@ export const songChannelSchema = z.object({
   volume: z.number().min(0).max(1).default(0.8),
   pan: z.number().min(-1).max(1).default(0),
   mute: z.boolean().default(false),
+  /** A drum channel (kick, snare, hats…): shown apart from the instruments, below them. */
+  drum: z.boolean().default(false),
 });
 
 export const songPatternSchema = z.object({
@@ -155,18 +157,18 @@ export function preset(name: string): Instrument {
 }
 
 /** The instruments a new song of each chip starts with, a channel each. */
-export const STARTER_KITS: Record<Chip, string[]> = {
-  '8bit': ['Square lead', 'Triangle bass', 'Chip kick', 'Chip snare', 'Chip hi-hat'],
-  '16bit': ['Saw lead', 'FM bass', 'Kick', 'Snare', 'Hi-hat'],
+export const STARTER_KITS: Record<Chip, { instruments: string[]; drums: string[] }> = {
+  '8bit': { instruments: ['Square lead', 'Pulse lead', 'Triangle bass'], drums: ['Chip kick', 'Chip snare', 'Chip hi-hat'] },
+  '16bit': { instruments: ['Saw lead', 'Electric piano', 'FM bass'], drums: ['Kick', 'Snare', 'Hi-hat'] },
 };
 
-/** A new song: one empty pattern, a channel per instrument. */
-export function emptySong(instruments: { id: string; name: string }[], bpm = 120): Song {
+/** A new song: one empty pattern, a channel per instrument (drum channels marked). */
+export function emptySong(instruments: { id: string | null; name: string; drum?: boolean }[], bpm = 120): Song {
   return songSchema.parse({
     type: 'song',
     bpm,
     steps: 16,
-    channels: (instruments.length ? instruments : [{ id: null, name: 'Channel 1' }]).slice(0, MAX_CHANNELS).map((i) => ({ name: i.name, instrument: i.id })),
+    channels: (instruments.length ? instruments : [{ id: null, name: 'Channel 1', drum: false }]).slice(0, MAX_CHANNELS).map((i) => ({ name: i.name, instrument: i.id, drum: i.drum ?? false })),
     patterns: [{ name: 'A', notes: [] }],
     order: [0],
     loop: true,
