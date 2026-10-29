@@ -80,7 +80,7 @@ export function AIConnection() {
 
   if (claudeAccount) {
     return (
-      <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div className="dialog-backdrop" data-prompt-keep onMouseDown={(e) => e.target === e.currentTarget && close()}>
         <section className="dialog" role="dialog" aria-label="AI connection" data-testid="ai-connection">
           <header className="bg-head">
             <span>AI connection</span>

@@ -34,6 +34,7 @@ import type { AssetRecord, Id, Project } from '../../core/types';
 import { instrumentsOf, playNote, playSong, type SongPlayer } from '../audio/musicPlayer';
 import { useEditor } from '../store';
 import { PromptBox } from '../prompt/PromptBox';
+import { useCloseOutside } from '../prompt/closeOutside';
 
 export const CHANNEL_COLORS = ['#ff5d73', '#4cc9f0', '#ffd166', '#06d6a0', '#c77dff', '#ff9f1c', '#a3e635', '#f472b6', '#60a5fa', '#fb7185', '#facc15', '#2dd4bf'];
 
@@ -41,6 +42,7 @@ const close = () => useEditor.getState().setMusicStudio(null);
 
 export function MusicStudio() {
   const open = useEditor((s) => s.musicStudio);
+  const [asking, setAsking] = useState(false);
   if (!open) return null;
   const tab = open.tab;
   return (
@@ -56,39 +58,79 @@ export function MusicStudio() {
               Instruments
             </button>
           </div>
+          <button
+            className={`icon-btn spark-btn${asking ? ' active' : ''}`}
+            title={tab === 'songs' ? 'Ask the AI about this song (or for a new one)' : 'Ask the AI about this instrument (or for a new one)'}
+            aria-label="Ask the AI"
+            aria-pressed={asking}
+            data-testid="music-ai"
+            data-prompt-opener
+            onClick={() => setAsking(!asking)}
+          >
+            ✦
+          </button>
           <span className="grow" />
           <button className="icon-btn" aria-label="Close" title="Close (Esc)" data-testid="music-close" onClick={close}>
             ×
           </button>
         </header>
         {tab === 'songs' ? <SongsTab /> : <InstrumentsTab />}
+        <OpensWhatAIMakes />
+        {asking && <MusicPrompt kind={tab === 'songs' ? 'song' : 'instrument'} onClose={() => setAsking(false)} />}
       </section>
     </div>
   );
 }
 
-/**
- * The AI prompt of a tab: about the open song or instrument (or a new one when there is none). What it makes
- * opens in the tab.
- */
-function MusicPrompt({ kind, assetId }: { kind: 'song' | 'instrument'; assetId: Id | null }) {
-  const sceneId = useEditor((s) => s.activeSceneId);
-  const assetKind = kind === 'song' ? 'music' : 'instrument';
-  const ids = useEditor((s) => s.project.assets.filter((a) => a.kind === assetKind).map((a) => a.id).join(','));
-  const known = useRef(new Set(ids.split(',')));
+/** The song and the instrument open in the tabs (the chosen one, else the first). */
+function openIds(): { song: Id | null; instrument: Id | null } {
+  const { project, musicStudio } = useEditor.getState();
+  const pick = (kind: 'music' | 'instrument', wanted: Id | null | undefined) => {
+    const items = musicAssets(project, kind);
+    return (items.find((a) => a.id === wanted) ?? items[0])?.id ?? null;
+  };
+  return { song: pick('music', musicStudio?.songId), instrument: pick('instrument', musicStudio?.instrumentId) };
+}
+
+/** A song or instrument the AI just made opens in its tab (also when its card was closed while it worked). */
+function OpensWhatAIMakes() {
+  const songs = useEditor((s) => s.project.assets.filter((a) => a.kind === 'music').map((a) => a.id).join(','));
+  const instruments = useEditor((s) => s.project.assets.filter((a) => a.kind === 'instrument').map((a) => a.id).join(','));
+  const known = useRef({ songs: new Set(songs.split(',')), instruments: new Set(instruments.split(',')) });
   useEffect(() => {
-    // A song or instrument the AI just made opens here.
-    const now = ids.split(',').filter(Boolean);
-    const fresh = now.find((id) => !known.current.has(id));
-    known.current = new Set(now);
-    if (fresh) useEditor.getState().setMusicStudio(kind === 'song' ? { songId: fresh } : { instrumentId: fresh });
-  }, [ids]);
+    const fresh = (now: string, seen: Set<string>) => now.split(',').filter(Boolean).find((id) => !seen.has(id));
+    const song = fresh(songs, known.current.songs);
+    const inst = fresh(instruments, known.current.instruments);
+    known.current = { songs: new Set(songs.split(',')), instruments: new Set(instruments.split(',')) };
+    const tab = useEditor.getState().musicStudio?.tab;
+    if (song && tab === 'songs') useEditor.getState().setMusicStudio({ songId: song });
+    if (inst && tab === 'instruments') useEditor.getState().setMusicStudio({ instrumentId: inst });
+  }, [songs, instruments]);
+  return null;
+}
+
+/**
+ * The AI prompt card (the ✦ at the top): about the open song or instrument, or a new one when there is none.
+ * × or a click outside closes it (a request still running carries on).
+ */
+function MusicPrompt({ kind, onClose }: { kind: 'song' | 'instrument'; onClose: () => void }) {
+  const sceneId = useEditor((s) => s.activeSceneId);
+  // (Follows the open song or instrument.)
+  useEditor((s) => s.musicStudio);
+  useEditor((s) => s.project.assets);
+  const ids = openIds();
+  const assetId = kind === 'song' ? ids.song : ids.instrument;
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
   return (
-    <div className="ms-ask">
+    <div className="ms-ask-card" ref={ref} data-testid="music-prompt-card">
       <PromptBox
         ctx={{ kind, sceneId, assetId }}
+        autoFocus
         placeholder={kind === 'song' ? 'Describe a song, a melody, a feel, or just the drum beat: "a spooky castle theme", "make the drums busier"' : 'Describe a sound: "a fat wobbly bass", "a soft flute", "a punchy 8-bit kick"'}
         testId={`music-${kind}-prompt`}
+        onEscape={onClose}
+        onClose={onClose}
       />
     </div>
   );
@@ -212,8 +254,7 @@ function InstrumentsTab() {
         <PresetSelect label="+ New instrument…" testId="music-new-instrument" onPick={newInstrument} />
       </AssetList>
       <div className="ms-main">
-        <MusicPrompt kind="instrument" assetId={asset?.id ?? null} />
-        {asset ? <InstrumentEditor key={asset.id} asset={asset} /> : <p className="ms-empty muted">Make an instrument from one of the ready ones (+ New instrument), or describe the sound you want above, then shape it.</p>}
+        {asset ? <InstrumentEditor key={asset.id} asset={asset} /> : <p className="ms-empty muted">Make an instrument from one of the ready ones (+ New instrument), or describe the sound you want (✦ at the top), then shape it.</p>}
       </div>
     </div>
   );
@@ -606,7 +647,6 @@ function Keyboard({ inst }: { inst: Instrument }) {
         {whites}
         {blacks}
       </div>
-      <p className="panel-hint">Play with the mouse (hold the button and slide along the keys) or your computer's keys: each piano key shows the key that plays it (the bottom letter row and the row above it are the lower octave, the top letter row and the number row the upper one). ← → change the octave.</p>
     </div>
   );
 }
@@ -644,8 +684,7 @@ function SongsTab() {
         </button>
       </AssetList>
       <div className="ms-main">
-        <MusicPrompt kind="song" assetId={asset?.id ?? null} />
-        {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with three instruments (a lead, a second voice and a bass) and three drums (kick, snare, hi-hat). Or describe the song you want above.</p>}
+        {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with three instruments (a lead, a second voice and a bass) and three drums (kick, snare, hi-hat). Or describe the song you want (✦ at the top).</p>}
       </div>
     </div>
   );
@@ -1040,7 +1079,6 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
           onNotes={(next) => change('Notes', (s) => void (s.patterns[p].notes = next))}
         />
       </div>
-      <p className="panel-hint">Click the grid to add a note on the chosen channel (drag right to make it longer); click a note to take it away. Other channels' notes show faintly. The keys at the left, and your computer's keys, play the chosen channel's instrument (hold the mouse and slide along the keys). Space plays and stops the song. Undo works on everything.</p>
     </div>
   );
 }

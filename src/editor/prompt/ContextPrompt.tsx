@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useCloseOutside } from './closeOutside';
 import { describeRelationship, relationshipLabel } from '../../core/logic/describe';
 import { describeRef } from '../../core/logic/refs';
 import { contextKey } from '../../core/ai/context';
@@ -35,6 +36,8 @@ export function ContextPrompt() {
   );
   const key = ctx ? contextKey(ctx) : null;
   const wrapRef = useRef<HTMLDivElement>(null);
+  // A click outside the card closes it (what is selected stays selected; × also deselects).
+  useCloseOutside(wrapRef, promptOpen && key ? () => useEditor.getState().setPromptOpen(false) : undefined);
   const lineRef = useRef<SVGLineElement>(null);
   const dotRef = useRef<SVGCircleElement>(null);
 
@@ -230,6 +233,7 @@ function AIStar({ anchorKey }: { anchorKey: string }) {
     <button
       ref={ref}
       className="ai-star"
+      data-prompt-opener
       style={{ visibility: 'hidden' }}
       title="Ask the AI about this (or double-click it)"
       aria-label="Ask the AI about the selection"

@@ -35,12 +35,12 @@ export function TopBar() {
         <SaveButton />
         <SceneSelector />
         <div className="icon-group">
-          <button className="icon-btn" disabled={!canUndo} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo" data-testid="undo" onClick={undo}>
+          <button className="icon-btn" disabled={!canUndo} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo" data-testid="undo" data-prompt-keep onClick={undo}>
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M6 4 3 7l3 3M3.5 7H10a3 3 0 0 1 0 6H8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <button className="icon-btn" disabled={!canRedo} title={canRedo ? `Redo ${redoLabel} (Ctrl+Shift+Z)` : 'Nothing to redo'} aria-label="Redo" data-testid="redo" onClick={redo}>
+          <button className="icon-btn" disabled={!canRedo} title={canRedo ? `Redo ${redoLabel} (Ctrl+Shift+Z)` : 'Nothing to redo'} aria-label="Redo" data-testid="redo" data-prompt-keep onClick={redo}>
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m10 4 3 3-3 3M12.5 7H6a3 3 0 0 0 0 6h2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -56,6 +56,7 @@ export function TopBar() {
           title="Ask about the whole level or game (Ctrl+K)"
           aria-label="Global prompt"
           data-testid="global-prompt-toggle"
+          data-prompt-opener
           onClick={() => setGlobalPrompt(!globalOpen)}
         >
           ✦

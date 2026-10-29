@@ -130,7 +130,7 @@ export function AIPicker() {
       </button>
       {open &&
         createPortal(
-          <div ref={menu} className="context-menu ai-picker-menu" role="menu" aria-label="AI" data-testid="ai-picker-menu" style={pos ?? { left: -9999, top: -9999 }}>
+          <div ref={menu} className="context-menu ai-picker-menu" data-prompt-keep role="menu" aria-label="AI" data-testid="ai-picker-menu" style={pos ?? { left: -9999, top: -9999 }}>
             {claudeAccount ? (
               <>
                 <div className="menu-head">Claude · your claude.ai account</div>

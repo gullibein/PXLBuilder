@@ -818,6 +818,8 @@ try {
   await check(async () => (await page.getByTestId('field-Patrol.distance').inputValue()) === '64', 'the new enemy has the Patrol behavior (shown in its details)');
   await page.getByTestId('close-details').click();
   await page.getByTestId('undo').click();
+  // (Clicking outside it closed the card: opened again on the selection.)
+  await openCard(page, prompts);
   await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Enemy', 'Undo turns it back into a plain Enemy (one step)');
   await ask('Give the enemy a jetpack.');
   await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
@@ -1620,8 +1622,12 @@ try {
     await gen.getByTestId('bg-gen-go').click();
     await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'the picture is made at the size asked for (320×180 game pixels) and becomes the background');
     const boxOf = async () => ((await canvas.getAttribute('data-background-box')) ?? '').split(',').map(Number);
+    // (The box is written when the level is next drawn.)
+    await check(async () => {
+      const b = await boxOf();
+      return b.length === 4 && b[2] - b[0] === 320 && b[3] - b[1] === 180 && (await bgPanel.getByTestId('bg-movement').inputValue()) === 'level';
+    }, 'placed in the level in a box (each picture pixel one game pixel), moving with the level');
     const b0 = await boxOf();
-    await check(b0.length === 4 && b0[2] - b0[0] === 320 && b0[3] - b0[1] === 180 && (await bgPanel.getByTestId('bg-movement').inputValue()) === 'level', 'placed in the level in a box (each picture pixel one game pixel), moving with the level');
     {
       // Dragged inside the box: it moves; dragged by its corner: it gets bigger, redrawn at the new size.
       const [cx, cy, zoom] = ((await canvas.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
@@ -2077,7 +2083,7 @@ try {
     await page.mouse.down();
     await page.mouse.move(trashAt.x, trashAt.y, { steps: 8 });
     await check(async () => (await trash.getAttribute('class')).includes('hot'), 'dragging an object over the trash can lights it up');
-    await check(async () => (await prompts.count()) === 1 && !(await prompts.isVisible()), "while an object is being moved, its prompt card is out of the way");
+    await check(async () => ((await prompts.count()) === 0 || !(await prompts.isVisible())), "while an object is being moved, its prompt card is out of the way");
     await page.screenshot({ path: `${OUT}/12c-trash-drag.png` });
     await page.mouse.up();
     await check(async () => (await entities()) === n0 - 1 && !(await trash.getAttribute('class')).includes('hot'), 'dropping it on the trash can deletes it');
@@ -2178,7 +2184,7 @@ try {
       await check(async () => !(await prompts.isVisible()), 'while a point of the box is dragged, the prompt card is out of the way');
       await page.mouse.up();
     }
-    await check(async () => (await entities()) === n0 + 15 && (await prompts.isVisible()), 'pushing the top point down one row removes the top row (and the card is back after letting go)');
+    await check(async () => (await entities()) === n0 + 15 && !(await prompts.isVisible()) && (await page.getByTestId('ai-star').isVisible()), 'pushing the top point down one row removes the top row (pressing outside the card closed it; the ✦ above the selection opens it again)');
     const h7 = await handles();
     await check(h7['s0,1'][1] - h7['s0,-1'][1] === 96, '(the block is 3 rows tall now)');
     await page.getByTestId('undo').click();
@@ -2289,7 +2295,9 @@ try {
     await gp.getByTestId('prompt-input').press('Enter');
     await check(async () => (await gp.getByTestId('prompt-result').innerText()).includes("I read the Coin's code: 0 script(s), sent when I asked"), "the AI asks for an object's code it needs, gets it, and answers (one prompt, two requests)");
     await check(aiRequests.length === before + 2 && !aiRequests[before].code?.some((c) => c.name === 'Coin') && aiRequests[before + 1].code?.some((c) => c.name === 'Coin'), '(the first request without the code, the second with it)');
-    await page.keyboard.press('Escape');
+    // Every prompt card closes on a click outside it.
+    await page.locator('.topbar').click({ position: { x: 560, y: 4 } });
+    await check(async () => (await page.getByTestId('global-prompt').count()) === 0, 'a click outside the prompt card closes it');
   }
 
   step = 'more levels';
@@ -3751,6 +3759,8 @@ try {
   // The AI selector with a Gemini key: the models that key can use (Google's list), the chosen one ticked.
   {
     await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);
+    // (The click outside closed the card: opened again on the level.)
+    await openCard(kp, kPrompt);
     const picker = kPrompt.getByTestId('ai-picker');
     await check(async () => (await picker.innerText()).trim() === '3.8 Flash', 'the AI selector shows Gemini 3.8 Flash');
     await picker.click();
@@ -4283,6 +4293,18 @@ try {
     await check(async () => (await mp.getByTestId('music-channel-instrument').first().locator('option:checked').textContent()) === 'Bell lead', 'the song plays it under its new name');
     // Asking the AI in the Songs tab: only the drums change.
     const notesBefore = await roll.getAttribute('data-notes');
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, 'no prompt takes up room until asked for');
+    await mp.getByTestId('music-ai').click();
+    await check(async () => await mp.getByTestId('music-song-prompt').isVisible(), 'the ✦ at the top opens the AI prompt card');
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-close').click();
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, '× closes it');
+    await mp.getByTestId('music-ai').click();
+    await mp.getByTestId('music-tab-songs').click();
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, 'a click outside the card closes it');
+    await mp.getByTestId('music-ai').click();
+    await mp.getByTestId('music-ai').click();
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, 'the ✦ again closes it too');
+    await mp.getByTestId('music-ai').click();
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('make the drums busier');
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
     await check(async () => Number(await roll.getAttribute('data-notes')) === Number(notesBefore) + 16 + 4 + 2, "the Songs tab's prompt changes only the drums (the melody's notes stay)");
@@ -4295,7 +4317,9 @@ try {
     await check(async () => (await mp.getByTestId('music-item-Spooky waltz').count()) === 1 && (await mp.getByTestId('music-item-Spooky waltz').getAttribute('class')).includes('on'), "a song the AI writes opens in the Songs tab");
     // And in the Instruments tab: the open instrument is reshaped.
     await mp.getByTestId('music-tab-instruments').click();
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, '(switching tabs, a click outside, closed the card)');
     await mp.getByTestId('music-item-Ghost organ').locator('.ms-item-name').click();
+    await mp.getByTestId('music-ai').click();
     const pictureBefore = await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL());
     await mp.getByTestId('music-instrument-prompt').getByTestId('prompt-input').fill('make it wobbly');
     await mp.getByTestId('music-instrument-prompt').getByTestId('prompt-input').press('Enter');

@@ -1,4 +1,5 @@
 import { PlayButton } from './TopBar';
+import { useCloseOutside } from '../prompt/closeOutside';
 import { NoteIcon } from './NoteIcon';
 import { openNewSound } from '../sounds';
 import { DeleteConfirm } from './SoundEditor';
@@ -226,6 +227,8 @@ function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void 
   const sceneId = useEditor((s) => s.activeSceneId);
   const def = useEditor((s) => (ask.kind === 'object' ? s.project.definitions.find((d) => d.id === ask.id) : undefined));
   const sound = useEditor((s) => (ask.kind === 'sound' ? s.project.assets.find((a) => a.id === ask.id && a.kind === 'sound') : undefined));
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
   if (!def && !sound) return null;
   const left = Math.max(12, Math.min(ask.rect.left + ask.rect.width / 2 - ASK_WIDTH / 2, window.innerWidth - ASK_WIDTH - 12));
   const bottom = Math.max(12, window.innerHeight - ask.rect.top + 8);
@@ -241,7 +244,7 @@ function LibraryPrompt({ ask, onClose }: { ask: LibraryAsk; onClose: () => void 
     </span>
   );
   return createPortal(
-    <div className="library-ask" style={{ left, bottom, width: ASK_WIDTH }} data-testid="library-prompt" data-context={ask.kind}>
+    <div className="library-ask" ref={ref} style={{ left, bottom, width: ASK_WIDTH }} data-testid="library-prompt" data-context={ask.kind}>
       <PromptBox
         key={`${ask.kind}:${ask.id}`}
         ctx={def ? { kind: 'object', sceneId, definitionId: def.id } : { kind: 'sound', sceneId, assetId: sound!.id }}
