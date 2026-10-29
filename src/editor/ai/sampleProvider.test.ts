@@ -81,6 +81,21 @@ describe('Claude through claude.ai (sample)', () => {
     expect(notes[0]).toMatch(/couldn't be read .*It began: \{"kind":"apply"/);
   });
 
+  it('an answer of empty tool-call tags is not taken as an answer: asked again, telling it there are no tools; never shown as a reply', async () => {
+    const junk = '<invoke name="">\n</invoke>\n\n\n<invoke name="">\n</invoke>';
+    const good = { kind: 'answer', message: 'Fixed.', changes: [], operations: [], needCode: null, starter: null };
+    const turns: unknown[] = [];
+    const answers = [junk, JSON.stringify(good)];
+    const provider = new SampleAIProvider(async (input: unknown) => (turns.push(input), { text: answers.shift()!, truncated: false }));
+    expect(await provider.respond(body)).toEqual(good);
+    expect(turns).toHaveLength(2);
+    const followUp = (turns[1] as { content: string }[]).at(-1)!.content;
+    expect(followUp).toContain('no tools here');
+    // Twice: an error the user can act on, not the tags.
+    const twice = new SampleAIProvider(async () => ({ text: junk, truncated: false }));
+    await expect(twice.respond(body)).rejects.toThrow(/wasn't in the form the app reads/);
+  });
+
   it('reads JSON with a trailing comma, or after a sentence that has braces in it', async () => {
     const answer = { kind: 'answer', message: 'Halló', changes: [], operations: [], needCode: null, starter: null };
     const reply = (text: string) => new SampleAIProvider(async () => ({ text, truncated: false })).respond(body);

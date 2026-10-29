@@ -16,7 +16,7 @@ export function systemPromptWithReplyFormat(): string {
   jsonInstructions ??= `${buildSystemPrompt(componentRegistry)}
 
 REPLY FORMAT
-Reply with only one JSON object matching this JSON Schema (no other text). Every operation must have all of its fields; use null where a field allows it.
+Reply with only one JSON object matching this JSON Schema (no other text). Every operation must have all of its fields; use null where a field allows it. You have no tools here: never write tool or function calls (no <invoke>, <function_calls> or other tags); every change goes in the JSON's operations.
 ${JSON.stringify(z.toJSONSchema(aiResponseSchema))}`;
   return jsonInstructions;
 }
@@ -43,11 +43,13 @@ export function userMessage(body: AIRequestBody): string {
 /**
  * A finished reply of only words, no JSON at all ("No changes this time: the record shows…"): read as an answer that
  * changes nothing, rather than asked for again (a second request with the whole game costs as much as the first).
- * Null for anything with a brace in it or too short to be a sentence.
+ * Null for anything with a brace in it, too short to be a sentence, or with markup in it (tool-call tags such as
+ * <invoke name="">, which an AI sometimes writes instead of the JSON: not an answer, so it is asked for again).
  */
 export function proseReply(text: string): { kind: 'answer'; message: string; changes: []; operations: []; needCode: null; starter: null } | null {
   const t = text.trim();
   if (t.length < 20 || t.includes('{') || t.split(/\s+/).length < 4) return null;
+  if (/<\/?[a-z_][\w:.-]*(\s[^<>]*)?\/?>/i.test(t)) return null;
   return { kind: 'answer', message: t, changes: [], operations: [], needCode: null, starter: null };
 }
 

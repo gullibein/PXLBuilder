@@ -113,7 +113,7 @@ export class SampleAIProvider implements AIProvider {
         [
           { role: 'user', content: question },
           { role: 'assistant', content: answer.text },
-          { role: 'user', content: `That answer is not valid JSON (${problem}), so the app couldn't read it and nothing was changed. Send the same answer again as ONE valid JSON object in the reply format, with nothing before or after it. In strings, escape quotes (\\") and backslashes (\\\\); in drawings use only letters and digits as palette keys.` },
+          { role: 'user', content: `That answer is not valid JSON (${problem}), so the app couldn't read it and nothing was changed.${/<\/?[a-z_]/i.test(answer.text) ? ' You have no tools here: tool or function calls (tags like <invoke>) do nothing; put every change in the JSON\'s operations.' : ''} Send the answer again as ONE valid JSON object in the reply format, with nothing before or after it. In strings, escape quotes (\\") and backslashes (\\\\); in drawings use only letters and digits as palette keys.` },
         ],
         body,
         signal,
