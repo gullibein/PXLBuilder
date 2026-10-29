@@ -1,7 +1,7 @@
 import { useEditor } from '../store';
 import { Thumb } from './Dock';
 
-/** Left tool panel: Select (arrow), Marquee (box select), Eyedropper (pick up an object to draw with), Draw (pen), the level background, and the level's logic. */
+/** Left tool panel: Select (arrow), Marquee (box select), Eyedropper (pick up an object to draw with), Draw (pen), the level background, the level's logic, and the camera view (its boxes on the level). */
 export function ToolPanel() {
   const tool = useEditor((s) => s.tool);
   const backgroundOpen = useEditor((s) => s.backgroundOpen);
@@ -14,6 +14,7 @@ export function ToolPanel() {
   const wireframe = useEditor((s) => s.layout.wireframe);
   const altHeld = useEditor((s) => s.altHeld);
   const addOnTop = useEditor((s) => s.layout.addOnTop);
+  const cameraShown = useEditor((s) => s.layout.showCameraOutlines);
   const eyedropper = tool.kind === 'eyedropper' || altHeld;
   const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
   return (
@@ -116,6 +117,23 @@ export function ToolPanel() {
           <path d="M6.5 5.5 11.4 8M6.5 12.5l4.9-2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
         {logicCount > 0 && <span className="tool-badge">{logicCount}</span>}
+      </button>
+      <button
+        className={`tool${cameraShown ? ' on' : ''}`}
+        title={cameraShown ? 'Camera view is on: the Camera start and Camera limits boxes show on the level. Click to hide them.' : 'Camera view is off. Click to show the Camera start and Camera limits boxes on the level.'}
+        aria-label="Camera view"
+        aria-pressed={cameraShown}
+        data-testid="tool-camera"
+        onClick={() => {
+          // Hidden, a selected camera box isn't selected any more (its card closes).
+          if (cameraShown && useEditor.getState().cameraOutline) useEditor.setState({ cameraOutline: null, cameraSettingsOpen: false, worldContext: null });
+          setLayout({ showCameraOutlines: !cameraShown });
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <rect x="1.8" y="5" width="10.4" height="8.4" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M12.2 8.2 16.2 6v6.4l-4-2.2z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
       </button>
       <span className="tool-sep" />
       <button

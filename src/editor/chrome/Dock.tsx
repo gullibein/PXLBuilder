@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { componentRegistry } from '../../core/components/builtin';
 import { createStarterAssets, createStarterDefinitions } from '../../core/model/factory';
-import { resetStarterDefinition, starterKeyOf } from '../../core/model/mutations';
+import { countInstances, deleteObject, resetStarterDefinition, starterKeyOf } from '../../core/model/mutations';
 import type { ObjectDefinition } from '../../core/types';
 import { CATEGORIES, categoryOf } from '../categories';
 import { PromptBox } from '../prompt/PromptBox';
@@ -134,6 +134,7 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
   const tool = useEditor((s) => s.tool);
   const armed = tool.kind === 'brush' && tool.definitionId === def.id;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { setTool, setDock, selectDefinition, setInspectorOpen, openSprites } = useEditor.getState();
   const isStarter = starterKeyOf(def, STARTER_NAMES) !== null;
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -205,9 +206,11 @@ function ObjectTile({ def, armOnClick = true, onAsk }: { def: ObjectDefinition; 
                   },
                 ]
               : []),
+            { label: 'Delete…', testId: 'menu-delete-object', run: () => setDeleting(true) },
           ]}
         />
       )}
+      {deleting && <ObjectDeleteConfirm def={def} onDone={() => setDeleting(false)} />}
     </button>
   );
 }
@@ -534,4 +537,59 @@ export function editSpriteOf(definitionId: string): void {
   const asset = assetId ? project.assets.find((a) => a.id === assetId) : undefined;
   const editable = !!asset && (!!asset.pixelArt || (asset.kind === 'image' && asset.width <= 64 && asset.height <= 64));
   openSpriteEditor({ definitionId, assetId: editable ? asset!.id : null });
+}
+
+/**
+ * "Delete object?" for a library object (Objects → right-click → Delete…). With copies in the levels: delete them
+ * too, or keep them there as standalone things. One Undo step either way.
+ */
+function ObjectDeleteConfirm({ def, onDone }: { def: ObjectDefinition; onDone: () => void }) {
+  const copies = useEditor((s) => countInstances(s.project, def.id));
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onDone();
+    };
+    window.addEventListener('keydown', esc, true);
+    return () => window.removeEventListener('keydown', esc, true);
+  }, [onDone]);
+  const remove = (keep: boolean) => {
+    onDone();
+    const s = useEditor.getState();
+    const done = s.edit(keep ? `Delete object ${def.name} (copies kept)` : `Delete object ${def.name}`, (p) => deleteObject(p, def.id, keep ? 'keep' : 'remove', componentRegistry));
+    if (!done) return;
+    if (s.pickedDefinitionId === def.id) s.setPickedDefinition(null);
+    const tool = useEditor.getState().tool;
+    if (tool.kind === 'brush' && tool.definitionId === def.id) s.setTool({ kind: 'select' });
+  };
+  const n = copies === 1 ? 'its copy' : `its ${copies} copies`;
+  return createPortal(
+    <div className="dialog-backdrop confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onDone()} onClick={(e) => e.stopPropagation()}>
+      <section className="dialog" role="alertdialog" aria-label="Delete object?" data-testid="object-delete-confirm">
+        <header className="bg-head">
+          <span>Delete object?</span>
+        </header>
+        <p className="dialog-text">
+          “{def.name}” goes from the object library{copies ? `, and it has ${copies === 1 ? 'a copy' : `${copies} copies`} in the levels` : ''}. Undo brings it back.
+        </p>
+        <footer className="se-footer">
+          <span className="grow" />
+          <button className="chip-btn" data-testid="object-delete-cancel" onClick={onDone} autoFocus>
+            Cancel
+          </button>
+          {copies > 0 && (
+            <button className="chip-btn" data-testid="object-delete-keep" title="The copies stay in the levels, as standalone things" onClick={() => remove(true)}>
+              Keep {copies === 1 ? 'the copy' : 'the copies'}
+            </button>
+          )}
+          <button className="danger-btn" data-testid="object-delete-yes" onClick={() => remove(false)}>
+            {copies ? `Delete it and ${n}` : 'Delete'}
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
 }

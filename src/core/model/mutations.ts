@@ -664,6 +664,20 @@ export function deleteDefinition(project: Project, definitionId: Id, registry: C
   for (const scene of project.scenes) pruneLogic(scene, (ref) => ref.kind === 'object' && ref.id === definitionId);
 }
 
+/**
+ * Deletes a library object (the Objects menu's Delete…): with `copies` "remove", its copies in every level go too;
+ * with "keep", they stay as they are, as standalone things (deleteDefinition).
+ */
+export function deleteObject(project: Project, definitionId: Id, copies: 'remove' | 'keep', registry: ComponentRegistry): void {
+  getDefinition(project, definitionId);
+  if (copies === 'remove')
+    for (const scene of project.scenes) {
+      const ids = scene.entities.filter((e) => e.definitionId === definitionId).map((e) => e.id);
+      if (ids.length) removeEntities(project, scene.id, ids);
+    }
+  deleteDefinition(project, definitionId, registry);
+}
+
 export function countInstances(project: Project, definitionId: Id): number {
   let n = 0;
   forEachInstance(project, definitionId, () => n++);

@@ -119,6 +119,18 @@ describe('definitions and instances', () => {
   });
 });
 
+describe('deleting a library object (Objects menu)', () => {
+  it('with its copies: they go from every level; keeping them: they stay, standalone', () => {
+    const { project, sceneId, player, entityId } = withPlayer();
+    const gone = produce(project, (d) => m.deleteObject(d, player.id, 'remove', registry));
+    expect(gone.definitions.some((x) => x.id === player.id)).toBe(false);
+    expect(gone.scenes.find((x) => x.id === sceneId)!.entities.some((e) => e.id === entityId)).toBe(false);
+    const kept = produce(project, (d) => m.deleteObject(d, player.id, 'keep', registry));
+    expect(kept.definitions.some((x) => x.id === player.id)).toBe(false);
+    expect(m.getEntity(kept, sceneId, entityId).definitionId).toBeNull();
+  });
+});
+
 describe('entity and scene mutations', () => {
   it('moves, duplicates, removes entities', () => {
     const { project, sceneId, entityId } = withPlayer();

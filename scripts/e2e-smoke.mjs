@@ -1259,7 +1259,7 @@ try {
     await check(async () => (await look()) === before, 'Undo brings its old look back');
   }
   await page.getByTestId('definition-Enemy').click({ button: 'right' });
-  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Sprites Reset to default', 'right-clicking a built-in object offers Ask AI…, Details…, Edit sprite, Code, Sprites and Reset to default');
+  await check(async () => (await page.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Sprites Reset to default Delete…', 'right-clicking a built-in object offers Ask AI…, Details…, Edit sprite, Code, Sprites, Reset to default and Delete…');
   await page.getByTestId('menu-sprites').click();
   const sp = page.getByTestId('sprites-panel');
   await check(async () => (await sp.isVisible()) && (await page.getByTestId('library-panel').count()) === 0, 'Sprites opens a panel for the object');
@@ -2802,6 +2802,12 @@ try {
   await page.getByTestId('main-menu').click();
   await page.getByTestId('menu-camera-frame').click();
   await page.keyboard.press('Escape');
+  // The camera tool on the left toolbar does the same.
+  await check(async () => (await page.getByTestId('tool-camera').getAttribute('aria-pressed')) === 'true' && (await frameOf()).length === 4, 'the camera tool (left toolbar) shows the camera view is on');
+  await page.getByTestId('tool-camera').click();
+  await check(async () => (await frameOf()).length === 0 && (await page.getByTestId('tool-camera').getAttribute('aria-pressed')) === 'false', 'clicking the camera tool hides the Camera start and Camera limits boxes');
+  await page.getByTestId('tool-camera').click();
+  await check(async () => (await frameOf()).length === 4, 'clicking it again shows them');
 
   step = 'wireframe view';
   await page.keyboard.press('Escape');
@@ -2906,6 +2912,32 @@ try {
   await openPlayerDetails();
   await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '350', 'right-click → Reset to default resets one object');
   await page.getByTestId('close-details').click();
+  {
+    // Right-click → Delete… takes an object out of the library: with its copies in the levels, or keeping them.
+    const count = async () => Number(await canvas.getAttribute('data-entities'));
+    const before = await count();
+    await openLibrary();
+    await page.getByTestId('definition-Player').click({ button: 'right' });
+    await page.getByTestId('menu-delete-object').click();
+    const dlg = page.getByTestId('object-delete-confirm');
+    await check(async () => (await dlg.innerText()).includes('“Player” goes from the object library') && (await dlg.getByTestId('object-delete-keep').count()) === 1, 'right-click → Delete… asks first, saying it has copies in the levels');
+    await dlg.getByTestId('object-delete-cancel').click();
+    await check(async () => (await page.getByTestId('object-delete-confirm').count()) === 0 && (await page.getByTestId('definition-Player').count()) === 1, 'Cancel keeps it');
+    await page.getByTestId('definition-Player').click({ button: 'right' });
+    await page.getByTestId('menu-delete-object').click();
+    await page.getByTestId('object-delete-yes').click();
+    await check(async () => (await page.getByTestId('definition-Player').count()) === 0 && (await count()) < before, 'Delete removes the object and its copies from the level');
+    await page.getByTestId('undo').click();
+    await openLibrary();
+    await check(async () => (await page.getByTestId('definition-Player').count()) === 1 && (await count()) === before, 'Undo brings both back');
+    await page.getByTestId('definition-Player').click({ button: 'right' });
+    await page.getByTestId('menu-delete-object').click();
+    await page.getByTestId('object-delete-keep').click();
+    await check(async () => (await page.getByTestId('definition-Player').count()) === 0 && (await count()) === before, 'Keep the copies: the object goes, its copies stay in the level');
+    await page.getByTestId('undo').click();
+    await check(async () => (await count()) === before, '(undone)');
+    await page.keyboard.press('Escape');
+  }
   // A "Whole game" conversation in this game (it must not show up in the next one).
   const wholeGame = async () => {
     if ((await page.getByTestId('global-prompt').count()) === 0) await page.getByTestId('global-prompt-toggle').click();
