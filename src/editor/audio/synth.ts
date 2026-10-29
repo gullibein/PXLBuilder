@@ -18,6 +18,9 @@ let shared: AudioContext | null = null;
  */
 export function keepAudioAwake(ac: AudioContext | null = audio()): () => void {
   if (!ac) return () => undefined;
+  const keep = awake.get(ac) ?? { since: ac.currentTime, keepers: 0 };
+  keep.keepers++;
+  awake.set(ac, keep);
   const silence = ac.createConstantSource();
   const mute = ac.createGain();
   mute.gain.value = 0;
@@ -35,6 +38,7 @@ export function keepAudioAwake(ac: AudioContext | null = audio()): () => void {
   window.addEventListener('keydown', wake, true);
   wake();
   return () => {
+    if (--keep.keepers <= 0) awake.delete(ac);
     try {
       silence.stop();
     } catch {
@@ -46,6 +50,21 @@ export function keepAudioAwake(ac: AudioContext | null = audio()): () => void {
     window.removeEventListener('pointerdown', wake, true);
     window.removeEventListener('keydown', wake, true);
   };
+}
+
+/** Audio kept awake (keepAudioAwake): since when (the audio clock), and by how many. */
+const awake = new WeakMap<AudioContext, { since: number; keepers: number }>();
+/** Silence the sound output needs before music starts: speakers and headphones fade in what comes first after a quiet time. */
+const WARM_UP = 0.3;
+
+/**
+ * How long to wait (seconds) before starting music so its first note is heard in full: the sound output may fade in
+ * what comes right after it wakes, so music starts only once it has been running (silently) for a moment.
+ */
+export function warmUpLead(ac: AudioContext): number {
+  const keep = awake.get(ac);
+  if (ac.state !== 'running' || !keep) return WARM_UP;
+  return Math.max(0.05, keep.since + WARM_UP - ac.currentTime);
 }
 
 /** Makes the game's sounds ready to play at once (each step sound's audio made now, not on its first play). */

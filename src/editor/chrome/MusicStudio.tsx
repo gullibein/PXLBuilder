@@ -32,6 +32,7 @@ import {
 import { addInstrumentAsset, addSongAsset, musicAssets, removeMusicAsset, renameMusicAsset, setInstrument, setLevelMusic, setSong } from '../../core/model/music';
 import type { AssetRecord, Id, Project } from '../../core/types';
 import { instrumentsOf, playNote, playSong, type SongPlayer } from '../audio/musicPlayer';
+import { audio, keepAudioAwake } from '../audio/synth';
 import { useEditor } from '../store';
 import { PromptBox } from '../prompt/PromptBox';
 import { useCloseOutside } from '../prompt/closeOutside';
@@ -43,6 +44,8 @@ const close = () => useEditor.getState().setMusicStudio(null);
 export function MusicStudio() {
   const open = useEditor((s) => s.musicStudio);
   const [asking, setAsking] = useState(false);
+  // While it's open the sound output stays awake: the first note played (a song's, a key's) isn't faded in.
+  useEffect(() => (open ? keepAudioAwake(audio()) : undefined), [open !== null]);
   if (!open) return null;
   const tab = open.tab;
   return (

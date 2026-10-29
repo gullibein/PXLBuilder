@@ -8,7 +8,7 @@
  */
 import { patternSeconds, renderNote, renderPatternInSteps, stepSeconds, type Instrument, type Rendered, type Song } from '../../core/audio/music';
 import type { AssetRecord, Project } from '../../core/types';
-import { audio } from './synth';
+import { audio, warmUpLead } from './synth';
 
 /** The sample rate songs are made at (the SNES's): the browser converts it. */
 const RATE = 32000;
@@ -160,7 +160,8 @@ export function playSong(first: Song, firstInstruments: InstrumentLookup, opts: 
 
   // The first pattern is ready before the music starts (it never starts with a piece missing).
   make(sequence()[next], 0, true);
-  nextTime = ac.currentTime + 0.05;
+  // (After a moment of silence when the sound output may still be waking up: its first note is heard in full.)
+  nextTime = ac.currentTime + warmUpLead(ac);
   tick();
   const timer = setInterval(tick, 25);
 

@@ -56,6 +56,15 @@ describe('song player', () => {
     }
   });
 
+  it('starts only after a moment of silence (the sound output fades in what comes first after it wakes)', () => {
+    vi.useFakeTimers();
+    const { ac, starts } = fakeAudio();
+    const lead = preset('Square lead');
+    const player = playSong(song(), () => lead, { loop: true }, ac)!;
+    player.stop();
+    expect(starts[0].when).toBeGreaterThanOrEqual(0.3);
+  });
+
   it('after the page was asleep a long time, it goes on from where the song is now (no burst of missed patterns)', () => {
     vi.useFakeTimers();
     const { ac, starts } = fakeAudio();
