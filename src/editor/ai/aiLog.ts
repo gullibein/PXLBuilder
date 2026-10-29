@@ -14,7 +14,8 @@
  * nothing; "New chat" starts fresh.
  */
 import { create } from 'zustand';
-import type { AIContext } from '../../core/ai/context';
+import { contextKey, type AIContext } from '../../core/ai/context';
+import type { Project } from '../../core/types';
 import { useEditor } from '../store';
 import type { PromptOutcome } from './runPrompt';
 import type { TraceStep } from '../../core/ai/trace';
@@ -153,10 +154,34 @@ export function logExchange(ctx: AIContext, key: string, request: string, outcom
 /** Conversations belong to one game (another game's "Whole game" chat isn't this one's); the editor's own chat to none. */
 const scoped = (key: string, project: string) => (key === 'editor' ? key : `${project}/${key}`);
 
+/**
+ * Which conversation a card's exchanges belong to. A placed copy of a library object is that object (what is asked
+ * about one Ring is about the Ring), so every copy's card and the object's own card in Objects share one
+ * conversation; anything else has its own.
+ */
+export function conversationKey(ctx: AIContext, project: Project = useEditor.getState().project): string {
+  if (ctx.kind === 'entity' && ctx.entityIds.length === 1) {
+    const id = ctx.entityIds[0];
+    for (const s of project.scenes) {
+      const e = s.entities.find((x) => x.id === id);
+      if (e) return e.definitionId ? `object:${e.definitionId}` : contextKey(ctx);
+    }
+  }
+  return contextKey(ctx);
+}
+
+/** Where a conversation's exchanges may be filed: an object's also under its copies' own keys (from before they shared it). */
+function filedUnder(key: string, project: Project): Set<string> {
+  if (!key.startsWith('object:')) return new Set([key]);
+  const def = key.slice('object:'.length);
+  return new Set([key, ...project.scenes.flatMap((s) => s.entities.filter((e) => e.definitionId === def).map((e) => `entity:${e.id}`))]);
+}
+
 /** The exchanges of one conversation in this game since its last "New chat", oldest first (at most the last `max`). */
 export function chatEntries(state: { entries: AILogEntry[]; starts: Record<string, number> }, key: string, max = CARD_TURNS, project = useEditor.getState().project.id): AILogEntry[] {
   const start = state.starts[scoped(key, project)] ?? 0;
-  return state.entries.filter((e) => e.key === key && (key === 'editor' || e.project === project) && e.time > start).slice(-max);
+  const keys = filedUnder(key, useEditor.getState().project);
+  return state.entries.filter((e) => e.key !== undefined && keys.has(e.key) && (key === 'editor' || e.project === project) && e.time > start).slice(-max);
 }
 
 /**

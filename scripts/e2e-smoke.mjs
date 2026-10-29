@@ -3692,7 +3692,7 @@ try {
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
   await kPrompt.locator('[data-testid="prompt-result"][data-status="moved"]').waitFor({ timeout: 10000 });
   await check(
-    async () => (await kPrompt.getByTestId('result-message').innerText()) === "This changed the Mushroom, not the Player, so it was moved to the Mushroom's prompt card (in Objects).",
+    async () => (await kPrompt.getByTestId('result-message').innerText()) === "This changed the Mushroom, not the Player, so it was moved to the Mushroom's prompt card.",
     "asked on the player, a change to the Mushroom object (2 in the level): the player's card says it was moved to the Mushroom's card",
   );
   await check(async () => (await kCanvas.getAttribute('data-flash')) === '2', 'the change is made: the two mushrooms glow on the level');
@@ -3706,6 +3706,11 @@ try {
     await kp.screenshot({ path: `${OUT}/21b-moved-to-object.png` });
     await lib.getByTestId('prompt-close').click();
     await kp.getByTestId('dock-panel-close').click();
+    // Every Mushroom in the level is that object: its card shows the same conversation.
+    await kp.mouse.click(kAt(100, -150).x, kAt(100, -150).y);
+    await openCard(kp, kPrompt);
+    await check(async () => (await kPrompt.getByTestId('entity-header').innerText()).includes('Mushroom') && (await kPrompt.innerText()).includes('The player kills mushroom-enemies'), "a Mushroom's card in the level shows the conversation about the Mushroom object");
+    await kp.keyboard.press('Escape');
   }
   // The enemy, placed once: its own card in the level.
   await kp.mouse.click(kAt(-200, -150).x, kAt(-200, -150).y);

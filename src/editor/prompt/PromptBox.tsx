@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } from '../ai/jobs';
-import { chatEntries, contextName, useAILog, type AILogEntry } from '../ai/aiLog';
+import { chatEntries, contextName, conversationKey, useAILog, type AILogEntry } from '../ai/aiLog';
 import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
 import { useEditor } from '../store';
 import { playSound } from '../audio/synth';
@@ -24,9 +24,10 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
   const starts = useAILog((s) => s.starts);
   const project = useEditor((s) => s.project.id);
   const thread: AILogEntry[] = useMemo(() => {
-    const all = chatEntries({ entries, starts }, key, undefined, project);
+    // (A placed copy's card shows its object's conversation: the same on every copy, and on the object's card.)
+    const all = chatEntries({ entries, starts }, conversationKey(ctx, useEditor.getState().project), undefined, project);
     return job?.phase === 'done' && job.logId !== undefined ? all.filter((e) => e.id !== job.logId) : all;
-  }, [entries, starts, key, job, project]);
+  }, [entries, starts, key, job, project, conversationKey(ctx)]);
 
   // While this card is on screen, what finishes here counts as seen.
   useEffect(() => cardOpened(key), [key]);
@@ -53,7 +54,7 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     },
     /** "New chat": start the conversation about this again. */
     newChat() {
-      startNewChat(key);
+      startNewChat(key, conversationKey(ctx));
     },
     /** The change went to the object (every copy): make it a new object instead (undo it, apply it as a new one). */
     asNew() {

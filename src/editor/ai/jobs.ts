@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
 import { runPrompt, type PromptOptions, type PromptOutcome } from './runPrompt';
-import { contextName, logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
+import { contextName, conversationKey, logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
 import { useEditor } from '../store';
@@ -68,13 +68,13 @@ export function startJob(ctx: AIContext, request: string, options: PromptOptions
     const toKey = to ? contextKey(to) : null;
     if (to && toKey && useJobs.getState().jobs[toKey]?.phase !== 'working') {
       trace.add('note', `About ${contextName(to)}, not ${contextName(ctx)}: moved to ${contextName(to)}'s prompt card`);
-      const logId = logExchange(to, toKey, request, outcome, trace.steps);
+      const logId = logExchange(to, conversationKey(to), request, outcome, trace.steps);
       put(toKey, { key: toKey, ctx: to, request, phase: 'done', outcome, seen: true, logId });
-      const message = `This changed the ${contextName(to)}, not the ${contextName(ctx)}, so it was moved to the ${contextName(to)}'s prompt card${to.kind === 'object' ? ' (in Objects)' : ''}.`;
+      const message = `This changed the ${contextName(to)}, not the ${contextName(ctx)}, so it was moved to the ${contextName(to)}'s prompt card.`;
       put(key, { key, ctx, request, phase: 'done', outcome: { status: 'message', tone: 'info', message, movedTo: to }, seen: true });
       return;
     }
-    const logId = logExchange(ctx, key, request, outcome, trace.steps);
+    const logId = logExchange(ctx, conversationKey(ctx), request, outcome, trace.steps);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
   };
@@ -119,8 +119,8 @@ export function cardOpened(key: string): () => void {
 }
 
 /** "New chat": the conversation about this context starts again (a prompt still running carries on). */
-export function startNewChat(key: string): void {
-  newChat(key);
+export function startNewChat(key: string, conversation = key): void {
+  newChat(conversation);
   if (useJobs.getState().jobs[key]?.phase === 'done') put(key, null);
 }
 

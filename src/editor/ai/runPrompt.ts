@@ -8,7 +8,7 @@ import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from 
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
-import { chatHistory, unusableReply } from './aiLog';
+import { chatHistory, conversationKey, unusableReply } from './aiLog';
 import type { TraceFn } from '../../core/ai/trace';
 import { getAISettings } from './aiSettings';
 import { GeminiProvider } from './geminiProvider';
@@ -129,7 +129,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random),
     request,
     // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
-    history: chatHistory(contextKey(ctx)),
+    history: chatHistory(conversationKey(ctx)),
     speed: getAISettings().speed,
     // What the editor's settings are: fixed, so it goes with the (cached) instructions; the context has their values.
     reference: editorReference(),

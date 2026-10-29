@@ -106,4 +106,37 @@ describe('AI conversations (kept in the AI History log)', () => {
     expect(fresh.chatHistory('entity:p')).toEqual([]);
     vi.unstubAllGlobals();
   });
+
+  it('every placed copy of a library object shares its conversation (with the object\'s card), older ones filed under a copy too', async () => {
+    const store = storage({});
+    vi.stubGlobal('localStorage', store);
+    vi.resetModules();
+    const { useEditor } = await import('../store');
+    const { produce } = await import('immer');
+    const { instantiateDefinition } = await import('../../core/model/factory');
+    const project = useEditor.getState().project;
+    const ring = project.definitions.find((d) => d.name === 'Coin')!;
+    const sceneId = project.scenes[0].id;
+    const a = instantiateDefinition(ring, { x: 0, y: 0 });
+    const b = instantiateDefinition(ring, { x: 40, y: 0 });
+    useEditor.setState({ project: produce(project, (d) => void d.scenes[0].entities.push(a, b)) });
+    store.setItem(
+      'pxlbuilder.aiLog',
+      JSON.stringify([
+        entry(1, `entity:${a.id}`, 'Make this coin spin', { project: project.id }),
+        entry(2, `object:${ring.id}`, 'Make coins bounce when dropped', { project: project.id }),
+        entry(3, 'level:x', 'Something else', { project: project.id }),
+      ]),
+    );
+    const log = await import('./aiLog');
+    const onB = { kind: 'entity' as const, sceneId, entityIds: [b.id] as [string] };
+    expect(log.conversationKey(onB)).toBe(`object:${ring.id}`);
+    expect(log.conversationKey({ kind: 'object', sceneId, definitionId: ring.id })).toBe(`object:${ring.id}`);
+    // Copy b's card (never asked about itself) shows both exchanges about the Coin, and the AI is reminded of them.
+    const shown = log.chatEntries(log.useAILog.getState(), log.conversationKey(onB)).map((e) => e.request);
+    expect(shown).toEqual(['Make this coin spin', 'Make coins bounce when dropped']);
+    expect(log.chatHistory(log.conversationKey(onB)).map((h) => h.request)).toEqual(shown);
+    // Several things selected keep their own conversation.
+    expect(log.conversationKey({ kind: 'pair', sceneId, entityIds: [a.id, b.id] as [string, string] })).toBe(`pair:${a.id},${b.id}`);
+  });
 });
