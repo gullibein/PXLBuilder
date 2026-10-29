@@ -288,8 +288,9 @@ export function addNote(out: Float32Array, at: number, inst: Instrument, pitch: 
     const idx = at + k;
     if (idx >= out.length) break;
     const t = k / sampleRate;
-    // 8-bit: the volume moves 60 times a second, in 16 steps.
-    const tEnv = eightBit ? Math.floor(t * 60) / 60 : t;
+    // 8-bit: the volume moves 60 times a second, in 16 steps, each step at the volume it reaches by the end of that
+    // 1/60 s (so a note sounds from its very start, not after a silent first step), the release not before its time.
+    const tEnv = eightBit ? (t < held ? Math.min((Math.floor(t * 60) + 1) / 60, held) : held + (Math.floor((t - held) * 60) + 1) / 60) : t;
     let env = envelope(inst, tEnv, held);
     if (eightBit) env = Math.round(env * 15) / 15;
     else env = lastEnv += (env - lastEnv) * 0.05; // a few samples of smoothing: no clicks

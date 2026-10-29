@@ -4286,6 +4286,41 @@ try {
     await mp.mouse.move(to.x, to.y, { steps: 4 });
     await mp.mouse.up();
     await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await roll.getAttribute('data-note-steps')) === '6', 'notes are drawn on the piano roll, one dragged 4 steps long');
+    {
+      // Either end of a note can be dragged: the note at step 4 (4 steps long, to step 8) made longer, then shorter.
+      const edge = async (boundary, pitch) => {
+        const at = await cell(0, pitch);
+        const { width } = await roll.evaluate((c) => ({ width: c.width }));
+        const col = (width - 38) / 16;
+        const b = await roll.boundingBox();
+        return { x: b.x + 38 + boundary * col, y: at.y };
+      };
+      const drag = async (from, to) => {
+        await mp.mouse.move(from.x, from.y);
+        await mp.mouse.down();
+        await mp.mouse.move(to.x, to.y, { steps: 5 });
+        await mp.mouse.up();
+      };
+      await drag(await edge(8, 79), await edge(10, 79));
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '8' && (await roll.getAttribute('data-notes')) === '3', "dragging a note's right end makes it longer (4 → 6 steps)");
+      await drag(await edge(4, 79), await edge(7, 79));
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '5' && (await roll.getAttribute('data-notes')) === '3', "dragging its left end makes it shorter (it now starts later)");
+      // Just a click on an end changes nothing (it doesn't take the note away).
+      const e1 = await edge(10, 79);
+      await mp.mouse.click(e1.x, e1.y);
+      await check(async () => (await roll.getAttribute('data-notes')) === '3' && (await roll.getAttribute('data-note-steps')) === '5', 'a click on a note\'s end leaves it as it is');
+      await mp.keyboard.press('Control+z');
+      await mp.keyboard.press('Control+z');
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '6', '(both undone, one step each)');
+      // And the other way round: the right end inward (shorter), the left end outward (longer).
+      await drag(await edge(8, 79), await edge(6, 79));
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '4', "dragging the right end back makes it shorter (4 → 2 steps)");
+      await drag(await edge(4, 79), await edge(1, 79));
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '7' && (await roll.getAttribute('data-notes')) === '3', 'dragging the left end out makes it longer (it starts earlier: 2 → 5 steps)');
+      await mp.keyboard.press('Control+z');
+      await mp.keyboard.press('Control+z');
+      await check(async () => (await roll.getAttribute('data-note-steps')) === '6', '(undone)');
+    }
     const again = await cell(2, 76);
     await mp.mouse.click(again.x, again.y);
     await check(async () => (await roll.getAttribute('data-notes')) === '2', 'clicking a note takes it away');

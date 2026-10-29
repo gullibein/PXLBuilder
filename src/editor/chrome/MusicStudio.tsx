@@ -735,7 +735,9 @@ function SongEditor({ asset, project }: { asset: AssetRecord; project: Project }
         setPos(null);
         return;
       }
-      setPos(pl?.position() ?? null);
+      // (Only when the step changes: the editor isn't drawn again every frame while it plays.)
+      const now = pl?.position() ?? null;
+      setPos((was) => (was?.order === now?.order && was?.step === now?.step ? was : now));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -1091,6 +1093,8 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
   const [draft, setDraft] = useState<SongNote | null>(null);
   // The roll's key held with the mouse (sliding up and down plays the keys passed over).
   const keyHeld = useRef<number | null>(null);
+  // A note being made longer or shorter by one of its ends: which note, which end, and how it is now.
+  const [resizing, setResizing] = useState<{ index: number; edge: 'start' | 'end'; note: SongNote } | null>(null);
   // Columns as wide as the space allows (at least COL_W).
   const [room, setRoom] = useState(0);
   useEffect(() => {
@@ -1137,7 +1141,8 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
       ctx.fillStyle = s % 16 === 0 ? '#7a8090' : s % 4 === 0 ? '#4a5060' : '#30343f';
       ctx.fillRect(KEYS_W + s * COL_W, 0, 1, height);
     }
-    const all = draft ? [...notes, draft] : notes;
+    const shown = resizing ? notes.map((n, i) => (i === resizing.index ? resizing.note : n)) : notes;
+    const all = draft ? [...shown, draft] : shown;
     for (const mineFirst of [false, true]) {
       for (const n of all) {
         const mine = n[0] === channel;
@@ -1160,13 +1165,32 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(KEYS_W + head * COL_W, 0, 2, height);
     }
-  }, [notes, draft, channel, head, song.steps, width, height, COL_W, hand.down]);
+  }, [notes, draft, resizing, channel, head, song.steps, width, height, COL_W, hand.down]);
 
   const cellAt = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
     const x = ((e.clientX - r.left) * width) / r.width;
     const y = ((e.clientY - r.top) * height) / r.height;
     return { x, step: Math.floor((x - KEYS_W) / COL_W), pitch: HIGH - Math.floor(y / ROW_H) };
+  };
+  /** The end of one of the chosen channel's notes under the pointer (within a few pixels of it), if any. */
+  const edgeAt = (x: number, pitch: number): { index: number; edge: 'start' | 'end' } | null => {
+    const grab = Math.max(4, Math.min(8, COL_W / 4));
+    let best: { index: number; edge: 'start' | 'end' } | null = null;
+    let nearest = grab;
+    for (const [index, n] of notes.entries()) {
+      if (n[0] !== channel || n[2] !== pitch) continue;
+      const left = KEYS_W + n[1] * COL_W;
+      const right = KEYS_W + Math.min(n[1] + n[3], song.steps) * COL_W;
+      for (const [edge, at] of [['start', left], ['end', right]] as const) {
+        const d = Math.abs(x - at);
+        if (d <= nearest) {
+          nearest = d;
+          best = { index, edge };
+        }
+      }
+    }
+    return best;
   };
 
   return (
@@ -1190,6 +1214,13 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
             hand.press('roll', pitch);
             return;
           }
+          // By one of its ends: made longer or shorter.
+          const edge = edgeAt(x, pitch);
+          if (edge) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setResizing({ ...edge, note: [...notes[edge.index]] as SongNote });
+            return;
+          }
           if (step < 0 || step >= song.steps) return;
           const hit = notes.findIndex((n) => n[0] === channel && n[2] === pitch && step >= n[1] && step < n[1] + n[3]);
           if (hit >= 0) {
@@ -1210,7 +1241,21 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
             hand.press('roll', pitch);
             return;
           }
-          if (!draft) return;
+          if (resizing) {
+            const { x } = cellAt(e);
+            const at = Math.round((x - KEYS_W) / COL_W);
+            const [c, start, p, len, v] = notes[resizing.index];
+            const end = start + len;
+            const note: SongNote = resizing.edge === 'end' ? [c, start, p, Math.max(start + 1, Math.min(song.steps, at)) - start, v] : [c, Math.max(0, Math.min(end - 1, at)), p, end - Math.max(0, Math.min(end - 1, at)), v];
+            if (note[1] !== resizing.note[1] || note[3] !== resizing.note[3]) setResizing({ ...resizing, note });
+            return;
+          }
+          if (!draft) {
+            // Over a note's end: the cursor says it can be dragged.
+            const { x, pitch } = cellAt(e);
+            e.currentTarget.style.cursor = x >= KEYS_W && edgeAt(x, pitch) ? 'ew-resize' : '';
+            return;
+          }
           const { step } = cellAt(e);
           const len = Math.max(1, Math.min(song.steps - draft[1], step - draft[1] + 1));
           if (len !== draft[3] && step > draft[1]) setDraft([draft[0], draft[1], draft[2], len, draft[4]]);
@@ -1221,6 +1266,16 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
             hand.letGo('roll');
             return;
           }
+          if (resizing) {
+            const r = resizing.note;
+            const before = notes[resizing.index];
+            setResizing(null);
+            if (r[1] === before[1] && r[3] === before[3]) return;
+            // Stretched over another of the channel's notes at the same pitch: that one goes.
+            const keep = notes.filter((n, i) => i !== resizing.index && !(n[0] === r[0] && n[2] === r[2] && n[1] < r[1] + r[3] && r[1] < n[1] + n[3]));
+            onNotes([...keep, r].sort((a, b) => a[1] - b[1] || a[0] - b[0]));
+            return;
+          }
           if (!draft) return;
           // A new note replaces any other note of the channel it covers at the same pitch.
           const keep = notes.filter((n) => !(n[0] === draft[0] && n[2] === draft[2] && n[1] < draft[1] + draft[3] && draft[1] < n[1] + n[3]));
@@ -1229,6 +1284,7 @@ function PianoRoll({ song, pattern, channel, pen, head, instrument, hand, onNote
         }}
         onPointerCancel={() => {
           setDraft(null);
+          setResizing(null);
           keyHeld.current = null;
           hand.letGo('roll');
         }}

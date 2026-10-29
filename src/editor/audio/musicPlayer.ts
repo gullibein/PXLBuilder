@@ -1,8 +1,10 @@
 /**
  * Plays songs from the music machine (core/audio/music.ts) with the browser's Web Audio. A song is turned into audio
- * a pattern at a time, a little before it is needed and a few notes per moment, so long songs start at once and the
- * game never stutters; each pattern's audio is kept and reused while the song doesn't change. Edits made while it
- * plays (update) are heard from the next pattern on.
+ * a pattern at a time, a few notes per moment, so long songs start at once and the game never stutters: the first
+ * pattern before it starts, then every other pattern of the song in the background, well before it is needed (each
+ * pattern's audio is kept and reused while the song doesn't change), and queued seconds ahead, back to back to the
+ * sample, so there is never a gap between patterns. Edits made while it plays (update) are heard from the next
+ * pattern on.
  */
 import { patternSeconds, renderNote, renderPatternInSteps, stepSeconds, type Instrument, type Rendered, type Song } from '../../core/audio/music';
 import type { AssetRecord, Project } from '../../core/types';
@@ -10,10 +12,12 @@ import { audio } from './synth';
 
 /** The sample rate songs are made at (the SNES's): the browser converts it. */
 const RATE = 32000;
-/** How far ahead of the music the patterns are made and queued, seconds. */
-const LOOKAHEAD = 1.5;
+/** How far ahead of the music the patterns are queued, seconds. */
+const LOOKAHEAD = 3;
+/** A pattern needed sooner than this (seconds) and not ready yet is finished at once, whatever it takes. */
+const URGENT = 0.6;
 /** Milliseconds of making audio per moment (the rest of the frame is the game's). */
-const BUDGET_MS = 4;
+const BUDGET_MS = 6;
 
 export type InstrumentLookup = (id: string | null) => Instrument | null;
 
@@ -106,10 +110,25 @@ export function playSong(first: Song, firstInstruments: InstrumentLookup, opts: 
     if (stopped) return;
     const until = performance.now() + BUDGET_MS;
     const seq = sequence();
-    while (!ended && nextTime < ac.currentTime + LOOKAHEAD) {
+    // Back after the page was asleep (a hidden tab's timers barely run): on from where the song is now, never a
+    // burst of everything missed.
+    while (!ended && nextTime + patternSeconds(song) < ac.currentTime) {
+      nextTime += patternSeconds(song);
+      next++;
+      if (next >= seq.length) {
+        if (loops()) next = 0;
+        else {
+          ended = true;
+          endsAt = nextTime;
+        }
+      }
+    }
+    // A hidden tab's timers may run only once a minute: queued that much further ahead meanwhile.
+    const ahead = typeof document !== 'undefined' && document.hidden ? 65 : LOOKAHEAD;
+    while (!ended && nextTime < ac.currentTime + ahead) {
       const pattern = seq[next];
-      // Behind: it's needed very soon, so it's finished now.
-      const urgent = nextTime - ac.currentTime < 0.25;
+      // Behind: it's needed soon, so it's finished now.
+      const urgent = nextTime - ac.currentTime < URGENT;
       if (!make(pattern, until, urgent)) return;
       const source = ac.createBufferSource();
       source.buffer = cache.get(pattern)!;
@@ -131,10 +150,17 @@ export function playSong(first: Song, firstInstruments: InstrumentLookup, opts: 
         }
       }
     }
-    // Time left: the next pattern in the order gets a head start.
-    if (!ended && performance.now() < until) make(seq[next], until, false);
+    // Time left: the song's other patterns are made ahead, in the order they come (each only once).
+    if (ended) return;
+    for (let i = 0; i < seq.length && performance.now() < until; i++) {
+      const pattern = seq[(next + i) % seq.length];
+      if (!make(pattern, until, false)) return;
+    }
   };
 
+  // The first pattern is ready before the music starts (it never starts with a piece missing).
+  make(sequence()[next], 0, true);
+  nextTime = ac.currentTime + 0.05;
   tick();
   const timer = setInterval(tick, 25);
 

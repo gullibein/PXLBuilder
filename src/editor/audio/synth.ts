@@ -10,6 +10,50 @@ import { isStepSound, renderSteps, type StepSound } from '../../core/audio/steps
 
 let shared: AudioContext | null = null;
 
+/**
+ * Keeps the game's audio ready while it plays: a silent signal so the computer's sound output doesn't fall asleep
+ * between sounds (the first sound after a quiet while would come late, or not at all), and the audio woken up again
+ * as soon as the page is back in view or anything is pressed (browsers pause it in a hidden tab, another app, or
+ * before the first click). Returns the way to let it rest again.
+ */
+export function keepAudioAwake(ac: AudioContext | null = audio()): () => void {
+  if (!ac) return () => undefined;
+  const silence = ac.createConstantSource();
+  const mute = ac.createGain();
+  mute.gain.value = 0;
+  silence.offset.value = 0;
+  silence.connect(mute);
+  mute.connect(ac.destination);
+  silence.start();
+  const wake = () => {
+    if (ac.state !== 'running' && ac.state !== 'closed') void ac.resume().catch(() => undefined);
+  };
+  const onVisible = () => document.visibilityState === 'visible' && wake();
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', wake);
+  window.addEventListener('pointerdown', wake, true);
+  window.addEventListener('keydown', wake, true);
+  wake();
+  return () => {
+    try {
+      silence.stop();
+    } catch {
+      // already stopped
+    }
+    mute.disconnect();
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', wake);
+    window.removeEventListener('pointerdown', wake, true);
+    window.removeEventListener('keydown', wake, true);
+  };
+}
+
+/** Makes the game's sounds ready to play at once (each step sound's audio made now, not on its first play). */
+export function prepareSounds(sounds: Iterable<GameSound>, ac: AudioContext | null = audio()): void {
+  if (!ac) return;
+  for (const s of sounds) if (isStepSound(s)) stepBuffer(s, ac);
+}
+
 /** The page's audio (made on first use; browsers start it on a click or key press). Null where there is none. */
 export function audio(): AudioContext | null {
   try {

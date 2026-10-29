@@ -5,7 +5,7 @@ import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-lati
 import { componentRegistry } from '../../core/components/builtin';
 import { LookCache } from '../../render/screen';
 import { drawPlayFrame } from './playFrame';
-import { audio, playSound } from '../audio/synth';
+import { audio, keepAudioAwake, playSound, prepareSounds } from '../audio/synth';
 import { instrumentsOf, playSong, songAsset, type SongPlayer } from '../audio/musicPlayer';
 import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
 import { PlayRecorder } from '../../runtime/recorder';
@@ -92,7 +92,11 @@ export function PlayView(props: PlayViewProps) {
     const heartLook = heartDef ? looks.get(heartDef.id) : null;
     // Sounds the game plays (made by the synthesizer from their recipes). Started now: Play was just clicked.
     const sounds = new Map(project.assets.filter((a) => a.kind === 'sound' && a.synth).map((a) => [a.id, a.synth!]));
-    if (sounds.size) audio();
+    // Ready before the game starts: every sound made now, and the audio kept awake while it plays (so no sound
+    // comes late or gets lost, the first time or after a while away in another tab).
+    const hasMusic = project.scenes.some((s) => s.music) || project.assets.some((a) => a.kind === 'music' && a.song);
+    const restAudio = sounds.size || hasMusic ? keepAudioAwake(audio()) : () => undefined;
+    prepareSounds(sounds.values());
     // Play starts at the level being edited; a won level goes on to the next one (in the levels' order).
     let scene = project.scenes.find((s) => s.id === activeSceneId) ?? project.scenes[0];
     // Music: the level's song, or the one a script asked for (a level with the same song goes on playing it).
@@ -291,6 +295,7 @@ export function PlayView(props: PlayViewProps) {
     return () => {
       cancelAnimationFrame(frame);
       music?.player?.stop();
+      restAudio();
       const report = recorder.report();
       recorder.stop();
       props.onEnd?.(report, project);

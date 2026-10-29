@@ -72,6 +72,13 @@ describe('music', () => {
     expect(levels(makeInstrument({ chip: '16bit', wave: 'square', ...slow }))).toBeGreaterThan(100);
   });
 
+  it('an 8-bit note sounds from its very first moment (no silent first step), also with a short attack', () => {
+    for (const attack of [0, 0.01, 0.03]) {
+      const out = renderNote(makeInstrument({ chip: '8bit', wave: 'pulse50', attack, sustain: 1 }), 69, 0.3, SR);
+      expect(rms(out, 0, Math.round(SR * 0.004)), `attack ${attack}`).toBeGreaterThan(0.02);
+    }
+  });
+
   it('a note sounds for its length plus its release, then is silent', () => {
     const inst = makeInstrument({ chip: '8bit', wave: 'pulse50', sustain: 1, release: 0.1 });
     const out = renderNote(inst, 60, 0.3, SR);
