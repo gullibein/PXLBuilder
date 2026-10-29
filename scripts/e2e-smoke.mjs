@@ -143,6 +143,10 @@ function stubModel(body) {
     const i = body.context.instrument;
     return { kind: 'apply', message: `${i.name} wobbles now.`, changes: [`${i.name}: vibrato`], operations: [{ op: 'make_instrument', name: i.name, description: 'wobbly', instrumentJson: JSON.stringify({ vibratoRate: 7, vibratoDepth: 0.8, vibratoDelay: 0 }), replaceId: i.id }] };
   }
+  if (body.context.scope === 'sound' && !body.context.sound && req.includes('zap')) {
+    // From the Sounds list (no sound open): a new sound.
+    return { kind: 'apply', message: 'Made a zap.', changes: ['New sound: Zap'], operations: [{ op: 'make_sound', name: 'Zap', description: 'a short laser zap', soundJson: JSON.stringify({ type: 'steps', speed: 2, notes: [[50, 4, 6, 3], [44, 4, 4, 3]] }), replaceId: null }] };
+  }
   if (body.context.scope === 'sound' && req.includes('lower')) {
     const snd = body.context.sound;
     const lower = { ...snd.sound, notes: snd.sound.notes.map(([pitch, ...rest]) => [Math.max(0, pitch - 5), ...rest]) };
@@ -4160,6 +4164,35 @@ try {
     await ap.waitForTimeout(300);
     await check(async () => (await sample()) === before, 'switched off (the card → Autotile…), they look as before');
     await ac.close();
+  }
+
+  step = 'sound prompts';
+  {
+    const sc = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const sp = await sc.newPage();
+    sp.on('pageerror', (e) => errors.push(`pageerror (sound prompts): ${e.message}`));
+    await sp.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await sp.goto(URL);
+    await startPlatformer(sp);
+    await sp.getByTestId('dock-sounds').click();
+    const sPrompt = sp.getByTestId('sounds-panel').getByTestId('sounds-prompt');
+    await check(async () => await sPrompt.isVisible(), 'the Sounds card has an AI prompt');
+    await sPrompt.getByTestId('prompt-input').fill('a zap sound');
+    await sPrompt.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await sp.getByTestId('sound-Zap').count()) === 1, 'asked there, the AI makes the sound and it is in the list');
+    await check(aiRequests.at(-1).context.scope === 'sound' && !aiRequests.at(-1).context.sound, '(asked about the sounds, not one of them)');
+    await sp.getByTestId('sound-Zap').getByTestId('sound-edit').click();
+    await check(async () => (await sp.getByTestId('sound-prompt-card').count()) === 0 && (await sp.getByTestId('sound-ai').isVisible()), 'the sound editor has a ✦ (no card until it is clicked)');
+    await sp.getByTestId('sound-ai').click();
+    const ePrompt = sp.getByTestId('sound-editor-prompt');
+    await ePrompt.getByTestId('prompt-input').fill('make it lower');
+    await ePrompt.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await ePrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.sound?.name === 'Zap', "the editor's ✦ card asks about the open sound, and its change is applied");
+    await check(async () => (await sp.getByTestId('sound-name').inputValue()) === 'Zap', '(still the same sound, open in the editor)');
+    const se = await sp.getByTestId('sound-editor').boundingBox();
+    await sp.mouse.click(se.x + 20, se.y + se.height - 12);
+    await check(async () => (await sp.getByTestId('sound-prompt-card').count()) === 0, 'a click outside closes the card');
+    await sc.close();
   }
 
   step = 'music machine';

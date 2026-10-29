@@ -126,7 +126,7 @@ export function contextName(ctx: AIContext): string {
     case 'object':
       return project.definitions.find((d) => d.id === ctx.definitionId)?.name ?? 'Object';
     case 'sound':
-      return project.assets.find((a) => a.id === ctx.assetId)?.name ?? 'Sound';
+      return project.assets.find((a) => a.id === ctx.assetId)?.name ?? 'Sounds';
     case 'autotile':
       return `${project.definitions.find((d) => d.id === ctx.definitionId)?.name ?? 'Object'} autotile`;
     case 'song':

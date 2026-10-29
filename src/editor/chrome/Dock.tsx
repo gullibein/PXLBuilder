@@ -424,6 +424,7 @@ function SoundsPanel() {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; row: Element } | null>(null);
   const [asking, setAsking] = useState<LibraryAsk | null>(null);
   const menuSound = menu ? sounds.find((a) => a.id === menu.id) : undefined;
+  const sceneId = useEditor((s) => s.activeSceneId);
   return (
     <section className="dock-panel sounds" data-testid="sounds-panel" aria-label="Sounds">
       <PanelClose />
@@ -481,7 +482,9 @@ function SoundsPanel() {
           }}
         />
       )}
-      <p className="panel-hint">Make one in the sound editor (✎ edits one), or ask the AI on anything: "the duck quacks when the player touches it", then fine-tune it here.</p>
+      <div className="sounds-ask">
+        <PromptBox ctx={{ kind: 'sound', sceneId, assetId: null }} placeholder={'Describe a sound: "a springy boing when the player jumps"'} testId="sounds-prompt" />
+      </div>
     </section>
   );
 }

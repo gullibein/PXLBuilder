@@ -10,6 +10,8 @@ import { emptySteps, isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, 
 import { playSound, type Playing } from '../audio/synth';
 import { openNewSound, renameSound, updateSound } from '../sounds';
 import { useEditor } from '../store';
+import { PromptBox } from '../prompt/PromptBox';
+import { useCloseOutside } from '../prompt/closeOutside';
 
 export const WAVE_COLORS = ['#29adff', '#00e436', '#ff004d', '#ffa300', '#ffec27', '#ff77a8', '#c2c3c7', '#a78bfa'];
 const EFFECT_MARKS = ['·', '⟋', '∿', '↘', '◁', '▷'];
@@ -44,6 +46,16 @@ export function SoundEditor() {
   const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
   // What is drawn with, kept while switching between sounds.
   const pens = useState({ wave: 3, volume: 5, effect: 0 });
+  // The AI prompt card (the ✦ in the header).
+  const [asking, setAsking] = useState(false);
+  // A sound the AI just made opens here.
+  const soundIds = sounds.map((a) => a.id).join(',');
+  const knownSounds = useRef(new Set(soundIds.split(',')));
+  useEffect(() => {
+    const fresh = soundIds.split(',').filter(Boolean).find((id) => !knownSounds.current.has(id));
+    knownSounds.current = new Set(soundIds.split(','));
+    if (fresh && useEditor.getState().soundEditor) useEditor.getState().setSoundEditor(fresh);
+  }, [soundIds]);
   // 'open' (the ♪): the sound last edited, else the game's first sound, else none yet. 'none': no sound open.
   const shownId = target === 'open' ? ((sounds.find((a) => a.id === lastSound) ?? sounds[0])?.id ?? null) : target === 'none' ? null : target;
   const asset = shownId ? sounds.find((a) => a.id === shownId) : undefined;
@@ -54,6 +66,19 @@ export function SoundEditor() {
   }, [target, asset === undefined]);
   if (asset) lastSound = asset.id;
   if (!target) return null;
+  const ai = (
+    <button
+      className={`icon-btn spark-btn${asking ? ' active' : ''}`}
+      title={asset ? 'Ask the AI about this sound' : 'Ask the AI for a sound'}
+      aria-label="Ask the AI"
+      aria-pressed={asking}
+      data-testid="sound-ai"
+      data-prompt-opener
+      onClick={() => setAsking(!asking)}
+    >
+      ✦
+    </button>
+  );
   const picker = (
     <select
       className="sound-pick"
@@ -76,10 +101,11 @@ export function SoundEditor() {
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <section className="dialog sound-editor" role="dialog" aria-label="Sound editor" data-testid="sound-editor">
         {!asset ? (
-          <Editor key="none" off pens={pens} picker={picker} name="" sound={NO_SOUND} onChange={() => undefined} onRename={() => null} onDelete={() => undefined} onClose={close} />
+          <Editor key="none" off ai={ai} pens={pens} picker={picker} name="" sound={NO_SOUND} onChange={() => undefined} onRename={() => null} onDelete={() => undefined} onClose={close} />
         ) : isStepSound(asset.synth) ? (
           <Editor
             key={asset.id}
+            ai={ai}
             pens={pens}
             picker={picker}
             name={asset.name}
@@ -97,7 +123,9 @@ export function SoundEditor() {
         ) : (
           <>
             <header className="bg-head">
-              <span className="sound-title">Sound {picker}</span>
+              <span className="sound-title">
+                Sound {picker} {ai}
+              </span>
               <CloseButton onClose={close} />
             </header>
             <p className="muted" data-testid="sound-old">
@@ -105,7 +133,27 @@ export function SoundEditor() {
             </p>
           </>
         )}
+        {asking && <SoundPrompt assetId={asset?.id ?? null} onClose={() => setAsking(false)} />}
       </section>
+    </div>
+  );
+}
+
+/** The sound editor's AI prompt card: about the open sound (or for a new one). × or a click outside closes it. */
+function SoundPrompt({ assetId, onClose }: { assetId: string | null; onClose: () => void }) {
+  const sceneId = useEditor((s) => s.activeSceneId);
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
+  return (
+    <div className="ms-ask-card" ref={ref} data-testid="sound-prompt-card">
+      <PromptBox
+        ctx={{ kind: 'sound', sceneId, assetId }}
+        autoFocus
+        placeholder={assetId ? 'e.g. "lower in pitch", "shorter", "more like a laser"' : 'Describe a sound: "a springy boing", "a coin pickup jingle"'}
+        testId="sound-editor-prompt"
+        onEscape={onClose}
+        onClose={onClose}
+      />
     </div>
   );
 }
@@ -160,9 +208,11 @@ interface EditorProps {
   onClose: () => void;
   /** No sound open: everything greyed out but the menu, + New and close. */
   off?: boolean;
+  /** The ✦ that opens the AI prompt card. */
+  ai: React.ReactNode;
 }
 
-function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, onDelete, onClose, off = false }: EditorProps) {
+function Editor({ ai, pens: [pen, setPen], picker, name, sound, onChange, onRename, onDelete, onClose, off = false }: EditorProps) {
   const [confirming, setConfirming] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const { wave, volume, effect } = pen;
@@ -390,14 +440,14 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
   useEffect(() => {
     const onSpace = (e: KeyboardEvent) => {
       if (e.key !== ' ') return;
-      if ((e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"]')) return;
+      if ((e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"], textarea')) return;
       e.preventDefault();
       e.stopPropagation();
       if (!e.repeat) toggle.current();
     };
     const swallow = (e: KeyboardEvent) => {
       // (A focused button would otherwise click on the key's release.)
-      if (e.key === ' ' && !(e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"]')) e.preventDefault();
+      if (e.key === ' ' && !(e.target as HTMLElement | null)?.closest?.('[data-testid="sound-name"], [role="alertdialog"], textarea')) e.preventDefault();
     };
     window.addEventListener('keydown', onSpace, true);
     window.addEventListener('keyup', swallow, true);
@@ -437,6 +487,7 @@ function Editor({ pens: [pen, setPen], picker, name, sound, onChange, onRename, 
               <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+          {ai}
         </span>
         <CloseButton onClose={onClose} />
       </header>
