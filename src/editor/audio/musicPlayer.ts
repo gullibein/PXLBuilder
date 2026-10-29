@@ -19,6 +19,38 @@ const URGENT = 0.6;
 /** Milliseconds of making audio per moment (the rest of the frame is the game's). */
 const BUDGET_MS = 6;
 
+/** Each audio context's soft limiter (one for all songs). */
+const limiters = new WeakMap<AudioContext, AudioNode>();
+
+/**
+ * Many loud channels at once don't crackle: peaks are rounded off by a fixed curve (quiet and normal levels pass
+ * as they are). A curve, not a compressor: a compressor starts turned down and takes a moment to open up, which
+ * faded in the first note of a song started in the middle of a game (a death tune).
+ */
+export function softLimiter(ac: AudioContext): AudioNode {
+  let node = limiters.get(ac);
+  if (!node) {
+    const shaper = ac.createWaveShaper();
+    shaper.curve = limiterCurve();
+    shaper.connect(ac.destination);
+    limiters.set(ac, (node = shaper));
+  }
+  return node;
+}
+
+/** Straight up to 0.7, then bending smoothly toward 1 (never past it). */
+export function limiterCurve(points = 2049): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(points);
+  const knee = 0.7;
+  for (let i = 0; i < points; i++) {
+    const x = (i / (points - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    const y = a <= knee ? a : knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee));
+    curve[i] = Math.sign(x) * y;
+  }
+  return curve;
+}
+
 export type InstrumentLookup = (id: string | null) => Instrument | null;
 
 /** The project's instruments by id. */
@@ -63,15 +95,7 @@ export function playSong(first: Song, firstInstruments: InstrumentLookup, opts: 
 
   const master = ac.createGain();
   master.gain.value = opts.volume ?? 1;
-  // A gentle limiter: many loud channels at once don't crackle.
-  const limiter = ac.createDynamicsCompressor();
-  limiter.threshold.value = -6;
-  limiter.knee.value = 6;
-  limiter.ratio.value = 8;
-  limiter.attack.value = 0.003;
-  limiter.release.value = 0.15;
-  master.connect(limiter);
-  limiter.connect(ac.destination);
+  master.connect(softLimiter(ac));
 
   const scheduled: { start: number; order: number; seconds: number; step: number; source: AudioBufferSourceNode }[] = [];
   let next = Math.min(Math.max(0, opts.from ?? 0), sequence().length - 1);

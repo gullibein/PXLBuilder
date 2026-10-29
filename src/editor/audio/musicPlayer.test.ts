@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySong, preset, type Song } from '../../core/audio/music';
-import { playSong } from './musicPlayer';
+import { limiterCurve, playSong } from './musicPlayer';
 
 /** A stand-in audio context with a clock the test moves; it records when each pattern's audio was started. */
 function fakeAudio() {
@@ -11,6 +11,7 @@ function fakeAudio() {
     destination: {},
     createGain: node,
     createDynamicsCompressor: node,
+    createWaveShaper: () => ({ ...node(), curve: null }),
     createBuffer: (_ch: number, length: number) => ({ length, getChannelData: () => new Float32Array(length) }),
     createBufferSource() {
       const src = {
@@ -79,5 +80,15 @@ describe('song player', () => {
     // Only what plays from now on was queued, at most one pattern already under way.
     expect(after.filter((x) => x.when < 120).length).toBeLessThanOrEqual(1);
     expect(after.length).toBeLessThan(6);
+  });
+
+  it('the limiter leaves normal levels as they are and rounds peaks off below full scale, the same at every moment', () => {
+    const curve = limiterCurve(2001);
+    const at = (x: number) => curve[Math.round(((x + 1) / 2) * 2000)];
+    expect(at(0.5)).toBeCloseTo(0.5, 2);
+    expect(at(-0.6)).toBeCloseTo(-0.6, 2);
+    expect(at(1)).toBeLessThan(1);
+    expect(at(1)).toBeGreaterThan(0.85);
+    for (let i = 1; i < curve.length; i++) expect(curve[i]).toBeGreaterThanOrEqual(curve[i - 1]);
   });
 });
