@@ -4,6 +4,14 @@
  * actions (bindings change in one place).
  */
 export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire';
+export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire'];
+
+/** What reading the input needs (an InputState, or a view of it that leaves some keys out). */
+export interface InputView {
+  isDown(action: Action): boolean;
+  wasPressed(action: Action): boolean;
+  wasReleased(action: Action): boolean;
+}
 
 export const KEY_BINDINGS: Record<string, Action> = {
   ArrowLeft: 'left',

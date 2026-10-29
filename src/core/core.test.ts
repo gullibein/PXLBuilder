@@ -27,10 +27,10 @@ function withPlayer() {
 
 describe('component registry', () => {
   it('creates defaults and validates props', () => {
-    expect(registry.createDefault('Health')).toEqual({ maxHealth: 3, currentHealth: 3 });
+    expect(registry.createDefault('Health')).toEqual({ maxHealth: 3, currentHealth: 3, respawnDelay: 0 });
     expect(registry.validate('Health', { maxHealth: 2.5 }, { partial: true })[0].message).toMatch(/integer/);
     expect(registry.validate('Health', { bogus: 1 }, { partial: true })[0].message).toBe('unknown field');
-    expect(registry.validate('Health', { maxHealth: 3 })).toHaveLength(1); // currentHealth missing
+    expect(registry.validate('Health', { maxHealth: 3 })).toHaveLength(2); // currentHealth and respawnDelay missing
     expect(registry.validate('Nope', {})[0].message).toMatch(/unknown component/);
   });
 

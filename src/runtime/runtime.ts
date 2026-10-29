@@ -19,7 +19,7 @@ import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
 import { Gameplay, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
-import type { InputState } from './input';
+import { ALL_ACTIONS, type Action, type InputState, type InputView } from './input';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
@@ -77,10 +77,17 @@ export interface RuntimeEntity {
   spawn: Vec2;
   /** How many times it was put back at its start (fell out of the level, or died). */
   respawns: number;
+  /**
+   * Died and waiting to come back (Health.respawnDelay): seconds left (0: alive as usual). Meanwhile its controls
+   * do nothing and it can't hurt, be hurt, stomp or pick things up: its death animation (a script on "died") plays.
+   */
+  dying: number;
+  /** Keys held when it respawned: ignored until they are let go (a key held through a death doesn't walk it off). */
+  heldBlock: Set<Action> | null;
   /** Opened (doors…): it no longer blocks and is drawn faded. */
   open: boolean;
   switch: { activation: 'interact' | 'touch'; once: boolean; on: boolean; used: boolean } | null;
-  health: { current: number; max: number } | null;
+  health: { current: number; max: number; respawnDelay: number } | null;
   receiver: { sources: string[]; invincibility: number; knockback: number } | null;
   /** Pushable: how it moves when pushed (step 0 = slides), who may push it, and when it was last pushed (a push after a pause is a new "pushed" event). */
   pushable: { step: number; pushers: string[]; speed: number; pushedAt: number } | null;
@@ -378,9 +385,11 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     jumpBuffer: 0,
     spawn: { ...r.transform.position },
     respawns: 0,
+    dying: 0,
+    heldBlock: null,
     open: c.Openable?.startsOpen === true,
     switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
-    health: c.Health ? { current: Number(c.Health.currentHealth), max: Number(c.Health.maxHealth) } : null,
+    health: c.Health ? { current: Number(c.Health.currentHealth), max: Number(c.Health.maxHealth), respawnDelay: Math.max(0, Number(c.Health.respawnDelay) || 0) } : null,
     receiver: c.DamageReceiver ? { sources: (c.DamageReceiver.damageSources as string[]) ?? [], invincibility: Number(c.DamageReceiver.invincibilityDuration), knockback: typeof c.DamageReceiver.knockback === 'number' ? c.DamageReceiver.knockback : 160 } : null,
     knock: null,
     pushable: c.Pushable ? { step: Number(c.Pushable.step) || 0, pushers: (c.Pushable.pushers as string[]) ?? ['player'], speed: Number(c.Pushable.speed) || 160, pushedAt: -Infinity } : null,
@@ -444,6 +453,8 @@ export class Runtime {
   readonly drawings = new Map<string, ScreenDrawing>();
   /** Parts of the built-in play display that scripts turned off. */
   readonly builtinHidden = new Set<'hearts' | 'items'>();
+  /** The input of the step being run (what is held when something respawns). */
+  private lastInput: InputState | null = null;
   /** Sounds to play (the play view plays and empties it every frame; the runtime itself makes no sound). */
   readonly soundQueue: { assetId: Id; volume: number; pitch: number }[] = [];
   /** A song a script asked for (null = stop the music); the play view takes it. */
@@ -534,8 +545,10 @@ export class Runtime {
 
   step(dt: number, input: InputState): void {
     this.time += dt;
+    this.lastInput = input;
     // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
     if (this.completed !== null) return;
+
     // Turning (scripts' rotate over time, and spin).
     for (const e of this.entities) {
       const before = e.angle;
@@ -610,7 +623,7 @@ export class Runtime {
           e.knock = null;
         }
       }
-      if (e.controller) this.control(e, input, dt);
+      if (e.controller && !e.dying) this.control(e, this.inputFor(e, input), dt);
       else if ((e.climbing || e.climbDir !== 0) && !this.floats(e)) this.climbAlong(e, dt);
       if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
         e.vx += this.gravity.x * e.gravityScale * dt;
@@ -650,6 +663,13 @@ export class Runtime {
     }
     this.behaviors.after(dt);
     this.gameplay.update(dt, input);
+    // Characters that died wait out their Health.respawnDelay (their death animation), then come back: counted
+    // after this step's events were handled, so a "died" handler always runs before the respawn, never after it.
+    for (const e of this.entities) {
+      if (e.dying <= 0) continue;
+      e.dying -= dt;
+      if (e.dying <= 0) this.respawn(e, 'died');
+    }
   }
 
   /** Its collision box after its size, scale or rotation changed. */
@@ -737,8 +757,20 @@ export class Runtime {
     return e.controller?.movement === 'topdown' || e.gravityScale === 0 || (this.gravity.x === 0 && this.gravity.y === 0);
   }
 
+  /** The input as this entity hears it: keys held since it respawned count as up until they are let go. */
+  inputFor(e: RuntimeEntity, input: InputView): InputView {
+    const block = e.heldBlock;
+    if (!block) return input;
+    for (const a of [...block]) if (!input.isDown(a)) block.delete(a);
+    if (!block.size) {
+      e.heldBlock = null;
+      return input;
+    }
+    return { isDown: (a) => !block.has(a) && input.isDown(a), wasPressed: (a) => !block.has(a) && input.wasPressed(a), wasReleased: (a) => input.wasReleased(a) };
+  }
+
   /** Player-style movement for entities with a CharacterController. */
-  private control(e: RuntimeEntity, input: InputState, dt: number): void {
+  private control(e: RuntimeEntity, input: InputView, dt: number): void {
     const c = e.controller!;
     if (c.movement === 'topdown') return this.walkTopDown(e, input, dt);
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
@@ -814,7 +846,7 @@ export class Runtime {
    * the same speed (diagonals aren't faster), speeding up and slowing down by
    * its acceleration. Walls stop it; nothing pulls it down.
    */
-  private walkTopDown(e: RuntimeEntity, input: InputState, dt: number): void {
+  private walkTopDown(e: RuntimeEntity, input: InputView, dt: number): void {
     const c = e.controller!;
     const dx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
     const dy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
@@ -869,7 +901,7 @@ export class Runtime {
   }
 
   /** While hanging: Up or Jump climbs onto the ledge, Down or pressing away lets go. Returns true while still hanging. */
-  private hang(e: RuntimeEntity, input: InputState, dir: number): boolean {
+  private hang(e: RuntimeEntity, input: InputView, dir: number): boolean {
     const h = e.hanging!;
     const box = boxOf(e)!;
     e.vx = 0;
@@ -1139,6 +1171,17 @@ export class Runtime {
 
   /** Puts an entity back at its start with full health (after falling out of the level or dying). */
   respawn(e: RuntimeEntity, reason: 'fell' | 'died' | 'rule' | 'script' = 'rule'): void {
+    e.dying = 0;
+    // Keys held now don't move it until they are let go: it comes back standing still.
+    const held = this.lastInput ? ALL_ACTIONS.filter((a) => this.lastInput!.isDown(a)) : [];
+    e.heldBlock = held.length ? new Set(held) : null;
+    e.hanging = null;
+    e.coyote = 0;
+    e.jumpBuffer = 0;
+    // What scripts did to how it looks, and the states they put it in (dying…), start over; their variables stay.
+    e.alpha = null;
+    e.hurtAt = -Infinity;
+    this.scripts.resetForRespawn(e);
     e.x = e.spawn.x;
     e.y = e.spawn.y;
     e.vx = 0;

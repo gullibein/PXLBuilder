@@ -197,7 +197,7 @@ export class Gameplay {
   /** Continuous contact effects: stomping first (so a stomp is never also a hit), then picking up and getting hurt. */
   private collectAndHurt(): void {
     for (const e of this.rt.entities) {
-      if (!e.alive || e.body !== 'dynamic') continue;
+      if (!e.alive || e.body !== 'dynamic' || e.dying > 0) continue;
       for (const id of e.touching) {
         const o = this.rt.byId(id);
         if (o?.alive && o.stompable && this.landedOn(e, o)) this.stomp(e, o);
@@ -210,7 +210,7 @@ export class Gameplay {
         if (!o?.alive || !e.alive) continue;
         // Shots hit in the behavior system (once, then they're gone).
         if (o.projectile || e.projectile) continue;
-        if (o.collectible && this.canCollect(e, o)) this.collect(e, o);
+        if (o.collectible && e.dying <= 0 && this.canCollect(e, o)) this.collect(e, o);
         else {
           this.tryHurt(o, e);
           this.tryHurt(e, o);
@@ -266,7 +266,7 @@ export class Gameplay {
 
   /** `attacker` hurts `victim` if the victim accepts its damage (by tag) or a "damages" relationship says so. */
   tryHurt(attacker: RuntimeEntity, victim: RuntimeEntity): boolean {
-    if (!victim.health || victim.invincible > 0 || victim.stompGrace > 0 || !attacker.alive) return false;
+    if (!victim.health || victim.invincible > 0 || victim.stompGrace > 0 || !attacker.alive || victim.dying > 0 || attacker.dying > 0) return false;
     if (attacker.projectile?.owner === victim.id) return false;
     let amount = 0;
     const rel = this.relationships('damages').find((r) => refMatches(r.source, attacker) && refMatches(r.target, victim) && this.check(r.conditions, { subject: victim, other: attacker }));
@@ -278,7 +278,7 @@ export class Gameplay {
   }
 
   hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
-    if (!victim.health || !victim.alive) return;
+    if (!victim.health || !victim.alive || victim.dying > 0) return;
     victim.health.current = Math.max(0, victim.health.current - amount);
     victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
@@ -303,8 +303,17 @@ export class Gameplay {
     this.emit('damaged', victim, source, { amount, health: victim.health.current });
     if (victim.health.current <= 0) {
       this.emit('died', victim, source);
-      // Characters come back at their start; anything else is gone.
-      if (victim.controller) this.rt.respawn(victim, 'died');
+      // Characters come back at their start (after their Health.respawnDelay: the death animation plays meanwhile,
+      // where it died, without controls); anything else is gone.
+      // (Even with no delay it comes back on the next step, after its "died" handlers ran: they never run on the
+      // character that already came back.)
+      if (victim.controller) {
+        victim.dying = Math.max(victim.health.respawnDelay, 1e-6);
+        victim.knock = null;
+        victim.vx = 0;
+        victim.climbing = false;
+        victim.hanging = null;
+      }
       else {
         victim.alive = false;
         this.rt.markSolidsDirty();

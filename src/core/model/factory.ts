@@ -452,7 +452,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
         CharacterController: c('CharacterController'),
         CameraTarget: c('CameraTarget'),
-        Health: c('Health', { maxHealth: 3, currentHealth: 3 }),
+        Health: c('Health', { maxHealth: 3, currentHealth: 3, respawnDelay: 1 }),
         DamageReceiver: c('DamageReceiver'),
         Inventory: c('Inventory'),
       },

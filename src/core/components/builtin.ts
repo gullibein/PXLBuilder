@@ -105,11 +105,12 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Health',
     label: 'Health',
-    description: 'Hit points. During play, damage lowers currentHealth; at 0 the entity dies (a player-controlled one respawns at its start with full health, anything else is removed).',
+    description: 'Hit points. During play, damage lowers currentHealth; at 0 the entity dies (a player-controlled one respawns at its start with full health after respawnDelay seconds, anything else is removed).',
     category: 'Gameplay',
     fields: {
       maxHealth: { kind: 'number', default: 3, min: 1, step: 1, integer: true },
       currentHealth: { kind: 'number', default: 3, min: 0, step: 1, integer: true },
+      respawnDelay: { kind: 'number', default: 0, min: 0, step: 0.1, description: 'A player-controlled character that dies stays where it died this many seconds before it respawns (its death animation plays meanwhile: its controls do nothing and it can\'t be hurt or pick things up). 0 = back at its start at once' },
     },
   },
   {

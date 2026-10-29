@@ -16,11 +16,15 @@ import { parseExpr, type Expr } from '../core/script/expr';
 import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
 import type { GameEvent } from './gameplay';
-import type { InputState } from './input';
+import type { InputState, InputView } from './input';
+
 import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
+
+/** No keys held (a dying character's scripts hear none). */
+const NO_KEYS: InputView = { isDown: () => false, wasPressed: () => false, wasReleased: () => false };
 
 /** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
 const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
@@ -78,7 +82,7 @@ export class ScriptSystem {
   private readonly parsed = new Map<string, Expr>();
   private readonly valid = new WeakMap<BehaviorScript, boolean>();
   private readonly reported = new Set<string>();
-  private input: InputState | null = null;
+  private input: InputView | null = null;
   private budget = 0;
   private stepBudget = 0;
   private generation = 0;
@@ -146,6 +150,9 @@ export class ScriptSystem {
     const gen = this.generation;
     for (const e of this.rt.entities.slice()) {
       if (!e.alive || !e.scripts.length) continue;
+      // Keys held through a respawn don't count for it until let go; nor do any while it is dying.
+      const keys: InputView = e.dying > 0 ? NO_KEYS : this.rt.inputFor(e, input);
+      this.input = keys;
       for (const inst of e.scripts) {
         if (!this.usable(e, inst)) continue;
         if (!inst.started) {
@@ -167,12 +174,26 @@ export class ScriptSystem {
               this.run(e, inst, h, null);
             }
           } else if (w.on === 'key') {
-            const hit = w.edge === 'pressed' ? input.wasPressed(w.key) : w.edge === 'held' ? input.isDown(w.key) : input.wasReleased(w.key);
+            const hit = w.edge === 'pressed' ? keys.wasPressed(w.key) : w.edge === 'held' ? keys.isDown(w.key) : keys.wasReleased(w.key);
             if (hit) this.run(e, inst, h, null);
           }
         });
         if (gen !== this.generation) return;
       }
+    }
+    // (Events handled later this step hear the keys as they are.)
+    this.input = input;
+  }
+
+  /**
+   * It respawned: its scripts' states start over (a "dying" state must not carry on, or start again, at the start
+   * point) and their "every" timers too; variables (scores, lives) stay.
+   */
+  resetForRespawn(e: RuntimeEntity): void {
+    for (const inst of e.scripts) {
+      if (inst.script.states.length) inst.state = inst.script.states[0];
+      inst.stateTime = 0;
+      inst.timers = inst.timers.map(() => 0);
     }
   }
 

@@ -1346,6 +1346,93 @@ describe('enemies on ladders', () => {
   });
 });
 
+describe('dying and respawning', () => {
+  /** The starter player (Health.respawnDelay 1) with a death script: a small hop and a "dying" state. */
+  function dyingLevel() {
+    return level((b) => {
+      setScript(b.d, { target: 'definition', id: b.def('Player') }, {
+        name: 'Death',
+        states: ['alive', 'dying'],
+        handlers: [{ when: { on: 'event', event: 'died', with: null }, do: [{ do: 'state', name: 'dying' }, { do: 'velocity', x: null, y: '-250', on: null }] }],
+      });
+    });
+  }
+  const stateOf = (rt: Runtime) => rt.find('Player')!.scripts[0].state;
+
+  it('a character with a respawn delay stays where it died while its death animation plays, then comes back as it started', () => {
+    const { rt, input, p } = dyingLevel();
+    run(rt, input, 0.2);
+    p.x = 80;
+    rt.gameplay.hurt(p, 3, null);
+    run(rt, input, 0.1);
+    // The death script ran where it died (not after coming back), and it hasn't respawned yet.
+    expect(stateOf(rt)).toBe('dying');
+    expect(p.respawns).toBe(0);
+    expect(p.x).toBeCloseTo(80, 0);
+    expect(p.vy).toBeLessThan(0); // the hop
+    // No controls meanwhile, and nothing hurts it again.
+    input.press('left');
+    run(rt, input, 0.3);
+    expect(p.x).toBeCloseTo(80, 0);
+    rt.gameplay.hurt(p, 1, null);
+    expect(events(rt, 'damaged')).toHaveLength(1);
+    input.release('left');
+    run(rt, input, 0.7);
+    // Back at its start, full health, its scripts' state back to the first: the death doesn't play again.
+    expect(p.respawns).toBe(1);
+    expect(p.x).toBeCloseTo(0, 0);
+    expect(p.health!.current).toBe(3);
+    expect(stateOf(rt)).toBe('alive');
+    expect(events(rt, 'died')).toHaveLength(1);
+    const order = rt.eventLog.map((e) => e.type).filter((t) => t === 'died' || t === 'respawned');
+    expect(order).toEqual(['died', 'respawned']);
+  });
+
+  it('a key held through a respawn does nothing until it is let go; pressed again, it works', () => {
+    const { rt, input, p } = dyingLevel();
+    run(rt, input, 0.2);
+    input.press('right');
+    rt.gameplay.hurt(p, 3, null);
+    run(rt, input, 1.5);
+    expect(p.respawns).toBe(1);
+    // Still holding right: it stands still at its start.
+    expect(p.x).toBeCloseTo(0, 0);
+    expect(Math.abs(p.vx)).toBeLessThan(1);
+    input.release('right');
+    run(rt, input, 0.1);
+    input.press('right');
+    run(rt, input, 0.4);
+    expect(p.x).toBeGreaterThan(20);
+    input.release('right');
+  });
+
+  it('without a respawn delay it comes back at once, after its death script ran (which then does not carry on)', () => {
+    const { rt, input, p } = level((b) => {
+      m.setDefinitionComponentField(b.d, b.def('Player'), 'Health', 'respawnDelay', 0, registry);
+      setScript(b.d, { target: 'definition', id: b.def('Player') }, {
+        name: 'Death',
+        states: ['alive', 'dying'],
+        handlers: [{ when: { on: 'event', event: 'died', with: null }, do: [{ do: 'state', name: 'dying' }] }],
+      });
+    });
+    run(rt, input, 0.2);
+    rt.gameplay.hurt(p, 3, null);
+    run(rt, input, 0.05);
+    expect(p.respawns).toBe(1);
+    expect(p.scripts[0].state).toBe('alive');
+  });
+
+  it('the same after falling out of the level (no delay there)', () => {
+    const { rt, input, p } = level();
+    run(rt, input, 0.2);
+    input.press('left');
+    rt.respawn(p, 'fell');
+    run(rt, input, 0.5);
+    expect(p.x).toBeCloseTo(0, 0);
+    input.release('left');
+  });
+});
+
 describe('no sideways teleports', () => {
   it('an enemy sunk a little into the floor walks on from where it is (it used to be thrown to the end of the row)', () => {
     // 32px tall at y=17: its bottom is 1px inside the ground row (top at 32).
