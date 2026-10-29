@@ -8,7 +8,7 @@ import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from 
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
-import { chatHistory } from './aiLog';
+import { chatHistory, unusableReply } from './aiLog';
 import type { TraceFn } from '../../core/ai/trace';
 import { getAISettings } from './aiSettings';
 import { GeminiProvider } from './geminiProvider';
@@ -175,6 +175,21 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     if (response.kind === 'need_code') {
       // It asked for code that isn't there (or kept asking): say so rather than leave the request hanging.
       response = { ...response, kind: 'answer', operations: [], message: response.message || "The AI couldn't find the code it needed. Try selecting the object it's about and asking there." };
+    }
+    // An "answer" that only repeats the request (or is empty, or markup) is not one: asked once more, saying so.
+    const echoed = (r: AIResponse) => !r.operations.length && unusableReply(request, r.message);
+    if (echoed(response)) {
+      trace?.('retry', 'The answer only repeated the request (or was empty): asked once more');
+      state.logMessage('info', 'The AI only repeated the request instead of answering; asking it again.');
+      response = await provider.respond(
+        {
+          ...body,
+          request: `${request}\n\n[Your previous answer only repeated this request (or said nothing), so the user got no answer. Answer it now: make the changes it asks for (operations), or, if the game already does what it asks (check the context: components, scripts, what the engine does), say so in your own words and what makes it so.]`,
+        },
+        signal,
+        trace,
+      );
+      if (echoed(response)) response = { ...response, kind: 'answer', operations: [], changes: [], message: "The AI didn't answer: it only repeated your request, twice, and nothing was changed. Try asking in other words, or start a new chat here (its earlier answers may be confusing it)." };
     }
     // A game change that wouldn't apply (a script with a typo, a wrong id), or a level the player can't get through,
     // goes back to the AI once, with the exact problem.

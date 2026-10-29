@@ -171,8 +171,25 @@ export function chatHistory(key: string): { request: string; reply: string }[] {
     reply:
       e.status === 'error'
         ? `[The app: this request failed and nothing was changed: ${e.message}]`
-        : [e.message, ...e.changes.map((c) => `- ${c}`), ...(e.undone ? ['[The app: the user undid this change.]'] : [])].join('\n'),
+        : unusableReply(e.request, e.message) && !e.changes.length
+          ? '[The app: that answer was unusable (it only repeated the request, or was not a reply at all) and nothing was changed.]'
+          : [e.message, ...e.changes.map((c) => `- ${c}`), ...(e.undone ? ['[The app: the user undid this change.]'] : [])].join('\n'),
   }));
+}
+
+/** The words of a text, for comparing (case, punctuation and spacing aside). */
+const words = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * A reply that isn't one: it only repeats the request (the AI echoed it), or it is markup such as empty tool-call
+ * tags. Kept out of what the AI is reminded of, and asked for again when it happens.
+ */
+export function unusableReply(request: string, message: string): boolean {
+  const m = words(message);
+  const r = words(request);
+  if (!m) return true;
+  if (/<\/?[a-z_][\w:.-]*(\s[^<>]*)?\/?>/i.test(message) && m.split(' ').length < 6) return true;
+  return r.length >= 12 && (m === r || (m.includes(r) && m.length < r.length + 40));
 }
 
 /** "New chat": the conversation about this starts again (the AI History log keeps the old one). */

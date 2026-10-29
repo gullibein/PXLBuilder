@@ -108,6 +108,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`remove ${s.target ? x(s.target) : 'self'}`);
     case 'damage':
       return one(`hurt ${x(s.target)} by ${x(s.amount)}`);
+    case 'kill':
+      return one(`${x(s.target)} dies`);
     case 'heal':
       return one(`heal ${x(s.target)} by ${x(s.amount)}`);
     case 'give_item':

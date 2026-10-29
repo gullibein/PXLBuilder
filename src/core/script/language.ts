@@ -55,6 +55,7 @@ export type Stmt =
   | { do: 'turn_group'; tag: string; x: string; y: string; dir: string }
   | { do: 'remove'; target: string | null }
   | { do: 'damage'; target: string; amount: string }
+  | { do: 'kill'; target: string }
   | { do: 'heal'; target: string; amount: string }
   | { do: 'give_item'; target: string; item: string; count: string }
   | { do: 'take_item'; target: string; item: string; count: string }
@@ -271,6 +272,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   remove: { example: '{"do":"remove","target":null}', doc: 'take it out of play (null = self)' },
   damage: { example: '{"do":"damage","target":"other","amount":"1"}', doc: 'take health (always hurts, with knock back; respects invincibility after a hit)' },
+  kill: { example: '{"do":"kill","target":"self"}', doc: 'it dies now, even while blinking after a hit (its health goes to 0; "died" runs; a player then respawns after its Health.respawnDelay, anything else is removed). Setting Health.currentHealth to 0 is a death too' },
   heal: { example: '{"do":"heal","target":"self","amount":"1"}', doc: 'give health, up to the maximum' },
   give_item: { example: '{"do":"give_item","target":"other","item":"coin","count":"1"}', doc: 'add to its inventory' },
   take_item: { example: '{"do":"take_item","target":"other","item":"key","count":"1"}', doc: 'remove from its inventory' },
@@ -376,6 +378,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('turn_group'), tag: z.string().min(1), x: expr, y: expr, dir: expr.default('1') }),
     z.object({ do: z.literal('remove'), target: nexpr }),
     z.object({ do: z.literal('damage'), target: expr, amount: expr.default('1') }),
+    z.object({ do: z.literal('kill'), target: expr.default('self') }),
     z.object({ do: z.literal('heal'), target: expr, amount: expr.default('1') }),
     z.object({ do: z.literal('give_item'), target: expr, item: z.string().min(1), count: expr.default('1') }),
     z.object({ do: z.literal('take_item'), target: expr, item: z.string().min(1), count: expr.default('1') }),
@@ -521,6 +524,8 @@ export function exprSlots(s: Stmt): string[] {
     case 'damage':
     case 'heal':
       return [s.target, s.amount];
+    case 'kill':
+      return [s.target];
     case 'give_item':
     case 'take_item':
       return [s.target, s.count];

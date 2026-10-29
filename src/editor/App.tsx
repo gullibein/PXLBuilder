@@ -124,6 +124,11 @@ export function App() {
   );
 }
 
+/** Some text on the page is marked (selected with the mouse): Ctrl+C is for it, not for the selected objects. */
+function textSelected(): boolean {
+  return (window.getSelection()?.toString().trim().length ?? 0) > 0;
+}
+
 function useGlobalShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -180,8 +185,9 @@ function useGlobalShortcuts() {
       } else if (mod && key === 'd') {
         e.preventDefault();
         duplicateSelection();
-      } else if (mod && (key === 'c' || key === 'x') && state.selectedEntityIds.length) {
-        // Copy / cut placed objects (Ctrl+V pastes them, also into another level).
+      } else if (mod && (key === 'c' || key === 'x') && state.selectedEntityIds.length && !textSelected()) {
+        // Copy / cut placed objects (Ctrl+V pastes them, also into another level). Text marked with the mouse (an
+        // AI answer, a message) is copied as text instead, as everywhere else.
         e.preventDefault();
         runQuickCommand(null, { kind: key === 'c' ? 'copy' : 'cut' });
       } else if (mod && key === 'v' && hasCopiedObjects()) {

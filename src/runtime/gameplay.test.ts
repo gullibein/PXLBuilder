@@ -1422,6 +1422,34 @@ describe('dying and respawning', () => {
     expect(p.scripts[0].state).toBe('alive');
   });
 
+  it('a script can make it die: kill (even while blinking after a hit), or its health set to 0', () => {
+    const { rt, input, p } = level((b) => {
+      setScript(b.d, { target: 'definition', id: b.def('Player') }, {
+        name: 'Doom',
+        handlers: [
+          { when: { on: 'key', key: 'fire', edge: 'pressed' }, do: [{ do: 'kill', target: 'self' }] },
+          { when: { on: 'key', key: 'interact', edge: 'pressed' }, do: [{ do: 'set_field', component: 'Health', field: 'currentHealth', value: '0', on: null }] },
+        ],
+      });
+    });
+    run(rt, input, 0.2);
+    rt.gameplay.hurt(p, 1, null);
+    expect(p.invincible).toBeGreaterThan(0);
+    input.press('fire');
+    run(rt, input, 0.05);
+    input.release('fire');
+    expect(events(rt, 'died')).toHaveLength(1);
+    run(rt, input, 1.2);
+    expect(p.respawns).toBe(1);
+    input.press('interact');
+    run(rt, input, 0.05);
+    input.release('interact');
+    expect(events(rt, 'died')).toHaveLength(2);
+    run(rt, input, 1.2);
+    expect(p.respawns).toBe(2);
+    expect(p.health!.current).toBe(3);
+  });
+
   it('the same after falling out of the level (no delay there)', () => {
     const { rt, input, p } = level();
     run(rt, input, 0.2);

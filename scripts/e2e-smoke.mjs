@@ -828,6 +828,20 @@ try {
   await ask('Give the enemy a jetpack.');
   await check(async () => (await result.getAttribute('data-status')) === 'message', 'an unsupported request gets a plain explanation');
   await check(async () => (await result.innerText()).includes("can't fly with a jetpack yet"), 'the AI says what is missing instead of faking it');
+  {
+    // Text marked with the mouse in the card is copied by Ctrl+C as text, even with an object selected.
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    const box = await result.boundingBox();
+    await page.mouse.move(box.x + 4, box.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 4, box.y + box.height - 6, { steps: 5 });
+    await page.mouse.up();
+    const marked = await page.evaluate(() => window.getSelection().toString().trim());
+    await page.keyboard.press('Control+c');
+    await check(async () => marked.length > 10 && (await page.evaluate(() => navigator.clipboard.readText())).trim() === marked, 'Ctrl+C copies text marked with the mouse in an AI answer (not the selected object)');
+    await page.evaluate(() => window.getSelection().removeAllRanges());
+  }
 
   step = 'AI writes a behavior script';
   const askedBefore = aiRequests.length;

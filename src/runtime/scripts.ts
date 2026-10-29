@@ -468,6 +468,11 @@ export class ScriptSystem {
         if (t?.health && t.alive && t.invincible <= 0) gp.hurt(t, Math.max(0, n(s.amount)), e);
         break;
       }
+      case 'kill': {
+        const t = ent(s.target);
+        if (t?.alive) gp.die(t, e);
+        break;
+      }
       case 'heal': {
         const t = ent(s.target);
         if (t?.health) t.health.current = Math.min(t.health.max, t.health.current + Math.max(0, n(s.amount)));

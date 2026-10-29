@@ -78,6 +78,7 @@ export class Gameplay {
     this.standOnGoals();
     this.useSwitches(input);
     this.collectAndHurt();
+    this.dieAtZero();
     this.process();
     this.messages = this.messages.filter((m) => m.until > this.rt.time);
   }
@@ -301,24 +302,34 @@ export class Gameplay {
       victim.climbing = false;
     }
     this.emit('damaged', victim, source, { amount, health: victim.health.current });
-    if (victim.health.current <= 0) {
-      this.emit('died', victim, source);
-      // Characters come back at their start (after their Health.respawnDelay: the death animation plays meanwhile,
-      // where it died, without controls); anything else is gone.
-      // (Even with no delay it comes back on the next step, after its "died" handlers ran: they never run on the
-      // character that already came back.)
-      if (victim.controller) {
-        victim.dying = Math.max(victim.health.respawnDelay, 1e-6);
-        victim.knock = null;
-        victim.vx = 0;
-        victim.climbing = false;
-        victim.hanging = null;
-      }
-      else {
-        victim.alive = false;
-        this.rt.markSolidsDirty();
-      }
+    if (victim.health.current <= 0) this.die(victim, source);
+  }
+
+  /**
+   * It dies (its health ran out, however: a hit, a script's kill, or its health set to 0). Characters come back at
+   * their start after their Health.respawnDelay (the death animation plays meanwhile, where it died, without
+   * controls); anything else is gone. (Even with no delay a character comes back on the next step, after its "died"
+   * handlers ran: they never run on the character that already came back.)
+   */
+  die(victim: RuntimeEntity, source: RuntimeEntity | null): void {
+    if (!victim.alive || victim.dying > 0) return;
+    if (victim.health) victim.health.current = 0;
+    this.emit('died', victim, source);
+    if (victim.controller) {
+      victim.dying = Math.max(victim.health?.respawnDelay ?? 0, 1e-6);
+      victim.knock = null;
+      victim.vx = 0;
+      victim.climbing = false;
+      victim.hanging = null;
+    } else {
+      victim.alive = false;
+      this.rt.markSolidsDirty();
     }
+  }
+
+  /** Health set to 0 some other way than a hit (a script's set_field, a rule): a death too. */
+  private dieAtZero(): void {
+    for (const e of this.rt.entities) if (e.alive && e.dying <= 0 && e.health && e.health.current <= 0) this.die(e, null);
   }
 
   /**
