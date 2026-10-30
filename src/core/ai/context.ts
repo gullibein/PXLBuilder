@@ -6,6 +6,8 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { ENGINE_PART_INFO } from '../model/engineParts';
+import type { EnginePart } from '../script/language';
 import { songSeconds, type Instrument } from '../audio/music';
 import { soundLength } from '../audio/sound';
 import { audibleNotes, isStepSound, type StepSound } from '../audio/steps';
@@ -611,6 +613,17 @@ export function codeToSend(project: Project, ctx: AIContext, request: string): I
 export function codeFor(project: Project, ids: string[]): { id: Id; name: string; scripts: BehaviorScript[] }[] {
   const out: { id: Id; name: string; scripts: BehaviorScript[] }[] = [];
   for (const want of ids) {
+    // "engine:<part>" (or "engine:<part>:<object id>"): the ready-made script of a part of the engine's own code,
+    // made for that object when named (only asked for when one is to become a script, so it isn't sent every time).
+    const engine = /^engine:([a-z_]+)(?::(.+))?$/.exec(want.trim());
+    if (engine) {
+      const info = ENGINE_PART_INFO[engine[1] as EnginePart];
+      if (!info || out.some((o) => o.id === want)) continue;
+      const def = engine[2] ? project.definitions.find((x) => x.id === engine[2] || x.name.toLowerCase() === engine[2].toLowerCase()) : undefined;
+      const script = info.script(def ? { name: def.name, components: def.components } : undefined);
+      out.push({ id: want, name: `the ready-made script for ${def ? `the ${def.name}'s ` : ''}${info.label}`, scripts: [{ ...script, id: 'ready-made' }] });
+      continue;
+    }
     const d = project.definitions.find((x) => x.id === want) ?? project.definitions.find((x) => x.name.toLowerCase() === want.trim().toLowerCase());
     if (d && !out.some((o) => o.id === d.id)) out.push({ id: d.id, name: d.name, scripts: d.scripts ?? [] });
   }

@@ -39,7 +39,7 @@ export const aiResponseSchema = z.object({
   message: z.string().describe('One or two short sentences for the user (an explanation of why something happened may take up to four). Plain language, no engine jargon, no ids.'),
   changes: z.array(z.string()).describe('One short line per change, in plain language, e.g. "Player: 3 hearts". Empty when there are no operations.'),
   operations: z.array(operationSchema),
-  needCode: z.array(z.string()).nullable().describe('need_code only: the library ids of the objects whose scripts you need; null otherwise'),
+  needCode: z.array(z.string()).nullable().describe('need_code only: the library ids of the objects whose scripts you need (or "engine:<part>:<object id>" for a ready-made engine-part script); null otherwise'),
   starter: z.enum(['platformer', 'topdown']).nullable().describe('switch_starter only: the starter to build the new game on; null otherwise'),
 });
 
