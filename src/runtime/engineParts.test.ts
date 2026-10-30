@@ -731,3 +731,67 @@ describe('switches and locked doors, done by scripts instead', () => {
     expect(shut.steps.at(-1)!.endsWith('false/false')).toBe(true);
   });
 });
+
+describe('reaching the goal, done by a script instead', () => {
+  /** A platformer (or top-down) level: the Player at x=0 and a Goal at x=160; with `scripted`, the Goal's ready-made script. */
+  function world(scripted: boolean, gameType: 'platformer' | 'topdown', goalAt: Vec2): Runtime {
+    let project = createProject(registry, 'Test', gameType);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const def = (name: string) => d.definitions.find((x) => x.name === name)!;
+      const place = (name: string, pos: Vec2) => {
+        const e = instantiateDefinition(def(name), pos);
+        m.addEntity(d, sceneId, e);
+        return e.id;
+      };
+      if (gameType === 'platformer') for (let x = -320; x <= 320; x += 32) place('Platform', { x, y: 48 });
+      place('Player', { x: 0, y: 16 });
+      const goal = place('Goal', goalAt);
+      if (scripted) applyOperations(d, [{ op: 'use_script_for', target: 'entity', id: goal, part: 'goal', scriptJson: null }] as never, registry);
+    });
+    return new Runtime(project, sceneId, registry);
+  }
+  function trace(rt: Runtime, keys: Record<number, Action[]>, steps: number): { steps: string[]; events: string[] } {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      out.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${rt.completed}`);
+    }
+    expect(rt.scripts.errors).toEqual([]);
+    const events = rt.gameplay.log.filter((e) => !['touch_started', 'touch_ended', 'level_started'].includes(e.type)).map((e) => `${e.time} ${e.type} ${e.subject}>${e.other}`);
+    return { steps: out, events };
+  }
+  const same = (gameType: 'platformer' | 'topdown', goalAt: Vec2, keys: Record<number, Action[]>, steps: number) => {
+    const engine = trace(world(false, gameType, goalAt), keys, steps);
+    const script = trace(world(true, gameType, goalAt), keys, steps);
+    const first = script.steps.findIndex((t, i) => t !== engine.steps[i]);
+    expect(first === -1 ? 'same' : `step ${first}: engine ${engine.steps[first]} script ${script.steps[first]}`).toBe('same');
+    expect(script.events).toEqual(engine.events);
+    return engine;
+  };
+
+  it('walking into it wins the level, won by the player, exactly as the engine does', () => {
+    const t = same('platformer', { x: 160, y: 16 }, { 0: ['right'] }, 200);
+    expect(t.events.some((e) => e.includes('level_completed Player>'))).toBe(true);
+  });
+
+  it('seen from above: brushing its edge does not win, standing on it does, exactly as the engine does', () => {
+    // Walk along just above it (brushing its top edge), then down onto it.
+    const edge = same('topdown', { x: 128, y: 40 }, { 0: ['right'], 100: [], 130: ['down'], 140: [] }, 220);
+    // (It did touch it, its body overlapping the goal's top at y = 30 (12 below its middle), but its middle stayed above.)
+    const lowest = Math.max(...edge.steps.map((t) => Number(t.split(',')[1])));
+    expect(lowest).toBeGreaterThan(18);
+    expect(lowest).toBeLessThan(30);
+    expect(edge.events.some((e) => e.includes('level_completed'))).toBe(false);
+    const won = same('topdown', { x: 128, y: 40 }, { 0: ['right'], 100: [], 130: ['down'], 160: [] }, 260);
+    expect(won.events.some((e) => e.includes('level_completed Player>'))).toBe(true);
+  });
+});

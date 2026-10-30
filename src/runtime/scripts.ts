@@ -720,7 +720,7 @@ export class ScriptSystem {
         this.rt.musicOn = truthy(this.eval(s.enabled, ctx));
         break;
       case 'complete_level':
-        this.rt.completeLevel(e);
+        this.rt.completeLevel(s.by ? ent(s.by) : e);
         break;
       case 'camera_shake':
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
@@ -1061,6 +1061,11 @@ export class ScriptSystem {
       }
       case 'wall_ahead':
         return this.rt.wallAhead(self, Math.sign(n(0)), Math.sign(n(1)));
+      case 'inside': {
+        const who = asEntity(v[0]);
+        const box = this.rt.boxOf(self);
+        return !!who && !!box && Math.abs(who.x - box.x) <= box.hw && Math.abs(who.y - box.y) <= box.hh;
+      }
       case 'ladder_here':
         return this.rt.ladderHere(self) !== null;
       case 'ladder_x':

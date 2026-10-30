@@ -112,7 +112,7 @@ export type Stmt =
   | { do: 'resume' }
   | { do: 'set_sound'; enabled: string }
   | { do: 'set_music'; enabled: string }
-  | { do: 'complete_level' }
+  | { do: 'complete_level'; by?: string | null }
   | { do: 'camera_shake'; strength: string; seconds: string }
   | { do: 'camera_flash'; color: string; seconds: string }
   | { do: 'camera_zoom'; zoom: string; seconds: string }
@@ -273,6 +273,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   ladder_x: { args: '', min: 0, max: 0, doc: 'the middle x of the ladder it is at (0 when there is none)' },
   ladder_top: { args: '', min: 0, max: 0, doc: 'the y of the top of the ladder it is at (0 when there is none): compare self.feet with it' },
   floor_below_ladder: { args: '', min: 0, max: 0, doc: 'it stands on the floor (not on a ladder top): Down there does not climb' },
+  inside: { args: 'e', min: 1, max: 1, doc: 'the middle of e is inside self\'s body (standing on it, seen from above: not just brushing its edge)' },
   on_ladder: { args: 'e?', min: 0, max: 1, doc: 'self (or e) is at a ladder it can climb (at least half of it in the ladder\'s width), or climbing one' },
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
   field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
@@ -392,7 +393,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   resume: { example: '{"do":"resume"}', doc: 'the game goes on after pause' },
   set_sound: { example: '{"do":"set_sound","enabled":"not sound_on"}', doc: 'sound effects on (true) or off (false) for the whole game, every level; "sound_on" tells which' },
   set_music: { example: '{"do":"set_music","enabled":"not music_on"}', doc: 'music on (true) or off (false) for the whole game (it goes on silently, so it comes back where it is); "music_on" tells which' },
-  complete_level: { example: '{"do":"complete_level"}', doc: 'the level is won: play goes on to the next level' },
+  complete_level: { example: '{"do":"complete_level","by":"other"}', doc: 'the level is won: play goes on to the next level; "by": who won it ("level_completed" happens with it as the subject; null: this entity)' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
   camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
   camera_zoom: { example: '{"do":"camera_zoom","zoom":"1.5","seconds":"0.5"}', doc: 'zoom to a value (0.25–4) over seconds (0 = at once)' },
@@ -528,7 +529,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('resume') }),
     z.object({ do: z.literal('set_sound'), enabled: expr }),
     z.object({ do: z.literal('set_music'), enabled: expr }),
-    z.object({ do: z.literal('complete_level') }),
+    z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
     z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
     z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
@@ -562,7 +563,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'goal', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -616,8 +617,9 @@ export function exprSlots(s: Stmt): string[] {
     case 'restart_game':
     case 'pause':
     case 'resume':
-    case 'complete_level':
       return [];
+    case 'complete_level':
+      return s.by ? [s.by] : [];
     case 'set_sound':
     case 'set_music':
       return [s.enabled];

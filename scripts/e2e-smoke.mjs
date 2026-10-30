@@ -383,6 +383,10 @@ function stubModel(body) {
     const key = body.context.library.find((d) => d.name === 'Key').id;
     return { kind: 'confirm', message: "Being picked up is built into the engine. To make keys need E, I'd turn the Key's picking up into a script. Do it?", changes: ['Key: picking up is a script (the Picked up script)'], operations: [{ op: 'use_script_for', target: 'definition', id: key, part: 'picking_up', scriptJson: null }] };
   }
+  if (req.includes('goal wins only when the player presses up')) {
+    const goal = body.context.library.find((d) => d.name === 'Goal').id;
+    return { kind: 'confirm', message: "Reaching the goal is built into the engine. To make it need Up I'd turn the Goal's reaching into a script. Do it?", changes: ['Goal: reaching it is a script (the Goal script)'], operations: [{ op: 'use_script_for', target: 'definition', id: goal, part: 'goal', scriptJson: null }] };
+  }
   if (req.includes('flips back after 3 seconds')) {
     const sw = body.context.library.find((d) => d.name === 'Switch').id;
     return { kind: 'apply', message: 'The switch flips back by itself after 3 seconds.', changes: ['Switch: being used is a script (the Switch script)'], operations: [{ op: 'use_script_for', target: 'definition', id: sw, part: 'switching', scriptJson: null }] };
@@ -1972,6 +1976,13 @@ try {
   await check(async () => (await result.getAttribute('data-status')) === 'confirm', "turning the engine's switch use into a script is asked first (also when the AI didn't ask)");
   await result.getByTestId('result-confirm-yes').click();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: the Switch gets its Switch script)');
+  await prompts.getByTestId('prompt-close').click();
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('The goal wins only when the player presses Up at it.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', "turning the engine's goal into a script is asked first");
+  await result.getByTestId('result-confirm-yes').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: the Goal gets its Goal script)');
   await prompts.getByTestId('prompt-close').click();
   await page.getByTestId('undo').click();
   await clickWorld(-256, 0);

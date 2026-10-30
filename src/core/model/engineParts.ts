@@ -760,7 +760,34 @@ function lockScript(owner?: PartOwner): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Being reached as the engine does it (Goal): a player walking into it wins the level; seen from above (or for a
+ * player with no gravity) the player has to stand on it, its middle inside the goal, not just brush its edge.
+ * The player who reached it wins ("level_completed", with it as the subject). (A goal never blocks the way.)
+ */
+function goalScript(): BehaviorScript {
+  const player = "has_component(other, 'CharacterController')";
+  const above = "(field(other, 'CharacterController.movement') == 'topdown' or other.floats)";
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Goal',
+    description: 'Reaching it wins the level: a player walking into it, or (seen from above) standing on it.',
+    takesOver: 'goal',
+    vars: [],
+    handlers: [
+      { when: { on: 'event', event: 'touch_started', with: null }, if: `${player} and not ${above}`, do: [{ do: 'complete_level', by: 'other' }] },
+      { when: { on: 'contact' }, if: `${player} and ${above} and inside(other)`, do: [{ do: 'complete_level', by: 'other' }] },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  goal: {
+    label: 'reaching the goal',
+    covers: 'winning the level when a player reaches it: walking into it, or seen from above standing on it (its middle inside the goal); the player who reached it is who won',
+    component: 'Goal',
+    script: goalScript,
+  },
   switching: {
     label: 'switching',
     covers: 'a switch being used: a player pressing Interact (E) while touching it, or walking into it (Switch.activation), flipping it on/off (Switch.once: only the first time), and "switch_activated" (what it "controls" still reacts through its connections)',

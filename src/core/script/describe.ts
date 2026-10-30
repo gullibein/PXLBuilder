@@ -173,7 +173,7 @@ function stmtLines(s: Stmt, indent: string): string[] {
     case 'set_music':
       return one(`music on: ${x(s.enabled)}`);
     case 'complete_level':
-      return one('complete the level');
+      return one(`complete the level${s.by ? ` (won by ${x(s.by)})` : ''}`);
     case 'camera_shake':
       return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
     case 'camera_flash':

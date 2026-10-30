@@ -104,7 +104,7 @@ export class Gameplay {
     for (const p of this.rt.entities) {
       if (!p.alive || !p.controller) continue;
       for (const g of this.rt.entities) {
-        if (!g.alive || !g.base.components.Goal || !this.standsOn(p, g)) continue;
+        if (!g.alive || !g.base.components.Goal || ownPart(g, 'goal') || !this.standsOn(p, g)) continue;
         const box = this.rt.boxOf(g);
         if (box && Math.abs(p.x - box.x) <= box.hw && Math.abs(p.y - box.y) <= box.hh) this.rt.completeLevel(p);
       }
@@ -458,7 +458,8 @@ export class Gameplay {
       // (A switch with a script doing its switching (its "Switch" script) is used by that instead; so is a lock.)
       if (touched.switch?.activation === 'touch' && toucher.controller && !ownPart(touched, 'switching')) this.activate(touched, toucher);
       // A Goal wins the level for the player who reaches it (seen from above: who stands on it, see standOnGoals).
-      if (touched.base.components.Goal && toucher.controller && !this.standsOn(toucher, touched)) this.rt.completeLevel(toucher);
+      // (A goal whose "Goal" script took reaching it over is won by that script.)
+      if (touched.base.components.Goal && toucher.controller && !ownPart(touched, 'goal') && !this.standsOn(toucher, touched)) this.rt.completeLevel(toucher);
       // "Door requires Key": opens for whoever touches it carrying the item.
       for (const r of this.relationships('requires')) {
         if (!refMatches(r.source, touched) || touched.open || ownPart(touched, 'unlocking')) continue;
