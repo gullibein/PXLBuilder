@@ -28,7 +28,7 @@ export function ObjectCard() {
     s.setInspectorOpen(true);
   };
   return (
-    <aside className="object-card" data-testid="object-card" data-about={entity ? 'entity' : 'object'} aria-label={`${def.name}`}>
+    <aside className="object-card" data-testid="object-card" data-movable="object-card" data-about={entity ? 'entity' : 'object'} aria-label={`${def.name}`}>
       <button className="icon-btn object-card-close" aria-label="Close" title="Close" data-testid="object-card-close" onClick={() => setDismissed(key)}>
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

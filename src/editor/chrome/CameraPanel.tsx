@@ -43,7 +43,7 @@ export function CameraPanel() {
   const resolutions = [...new Set([...RESOLUTIONS, ...(gamePixels ? [gamePixels] : [])])].sort((a, b) => a - b);
 
   return (
-    <section className="background-panel camera-panel" data-testid="camera-panel" aria-label="Camera">
+    <section className="background-panel camera-panel" data-testid="camera-panel" data-movable="camera-panel" aria-label="Camera">
       <header className="bg-head">
         <span>
           <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">

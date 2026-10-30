@@ -57,7 +57,7 @@ export function ObjectPanel() {
   const set = (c: PanelControl, value: number) =>
     useEditor.getState().edit(`Change ${c.label}`, (p) => setPanelValue(p, def.id, c, round(value, c.step), componentRegistry), { coalesceKey: `panel.${def.id}.${c.label}` });
   return (
-    <div ref={ref} className={`object-panel${asking ? ' asking' : ''}`} data-testid="object-panel" data-prompt-keep style={{ visibility: 'hidden' }} onPointerDown={(e) => e.stopPropagation()}>
+    <div ref={ref} className={`object-panel${asking ? ' asking' : ''}`} data-testid="object-panel" data-movable={`object-panel:${def.id}`} data-prompt-keep style={{ visibility: 'hidden' }} onPointerDown={(e) => e.stopPropagation()}>
       <header className="object-panel-head">
         <span data-testid="object-panel-title">{panel?.title ?? `${def.name}: new panel`}</span>
         <button

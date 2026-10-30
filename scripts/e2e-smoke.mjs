@@ -1999,6 +1999,46 @@ try {
     await page.keyboard.press('ArrowUp');
     await check(async () => (await panel.getByTestId('panel-control-Run speed').getByTestId('panel-value').innerText()) === '210', 'turning a knob changes the run speed (200 -> 210)');
     await page.screenshot({ path: `${OUT}/object-panel.png` });
+    // Every panel moves: dragged by its title bar, it stays where it was put (also after it closes and opens again).
+    const drag = async (handle, dx, dy) => {
+      const hb = await handle.boundingBox();
+      const from = { x: hb.x + 12, y: hb.y + hb.height / 2 };
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 4 });
+      await page.mouse.move(from.x + dx, from.y + dy, { steps: 4 });
+      await page.mouse.up();
+    };
+    const before = await panel.boundingBox();
+    await drag(panel.getByTestId('object-panel-title'), 120, 60);
+    const moved = await panel.boundingBox();
+    await check(async () => Math.abs(moved.x - before.x - 120) < 2 && Math.abs(moved.y - before.y - 60) < 2, `dragging the panel by its title moves it (${Math.round(moved.x - before.x)}, ${Math.round(moved.y - before.y)})`);
+    await clickWorld(200, 200, { single: true });
+    await clickWorld(-256, 0, { single: true });
+    await check(async () => {
+      const again = await panel.boundingBox();
+      return Math.abs(again.x - moved.x) < 2 && Math.abs(again.y - moved.y) < 2;
+    }, 'selected again, the panel opens where it was moved to');
+    await panel.getByTestId('object-panel-title').dblclick();
+    await check(async () => Math.abs((await panel.boundingBox()).x - before.x) < 2, 'double-clicking its title puts it back');
+    const tools = page.getByTestId('tool-panel');
+    const toolsAt = await tools.boundingBox();
+    await drag(page.getByTestId('tool-panel-grip'), 300, -40);
+    await check(async () => Math.abs((await tools.boundingBox()).x - toolsAt.x - 300) < 2, 'the tool panel moves by its grip');
+    await page.getByTestId('tool-select').click();
+    await check(async () => (await page.getByTestId('tool-select').getAttribute('aria-pressed')) === 'true', '(its buttons still work where it is now)');
+    await page.getByTestId('main-menu').click();
+    await page.getByTestId('menu-reset-layout').click();
+    await check(async () => Math.abs((await tools.boundingBox()).x - toolsAt.x) < 2, 'Reset editor layout puts moved panels back');
+    await page.getByTestId('main-menu').click();
+    await page.getByTestId('menu-style').click();
+    const dialog = page.getByTestId('style-picker');
+    const dialogAt = await dialog.boundingBox();
+    await drag(dialog.locator('header'), -150, 40);
+    await check(async () => Math.abs((await dialog.boundingBox()).x - dialogAt.x + 150) < 2 && (await dialog.isVisible()), 'dialogs move by their title bar too (and stay open)');
+    await dialog.locator('header').dblclick();
+    await page.keyboard.press('Escape');
+    await check(async () => (await dialog.count()) === 0, '(closed)');
     await page.mouse.click(at.x, at.y, { button: 'right' });
     await check(async () => (await page.getByTestId('menu-panel').innerText()).includes('Edit panel'), 'with a panel, the menu says "Edit panel…"');
     await page.getByTestId('menu-panel-remove').click();

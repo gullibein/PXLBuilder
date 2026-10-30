@@ -390,7 +390,8 @@ function ObjectsPanel() {
     return () => cancelAnimationFrame(frame);
   }, [libraryAsk, category]);
   return (
-    <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" aria-label="Objects">
+    <section className={`dock-panel objects${groupsShown ? '' : ' groups-hidden'}`} data-testid="library-panel" data-movable="library-panel" aria-label="Objects">
+      <div className="move-grip wide" data-move-handle title="Drag to move" />
       <PanelClose />
       <button className="groups-toggle" data-testid="groups-toggle" aria-expanded={groupsShown} title={groupsShown ? 'Hide the groups' : 'Show the groups'} onClick={toggleGroups}>
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -429,7 +430,8 @@ function SoundsPanel() {
   const menuSound = menu ? sounds.find((a) => a.id === menu.id) : undefined;
   const sceneId = useEditor((s) => s.activeSceneId);
   return (
-    <section className="dock-panel sounds" data-testid="sounds-panel" aria-label="Sounds">
+    <section className="dock-panel sounds" data-testid="sounds-panel" data-movable="sounds-panel" aria-label="Sounds">
+      <div className="move-grip wide" data-move-handle title="Drag to move" />
       <PanelClose />
       <div className="sound-list" data-testid="sound-list">
         {sounds.map((a) => (
@@ -496,7 +498,8 @@ function CreatePanel() {
   const scene = useEditor(getActiveScene);
   const definitions = useEditor((s) => s.project.definitions);
   return (
-    <section className="dock-panel create" data-testid="create-panel" aria-label="Create an object">
+    <section className="dock-panel create" data-testid="create-panel" data-movable="create-panel" aria-label="Create an object">
+      <div className="move-grip wide" data-move-handle title="Drag to move" />
       <PromptBox
         ctx={{ kind: 'create', sceneId: scene.id }}
         autoFocus

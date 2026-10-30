@@ -43,7 +43,7 @@ export function Tray() {
     );
   }
   return (
-    <section className={`tray${big ? ' big' : ''}`} data-testid="tray" aria-label="History and console">
+    <section className={`tray${big ? ' big' : ''}`} data-testid="tray" data-movable="tray" aria-label="History and console">
       <header className="tray-head">
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tray.tab === 'history'} className={tray.tab === 'history' ? 'on' : ''} onClick={() => setTray({ tab: 'history' })}>

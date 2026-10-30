@@ -53,7 +53,7 @@ export function BackgroundPanel() {
   };
 
   return (
-    <section className="background-panel" data-testid="background-panel" aria-label="Background">
+    <section className="background-panel" data-testid="background-panel" data-movable="background-panel" aria-label="Background">
       <header className="bg-head">
         <span>
           <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">

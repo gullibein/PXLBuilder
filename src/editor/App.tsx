@@ -1,4 +1,5 @@
 import { AutotileEditor } from './chrome/AutotileEditor';
+import { startPanelMover } from './layout/movable';
 import { ObjectPanel } from './prompt/ObjectPanel';
 import { usesMenuKey } from '../core/script/language';
 import { ObjectCard } from './chrome/ObjectCard';
@@ -61,6 +62,8 @@ export function App() {
     applyStyle(layout.editorStyle);
   }, [layout.accentColor, layout.editorStyle]);
   const docked = layout.inspector === 'docked';
+  // Every floating panel can be dragged by its title bar (layout/movable.ts).
+  useEffect(() => (mode === 'play' ? undefined : startPanelMover()), [mode]);
   if (mode === 'play') {
     // Build → Play → Game: the editor gets out of the way.
     return (

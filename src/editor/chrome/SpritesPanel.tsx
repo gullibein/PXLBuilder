@@ -78,7 +78,7 @@ export function SpritesPanel() {
   };
 
   return (
-    <section className="sprites-panel" data-testid="sprites-panel" aria-label={`Sprites for ${def.name}`}>
+    <section className="sprites-panel" data-testid="sprites-panel" data-movable="sprites-panel" aria-label={`Sprites for ${def.name}`}>
       <header className="bg-head">
         <span>
           Sprites <span className="muted">· {def.name}</span>

@@ -15,7 +15,8 @@ export function GlobalPrompt() {
   if (!open) return null;
   const ctx: AIContext = scope === 'project' ? { kind: 'project', sceneId: scene.id } : scope === 'editor' ? { kind: 'editor', sceneId: scene.id } : { kind: 'level', sceneId: scene.id, point: null };
   return (
-    <div className="global-prompt" data-testid="global-prompt" ref={ref}>
+    <div className="global-prompt" data-testid="global-prompt" data-movable="global-prompt" ref={ref}>
+      <div className="move-grip wide" data-move-handle title="Drag to move" />
       <div className="scope-toggle" role="radiogroup" aria-label="Scope">
         <button role="radio" aria-checked={scope === 'level'} className={scope === 'level' ? 'on' : ''} onClick={() => setGlobalPrompt(true, 'level')}>
           {scene.name}

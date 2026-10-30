@@ -21,7 +21,7 @@ export function LogicPanel() {
   const { setLogicOpen } = useEditor.getState();
   const empty = scene.relationships.length === 0 && scene.rules.length === 0;
   return (
-    <section className="background-panel logic-panel" data-testid="logic-panel" aria-label="Logic">
+    <section className="background-panel logic-panel" data-testid="logic-panel" data-movable="logic-panel" aria-label="Logic">
       <header className="bg-head">
         <span>
           <LogicIcon />

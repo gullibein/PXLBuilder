@@ -158,7 +158,7 @@ export function ContextPrompt() {
         <line ref={lineRef} style={{ visibility: 'hidden' }} />
         <circle ref={dotRef} r="2.5" style={{ visibility: 'hidden' }} />
       </svg>
-      <div className="context-prompt" ref={wrapRef} style={{ visibility: 'hidden' }} data-testid="context-prompt" data-context={ctx.kind}>
+      <div className="context-prompt" ref={wrapRef} style={{ visibility: 'hidden' }} data-testid="context-prompt" data-movable="context-prompt" data-context={ctx.kind}>
         <PromptBox
           key={key}
           ctx={ctx}

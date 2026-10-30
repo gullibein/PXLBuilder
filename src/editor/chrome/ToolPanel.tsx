@@ -18,7 +18,8 @@ export function ToolPanel() {
   const eyedropper = tool.kind === 'eyedropper' || altHeld;
   const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
   return (
-    <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel">
+    <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel" data-movable="tool-panel">
+      <div className="move-grip" data-move-handle title="Drag to move" data-testid="tool-panel-grip" />
       <button
         className={`tool${tool.kind === 'select' && !altHeld ? ' on' : ''}`}
         title="Select and move (V)"

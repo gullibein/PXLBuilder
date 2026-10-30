@@ -31,7 +31,7 @@ export function Inspector({ docked = false }: { docked?: boolean }) {
   const setInspectorOpen = useEditor((s) => s.setInspectorOpen);
   const setLayout = useEditor((s) => s.setLayout);
   return (
-    <aside className={`drawer${docked ? ' docked' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} aria-label="Details">
+    <aside className={`drawer${docked ? ' docked' : ''}`} data-testid="inspector" data-docked={docked ? 'true' : undefined} data-movable={docked ? undefined : 'inspector'} aria-label="Details">
       <header className="drawer-head">
         <span className="drawer-title">
           Inspector <span className="muted">(Advanced)</span>

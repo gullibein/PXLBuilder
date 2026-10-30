@@ -9,6 +9,7 @@
  * Selection is also the AI context: one selected entity, two (a relationship),
  * several (a group), or the level itself (`worldContext`).
  */
+import { resetPanelPositions } from './layout/movable';
 import { DEFAULT_LAYOUT, loadLayout, saveLayout, type EditorLayout } from './layout/settings';
 import { produce } from 'immer';
 import { create } from 'zustand';
@@ -463,6 +464,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     resetLayout() {
+      // (Panels moved by hand go back too.)
+      resetPanelPositions();
       get().setLayout({ ...DEFAULT_LAYOUT });
     },
 
