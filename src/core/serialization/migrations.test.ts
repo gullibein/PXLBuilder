@@ -188,6 +188,42 @@ describe('format v2 -> v3', () => {
     expect(own.definitions.map((d) => d.name)).toEqual(['Heart']);
   });
 
+  it('v12 -> v13: Stompable and Damage become the Stomp and Hurts on touch scripts, with the same values and victims', async () => {
+    const { migrateProject } = await import('./migrations');
+    type Def = { name: string; components: Record<string, Record<string, unknown>>; scripts?: { name: string; vars: { name: string; value: unknown }[]; handlers: { when: { on: string }; if: string | null }[] }[] };
+    const def = (name: string, tags: string[], components: Record<string, unknown>) => ({ id: `d_${name}`, name, description: '', tags, metadata: {}, components });
+    const out = migrateProject({
+      formatVersion: 12,
+      assets: [],
+      scenes: [{ id: 's', name: 'L', entities: [{ id: 'x', name: 'Odd', definitionId: null, transform: {}, components: { Damage: { amount: 3 } }, removedComponents: [], tags: ['odd'], metadata: {} }] }],
+      definitions: [
+        def('Player', ['player'], { Health: { maxHealth: 3 }, DamageReceiver: { damageSources: ['enemy', 'hazard', 'odd'], invincibilityDuration: 1 } }),
+        def('Enemy', ['enemy'], { Damage: { amount: 2 }, Stompable: { stompers: ['player'], bounce: 400, damage: 0 } }),
+        def('Spikes', ['hazard'], { Damage: { amount: 1 } }),
+        def('Rock', ['rock'], { Damage: { amount: 1 } }),
+      ],
+    }) as unknown as { definitions: Def[]; scenes: { entities: Def[] }[] };
+    const by = (n: string) => out.definitions.find((d) => d.name === n)!;
+    const script = (d: Def, n: string) => d.scripts?.find((x) => x.name === n);
+    const v = (d: Def, n: string, k: string) => script(d, n)!.vars.find((x) => x.name === k)!.value;
+    // No more Stompable or Damage, nor a list of what hurts the player.
+    for (const d of out.definitions) expect(Object.keys(d.components)).not.toContain('Damage');
+    expect(by('Enemy').components.Stompable).toBeUndefined();
+    expect(by('Player').components.DamageReceiver).toEqual({ invincibilityDuration: 1 });
+    // The same bounce and damage, as script variables; whom it hurts: what took damage from it before (the player).
+    expect(v(by('Enemy'), 'Stomp', 'bounce')).toBe(400);
+    expect(script(by('Enemy'), 'Stomp')!.handlers[0]).toMatchObject({ when: { on: 'landed_on' }, if: "has_tag(other, 'player')" });
+    expect(v(by('Enemy'), 'Hurts on touch', 'amount')).toBe(2);
+    expect(script(by('Enemy'), 'Hurts on touch')!.handlers[0]).toMatchObject({ when: { on: 'contact' }, if: "has_tag(other, 'player')" });
+    expect(script(by('Spikes'), 'Hurts on touch')!.handlers[0].if).toBe("has_tag(other, 'player')");
+    // Nothing took damage from the rock: it hurts anything with health now (there is no "nobody").
+    expect(script(by('Rock'), 'Hurts on touch')!.handlers[0].if).toBe('other.max_health > 0');
+    // A placed thing of its own (no object) too.
+    const odd = out.scenes[0].entities[0];
+    expect(odd.components.Damage).toBeUndefined();
+    expect(v(odd, 'Hurts on touch', 'amount')).toBe(3);
+  });
+
   it('v10 -> v11: the starter Enemy patrols and chases, unless it was given its own behavior or the game is top-down', async () => {
     const { migrateProject } = await import('./migrations');
     type Out = { definitions: { name: string; components: Record<string, Record<string, unknown>> }[] };

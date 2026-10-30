@@ -7,6 +7,7 @@
  * mutation functions the inspector uses. A list of operations is applied
  * all-or-nothing inside one transaction.
  */
+import { onlyOnTouch, touchHarm } from '../model/ruleScripts';
 import { gridFor } from '../model/spriteResolution';
 import { produce } from 'immer';
 import { z } from 'zod';
@@ -559,8 +560,8 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
       // one placed in the air drops onto the first surface below it.
       const c = b.r.components;
       const falls = c.PhysicsBody?.bodyType === 'dynamic' && c.PhysicsBody.gravityScale !== 0;
-      const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.Wander || c.MovingPlatform || c.CharacterController || b.r.scripts.length > 0;
-      if (!falls && (moves || !(c.Openable || c.Switch || c.Damage))) continue;
+      const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.Wander || c.MovingPlatform || c.CharacterController || b.r.scripts.some((sc) => !onlyOnTouch(sc));
+      if (!falls && (moves || !(c.Openable || c.Switch || touchHarm(b.r.scripts)))) continue;
       const near = (a: number, z: number) => Math.abs(a - z) <= 3;
       const supported = solids.some((s) => s.r.id !== e.id && Math.min(b.right, s.right) - Math.max(b.left, s.left) > 1 && (near(b.bottom, s.top) || near(b.top, s.bottom) || (Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1)))
         || solids.some((s) => s.r.id !== e.id && Math.min(b.bottom, s.bottom) - Math.max(b.top, s.top) > 1 && (near(b.right, s.left) || near(b.left, s.right)));

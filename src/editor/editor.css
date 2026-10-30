@@ -967,3 +967,7 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
   .ms-list { border-right: none; padding-right: 0; max-height: 140px; }
   .ms-editor { grid-template-columns: 1fr; }
 }
+/* Opening an older or broken game file: what updating changes, why it doesn't open, what fixing it left out. */
+.file-fix { max-width: 520px; }
+.file-fix-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.45; max-height: 40vh; overflow-y: auto; }
+.file-fix-list li { margin: 2px 0; overflow-wrap: anywhere; }

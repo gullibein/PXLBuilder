@@ -392,11 +392,12 @@ describe('gameplay', () => {
     expect(p.x).toBeCloseTo(-120, 0);
   });
 
-  /** An enemy standing on the ground at x=60; without `stompable` this one has its Stompable taken off. */
+  /** An enemy standing on the ground at x=60; without `stompable` the Enemy has no Stomp script. */
   function enemyLevel(stompable: boolean, player: Vec2) {
     return level((b) => {
-      const e = b.place('Enemy', { x: 60, y: 17 }, stompable ? 'Mushroom' : 'Enemy');
-      if (!stompable) m.removeEntityComponent(b.d, b.sceneId, e, 'Stompable');
+      b.place('Enemy', { x: 60, y: 17 }, stompable ? 'Mushroom' : 'Enemy');
+      const def = b.d.definitions.find((x) => x.name === 'Enemy')!;
+      if (!stompable) def.scripts = def.scripts!.filter((sc) => sc.name !== 'Stomp');
       b.d.scenes[0].entities.find((x) => x.name === 'Player')!.transform.position = player;
     });
   }
@@ -614,7 +615,7 @@ describe('behaviors', () => {
       add(b, rt0(b, 'Player'), 'Shooter', { trigger: 'key', interval: 0.3, speed: 300 });
       const e = b.place('Enemy', { x: 110, y: 17 });
       add(b, e, 'Health', { maxHealth: 2, currentHealth: 2 });
-      add(b, e, 'DamageReceiver', { damageSources: ['player'] });
+      add(b, e, 'DamageReceiver', {});
     });
     run(rt, input, 0.1);
     expect(events(rt, 'shot')).toHaveLength(0); // not without pressing
@@ -758,10 +759,10 @@ describe('behavior scripts', () => {
     );
     const e = rt.find('Enemy')!;
     run(rt, input, 0.5);
-    expect(e.scripts[0].state).toBe('walk');
+    expect(e.scripts.at(-1)!.state).toBe('walk');
     expect(e.vx).toBeCloseTo(-40, 5);
     run(rt, input, 1);
-    expect(e.scripts[0].state).toBe('charge');
+    expect(e.scripts.at(-1)!.state).toBe('charge');
     expect(e.vx).toBe(-160);
     expect(e.facing).toBe(-1);
     expect(rt.messages[0]).toMatch(/^Charge at (9\d|100)!$/);
@@ -805,7 +806,7 @@ describe('behavior scripts', () => {
       script(b, rt0(b, 'Player'), { handlers: [{ when: { on: 'key', key: 'fire' }, do: [{ do: 'shoot', dx: 'self.facing', dy: '0', speed: '300', damage: '1', range: '400', object: null }] }] });
       const e = b.place('Enemy', { x: 110, y: 17 });
       m.addEntityComponent(b.d, b.sceneId, e, 'Health', registry, { maxHealth: 3, currentHealth: 3 });
-      m.addEntityComponent(b.d, b.sceneId, e, 'DamageReceiver', registry, { damageSources: ['player'] });
+      m.addEntityComponent(b.d, b.sceneId, e, 'DamageReceiver', registry, {});
     });
     input.press('fire');
     run(rt, input, 0.05);
@@ -910,22 +911,22 @@ describe('behavior scripts', () => {
     expect(p.collider).toEqual(before);
   });
 
-  it('add_component / remove_component / tag: a stone starts hurting the player, then stops', () => {
-    const { rt, input, p } = level((b) => {
+  it('add_component / remove_component / tag: a stone becomes something to pick up, then not', () => {
+    const { rt, input } = level((b) => {
       const s = b.place('Stone', { x: 60, y: 16 }, 'Thorn');
       script(b, s, {
         handlers: [
-          { when: { on: 'start' }, do: [{ do: 'add_component', component: 'Damage', on: null }, { do: 'tag', tag: 'hazard', add: true, on: null }] },
-          { when: { on: 'event', event: 'damaged', with: null }, do: [{ do: 'remove_component', component: 'Damage', on: null }] },
+          { when: { on: 'start' }, do: [{ do: 'add_component', component: 'Collectible', on: null }, { do: 'tag', tag: 'treasure', add: true, on: null }] },
+          { when: { on: 'every', seconds: 0.5 }, do: [{ do: 'remove_component', component: 'Collectible', on: null }] },
         ],
       });
     });
     run(rt, input, 0.1);
     const thorn = rt.find('Thorn')!;
-    expect(thorn.damage).not.toBeNull();
-    expect(thorn.tags).toContain('hazard');
-    walkRight(rt, input, 0.6);
-    expect(p.health!.current).toBe(2);
+    expect(thorn.collectible).not.toBeNull();
+    expect(thorn.tags).toContain('treasure');
+    run(rt, input, 0.5);
+    expect(thorn.collectible).toBeNull();
     expect(rt.scripts.errors).toEqual([]);
   });
 
@@ -1007,7 +1008,7 @@ describe('behavior scripts', () => {
     });
     run(rt, input, 1.1);
     const enemies = rt.entities.filter((e) => e.name === 'Enemy');
-    expect(enemies.map((e) => e.scripts[0].vars.get('pings'))).toEqual([2, 2]);
+    expect(enemies.map((e) => e.scripts.at(-1)!.vars.get('pings'))).toEqual([2, 2]);
     expect(events(rt, 'signal')).toHaveLength(2);
   });
 
@@ -1060,7 +1061,7 @@ describe('the example scripts the AI learns from', () => {
     const e = rt.find('Enemy')!;
     const seen: string[] = [];
     run(rt, input, 3, () => {
-      if (seen.at(-1) !== e.scripts[0].state) seen.push(e.scripts[0].state);
+      if (seen.at(-1) !== e.scripts.at(-1)!.state) seen.push(e.scripts.at(-1)!.state);
     });
     // After resting it walks again, and (the player still close) charges again at once.
     expect(seen.slice(0, 4)).toEqual(['walk', 'charge', 'rest', 'charge']);

@@ -5,6 +5,7 @@ import * as logic from '../logic/mutations';
 import { createProject, instantiateDefinition } from '../model/factory';
 import * as m from '../model/mutations';
 import { setScript } from '../script/mutations';
+import { hurtsScript } from '../model/ruleScripts';
 import type { Id, Project, Vec2 } from '../types';
 import { diagnoseLevel } from './diagnose';
 
@@ -81,19 +82,19 @@ describe('the problem checker', () => {
 
   it('damage nothing accepts, and hurting something without Health', () => {
     const problems = check((b) => {
-      const e = b.place('Enemy');
-      m.setEntityTags(b.d, b.sceneId, e, []);
-      m.setDefinitionTags(b.d, b.def('Enemy'), ['robot']);
+      b.place('Enemy');
+      // It hurts only ghosts, and no ghost with health is here.
+      b.d.definitions.find((d) => d.name === 'Enemy')!.scripts = [hurtsScript({ amount: 1, who: ['ghost'] })];
       const stone = b.place('Stone', { x: 64, y: -32 });
       logic.addRelationship(b.d, b.sceneId, { type: 'damages', source: { kind: 'tag', tag: 'player' }, target: { kind: 'entity', id: stone }, params: {}, conditions: [] });
     });
     expect(keys(problems)).toEqual(['damages-no-health', 'damage-unaccepted']);
-    expect(problems[1].text).toMatch(/Enemy deals damage, but nothing takes damage from it: no Damage Receiver accepts its tags \("robot"\)/);
+    expect(problems[1].text).toMatch(/Enemy hurts what touches it, but nothing in this level that it hurts \(things tagged "ghost"\) has Health/);
   });
 
   it('copies of one object are one problem', () => {
     const problems = check((b) => {
-      m.setDefinitionTags(b.d, b.def('Enemy'), ['robot']);
+      b.d.definitions.find((d) => d.name === 'Enemy')!.scripts = [hurtsScript({ amount: 1, who: ['ghost'] })];
       b.place('Enemy');
       b.place('Enemy', { x: 64, y: 0 });
     });

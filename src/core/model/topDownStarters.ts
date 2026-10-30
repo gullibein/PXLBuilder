@@ -11,6 +11,7 @@ import type { ComponentRegistry } from '../components/registry';
 import type { AssetRecord, ObjectDefinition } from '../types';
 import { createAnimatedPixelArtAsset, createDefinition, createHeartAsset, createLeverAsset, createPixelArtAsset, heartDefinition } from './factory';
 import type { PixelArt } from './pixelArt';
+import { hurtsScript } from './ruleScripts';
 
 const PLAYER_DOWN: PixelArt = {
   palette: [{ key: 'o', color: '#1b1430' }, { key: 'h', color: '#7a4a24' }, { key: 'H', color: '#a8692f' }, { key: 's', color: '#f2c39b' }, { key: 't', color: '#3f9e5a' }, { key: 'T', color: '#2c7a43' }, { key: 'b', color: '#8a5a2b' }, { key: 'f', color: '#4a3a2a' }],
@@ -475,10 +476,10 @@ export function createTopDownStarterDefinitions(registry: ComponentRegistry, ass
         Collider: c('Collider', { size: { x: 24, y: 20 }, matchSprite: false }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic', gravityScale: 0 }),
         Wander: c('Wander', { speed: 45, interval: 1.8 }),
-        Damage: c('Damage', { amount: 1 }),
       },
       ['enemy'],
       'A slime that wanders around and hurts on contact.',
+      [hurtsScript({ amount: 1, who: ['player'] })],
     ),
     createDefinition(
       'Coin',
@@ -526,10 +527,10 @@ export function createTopDownStarterDefinitions(registry: ComponentRegistry, ass
       {
         Sprite: c('Sprite', { width: 32, height: 32, color: '#b9bfcc', assetId: assets.hazard.id }),
         Collider: c('Collider', { size: { x: 28, y: 28 }, isTrigger: true, matchSprite: false }),
-        Damage: c('Damage', { amount: 1 }),
       },
       ['hazard'],
       'Floor spikes, one tile: damage anything that walks over them.',
+      [hurtsScript({ amount: 1, who: [] })],
     ),
     createDefinition(
       'Teleporter',

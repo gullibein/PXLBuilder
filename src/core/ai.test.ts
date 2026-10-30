@@ -54,11 +54,11 @@ describe('operations', () => {
     expect(count(done, 'Player')).toBe(1);
   }, 60000);
 
-  it('"Make the player hurt enemies" -> add Damage on the instance', () => {
+  it('"Give the player a timer" -> add Timer on the instance', () => {
     const { project, sceneId, player } = level();
-    const next = apply(project, [{ op: 'add_component', target: 'instance', id: player.id, component: 'Damage', propsJson: '{"amount":2}' }]);
+    const next = apply(project, [{ op: 'add_component', target: 'instance', id: player.id, component: 'Timer', propsJson: '{"interval":2}' }]);
     const r = resolveEntity(next, m.getEntity(next, sceneId, player.id), registry);
-    expect(r.components.Damage).toEqual({ amount: 2 });
+    expect(r.components.Timer).toEqual({ interval: 2, repeat: true });
   });
 
   it('"Make gravity 30% weaker" -> set_world', () => {
@@ -174,7 +174,7 @@ describe('AI context', () => {
     const { project, sceneId, enemy, player, door } = level();
     const payload = buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [enemy.id] }, registry);
     expect(payload.targets).toHaveLength(1);
-    expect(payload.targets[0].components.Damage).toEqual({ amount: 1 });
+    expect(payload.targets[0].components.Patrol).toBeDefined();
     expect(payload.targets[0].object?.name).toBe('Enemy');
     expect(payload.targets[0].object?.placedCount).toBe(2);
     // Other entities are referenceable by name ("the player", "the door").
@@ -182,7 +182,8 @@ describe('AI context', () => {
     expect(payload.otherEntities.find((e) => e.id === player.id)).toMatchObject({ x: 0, y: 0, object: 'Player' });
     expect(payload.otherEntities.some((e) => e.id === enemy.id)).toBe(false);
     expect(payload.library.find((d) => d.name === 'Door')?.category).toBe('Environment');
-    expect(JSON.stringify(payload).length).toBeLessThan(8000);
+    // (The selected enemy's rule scripts, Stomp and Hurts on touch, come in full: the AI changes them when asked.)
+    expect(JSON.stringify(payload).length).toBeLessThan(9500);
     void door;
   });
 
@@ -209,7 +210,7 @@ describe('AI context', () => {
     expect(payload.scope).toBe('object');
     expect(payload.scope_note).toMatch(/OBJECT LIBRARY/);
     expect(payload.object).toMatchObject({ id: enemy.id, name: 'Enemy', placedCount: 2 });
-    expect(payload.object?.components.Damage).toEqual({ amount: 1 });
+    expect(payload.object?.components.Patrol).toBeDefined();
     expect(payload.object?.look.sprite?.pixelArt?.rows.length).toBeGreaterThan(0);
     // The same grid a placed copy would be drawn on.
     expect(payload.object?.spriteGrid).toEqual(buildAIPayload(project, { kind: 'entity', sceneId, entityIds: [placed.id] }, registry).targets[0].spriteGrid);

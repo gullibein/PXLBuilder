@@ -6,6 +6,7 @@
  * is the cell free, is there headroom above the platform, can the player get
  * there from a spot it already reaches.
  */
+import { onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
 import { getEntitySize } from './geometry';
@@ -50,14 +51,15 @@ function markOf(r: ResolvedEntity, name: string): Mark {
   if (c.Openable) return { ch: 'D', rank: 1, what: 'door' };
   if (c.Switch) return { ch: 'S', rank: 1, what: 'switch' };
   if (c.Collectible) return /key/i.test(name) || r.tags.includes('key') ? { ch: 'k', rank: 2, what: 'key' } : { ch: 'c', rank: 2, what: 'item to collect' };
-  const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.Wander || c.MovingPlatform || r.scripts.length > 0;
-  if (c.Damage && moves) return { ch: 'E', rank: 3, what: 'enemy' };
-  if (c.Damage) return { ch: '^', rank: 3, what: 'hazard (hurts)' };
+  const moves = c.PhysicsBody?.bodyType === 'dynamic' || c.Patrol || c.Wander || c.MovingPlatform || r.scripts.some((s) => !onlyOnTouch(s));
+  const hurts = !!touchHarm(r.scripts);
+  if (hurts && moves) return { ch: 'E', rank: 3, what: 'enemy' };
+  if (hurts) return { ch: '^', rank: 3, what: 'hazard (hurts)' };
   if (c.Climbable) return { ch: 'H', rank: 4, what: 'ladder (climb with Up/Down; not solid)' };
   if (c.MovingPlatform) return { ch: '=', rank: 4, what: 'moving platform' };
   const solid = c.Collider && c.Collider.isTrigger !== true && c.PhysicsBody?.bodyType !== 'dynamic';
   if (solid) return { ch: '#', rank: 5, what: 'solid' };
-  if (c.Damage === undefined && r.tags.includes('enemy')) return { ch: 'E', rank: 3, what: 'enemy' };
+  if (r.tags.includes('enemy')) return { ch: 'E', rank: 3, what: 'enemy' };
   return { ch: 'o', rank: 6, what: 'other' };
 }
 

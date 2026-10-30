@@ -8,6 +8,7 @@
  * - jump_reach: the arc of a running jump, so you can see which platforms
  *   a character can reach.
  */
+import { touchHarm } from '../../core/model/ruleScripts';
 import { componentRegistry } from '../../core/components/builtin';
 import { refMatches } from '../../core/logic/refs';
 import { getEntitySize } from '../../core/model/geometry';
@@ -93,7 +94,10 @@ export const METRICS: Record<string, Metric> = {
   damage: {
     label: 'Damage',
     description: 'Damage dealt on contact.',
-    value: ({ e }) => (e.components.Damage ? String(e.components.Damage.amount) : null),
+    value: ({ e }) => {
+      const harm = touchHarm(e.scripts);
+      return harm ? String(harm.amount) : null;
+    },
   },
   position: {
     label: 'Position',

@@ -198,7 +198,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const broken = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
     // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
-    const unasked = gameOps(response) && !broken && !stuck ? unaskedChanges(ctx, request, response.operations) : null;
+    const unasked = gameOps(response) && !broken && !stuck ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
     const problem = broken ?? stuck?.text ?? unasked;
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
@@ -225,10 +225,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
       }
       // Still changing what wasn't asked for: said plainly with the changes (undo takes it back).
-      const stillUnasked = gameOps(response) ? unaskedChanges(ctx, request, response.operations) : null;
+      const stillUnasked = gameOps(response) ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
       if (stillUnasked) {
         trace?.('check', `Still changes what wasn't asked for: ${stillUnasked}`);
-        response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ This also changed things you didn't ask for (${/removes/.test(stillUnasked) ? 'it removed a built-in behavior' : 'it made a new object'}); undo (Ctrl+Z) if you don't want that`] };
+        response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ This also changed things you didn't ask for (${/removes/.test(stillUnasked) ? 'it removed a behavior or rule' : 'it made a new object'}); undo (Ctrl+Z) if you don't want that`] };
       }
       // Still not playable: show it for confirmation, with the problem.
       const stillStuck = gameOps(response) ? (playability(ctx.sceneId, response.operations)?.text ?? null) : null;

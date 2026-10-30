@@ -1,4 +1,5 @@
 import { levelPerPixel, placeBackground, playZoom } from '../background';
+import { touchHarm } from '../../core/model/ruleScripts';
 import { MAX_ZOOM, MIN_ZOOM } from './zoomLimits';
 import { ZoomBar } from './ZoomBar';
 import { useEffect, useRef, useState } from 'react';
@@ -1267,7 +1268,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize,
 function wireKind(e: ResolvedEntity): keyof Omit<typeof theme.wire, 'ground' | 'fill' | 'glow' | 'dash'> {
   const c = e.components;
   if (c.CharacterController) return 'character';
-  if (c.Damage || e.tags.includes('enemy') || e.tags.includes('hazard')) return 'danger';
+  if (touchHarm(e.scripts) || e.tags.includes('enemy') || e.tags.includes('hazard')) return 'danger';
   if (c.Collectible) return 'item';
   if (!c.Collider || c.Collider.isTrigger === true) return 'trigger';
   return 'solid';

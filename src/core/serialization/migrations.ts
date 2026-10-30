@@ -3,6 +3,7 @@ import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
 import { createHeartAsset, createStarterAssets, createStarterDefinitions, ENEMY_PATROL, heartDefinition, SPIKES_ART_V8_ROWS } from '../model/factory';
 import { eightBitArt } from '../model/eightBitSet';
+import { hurtsScript, stompScript } from '../model/ruleScripts';
 import { lookAt, starterLook } from '../model/spriteResolution';
 import { FORMAT_VERSION } from './version';
 
@@ -15,6 +16,8 @@ export interface Migration {
   from: number;
   to: number;
   migrate(raw: Record<string, unknown>): Record<string, unknown>;
+  /** What updating a game changes in how it plays, in plain words (shown before an older game is opened); none for small format changes. */
+  note?: string;
 }
 
 type Raw = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -328,6 +331,48 @@ function migrateV11toV12(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v12 -> v13
+ * - Game rules are scripts: the Stompable and Damage components become the objects' "Stomp" and "Hurts on touch"
+ *   scripts (with the same bounce, hits and damage), and Damage Receivers no longer list what hurts them (the
+ *   hurting script says whom it hurts: the things whose Damage Receiver accepted it before).
+ */
+function migrateV12toV13(raw: Raw): Raw {
+  const project: Raw = structuredClone(raw);
+  const defs: Raw[] = project.definitions ?? [];
+  const placed: Raw[] = (project.scenes ?? []).flatMap((s: Raw) => s.entities ?? []);
+  // Everything that could be hurt before: its tags and what hurt it.
+  const receivers = [
+    ...defs.filter((d) => d.components?.DamageReceiver).map((d) => ({ tags: (d.tags ?? []) as string[], from: d.components.DamageReceiver.damageSources })),
+    ...placed.filter((e) => e.definitionId === null && e.components?.DamageReceiver).map((e) => ({ tags: (e.tags ?? []) as string[], from: e.components.DamageReceiver.damageSources })),
+  ].map((r) => ({ tags: r.tags, from: Array.isArray(r.from) ? (r.from as string[]) : ['hazard', 'enemy'] }));
+  const victimsOf = (tags: string[]): string[] => {
+    const hit = receivers.filter((r) => r.from.some((t) => tags.includes(t)));
+    // One without tags was hurt too: then anything with health is.
+    return hit.some((r) => !r.tags.length) ? [] : [...new Set(hit.flatMap((r) => r.tags))];
+  };
+  const convert = (holder: Raw, tags: string[]) => {
+    const c = holder.components ?? {};
+    const added: Raw[] = [];
+    if (c.Stompable) {
+      const st = c.Stompable;
+      added.push(stompScript({ by: Array.isArray(st.stompers) ? st.stompers : ['player'], bounce: typeof st.bounce === 'number' ? st.bounce : 320, hits: typeof st.damage === 'number' ? st.damage : 0 }));
+      delete c.Stompable;
+    }
+    if (c.Damage) {
+      added.push(hurtsScript({ amount: typeof c.Damage.amount === 'number' ? c.Damage.amount : 1, who: victimsOf(tags) }));
+      delete c.Damage;
+    }
+    if (c.DamageReceiver) delete c.DamageReceiver.damageSources;
+    if (Array.isArray(holder.removedComponents)) holder.removedComponents = holder.removedComponents.filter((t: string) => t !== 'Stompable' && t !== 'Damage');
+    if (added.length) holder.scripts = [...(holder.scripts ?? []), ...added];
+  };
+  for (const d of defs) convert(d, d.tags ?? []);
+  const defTags = new Map(defs.map((d) => [d.id, (d.tags ?? []) as string[]]));
+  for (const e of placed) convert(e, [...(defTags.get(e.definitionId) ?? []), ...(e.tags ?? [])]);
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -340,7 +385,18 @@ export const MIGRATIONS: Migration[] = [
   { from: 9, to: 10, migrate: migrateV9toV10 },
   { from: 10, to: 11, migrate: migrateV10toV11 },
   { from: 11, to: 12, migrate: migrateV11toV12 },
+  {
+    from: 12,
+    to: 13,
+    migrate: migrateV12toV13,
+    note: 'Stomping and hurting on touch become scripts you can change (each enemy and hazard gets a "Stomp" and/or "Hurts on touch" script with its old settings). Who gets hurt is now decided by the thing that hurts: enemies and spikes hurt what used to take damage from them.',
+  },
 ];
+
+/** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */
+export function updateNotes(from: number, migrations: Migration[] = MIGRATIONS): string[] {
+  return migrations.filter((m) => m.from >= from && m.note).map((m) => m.note!);
+}
 
 export class MigrationError extends Error {
   constructor(message: string) {

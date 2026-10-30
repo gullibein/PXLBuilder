@@ -93,19 +93,19 @@ export interface RuntimeEntity {
   open: boolean;
   switch: { activation: 'interact' | 'touch'; once: boolean; on: boolean; used: boolean } | null;
   health: { current: number; max: number; respawnDelay: number } | null;
-  receiver: { sources: string[]; invincibility: number; knockback: number } | null;
+  /** How it takes hits (DamageReceiver): blinking time after one and how hard it is shoved. What hurts it is up to the scripts that hurt. */
+  receiver: { invincibility: number; knockback: number } | null;
   /** Pushable: how it moves when pushed (step 0 = slides), who may push it, and when it was last pushed (a push after a pause is a new "pushed" event). */
   pushable: { step: number; pushers: string[]; speed: number; pushedAt: number } | null;
   /** Being knocked back by a hit: for how long, and the velocity it had before (it goes back to that after). */
   knock: { t: number; restore: { vx: number; vy: number } } | null;
-  /** Damage dealt on contact (Damage.amount), or null. */
+  /** A shot's damage (on what it hits), or null. */
   damage: number | null;
   /** Seconds left without taking damage. */
   invincible: number;
   /** Item name -> count, or null without an Inventory. */
   inventory: Map<string, number> | null;
   collectible: { item: string; keep: boolean; heal: number } | null;
-  stompable: { stompers: string[]; bounce: number; damage: number } | null;
   /** Which way it faces (1 right, -1 left): set by running and patrolling; drawn mirrored when -1. */
   facing: 1 | -1;
   /** The way it last moved or looked, as a direction (x, y each -1, 0 or 1; diagonals too): where a top-down character shoots. */
@@ -133,8 +133,8 @@ export interface RuntimeEntity {
   hanging: { side: 1 | -1; top: number; edgeX: number } | null;
   /** Seconds before it can grab a ledge again (after letting go). */
   grabCooldown: number;
-  /** A shot (from a Shooter): who fired it, and how far it may still fly. */
-  projectile: { owner: Id; left: number } | null;
+  /** A shot: who fired it, the tags of its side (it never hurts them), and how far it may still fly. */
+  projectile: { owner: Id; team: string[]; left: number } | null;
   /** Removed by a switch ("disappear"), so switching back brings it back. */
   hiddenBySwitch: boolean;
   /** Where a switch is moving it, and how fast (px/s; 0 = at once). */
@@ -396,14 +396,13 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     open: c.Openable?.startsOpen === true,
     switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
     health: c.Health ? { current: Number(c.Health.currentHealth), max: Number(c.Health.maxHealth), respawnDelay: Math.max(0, Number(c.Health.respawnDelay) || 0) } : null,
-    receiver: c.DamageReceiver ? { sources: (c.DamageReceiver.damageSources as string[]) ?? [], invincibility: Number(c.DamageReceiver.invincibilityDuration), knockback: typeof c.DamageReceiver.knockback === 'number' ? c.DamageReceiver.knockback : 160 } : null,
+    receiver: c.DamageReceiver ? { invincibility: Number(c.DamageReceiver.invincibilityDuration), knockback: typeof c.DamageReceiver.knockback === 'number' ? c.DamageReceiver.knockback : 160 } : null,
     knock: null,
     pushable: c.Pushable ? { step: Number(c.Pushable.step) || 0, pushers: (c.Pushable.pushers as string[]) ?? ['player'], speed: Number(c.Pushable.speed) || 160, pushedAt: -Infinity } : null,
-    damage: c.Damage ? Number(c.Damage.amount) : null,
+    damage: null,
     invincible: 0,
     inventory,
     collectible: c.Collectible && item ? { item, keep: c.Collectible.collectionBehavior !== 'consume', heal: Math.max(0, Number(c.Collectible.heal) || 0) } : null,
-    stompable: c.Stompable ? { stompers: (c.Stompable.stompers as string[]) ?? [], bounce: Number(c.Stompable.bounce), damage: Number(c.Stompable.damage) } : null,
     stompGrace: 0,
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
     heading: c.Patrol?.startDirection === 'up' ? { x: 0, y: -1 } : c.Patrol?.startDirection === 'down' ? { x: 0, y: 1 } : { x: c.Patrol?.startDirection === 'left' ? -1 : 1, y: 0 },
@@ -1026,7 +1025,7 @@ export class Runtime {
     e.damage = e.damage ?? cfg.damage;
     // A shot carries its shooter's tags (an enemy's shot hurts like the enemy does), plus "projectile".
     e.tags = [...new Set([...e.tags, ...from.tags, 'projectile'])];
-    e.projectile = { owner: from.id, left: cfg.range };
+    e.projectile = { owner: from.id, team: [...from.tags], left: cfg.range };
     this.entities.push(e);
     return e;
   }

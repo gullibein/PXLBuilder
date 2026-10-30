@@ -135,7 +135,7 @@ describe('pixel-art sprites', () => {
 
   it('a new object always has a look: a placeholder box until it is drawn', () => {
     const next = produce(createProject(registry), (d) => {
-      applyOperations(d, [{ op: 'create_definition', ref: 's', name: 'Spikes', description: 'Hurts', category: 'Environment', tags: ['hazard'], components: [{ component: 'Collider', propsJson: '{"size":{"x":64,"y":16},"isTrigger":true}' }, { component: 'Damage', propsJson: '{"amount":1}' }] }], registry);
+      applyOperations(d, [{ op: 'create_definition', ref: 's', name: 'Spikes', description: 'Hurts', category: 'Environment', tags: ['hazard'], components: [{ component: 'Collider', propsJson: '{"size":{"x":64,"y":16},"isTrigger":true}' }] }], registry);
     });
     const spikes = next.definitions.find((x) => x.name === 'Spikes')!;
     expect(spikes.components.Sprite).toMatchObject({ width: 64, height: 16, color: '#d9dde6', visible: true });

@@ -3,7 +3,8 @@ import { pixelArtToSvg, type PixelArt } from './pixelArt';
 import { defaultCamera } from './camera';
 import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
-import type { AssetRecord, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
+import { hurtsScript, stompScript } from './ruleScripts';
+import type { AssetRecord, BehaviorScript, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
 
 /** How the built-in enemy patrols: about 4 tiles each way from its start, ladders now and then, chasing the player it sees within 8 tiles. */
@@ -38,8 +39,8 @@ export function createLevelFor(project: Project, name: string, like: Scene | und
   return scene;
 }
 
-export function createDefinition(name: string, components: ComponentMap = {}, tags: string[] = [], description = ''): ObjectDefinition {
-  return { id: generateId('def'), name, description, components, tags, metadata: {} };
+export function createDefinition(name: string, components: ComponentMap = {}, tags: string[] = [], description = '', scripts: BehaviorScript[] = []): ObjectDefinition {
+  return { id: generateId('def'), name, description, components, tags, metadata: {}, ...(scripts.length ? { scripts } : {}) };
 }
 
 /** Creates a scene instance of a definition. The instance starts with no overrides. */
@@ -477,12 +478,11 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
         Sprite: c('Sprite', { width: 30, height: 30, color: '#e5534b', assetId: assets.enemy.id }),
         Collider: c('Collider', { size: { x: 30, y: 30 } }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'dynamic' }),
-        Damage: c('Damage', { amount: 1 }),
         Patrol: c('Patrol', ENEMY_PATROL),
-        Stompable: c('Stompable', { stompers: ['player'], bounce: 320, damage: 0 }),
       },
       ['enemy'],
       'A basic enemy that hurts on contact and is defeated by jumping on it. It patrols near where it starts (sometimes up or down a ladder) and chases the player once it sees it, slowing down before it turns around.',
+      [stompScript({ by: ['player'], bounce: 320, hits: 0 }), hurtsScript({ amount: 1, who: ['player'] })],
     ),
     createDefinition(
       'Coin',
@@ -530,10 +530,10 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       {
         Sprite: c('Sprite', { width: 32, height: 16, color: '#ff6b2c', assetId: assets.hazard.id }),
         Collider: c('Collider', { size: { x: 32, y: 16 }, isTrigger: true }),
-        Damage: c('Damage', { amount: 1 }),
       },
       ['hazard'],
       'Spikes, one tile wide: damages anything that touches it. Draw a row of them for longer spikes.',
+      [hurtsScript({ amount: 1, who: [] })],
     ),
     createDefinition(
       'Teleporter',

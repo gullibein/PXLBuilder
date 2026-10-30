@@ -27,7 +27,7 @@ import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 const NO_KEYS: InputView = { isDown: () => false, wasPressed: () => false, wasReleased: () => false };
 
 /** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
-const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'pause', 'resume', 'set_sound', 'set_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
+const KEEPS_INDEX = new Set<string>(['emit', 'bounce', 'set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'pause', 'resume', 'set_sound', 'set_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
 
 export interface ScriptInstance {
   script: BehaviorScript;
@@ -201,6 +201,21 @@ export class ScriptSystem {
       inst.stateTime = 0;
       inst.timers = inst.timers.map(() => 0);
     }
+  }
+
+  /** `e` and `other` touch ("contact"), or `other` came down onto `e` ("landed_on"): `e`'s handlers for it. */
+  onTouch(e: RuntimeEntity, other: RuntimeEntity, kind: 'landed_on' | 'contact'): void {
+    if (!e.alive) return;
+    const gen = this.generation;
+    for (const inst of e.scripts) {
+      if (gen !== this.generation || !e.alive) return;
+      if (this.usable(e, inst)) this.runWhere(e, inst, (h) => h.when.on === kind, other);
+    }
+  }
+
+  /** Whether any of its scripts reacts to `kind` (so the engine only looks for it where it matters). */
+  listens(e: RuntimeEntity, kind: 'landed_on' | 'contact'): boolean {
+    return e.scripts.some((inst) => inst.script.handlers.some((h) => h.when.on === kind));
   }
 
   /** A game event: the event handlers of both entities involved, and signal handlers everywhere. */
@@ -471,12 +486,27 @@ export class ScriptSystem {
       }
       case 'damage': {
         const t = ent(s.target);
-        if (t?.health && t.alive && t.invincible <= 0) gp.hurt(t, Math.max(0, n(s.amount)), e);
+        // Not while blinking after a hit, nor just after bouncing off a stomp (a stomp is never also a hit).
+        // Hurting itself: no knock back from itself.
+        if (t?.health && t.alive && t.invincible <= 0 && t.stompGrace <= 0) gp.hurt(t, Math.max(0, n(s.amount)), t === e ? null : e);
         break;
       }
+      case 'bounce': {
+        const t = ent(s.on);
+        if (t?.alive) {
+          t.vy = -Math.max(0, n(s.speed));
+          t.grounded = false;
+          t.stompGrace = 0.2;
+        }
+        break;
+      }
+      case 'emit':
+        gp.emit(s.event, e, s.other === null ? null : ent(s.other));
+        break;
       case 'kill': {
         const t = ent(s.target);
-        if (t?.alive) gp.die(t, e);
+        // Killing itself (stomped, say): the one it was dealing with did it.
+        if (t?.alive) gp.die(t, t === e ? ctx.other : e);
         break;
       }
       case 'heal': {

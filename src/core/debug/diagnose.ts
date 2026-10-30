@@ -9,6 +9,7 @@
  * runtime/scripts.ts); a check that could be wrong is left out rather than
  * reported as a guess.
  */
+import { touchHarm } from '../model/ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import { itemNameOf } from '../graph/graph';
 import { resolveRef } from '../logic/refs';
@@ -135,12 +136,11 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
 
   // ---- damage that can't land
   const receivers = placed.filter((p) => has(p, 'DamageReceiver'));
-  for (const [defId, group] of byObject(placed.filter((p) => has(p, 'Damage')))) {
-    const tags = group[0].r.tags;
-    const accepted = receivers.some((rcv) => rcv.id !== group[0].id && listOf(rcv.r.components.DamageReceiver?.damageSources).some((t) => tags.includes(t)));
-    const byConnection = scene.relationships.some((r) => r.type === 'damages' && matching(r.source).some((s) => s.id === group[0].id));
-    if (!accepted && !byConnection) {
-      add(`damage-unaccepted:${defId}`, 'warning', `${label(group)} deals damage, but nothing takes damage from it: no Damage Receiver accepts its tags (${tags.length ? tags.map((t) => `"${t}"`).join(', ') : 'it has none'}) and no "damages" connection starts at it.`, group.map((g) => g.id));
+  for (const [defId, group] of byObject(placed.filter((p) => touchHarm(p.r.scripts)))) {
+    const who = touchHarm(group[0].r.scripts)!.who;
+    const canBeHurt = placed.some((v) => v.id !== group[0].id && has(v, 'Health') && (who.length === 0 || who.some((t) => v.r.tags.includes(t))));
+    if (!canBeHurt) {
+      add(`damage-unaccepted:${defId}`, 'warning', `${label(group)} hurts what touches it, but nothing in this level that it hurts (${who.length ? `things tagged ${who.map((t) => `"${t}"`).join(' or ')}` : 'anything'}) has Health.`, group.map((g) => g.id));
     }
   }
   for (const [defId, group] of byObject(receivers.filter((p) => !has(p, 'Health')))) {
@@ -224,7 +224,7 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
 
   // ---- things nobody can see (no Sprite at all; a Sprite with visible off is deliberate)
   for (const [defId, group] of byObject(placed.filter((p) => !has(p, 'Sprite')))) {
-    add(`no-look:${defId}`, 'warning', `${label(group)} has no look (no Sprite), so it can't be seen while playing${has(group[0], 'Damage') ? ', though it still hurts' : ''}. Give it a sprite or a color.`, group.map((g) => g.id));
+    add(`no-look:${defId}`, 'warning', `${label(group)} has no look (no Sprite), so it can't be seen while playing${touchHarm(group[0].r.scripts) ? ', though it still hurts' : ''}. Give it a sprite or a color.`, group.map((g) => g.id));
   }
 
   // ---- a way to finish
@@ -243,10 +243,6 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
 
 function objectName(project: Project, p: Placed): string {
   return project.definitions.find((d) => d.id === p.definitionId)?.name ?? p.name;
-}
-
-function listOf(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
 /** The item a "requires" target stands for (as the runtime decides it). */

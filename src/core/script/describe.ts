@@ -32,6 +32,10 @@ export function describeTrigger(t: Trigger): string {
       return `when ${t.key} is ${t.edge}`;
     case 'signal':
       return `on signal "${t.name}"`;
+    case 'landed_on':
+      return 'when something lands on it';
+    case 'contact':
+      return 'while touching something';
   }
 }
 
@@ -124,6 +128,10 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`→ state ${s.name}`);
     case 'signal':
       return one(`send signal "${s.name}"`);
+    case 'emit':
+      return one(`announce "${s.event.replace(/_/g, ' ')}"${s.other ? ` with ${x(s.other)}` : ''}`);
+    case 'bounce':
+      return one(`${who(s.on)}bounce up (${x(s.speed)})`);
     case 'message':
       return one(`show "${s.text}" for ${s.seconds} s`);
     case 'alpha':

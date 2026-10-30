@@ -117,21 +117,11 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'DamageReceiver',
     label: 'Damage Receiver',
-    description: 'Takes damage from entities that have a Damage component and carry any of the listed tags (or that a "damages" relationship points from). Needs Health.',
+    description: 'How it takes hits (from scripts that hurt, shots and "damages" relationships): a moment of invincibility after one, and a knock back. What hurts it is decided by the scripts that hurt (e.g. a "Hurts on touch" script on spikes). Needs Health.',
     category: 'Gameplay',
     fields: {
-      damageSources: { kind: 'stringList', default: ['hazard', 'enemy'], description: 'Tags of entities that can deal damage' },
       invincibilityDuration: { kind: 'number', default: 1, min: 0, step: 0.1, description: 'Seconds of invincibility after a hit' },
       knockback: { kind: 'number', default: 160, min: 0, max: 1000, step: 10, description: 'How hard a hit shoves it away from what hurt it (px/s, for a moment; then it moves as before). 0 = not at all: for grid and turn-based games, where things must stay on their squares' },
-    },
-  },
-  {
-    type: 'Damage',
-    label: 'Damage',
-    description: 'Deals damage on contact to entities whose Damage Receiver accepts this entity (by tag).',
-    category: 'Gameplay',
-    fields: {
-      amount: { kind: 'number', default: 1, min: 0, step: 1 },
     },
   },
   {
@@ -152,17 +142,6 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       collectionBehavior: { kind: 'enum', options: ['addToInventory', 'consume'], default: 'addToInventory', description: 'addToInventory: the collector keeps it as an item. consume: it is used up at once (only the "collected" event happens)' },
       itemId: { kind: 'string', default: '', description: 'Item name added to the collector inventory (empty: the object name in lower case)' },
       heal: { kind: 'number', default: 0, min: 0, step: 1, integer: true, description: 'Health given back to the collector when picked up (a heart: 1), up to its maximum; 0: none' },
-    },
-  },
-  {
-    type: 'Stompable',
-    label: 'Stompable',
-    description: 'Can be defeated by jumping on top of it (like stomping an enemy). Whoever lands on it, if it carries one of the stomper tags, bounces off unhurt. Other contact still works as usual (its Damage still hurts from the side).',
-    category: 'Gameplay',
-    fields: {
-      stompers: { kind: 'stringList', default: ['player'], description: 'Tags of who can stomp it' },
-      bounce: { kind: 'number', default: 320, min: 0, step: 10, description: 'How high the stomper bounces off (upward speed, px/s)' },
-      damage: { kind: 'number', default: 0, min: 0, step: 1, description: '0: one stomp defeats it. Otherwise the health it loses per stomp' },
     },
   },
   {
@@ -247,7 +226,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'Shooter',
     label: 'Shooter',
     description:
-      'Fires shots. trigger "auto": every `interval` seconds; "key": when the player presses X (only on a player-controlled object), at most once per interval. A shot flies straight, hurts what it hits (by the usual Damage Receiver tag rules; shots carry the shooter\'s tags and "projectile") and vanishes on hitting a wall or after `range` pixels.',
+      'Fires shots. trigger "auto": every `interval` seconds; "key": when the player presses X (only on a player-controlled object), at most once per interval. A shot flies straight, hurts what it hits that has Health (never its own side: things with the shooter\'s tags; shots carry those tags and "projectile") and vanishes on hitting a wall or after `range` pixels.',
     category: 'Behavior',
     fields: {
       trigger: { kind: 'enum', options: ['auto', 'key'], default: 'auto' },

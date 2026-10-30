@@ -29,7 +29,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'damaged', description: 'Something loses health.', subject: 'who was hurt', other: 'what hurt it', phrase: '{subject} is hurt by {other}' },
   { type: 'died', description: 'Something runs out of health.', subject: 'who died', other: 'what dealt the last hit', phrase: '{subject} dies' },
   { type: 'respawned', description: 'Something is put back at its start (after dying or falling out of the level).', subject: 'who respawned', other: null, phrase: '{subject} respawns' },
-  { type: 'stomped', description: 'Something Stompable is jumped on from above.', subject: 'what was stomped', other: 'who jumped on it', phrase: '{other} stomps on {subject}' },
+  { type: 'stomped', description: 'Something is stomped (jumped on from above): announced by its Stomp script.', subject: 'what was stomped', other: 'who jumped on it', phrase: '{other} stomps on {subject}' },
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },
   { type: 'opened', description: 'Something (usually a door) opens.', subject: 'what opened', other: 'what opened it, if anything', phrase: '{subject} opens' },
   { type: 'locked', description: 'A player touches something that requires an item (a "requires" door) without carrying it, so it stays shut (detail.needs is the item).', subject: 'what stayed shut', other: 'who touched it', phrase: '{other} touches {subject}, which stays locked' },
@@ -101,7 +101,7 @@ export const BUILTIN_RELATIONSHIP_TYPES: RelationshipType[] = [
   {
     type: 'damages',
     verb: 'damages',
-    description: 'Touching the source hurts the target (whatever its Damage Receiver says).',
+    description: 'Touching the source hurts the target.',
     simulated: true,
     params: { amount: { kind: 'number', default: 1, min: 0, step: 1, description: 'Health lost per hit' } },
   },

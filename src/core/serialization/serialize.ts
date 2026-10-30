@@ -18,6 +18,7 @@
  * download/upload and local storage; a desktop shell or backend can write the
  * same map to a real folder.
  */
+import { repairProject, repairRaw } from './repair';
 import type { ComponentRegistry } from '../components/registry';
 import type { Project } from '../types';
 import { migrateProject } from './migrations';
@@ -46,6 +47,15 @@ export interface LoadResult {
   project: Project;
   /** Non-fatal issues (e.g. unknown component types) found while loading. */
   warnings: string[];
+  /** The format version the file was saved in (older ones were updated while loading). */
+  fromVersion: number;
+  /** Loaded with `repair`: what was left out to make it load (empty: nothing needed to be). */
+  removed?: string[];
+}
+
+export interface LoadOptions {
+  /** Leave out what doesn't load (see repair.ts) instead of refusing the whole file. */
+  repair?: boolean;
 }
 
 export class ProjectLoadError extends Error {
@@ -122,17 +132,22 @@ function fullEntity(raw: unknown, defNames: Map<unknown, unknown>): unknown {
   };
 }
 
-export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistry): LoadResult {
+export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistry, options: LoadOptions = {}): LoadResult {
+  const removed: string[] = [];
   const indexResult = projectIndexSchema.safeParse(files['project.json']);
   if (!indexResult.success) throw new ProjectLoadError(`Invalid project.json: ${formatZodError(indexResult.error)}`);
   const index = indexResult.data;
 
   const read = (path: string) => {
-    if (!(path in files)) throw new ProjectLoadError(`Missing file "${path}"`);
+    if (!(path in files)) {
+      if (!options.repair) throw new ProjectLoadError(`Missing file "${path}"`);
+      removed.push(`"${path}" (missing from the file)`);
+      return null;
+    }
     return files[path];
   };
 
-  const definitions = index.objects.map((o) => read(o.file));
+  const definitions = index.objects.map((o) => read(o.file)).filter((d) => !options.repair || d !== null);
   const defNames = new Map(definitions.map((d) => [(d as { id?: unknown })?.id, (d as { name?: unknown })?.name]));
   const assembled: Record<string, unknown> = {
     formatVersion: index.formatVersion,
@@ -140,10 +155,12 @@ export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistr
     name: index.name,
     settings: index.settings,
     startSceneId: index.startSceneId,
-    scenes: index.scenes.map((s) => {
-      const scene = read(s.file) as Record<string, unknown> | null;
-      return scene && Array.isArray(scene.entities) ? { ...scene, entities: scene.entities.map((e) => fullEntity(e, defNames)) } : scene;
-    }),
+    scenes: index.scenes
+      .map((s) => {
+        const scene = read(s.file) as Record<string, unknown> | null;
+        return scene && Array.isArray(scene.entities) ? { ...scene, entities: scene.entities.map((e) => fullEntity(e, defNames)) } : scene;
+      })
+      .filter((s) => !options.repair || s !== null),
     definitions,
     // Attach each asset's file contents (made again from its pixels or notes when it has none); a missing file is
     // reported by validation below.
@@ -162,26 +179,36 @@ export function projectFromFiles(files: ProjectFiles, registry: ComponentRegistr
     throw new ProjectLoadError((e as Error).message);
   }
 
-  const parsed = projectSchema.safeParse(migrated);
-  if (!parsed.success) throw new ProjectLoadError(`Invalid project data: ${formatZodError(parsed.error)}`);
-  const project = parsed.data as Project;
+  const fromVersion = index.formatVersion;
+  let project: Project;
+  if (options.repair) {
+    const fixed = repairRaw(migrated, (r) => projectSchema.safeParse(r));
+    removed.push(...fixed.removed);
+    if (!fixed.data) throw new ProjectLoadError("The file couldn't be fixed: too much of it is broken");
+    project = fixed.data as Project;
+    removed.push(...repairProject(project, registry));
+  } else {
+    const parsed = projectSchema.safeParse(migrated);
+    if (!parsed.success) throw new ProjectLoadError(`Invalid project data: ${formatZodError(parsed.error)}`);
+    project = parsed.data as Project;
+  }
 
   const integrity = checkIntegrity(project);
   if (integrity.length) throw new ProjectLoadError(integrity.join('; '));
-  return { project, warnings: [...checkComponents(project, registry), ...checkLogic(project)] };
+  return { project, warnings: [...checkComponents(project, registry), ...checkLogic(project)], fromVersion, ...(options.repair ? { removed } : {}) };
 }
 
 export function projectToBundle(project: Project): ProjectBundle {
   return { kind: 'pxlbuilder.bundle', bundleVersion: 1, files: projectToFiles(project) };
 }
 
-export function projectFromBundle(bundle: unknown, registry: ComponentRegistry): LoadResult {
+export function projectFromBundle(bundle: unknown, registry: ComponentRegistry, options: LoadOptions = {}): LoadResult {
   if (typeof bundle !== 'object' || bundle === null || (bundle as ProjectBundle).kind !== 'pxlbuilder.bundle') {
     throw new ProjectLoadError('Not a PXLBuilder project file');
   }
   const files = (bundle as ProjectBundle).files;
   if (typeof files !== 'object' || files === null) throw new ProjectLoadError('Project bundle has no files');
-  return projectFromFiles(files, registry);
+  return projectFromFiles(files, registry, options);
 }
 
 /** Structural reference checks: unique ids and resolvable references. */
@@ -269,12 +296,12 @@ function formatZodError(error: { issues: { path: PropertyKey[]; message: string 
  * A game from a file's text: a saved game (the bundle Save writes) or an exported game page (its HTML, with the
  * game inside). Throws ProjectLoadError when it is neither.
  */
-export function gameFromText(text: string, registry: ComponentRegistry): LoadResult {
+export function gameFromText(text: string, registry: ComponentRegistry, options: LoadOptions = {}): LoadResult {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('<')) {
     const m = /<script type="application\/json" id="pxl-game"[^>]*>([\s\S]*?)<\/script>/.exec(text);
     if (!m) throw new ProjectLoadError('This page has no PXLBuilder game in it');
-    return projectFromBundle(JSON.parse(m[1]), registry);
+    return projectFromBundle(JSON.parse(m[1]), registry, options);
   }
   let raw: unknown;
   try {
@@ -282,5 +309,5 @@ export function gameFromText(text: string, registry: ComponentRegistry): LoadRes
   } catch {
     throw new ProjectLoadError('Not a PXLBuilder game file');
   }
-  return projectFromBundle(raw, registry);
+  return projectFromBundle(raw, registry, options);
 }

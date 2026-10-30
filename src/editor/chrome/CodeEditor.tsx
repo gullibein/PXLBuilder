@@ -3,7 +3,7 @@
  * scripts, every copy's and (for a placed one) its own, as code to read and
  * edit: saved scripts are checked exactly like the AI's, so a mistake is
  * named with where it is and nothing broken is stored. Its built-in behaviors
- * (the components: Patrol, Damage…) are shown as code too, to read; they are
+ * (the components: Patrol, Health…) are shown as code too, to read; they are
  * changed in Details. The script language's reference is one click away.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';

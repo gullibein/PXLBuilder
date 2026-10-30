@@ -5,6 +5,7 @@ import { createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { addRelationship } from '../core/logic/mutations';
 import { setScript } from '../core/script/mutations';
+import { stompScript } from '../core/model/ruleScripts';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { Runtime } from './runtime';
@@ -191,7 +192,7 @@ describe('things in a level without gravity', () => {
   it('touching an enemy from above hurts instead of stomping it, and knocks straight back', () => {
     const rt = room((d, _s, place) => {
       const def = d.definitions.find((x) => x.name === 'Enemy')!;
-      def.components.Stompable = registry.createDefault('Stompable');
+      def.scripts = [...(def.scripts ?? []), stompScript({ by: ['player'], bounce: 320, hits: 0 })];
       def.components.Health = { ...registry.createDefault('Health'), maxHealth: 1, currentHealth: 1 };
       place('Enemy', { x: 0, y: 64 });
     });

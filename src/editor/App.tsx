@@ -3,6 +3,7 @@ import { usesMenuKey } from '../core/script/language';
 import { ObjectCard } from './chrome/ObjectCard';
 import { GameSite } from './gamesite/GameSite';
 import { OpenDialog } from './chrome/OpenDialog';
+import { FileFixDialog } from './chrome/FileFixDialog';
 import { quickSave } from './persistence';
 import { CodeEditor } from './chrome/CodeEditor';
 import { SaveDialog } from './chrome/SaveDialog';
@@ -111,6 +112,7 @@ export function App() {
         <CodeEditor />
         <SaveDialog />
         <OpenDialog />
+        <FileFixDialog />
         <GameSite />
         <ExportGameDialog />
         <SoundEditor />

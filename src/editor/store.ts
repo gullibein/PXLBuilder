@@ -51,6 +51,15 @@ export type DockPanel = 'library' | 'create' | 'sounds' | null;
 export type Tool = { kind: 'select' } | { kind: 'marquee' } | { kind: 'eyedropper' } | { kind: 'brush'; definitionId: Id; once?: boolean };
 export type TrayTab = 'history' | 'console' | 'debug';
 
+export interface FileFix {
+  kind: 'update' | 'repair' | 'fixed';
+  /** The game file's text, and where it came from ("game.pxlproj.json", "the last session"). */
+  text: string;
+  from: string;
+  /** update: what updating changes; repair: why it doesn't load; fixed: what was left out. */
+  lines: string[];
+}
+
 export interface EditorState {
   project: Project;
   activeSceneId: Id;
@@ -131,6 +140,12 @@ export interface EditorState {
   /** The Open window (saves kept with the app on claude.ai, or a file). */
   openDialog: boolean;
   setOpenDialog(open: boolean): void;
+  /**
+   * A game that needs something before it opens: one made with an older version ("update": what updating changes),
+   * one that doesn't load as it is ("repair": why), or one just fixed ("fixed": what was left out).
+   */
+  fileFix: FileFix | null;
+  setFileFix(fix: FileFix | null): void;
   /** PXLGameSite: putting this game up ('save'), or browsing everyone's games ('view'). */
   gameSite: 'save' | 'view' | null;
   setGameSite(gameSite: 'save' | 'view' | null): void;
@@ -267,6 +282,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     codeEditor: null,
     saveDialog: false,
     openDialog: false,
+    fileFix: null,
     gameSite: null,
     backgroundTarget: null,
     exportGameOpen: false,
@@ -535,6 +551,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     setOpenDialog(openDialog) {
       set({ openDialog });
+    },
+    setFileFix(fileFix) {
+      set({ fileFix });
     },
 
     setSaveDialog(saveDialog) {

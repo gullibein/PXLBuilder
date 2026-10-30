@@ -10,6 +10,7 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
+import { hurtsOnTouch, onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
 import { refMatches } from '../logic/refs';
@@ -344,7 +345,6 @@ export function startConflicts(project: Project, sceneId: Id, registry: Componen
   if (!p) return null;
   const pb = boxOf(p.r);
   const overlapping = (b: Box) => Math.min(pb.right, b.right) - Math.max(pb.left, b.left) > EDGE && Math.min(pb.bottom, b.bottom) - Math.max(pb.top, b.top) > EDGE;
-  const accepts = (p.r.components.DamageReceiver?.damageSources as string[] | undefined) ?? [];
   const solid: { id: Id; name: string }[] = [];
   const hurts: { id: Id; name: string }[] = [];
   for (const { e, r } of placed) {
@@ -357,7 +357,7 @@ export function startConflicts(project: Project, sceneId: Id, registry: Componen
     const target = { id: e.id, definitionId: e.definitionId, tags: r.tags };
     const me = { id: p.e.id, definitionId: p.e.definitionId, tags: p.r.tags };
     const harmful =
-      (!!r.components.Damage && !!p.r.components.Health && r.tags.some((t) => accepts.includes(t))) ||
+      (!!p.r.components.Health && hurtsOnTouch(r.scripts, p.r.tags)) ||
       scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, target) && refMatches(rel.target, me));
     if (harmful && touching) hurts.push({ id: e.id, name: e.name });
   }
@@ -381,17 +381,17 @@ export function layoutProblems(project: Project, sceneId: Id, registry: Componen
     return [...counts].map(([n, c]) => (c > 1 ? `${n} (${c})` : n)).join(', ');
   };
   const solid = (r: ResolvedEntity) => !!r.components.Collider && r.components.Collider.isTrigger !== true && r.components.PhysicsBody?.bodyType !== 'dynamic';
-  const surfaces = placed.filter(({ r }) => solid(r) && !r.components.Damage);
+  const surfaces = placed.filter(({ r }) => solid(r) && !touchHarm(r.scripts));
   const overlapX = (a: Box, b: Box) => Math.min(a.right, b.right) - Math.max(a.left, b.left);
   const overlapY = (a: Box, b: Box) => Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
   const near = (a: number, b: number) => Math.abs(a - b) <= 3;
   const attached = (x: { e: { id: Id }; b: Box }) =>
     surfaces.some(({ e, b }) => e.id !== x.e.id && ((overlapX(x.b, b) > 1 && (near(x.b.bottom, b.top) || near(x.b.top, b.bottom) || overlapY(x.b, b) > 1)) || (overlapY(x.b, b) > 1 && (near(x.b.right, b.left) || near(x.b.left, b.right)))));
-  const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.Wander || r.components.MovingPlatform || r.components.CharacterController || r.scripts.length > 0;
+  const moves = (r: ResolvedEntity) => r.components.PhysicsBody?.bodyType === 'dynamic' || r.components.Patrol || r.components.Wander || r.components.MovingPlatform || r.components.CharacterController || r.scripts.some((sc) => !onlyOnTouch(sc));
 
   // Floating spikes, doors and switches.
   // (Seen from above nothing needs something under it.)
-  const fixed = isTopDownScene(project, scene, registry) ? [] : placed.filter(({ r }) => !moves(r) && (r.components.Damage || r.components.Openable || r.components.Switch));
+  const fixed = isTopDownScene(project, scene, registry) ? [] : placed.filter(({ r }) => !moves(r) && (touchHarm(r.scripts) || r.components.Openable || r.components.Switch));
   const floating = fixed.filter((x) => !attached(x));
   if (floating.length) {
     out.push({
@@ -403,11 +403,10 @@ export function layoutProblems(project: Project, sceneId: Id, registry: Componen
 
   // Items that can only be had by getting hurt.
   if (player) {
-    const accepts = (player.r.components.DamageReceiver?.damageSources as string[] | undefined) ?? [];
     const me = { id: player.e.id, definitionId: player.e.definitionId, tags: player.r.tags };
     const hurts = placed.filter(
       ({ e, r }) =>
-        (!!r.components.Damage && !!player.r.components.Health && r.tags.some((t) => accepts.includes(t))) ||
+        (!!player.r.components.Health && hurtsOnTouch(r.scripts, player.r.tags)) ||
         scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, { id: e.id, definitionId: e.definitionId, tags: r.tags }) && refMatches(rel.target, me)),
     );
     const trapped = placed.filter((x) => x.r.components.Collectible && hurts.some((h) => overlapX(x.b, h.b) > 0 && overlapY(x.b, h.b) > 0));

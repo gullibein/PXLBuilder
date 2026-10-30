@@ -4,7 +4,8 @@ import { DEFAULT_SPRITE_RESOLUTION, type SpriteResolution } from '../core/model/
 import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
-import { gameFromText, projectFromBundle, projectToBundle } from '../core/serialization/serialize';
+import { gameFromText, projectFromBundle, projectToBundle, type LoadResult } from '../core/serialization/serialize';
+import { updateNotes } from '../core/serialization/migrations';
 import type { GameType, Project } from '../core/types';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
@@ -68,13 +69,16 @@ export async function restoreAutosave(): Promise<boolean> {
   const text = await readAutosaveText();
   if (!text) return false;
   try {
-    const { project, warnings } = projectFromBundle(JSON.parse(text), componentRegistry);
+    const { project, warnings, fromVersion } = projectFromBundle(JSON.parse(text), componentRegistry);
     loadProject(project);
     logMessage('info', `Restored "${project.name}" from local autosave`);
+    // (The game you were making is updated at once; what that changes is said in the log.)
+    for (const note of updateNotes(fromVersion)) logMessage('info', `Updated for this version: ${note}`);
     for (const w of warnings) logMessage('warn', w);
     return true;
   } catch (e) {
     logMessage('error', `Could not restore autosave: ${(e as Error).message}`);
+    useEditor.getState().setFileFix({ kind: 'repair', text, from: 'the last session', lines: [(e as Error).message] });
     return false;
   }
 }
@@ -227,18 +231,54 @@ export async function quickSave(): Promise<boolean> {
   return !useEditor.getState().dirty;
 }
 
-/** Opens a game from a saved file's text (a file from the computer, or a save kept with the app). */
-export function openGameText(text: string, from: string): void {
-  const { replaceProject, logMessage } = useEditor.getState();
+/**
+ * Opens a game from a saved file's text (a file from the computer, or a save kept with the app). A game made with
+ * an older version that plays differently once updated asks first (the update dialog says what changes); one that
+ * doesn't load as it is offers to be fixed.
+ */
+export function openGameText(text: string, from: string, confirmed = false): void {
+  const { logMessage, setFileFix } = useEditor.getState();
+  let loaded: LoadResult;
   try {
-    const { project, warnings } = gameFromText(text, componentRegistry);
-    replaceProject(`Open ${from}`, project);
-    logMessage('info', `Opened "${project.name}" from ${from}`);
-    if (text.trimStart().startsWith('{')) restoreAIHistory(project.id, (JSON.parse(text) as { aiHistory?: unknown }).aiHistory);
-    for (const w of warnings) logMessage('warn', w);
+    loaded = gameFromText(text, componentRegistry);
   } catch (e) {
     logMessage('error', `Could not open ${from}: ${(e as Error).message}`);
+    setFileFix({ kind: 'repair', text, from, lines: [(e as Error).message] });
+    return;
   }
+  const notes = updateNotes(loaded.fromVersion);
+  if (notes.length && !confirmed) {
+    setFileFix({ kind: 'update', text, from, lines: notes });
+    return;
+  }
+  openLoaded(loaded, text, from);
+}
+
+/** Opens a game file that doesn't load as it is, leaving out what is broken; says what was left out. */
+export function repairGameText(text: string, from: string): void {
+  const { logMessage, setFileFix } = useEditor.getState();
+  try {
+    const loaded = gameFromText(text, componentRegistry, { repair: true });
+    openLoaded(loaded, text, from);
+    const removed = loaded.removed ?? [];
+    for (const r of removed) logMessage('warn', `Fixing ${from}: left out ${r}`);
+    setFileFix({ kind: 'fixed', text, from, lines: removed });
+  } catch (e) {
+    logMessage('error', `Could not fix ${from}: ${(e as Error).message}`);
+    setFileFix({ kind: 'repair', text, from, lines: [(e as Error).message, "It couldn't be fixed either."] });
+  }
+}
+
+function openLoaded({ project, warnings }: LoadResult, text: string, from: string): void {
+  const { replaceProject, logMessage } = useEditor.getState();
+  replaceProject(`Open ${from}`, project);
+  logMessage('info', `Opened "${project.name}" from ${from}`);
+  try {
+    if (text.trimStart().startsWith('{')) restoreAIHistory(project.id, (JSON.parse(text) as { aiHistory?: unknown }).aiHistory);
+  } catch {
+    // (A file fixed after being cut off has no readable chat history.)
+  }
+  for (const w of warnings) logMessage('warn', w);
 }
 
 /** Where each game was last saved, when the browser lets the page write files itself (Chrome, Edge): Save replaces it. */

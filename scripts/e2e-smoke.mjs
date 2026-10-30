@@ -51,6 +51,9 @@ const startPlatformer = async (p) => {
 
 /** Stand-in for the language model: same protocol, deterministic answers. */
 const aiRequests = [];
+// The rule scripts the AI gives objects (as the built-in Enemy and spikes have them).
+const HURTS_SCRIPT = JSON.stringify({ name: 'Hurts on touch', description: 'Touching it hurts the player.', vars: [{ name: 'amount', value: 1 }], handlers: [{ when: { on: 'contact' }, if: "has_tag(other, 'player')", do: [{ do: 'damage', target: 'other', amount: 'amount' }] }] });
+const STOMP_SCRIPT = JSON.stringify({ name: 'Stomp', description: 'Jumping on it defeats it.', vars: [{ name: 'bounce', value: 320 }], handlers: [{ when: { on: 'landed_on' }, if: "has_tag(other, 'player')", do: [{ do: 'bounce', speed: 'bounce', on: 'other' }, { do: 'emit', event: 'stomped', other: 'other' }, { do: 'kill', target: 'self' }] }] });
 let diagnostics = null;
 /** Where a change to what a thing is goes: its library object (the AI is told so), or the thing itself when it has none. */
 const own = (target) => (target.object?.id ? { target: 'definition', id: target.object.id } : { target: 'instance', id: target.id });
@@ -450,7 +453,7 @@ function stubModel(body) {
       kind: 'apply',
       message: "I'll add this to the Mushroom enemy (every mushroom), not the player: landing on a mushroom defeats it. Other enemies still hurt.",
       changes: ['Mushroom: can be stomped by the player'],
-      operations: [{ op: 'add_component', target: 'definition', id: mushroom.id, component: 'Stompable', propsJson: '{"stompers":["player"]}' }],
+      operations: [{ op: 'set_script', target: 'definition', id: mushroom.id, scriptJson: STOMP_SCRIPT }],
     };
   }
   if (req.includes('mushroom enemy')) {
@@ -458,7 +461,7 @@ function stubModel(body) {
       kind: 'preview',
       message: 'A walking mushroom enemy.',
       changes: ['New object: Mushroom'],
-      operations: [{ op: 'create_definition', ref: 'm', name: 'Mushroom', description: 'A mushroom enemy.', category: 'Enemies', tags: ['enemy', 'mushroom'], components: [{ component: 'Sprite', propsJson: '{"width":28,"height":24,"color":"#c0563f"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":24}}' }, { component: 'PhysicsBody', propsJson: '{}' }, { component: 'Damage', propsJson: '{"amount":1}' }] }],
+      operations: [{ op: 'create_definition', ref: 'm', name: 'Mushroom', description: 'A mushroom enemy.', category: 'Enemies', tags: ['enemy', 'mushroom'], components: [{ component: 'Sprite', propsJson: '{"width":28,"height":24,"color":"#c0563f"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":24}}' }, { component: 'PhysicsBody', propsJson: '{}' }] }, { op: 'set_script', target: 'definition', id: 'm', scriptJson: HURTS_SCRIPT }],
     };
   }
   if (req.includes('flying robot')) {
@@ -473,9 +476,9 @@ function stubModel(body) {
             { component: 'Sprite', propsJson: '{"width":26,"height":22,"color":"#9aa7ff"}' },
             { component: 'Collider', propsJson: '{"size":{"x":26,"y":22}}' },
             { component: 'PhysicsBody', propsJson: '{"gravityScale":0}' },
-            { component: 'Damage', propsJson: '{"amount":1}' },
           ],
         },
+        { op: 'set_script', target: 'definition', id: 'robot', scriptJson: HURTS_SCRIPT },
       ],
     };
   }
@@ -518,7 +521,7 @@ function stubModel(body) {
     const lib = (name) => body.context.library.find((d) => d.name === name)?.id;
     const ops = [{ op: 'erase_area', sceneId, col: -50, row: -50, width: 100, height: 100, definitionRef: null }];
     const spikes = lib('Spikes') ?? 'spikes';
-    if (!lib('Spikes')) ops.push({ op: 'create_definition', ref: 'spikes', name: 'Spikes', description: 'Hurts on touch.', category: 'Environment', tags: ['hazard'], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":12,"color":"#c9ced8"}' }, { component: 'Collider', propsJson: '{"size":{"x":32,"y":12},"isTrigger":true}' }, { component: 'Damage', propsJson: '{"amount":1}' }] });
+    if (!lib('Spikes')) ops.push({ op: 'create_definition', ref: 'spikes', name: 'Spikes', description: 'Hurts on touch.', category: 'Environment', tags: ['hazard'], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":12,"color":"#c9ced8"}' }, { component: 'Collider', propsJson: '{"size":{"x":32,"y":12},"isTrigger":true}' }] }, { op: 'set_script', target: 'definition', id: 'spikes', scriptJson: HURTS_SCRIPT });
     ops.push({ op: 'create_definition', ref: 'tp', name: 'Teleporter', description: 'Step on it to travel.', category: 'Environment', tags: ['teleporter'], components: [{ component: 'Sprite', propsJson: '{"width":28,"height":8,"color":"#36e2ff"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":8},"isTrigger":true}' }] });
     ops.push({ op: 'draw_tiles', sceneId, definitionRef: lib('Platform'), rects: [{ col: -8, row: 2, width: 10, height: 1 }, { col: 5, row: 2, width: 8, height: 1 }, { col: 16, row: 2, width: 10, height: 1 }] });
     ops.push({ op: 'draw_tiles', sceneId, definitionRef: lib('Stone'), rects: [{ col: 8, row: -2, width: 4, height: 1 }, { col: 20, row: 1, width: 1, height: 1 }] });
@@ -3395,6 +3398,36 @@ try {
     await op.getByTestId('tray-toggle').click();
     await op.getByRole('tab', { name: /AI History/ }).click();
     await check(async () => (await op.getByTestId('history-list').getByTestId('history-exchange').filter({ hasText: 'Give the player five hearts.' }).count()) === 1, 'opening the saved game brings its AI History back');
+
+    // The same game as an earlier version saved it: its enemy still had the Damage and Stompable components.
+    const old = JSON.parse(saves[0].text);
+    old.files['project.json'].formatVersion = 12;
+    const enemyFile = Object.keys(old.files).find((k) => k.startsWith('objects/') && old.files[k].name === 'Enemy');
+    old.files[enemyFile].scripts = [];
+    old.files[enemyFile].components.Damage = { amount: 2 };
+    old.files[enemyFile].components.Stompable = { stompers: ['player'], bounce: 400, damage: 0 };
+    const fix = op.getByTestId('file-fix');
+    await op.getByTestId('open-file-input').setInputFiles({ name: 'old-game.pxlproj.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(old)) });
+    await check(async () => (await fix.getAttribute('data-kind')) === 'update' && (await fix.getByTestId('file-fix-lines').innerText()).includes('Stomping and hurting on touch become scripts'), 'a game made with an earlier version asks first, saying what updating it changes');
+    await op.screenshot({ path: `${OUT}/27-update-old-game.png` });
+    await fix.getByTestId('file-fix-go').click();
+    await check(async () => (await fix.count()) === 0 && (await op.getByTestId('project-menu').innerText()).includes('Mole Mine'), 'Update and open: the game opens');
+    await op.getByTestId('dock-library').click();
+    await op.getByTestId('definition-Enemy').click({ button: 'right' });
+    await op.getByTestId('menu-code').click();
+    await check(async () => (await op.getByTestId('code-file-Stomp').count()) === 1 && (await op.getByTestId('code-file-Hurts on touch').count()) === 1, "its enemy's stomping and hurting are now scripts, to read and change in the Code editor");
+    await op.keyboard.press('Escape');
+
+    // A file that doesn't open as it is: a script this version can't read.
+    const broken = JSON.parse(saves[0].text);
+    broken.files[enemyFile].scripts.push({ id: 'scr_weird', name: 'Weird', handlers: [{ when: { on: 'teleport_party' }, do: [{ do: 'dance' }] }] });
+    await op.getByTestId('open-file-input').setInputFiles({ name: 'broken.pxlproj.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(broken)) });
+    await check(async () => (await fix.getAttribute('data-kind')) === 'repair' && (await fix.getByTestId('file-fix-go').innerText()) === 'Try to fix it', "a file that doesn't open offers to be fixed");
+    await fix.getByTestId('file-fix-go').click();
+    await check(async () => (await fix.getAttribute('data-kind')) === 'fixed' && (await fix.getByTestId('file-fix-lines').innerText()).includes('the script "Weird" of "Enemy"'), 'fixed: it opens, and says what was left out (only the broken script)');
+    await op.screenshot({ path: `${OUT}/27b-fixed-game.png` });
+    await fix.getByTestId('file-fix-ok').click();
+    await check(async () => (await fix.count()) === 0 && (await op.getByTestId('project-menu').innerText()).includes('Mole Mine'), '(the fixed game is open)');
     await oc.close();
   }
   await cc.close();

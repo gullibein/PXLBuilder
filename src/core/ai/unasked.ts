@@ -6,6 +6,12 @@
  */
 import type { Operation } from '../commands/operations';
 import type { AIContext } from './context';
+import { touchHarm } from '../model/ruleScripts';
+import type { Project } from '../types';
+
+/** The words that name what a rule script does (a stomp, hurting on touch). */
+const STOMP_WORDS = /stomp|jump(ed|s)? on|squash|land(s|ed)? on/i;
+const HURT_WORDS = /hurt|damage|harm|kill|deadly|dangerous|touch/i;
 
 /** The request is about how something looks. */
 const LOOK = /\b(sprites?|pictures?|looks?|drawings?|drawn|draw|poses?|animations?|animated|art|images?|frames?|appearance|costume|graphics?)\b/i;
@@ -16,8 +22,6 @@ const TAKE_AWAY = /\b(remove|delete|take away|get rid|without|no longer|not|neve
 
 /** Behaviors whose removal changes how the game plays, and the words that name them in a request. */
 const BEHAVIORS: Record<string, RegExp> = {
-  Stompable: /stomp|jump(ed|s)? on|squash/i,
-  Damage: /hurt|damage|harm|kill|deadly|dangerous/i,
   DamageReceiver: /hurt|damage|invincib|immortal|kill/i,
   Health: /health|hearts?|lives|life|die|dies|kill/i,
   Patrol: /patrol|walk|move|chase|follow/i,
@@ -41,7 +45,7 @@ const BEHAVIORS: Record<string, RegExp> = {
 const BEHAVIOR_WORDS = /\b(behaviou?rs?|components?|scripts?|abilit(y|ies)|works?)\b/i;
 
 /** What the answer changed that wasn't asked for (a sentence for the AI), or null. */
-export function unaskedChanges(ctx: AIContext, request: string, operations: Operation[]): string | null {
+export function unaskedChanges(ctx: AIContext, request: string, operations: Operation[], project?: Project): string | null {
   const problems: string[] = [];
   const aboutOne = ctx.kind === 'entity' || ctx.kind === 'object';
   if (aboutOne && LOOK.test(request) && !NEW_THING.test(request) && operations.some((o) => o.op === 'create_definition')) {
@@ -56,6 +60,26 @@ export function unaskedChanges(ctx: AIContext, request: string, operations: Oper
     if (removed.length) {
       problems.push(
         `it removes ${[...new Set(removed)].join(', ')}, which the user didn't ask for: keep every built-in behavior exactly as it is (never replace one with a script that does "the same"); change only what was asked`,
+      );
+    }
+  }
+  // A script (the game's rules: stomping, hurting on touch…) goes only when the request names it, or what it does,
+  // and asks for it gone or changed.
+  if (project) {
+    const scripts = [...project.definitions.flatMap((d) => d.scripts ?? []), ...project.scenes.flatMap((sc) => sc.entities.flatMap((e) => e.scripts ?? []))];
+    const gone = operations.flatMap((o) => {
+      if (o.op !== 'remove_script') return [];
+      const script = scripts.find((x) => x.id === o.scriptId);
+      if (!script) return [];
+      const words = [new RegExp(`\\b(?:${script.name.replace(/[^\w ]/g, '').split(/\s+/).filter((w) => w.length > 2).join('|') || '$^'})\\b`, 'i')];
+      if (script.handlers.some((h) => h.when.on === 'landed_on')) words.push(STOMP_WORDS);
+      if (touchHarm([script])) words.push(HURT_WORDS);
+      const named = TAKE_AWAY.test(request) && (BEHAVIOR_WORDS.test(request) || words.some((w) => w.test(request)));
+      return named ? [] : [script.name];
+    });
+    if (gone.length) {
+      problems.push(
+        `it removes the ${[...new Set(gone)].map((n) => `"${n}"`).join(', ')} script, which the user didn't ask for: keep every rule script as it is; to change what a rule does, edit that script (edit_script) only when asked; change only what was asked`,
       );
     }
   }

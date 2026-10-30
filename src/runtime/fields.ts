@@ -197,18 +197,12 @@ function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: strin
     case 'DamageReceiver':
       e.receiver = fresh.receiver;
       break;
-    case 'Damage':
-      e.damage = fresh.damage;
-      break;
     case 'Inventory':
       if (!fresh.inventory) e.inventory = null;
       else if (!e.inventory || field === 'items') e.inventory = fresh.inventory;
       break;
     case 'Collectible':
       e.collectible = fresh.collectible;
-      break;
-    case 'Stompable':
-      e.stompable = fresh.stompable;
       break;
     default:
       if (BEHAVIOR_COMPONENTS.has(component)) rederiveBehaviors(e);

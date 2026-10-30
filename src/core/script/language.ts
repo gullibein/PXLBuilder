@@ -32,7 +32,9 @@ export type Trigger =
   | { on: 'enter_state' }
   | { on: 'event'; event: string; with: string | null }
   | { on: 'key'; key: KeyName; edge: 'pressed' | 'held' | 'released' }
-  | { on: 'signal'; name: string };
+  | { on: 'signal'; name: string }
+  | { on: 'landed_on' }
+  | { on: 'contact' };
 
 export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
 
@@ -63,6 +65,8 @@ export type Stmt =
   | { do: 'set_open'; target: string; open: string }
   | { do: 'state'; name: string }
   | { do: 'signal'; name: string }
+  | { do: 'emit'; event: string; other: string | null }
+  | { do: 'bounce'; speed: string; on: string | null }
   | { do: 'message'; text: string; seconds: number }
   | { do: 'alpha'; value: string; on: string | null }
   | { do: 'rotate'; by: string | null; to: string | null; seconds: string; on: string | null }
@@ -288,6 +292,14 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   take_item: { example: '{"do":"take_item","target":"other","item":"key","count":"1"}', doc: 'remove from its inventory' },
   set_open: { example: '{"do":"set_open","target":"self","open":"true"}', doc: 'open (not solid, faded) or close' },
   state: { example: '{"do":"state","name":"chase"}', doc: 'switch to another state (runs its enter_state handlers)' },
+  bounce: {
+    example: '{"do":"bounce","speed":"320","on":"other"}',
+    doc: 'bounce it up off this (sets vy = -speed, off the ground) and it can\'t be hurt for 0.2 s, so landing on a thing that hurts on contact is never also a hit from it: what a stomp does to the stomper',
+  },
+  emit: {
+    example: '{"do":"emit","event":"stomped","other":"other"}',
+    doc: 'announce a game event with this entity as its subject (and "other" as its other party, or null): rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
+  },
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
   message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
@@ -296,7 +308,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'change any field of any component while playing (the component list says what exists): Sprite width/height/color/assetId, Collider size.x/size.y (two-number fields are set one half at a time), CharacterController jumpForce/speed, Health maxHealth, PhysicsBody gravityScale/bodyType, Patrol speed… and "Transform" x/y/rotation/scale.x/scale.y. Numbers are kept within the field\'s limits; a thing without the component gets it first. Read fields back with field(e, "Component.field")',
   },
   add_component: { example: '{"do":"add_component","component":"Climbable","on":null}', doc: 'give it a component (default values; then set_field to tune it): becomes climbable, stompable, collectible, a patroller…' },
-  remove_component: { example: '{"do":"remove_component","component":"Damage","on":"other"}', doc: 'take a component away (it stops hurting, stops being solid without Collider, …)' },
+  remove_component: { example: '{"do":"remove_component","component":"Collectible","on":"other"}', doc: 'take a component away (it stops being picked up, stops being solid without Collider, …)' },
   tag: { example: '{"do":"tag","tag":"enemy","add":true,"on":null}', doc: 'add (add true) or remove (add false) a tag (tags decide what hurts what, what a stomp or a door needs, who is "player"…)' },
   repeat: { example: '{"do":"repeat","times":"self.max_health","then":[…]}', doc: 'run "then" N times (at most 2000); inside, "i" counts 0, 1, 2…' },
   draw: {
@@ -340,6 +352,14 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
   event: { example: '{"on":"event","event":"touch_started","with":"player"}', doc: 'a game event this entity takes part in (as subject or other); "with" = only when the other party has that tag (null: anything)' },
   key: { example: '{"on":"key","key":"fire","edge":"pressed"}', doc: 'player input: pressed (once), held (every step), released (the keys, touch buttons or a game controller: the same actions)' },
   signal: { example: '{"on":"signal","name":"alarm"}', doc: 'another script sent this signal' },
+  landed_on: {
+    example: '{"on":"landed_on"}',
+    doc: 'something came down onto the top of this one this step ("other" is it): it was falling (not rising) and its feet were above this one\'s top a moment before, and it isn\'t floating (no gravity). The exact test for a stomp: runs before "contact", so a stomp can bounce the stomper before anything hurts it',
+  },
+  contact: {
+    example: '{"on":"contact"}',
+    doc: 'every step while something touches this one (overlapping, standing on it or pressed against it; "other" is it), after "landed_on" handlers and picking things up. For what touching does: hurting, pushing, slowing down',
+  },
 };
 
 // ---------------------------------------------------------------- schema
@@ -404,6 +424,8 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_open'), target: expr, open: expr }),
     z.object({ do: z.literal('state'), name: z.string().min(1) }),
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
+    z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr }),
+    z.object({ do: z.literal('bounce'), speed: expr.default('320'), on: nexpr }),
     z.object({ do: z.literal('message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(2) }),
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
     z.object({ do: z.literal('rotate'), by: nexpr, to: nexpr, seconds: expr.default('0'), on: nexpr }),
@@ -459,6 +481,8 @@ const trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('event'), event: z.string().min(1), with: z.string().min(1).nullable().default(null) }),
   z.object({ on: z.literal('key'), key: z.enum(KEYS as [KeyName, ...KeyName[]]), edge: z.enum(['pressed', 'held', 'released']).default('pressed') }),
   z.object({ on: z.literal('signal'), name: z.string().min(1) }),
+  z.object({ on: z.literal('landed_on') }),
+  z.object({ on: z.literal('contact') }),
 ]);
 
 const handler = z.object({
@@ -555,6 +579,10 @@ export function exprSlots(s: Stmt): string[] {
     case 'damage':
     case 'heal':
       return [s.target, s.amount];
+    case 'emit':
+      return s.other ? [s.other] : [];
+    case 'bounce':
+      return [s.speed, ...(s.on ? [s.on] : [])];
     case 'kill':
       return [s.target];
     case 'give_item':
@@ -665,7 +693,7 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
       return { error: `${where}: unknown event "${h.when.event}"${suggest(h.when.event, eventRegistry.list().map((e) => e.type))}` };
     }
     const base = new Set([...Object.keys(BUILTIN_NAMES), ...varNames]);
-    if (h.when.on === 'event' || h.when.on === 'signal') base.add('other');
+    if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'contact') base.add('other');
     const scopeOf = (names: Set<string>): Scope => ({ names, functions, members });
     const checkText = (text: string, names: Set<string>, what: string): string | null => {
       try {
@@ -701,6 +729,7 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
           const names = project.assets.filter((a) => a.kind === 'music' && a.song).map((a) => a.name);
           return `${at}: there is no song "${s.music}"${names.length ? ` (songs: ${names.join(', ')})` : ' (write one in the music machine, or with make_song)'}`;
         }
+        if (s.do === 'emit' && !eventRegistry.has(s.event)) return `${at}: unknown event "${s.event}"${suggest(s.event, eventRegistry.list().map((e) => e.type))}`;
         if (s.do === 'set_field') {
           const target = resolveField(componentRegistry, s.component, s.field);
           if ('error' in target) return `${at}: ${target.error}`;
