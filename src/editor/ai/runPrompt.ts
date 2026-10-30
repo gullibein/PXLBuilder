@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { unaskedChanges } from '../../core/ai/unasked';
 import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from '../../core/ai/context';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
@@ -196,7 +197,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const gameOps = (r: AIResponse) => r.operations.length > 0 && !r.operations.some(isEditorOperation);
     const broken = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
-    const problem = broken ?? stuck?.text ?? null;
+    // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
+    const unasked = gameOps(response) && !broken && !stuck ? unaskedChanges(ctx, request, response.operations) : null;
+    const problem = broken ?? stuck?.text ?? unasked;
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');
@@ -220,6 +223,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         if (!kept.length) return { status: 'error', message: `The AI's change couldn't be applied. ${skipped[0]}` };
         const note = skipped.length === 1 ? `Left out one part that couldn't be applied: ${skipped[0]}` : `Left out ${skipped.length} parts that couldn't be applied (first: ${skipped[0]})`;
         response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
+      }
+      // Still changing what wasn't asked for: said plainly with the changes (undo takes it back).
+      const stillUnasked = gameOps(response) ? unaskedChanges(ctx, request, response.operations) : null;
+      if (stillUnasked) {
+        trace?.('check', `Still changes what wasn't asked for: ${stillUnasked}`);
+        response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ This also changed things you didn't ask for (${/removes/.test(stillUnasked) ? 'it removed a built-in behavior' : 'it made a new object'}); undo (Ctrl+Z) if you don't want that`] };
       }
       // Still not playable: show it for confirmation, with the problem.
       const stillStuck = gameOps(response) ? (playability(ctx.sceneId, response.operations)?.text ?? null) : null;

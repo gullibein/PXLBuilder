@@ -139,7 +139,7 @@ export const operationSchema = z.union([
       .describe('For an animation (a walk cycle, a flickering torch, a spinning coin): the frames AFTER the first, each a list of rows of the same size as rows, with the same palette; it plays rows, then these, over and over. null for a still picture'),
     fps: z.number().nullable().describe('Animation speed in frames per second (walk cycle 6-10, idle breathing 2-4); null = 8'),
     situation: z
-      .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot', 'up', 'down'])
+      .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot', 'defeated', 'up', 'down'])
       .nullable()
       .describe('null: the normal look. A situation: an extra image shown only while that happens (e.g. "jump" for a jumping sprite); the normal look stays'),
   }),

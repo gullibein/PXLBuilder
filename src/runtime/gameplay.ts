@@ -49,6 +49,8 @@ const KNOCKBACK = { x: 160, y: 220 };
 const KNOCK_TIME = 0.15;
 /** Touching includes standing on something or pressing against it. */
 const TOUCH_SLOP = 0.5;
+/** How long a defeated thing is shown in its defeated look (fading out over the second half). */
+export const DEFEATED_LOOK = 0.6;
 /** How far below a stompable's top the feet may have been and still count as landing on it. */
 const STOMP_SLOP = 6;
 
@@ -242,8 +244,7 @@ export class Gameplay {
       if (o.invincible <= 0) this.hurt(o, s.damage, null);
     } else {
       this.emit('died', o, stomper);
-      o.alive = false;
-      this.rt.markSolidsDirty();
+      this.gone(o);
     }
   }
 
@@ -321,9 +322,18 @@ export class Gameplay {
       victim.vx = 0;
       victim.climbing = false;
       victim.hanging = null;
-    } else {
-      victim.alive = false;
-      this.rt.markSolidsDirty();
+    } else this.gone(victim);
+  }
+
+  /** A defeated thing leaves play; with a defeated look (SpriteStates.defeated) it is shown in it a moment, fading. */
+  private gone(e: RuntimeEntity): void {
+    e.alive = false;
+    this.rt.markSolidsDirty();
+    const states = e.base.components.SpriteStates as Record<string, unknown> | undefined;
+    if (typeof states?.defeated === 'string' && states.defeated) {
+      e.vanishing = DEFEATED_LOOK;
+      e.vx = 0;
+      e.vy = 0;
     }
   }
 

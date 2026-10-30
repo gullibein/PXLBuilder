@@ -371,6 +371,15 @@ function stubModel(body) {
   if (req.includes('take your time') && req.includes('propose')) {
     return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
   }
+  if (req.includes('squished')) {
+    // First the mistake the real AI made: a separate object for the look. Sent back, it draws the look in the object.
+    const g = t[0].spriteGrid;
+    if (!req.includes('could not be applied')) {
+      return { kind: 'apply', message: 'Made a squished enemy that appears when it is stomped.', changes: ['New object "Squished Enemy"'], operations: [{ op: 'create_definition', ref: 'sq', name: 'Squished Enemy', description: 'A flat enemy.', category: 'Effects', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":8,"color":"#c0563f"}' }] }] };
+    }
+    const rows = Array.from({ length: g.height }, (_, y) => (y >= g.height - Math.max(2, g.height >> 2) ? 'r' : '.').repeat(g.width));
+    return { kind: 'apply', message: 'Drew a squished look; it shows for a moment when the enemy is stomped.', changes: [`${t[0].object.name ?? t[0].name}: squished (defeated) picture`], operations: [{ op: 'draw_sprite', target: 'definition', id: t[0].object.id, name: `${t[0].object.name ?? t[0].name} squished`, palette: [{ key: 'r', color: '#c0563f' }], rows, frames: null, fps: null, situation: 'defeated' }] };
+  }
   if (req.includes('jumping sprite')) {
     const g = t[0].spriteGrid;
     const base = t[0].look.sprite?.pixelArt;
@@ -1815,6 +1824,26 @@ try {
   await page.keyboard.up('Space');
   await check(async () => (await lookNow()) === 'idle', 'back on the ground, the normal look again');
   await page.keyboard.press('Escape');
+  await page.getByTestId('undo').click();
+
+  step = 'a look is drawn in the object';
+  const objectCount = async () => {
+    await page.getByTestId('dock-library').click();
+    const n = await page.locator('[data-testid^="definition-"]').count();
+    await page.getByTestId('dock-library').click();
+    return n;
+  };
+  const objectsBefore = await objectCount();
+  await check(objectsBefore > 3, '(the Objects panel lists the objects)');
+  await clickWorld(96, 0);
+  await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim().startsWith('Enemy'), 'an enemy is selected');
+  await ask('I need a squished enemy sprite for when the player stomps the enemy');
+  await changeObject();
+  const squishTrace = aiRequests.at(-1);
+  await check(squishTrace.request.includes('could not be applied') && squishTrace.request.includes('not a new object'), 'an answer that made a new object for a look was sent back to the AI with why');
+  await check(async () => (await result.innerText()).includes('squished (defeated) picture'), 'the squished picture was drawn in the enemy itself (its defeated look)');
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await objectCount()) === objectsBefore, 'no new object was made');
   await page.getByTestId('undo').click();
 
   step = 'play';

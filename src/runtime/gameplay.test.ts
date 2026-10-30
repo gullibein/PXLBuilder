@@ -414,6 +414,34 @@ describe('gameplay', () => {
     expect(p.health!.current).toBe(3);
   });
 
+  it('with a defeated look, a stomped enemy shows it where it was, fading out, and is otherwise gone (the stomp is the same)', () => {
+    const { rt, input, p } = level((b) => {
+      const enemy = b.d.definitions.find((x) => x.name === 'Enemy')!;
+      enemy.components.SpriteStates = { ...registry.createDefault('SpriteStates'), defeated: 'squashed_asset' };
+      b.place('Enemy', { x: 60, y: 17 }, 'Mushroom');
+      b.d.scenes[0].entities.find((x) => x.name === 'Player')!.transform.position = { x: 60, y: -80 };
+    });
+    const e = rt.find('Mushroom')!;
+    let bounced = false;
+    let stompedAt = -1;
+    const seen: { t: number; asset: unknown; alpha: number }[] = [];
+    run(rt, input, 1.2, () => {
+      if (events(rt, 'stomped').length && stompedAt < 0) stompedAt = rt.time;
+      if (events(rt, 'stomped').length && p.vy < 0) bounced = true;
+      const r = rt.renderList().find((x) => x.name === 'Mushroom');
+      if (stompedAt >= 0) seen.push({ t: rt.time - stompedAt, asset: (r?.components.Sprite as { assetId?: unknown } | undefined)?.assetId ?? null, alpha: r ? (r.alpha ?? 1) : 0 });
+    });
+    // The stomp is exactly as without the look: it dies, the player bounces off unhurt.
+    expect(events(rt, 'stomped')).toHaveLength(1);
+    expect(e.alive).toBe(false);
+    expect(bounced).toBe(true);
+    expect(p.health!.current).toBe(3);
+    // Shown in its defeated look, then fading, then not drawn at all.
+    expect(seen.filter((x) => x.t < 0.25).every((x) => x.asset === 'squashed_asset' && x.alpha === 1)).toBe(true);
+    expect(seen.some((x) => x.t > 0.4 && x.t < 0.55 && x.alpha > 0 && x.alpha < 1)).toBe(true);
+    expect(seen.filter((x) => x.t > 0.7).every((x) => x.alpha === 0)).toBe(true);
+  });
+
   it('other enemies cannot be stomped: landing on one hurts', () => {
     const { rt, input, p } = enemyLevel(false, { x: 60, y: -80 });
     run(rt, input, 1);

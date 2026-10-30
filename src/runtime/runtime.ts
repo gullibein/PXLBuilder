@@ -17,7 +17,7 @@ import type { Camera, RenderEntity } from '../render/renderer';
 import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
-import { Gameplay, type LoggedEvent } from './gameplay';
+import { DEFEATED_LOOK, Gameplay, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import { ALL_ACTIONS, type Action, type InputState, type InputView } from './input';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
@@ -82,6 +82,11 @@ export interface RuntimeEntity {
    * do nothing and it can't hurt, be hurt, stomp or pick things up: its death animation (a script on "died") plays.
    */
   dying: number;
+  /**
+   * Defeated (stomped, out of health) and gone from play, but still shown in its defeated look (SpriteStates.defeated)
+   * where it was, fading out: seconds left (0: not shown). It touches, blocks and hurts nothing meanwhile.
+   */
+  vanishing: number;
   /** Keys held when it respawned: ignored until they are let go (a key held through a death doesn't walk it off). */
   heldBlock: Set<Action> | null;
   /** Opened (doors…): it no longer blocks and is drawn faded. */
@@ -221,7 +226,7 @@ export interface ScreenDrawing {
   order: number;
 }
 
-export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot';
+export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot' | 'defeated';
 /** How long the hurt and shoot looks last (seconds). */
 const HURT_LOOK = 0.4;
 const SHOOT_LOOK = 0.25;
@@ -386,6 +391,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     spawn: { ...r.transform.position },
     respawns: 0,
     dying: 0,
+    vanishing: 0,
     heldBlock: null,
     open: c.Openable?.startsOpen === true,
     switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
@@ -682,6 +688,7 @@ export class Runtime {
     this.gameplay.update(dt, input);
     // Characters that died wait out their Health.respawnDelay (their death animation), then come back: counted
     // after this step's events were handled, so a "died" handler always runs before the respawn, never after it.
+    for (const e of this.entities) if (e.vanishing > 0) e.vanishing = Math.max(0, e.vanishing - dt);
     for (const e of this.entities) {
       if (e.dying <= 0) continue;
       e.dying -= dt;
@@ -1222,6 +1229,7 @@ export class Runtime {
       e.alive = true;
       this.solidsDirty = true;
     }
+    e.vanishing = 0;
     e.respawns++;
     this.gameplay.emit('respawned', e, null, { reason });
   }
@@ -1239,7 +1247,7 @@ export class Runtime {
   renderList(): RenderEntity[] {
     const out: RenderEntity[] = [];
     for (const e of this.entities) {
-      if (!e.alive) continue;
+      if (!e.alive && !(e.vanishing > 0)) continue;
       const t = e.base.transform;
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
@@ -1250,7 +1258,8 @@ export class Runtime {
           : e.base;
       const look = this.lookOf(e);
       if (look.assetId && r.components.Sprite) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, assetId: look.assetId, frame: 1 } } };
-      const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1);
+      const fade = e.alive ? 1 : Math.min(1, e.vanishing / (DEFEATED_LOOK / 2));
+      const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1) * fade;
       if (alpha !== 1) r = { ...r, alpha };
       out.push(r);
     }
@@ -1263,7 +1272,8 @@ export class Runtime {
    */
   lookOf(e: RuntimeEntity): { situation: Situation; assetId: string | null } {
     let situation: Situation = 'idle';
-    if (this.time - e.hurtAt < HURT_LOOK) situation = 'hurt';
+    if (!e.alive && e.vanishing > 0) situation = 'defeated';
+    else if (this.time - e.hurtAt < HURT_LOOK) situation = 'hurt';
     else if (this.time - e.shotAt < SHOOT_LOOK) situation = 'shoot';
     else if (e.hanging) situation = 'hang';
     else if (e.climbing) situation = 'climb';
