@@ -41,6 +41,8 @@ export function userMessageParts(body: AIRequestBody): { context: string; rest: 
 
 /** What the attached pictures are (they are shown with this message, in this order). */
 export function picturesText(body: AIRequestBody): string {
+  if (body.pictureGrids?.length)
+    return `PICTURES THE USER ATTACHED (see the pictures guidance). They could not be sent as pictures here, so each is given as text: a grid of characters, one per cell, row by row from the top, with its colors; read it as the picture (shapes are runs and blocks of one character):\n${body.pictureGrids.join('\n\n')}\n\n`;
   const pics = body.images ?? [];
   if (!pics.length) return '';
   const lines = pics.map((p, i) => {

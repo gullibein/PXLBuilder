@@ -50,6 +50,8 @@ export interface AIRequestBody {
   code?: { id: string; name: string; scripts: unknown[] }[];
   /** Pictures attached to this request (only this one: later requests get a line saying they were there). */
   images?: AIPicture[];
+  /** The same pictures as text grids, for an AI that can't be sent pictures (claude.ai in the Claude app). */
+  pictureGrids?: string[];
 }
 
 export const aiResponseSchema = z.object({

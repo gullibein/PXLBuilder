@@ -13,6 +13,7 @@ import { AIUnavailableError, aiResponseSchema, type AIPicture, type AIRequestBod
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
+import { pictureGrid } from './pictures';
 
 interface SampleError {
   code: string;
@@ -73,6 +74,9 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** claude.ai turned the pictures down (images_unavailable): they are sent as text instead. */
+class PicturesRefused extends Error {}
+
 export class SampleAIProvider implements AIProvider {
   /** `log`: hears about answers that couldn't be read (with the start of what came back), for the console. */
   constructor(
@@ -83,12 +87,6 @@ export class SampleAIProvider implements AIProvider {
   private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<{ text: string; truncated: boolean }> {
     const size = typeof input === 'string' ? input.length : input.reduce((n, t) => n + t.content.length, 0);
     const pictures = body.images ?? [];
-    if (pictures.length) {
-      // Only where this view can send pictures, and no more than it takes.
-      const can = await this.sample.limits?.().catch(() => null);
-      if (!can?.images) throw new AIUnavailableError(MESSAGES.images_unavailable);
-      if (pictures.length > can.images.maxCount) throw new AIUnavailableError(`claude.ai takes at most ${can.images.maxCount} picture${can.images.maxCount === 1 ? '' : 's'} with one request here. Remove some and send again.`);
-    }
     trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}${pictures.length ? `, ${pictures.length} picture(s)` : ''}`);
     for (let attempt = 0; ; attempt++) {
       try {
@@ -102,6 +100,7 @@ export class SampleAIProvider implements AIProvider {
         const code = err?.code ?? 'unknown';
         trace?.('error', `${code}: ${err?.message ?? ''}${(e as { text?: string }).text ? `\nPartial answer: ${(e as { text?: string }).text}` : ''}`);
         if (code === 'cancelled' || signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+        if (code === 'images_unavailable' && pictures.length) throw new PicturesRefused();
         if (PASSING.has(code) && attempt < RETRY_WAIT_MS.length) {
           trace?.('retry', `claude.ai turned the request down (${code}); sending it again`);
           this.log?.(`claude.ai turned the AI request down (${code}); sending it again.`);
@@ -113,9 +112,51 @@ export class SampleAIProvider implements AIProvider {
     }
   }
 
-  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
-    const question = prompt(body);
-    let answer = await this.ask(question, body, signal, trace);
+  /**
+   * Pictures go along where this view can send them. Where it can't (claude.ai inside the Claude app), they go as
+   * text instead (pictures.ts: a grid of characters, exact for pixel art), so the AI still sees them.
+   */
+  private async withPictures(body: AIRequestBody, trace?: TraceFn): Promise<AIRequestBody> {
+    if (!body.images?.length) return body;
+    let can: Awaited<ReturnType<NonNullable<SampleFn['limits']>>> | null = null;
+    let why = 'it gives no limits';
+    try {
+      can = (await this.sample.limits?.()) ?? null;
+      why = JSON.stringify(can);
+    } catch (e) {
+      why = `asking failed: ${(e as SampleError)?.code ?? (e as Error)?.message}`;
+    }
+    trace?.('note', `What claude.ai here can send: ${why}`);
+    if (can?.images) {
+      if (body.images.length > can.images.maxCount) throw new AIUnavailableError(`claude.ai takes at most ${can.images.maxCount} picture${can.images.maxCount === 1 ? '' : 's'} with one request here. Remove some and send again.`);
+      return body;
+    }
+    // It answered, without pictures: as text. (No answer at all: the pictures are tried, and text if refused.)
+    return can ? this.asText(body, trace, why) : body;
+  }
+
+  private async asText(body: AIRequestBody, trace: TraceFn | undefined, why: string): Promise<AIRequestBody> {
+    const pics = body.images ?? [];
+    // (Finer with fewer pictures; all of them well inside claude.ai's limit on one request's text.)
+    const cells = pics.length === 1 ? 192 : pics.length === 2 ? 144 : 96;
+    const pictureGrids = await Promise.all(pics.map((p, i) => pictureGrid(p, i, cells)));
+    trace?.('note', `claude.ai can't take pictures here (${why}): sent as text grids instead`);
+    this.log?.(`claude.ai can't send pictures from here (${why}), so the AI got them as text: a grid of colors (exact for pixel art, rougher for big pictures).`);
+    return { ...body, images: undefined, pictureGrids };
+  }
+
+  async respond(asked: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+    let body = await this.withPictures(asked, trace);
+    let question = prompt(body);
+    let answer: { text: string; truncated: boolean };
+    try {
+      answer = await this.ask(question, body, signal, trace);
+    } catch (e) {
+      if (!(e instanceof PicturesRefused)) throw e;
+      body = await this.asText(body, trace, 'it refused them');
+      question = prompt(body);
+      answer = await this.ask(question, body, signal, trace);
+    }
     // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
     // and an answer that was cut off is told apart from one that is malformed.
     const cutOff = () => new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");

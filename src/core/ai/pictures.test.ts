@@ -7,6 +7,9 @@ import { sendSize } from '../../editor/ai/pictures';
 import { GeminiProvider, resetGeminiBusy } from '../../editor/ai/geminiProvider';
 import { SampleAIProvider } from '../../editor/ai/sampleProvider';
 
+// (Reading a picture into a grid needs a browser: a stand-in here.)
+vi.mock('../../editor/ai/pictures', async (original) => ({ ...(await original<object>()), pictureGrid: async (p: AIPicture) => `GRID of ${p.name}` }));
+
 const pic = (over: Partial<AIPicture> = {}): AIPicture => ({ name: 'game.png', mediaType: 'image/png', data: 'iVBORw0KGgo=', width: 1200, height: 900, sourceWidth: 400, sourceHeight: 300, ...over });
 const body = (images?: AIPicture[]): AIRequestBody => ({ context: { scope: 'project' } as never, request: 'A game like this', history: [], ...(images ? { images } : {}) });
 const answer = { kind: 'answer', message: 'Hi', changes: [], operations: [], needCode: null, starter: null };
@@ -73,9 +76,36 @@ describe('pictures attached to a request', () => {
       ['image/png', 8],
       ['image/png', 8],
     ]);
-    const without = Object.assign(async () => ({ text: JSON.stringify(answer), truncated: false }), { limits: async () => ({}) });
-    await expect(new SampleAIProvider(without).respond(body([pic()]))).rejects.toThrow(/Pictures can't be sent/);
     const two = Object.assign(sample, { limits: async () => ({ images: { maxCount: 1, maxInputBytes: 1, mediaTypes: [] } }) });
     await expect(new SampleAIProvider(two).respond(body([pic(), pic()]))).rejects.toThrow(/at most 1 picture/);
+  });
+
+  it('through claude.ai where pictures can\'t go (the Claude app): sent as text grids instead, also when it refuses them', async () => {
+    const asked: { input: string; images?: Blob[] }[] = [];
+    const reply = async (input: unknown, o?: { images?: Blob[] }) => {
+      asked.push({ input: input as string, images: o?.images });
+      return { text: JSON.stringify(answer), truncated: false };
+    };
+    const notes: string[] = [];
+    // It says it can't: text from the start.
+    await new SampleAIProvider(Object.assign(reply, { limits: async () => ({}) }), (n) => notes.push(n)).respond(body([pic()]));
+    expect(asked[0].images).toBeUndefined();
+    expect(asked[0].input).toContain('could not be sent as pictures here');
+    expect(asked[0].input).toContain('GRID of game.png');
+    expect(notes[0]).toMatch(/as text/);
+    // It says nothing: the pictures are tried; refused, text.
+    asked.length = 0;
+    let first = true;
+    const refusing = async (input: unknown, o?: { images?: Blob[] }) => {
+      if (first) {
+        first = false;
+        throw { code: 'images_unavailable', message: '' };
+      }
+      return reply(input, o);
+    };
+    expect(await new SampleAIProvider(refusing).respond(body([pic()]))).toEqual(answer);
+    expect(asked.length).toBe(1);
+    expect(asked[0].images).toBeUndefined();
+    expect(asked[0].input).toContain('GRID of game.png');
   });
 });
