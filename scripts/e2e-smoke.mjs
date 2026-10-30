@@ -4257,6 +4257,9 @@ try {
     await startPlatformer(mp);
     await mp.getByTestId('dock-music').click();
     await check(async () => await mp.getByTestId('music-studio').isVisible(), 'the Music button opens the music machine');
+    await check(async () => (await mp.getByTestId('music-list-songs').count()) === 0 && (await mp.getByTestId('music-song-pick').isVisible()), 'the Songs tab has no list on the left: the song is chosen at the top');
+    await mp.getByTestId('music-new').click();
+    await check(async () => (await mp.getByTestId('object-menu').innerText()).replace(/\s+/g, ' ').trim() === '8-bit song 16-bit song', 'NEW at the top offers an 8-bit song or a 16-bit song');
     await mp.getByTestId('music-new-song-8bit').click();
     await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 6, 'a new 8-bit song comes with six channels');
     await check(async () => (await mp.locator('.ms-drum-sep ~ .ms-channel').count()) === 3 && (await mp.locator('.ms-drum-sep ~ .ms-channel').first().locator('option:checked').textContent()) === 'Chip kick', 'three instruments, then the three drums below a line');
@@ -4433,7 +4436,21 @@ try {
     }
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('a new spooky song');
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
-    await check(async () => (await mp.getByTestId('music-item-Spooky waltz').count()) === 1 && (await mp.getByTestId('music-item-Spooky waltz').getAttribute('class')).includes('on'), "a song the AI writes opens in the Songs tab");
+    await check(async () => (await mp.getByTestId('music-song-pick').locator('option:checked').textContent()) === 'Spooky waltz', 'a song the AI writes opens in the Songs tab (chosen in the list at the top)');
+    // Songs are chosen, renamed and deleted at the top.
+    await mp.getByTestId('music-song-pick').selectOption({ label: 'Song' });
+    await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 6, 'choosing another song in the list at the top opens it');
+    await mp.getByTestId('music-song-pick').selectOption({ label: 'Spooky waltz' });
+    await mp.getByTestId('music-songbar').getByTestId('music-rename').click();
+    await mp.getByTestId('music-rename-input').fill('Ghost waltz');
+    await mp.getByTestId('music-rename-input').press('Enter');
+    await check(async () => (await mp.getByTestId('music-song-pick').locator('option:checked').textContent()) === 'Ghost waltz', '✎ at the top renames the song');
+    await mp.getByTestId('music-songbar').getByTestId('music-delete').click();
+    await mp.getByTestId('music-delete-yes').click();
+    await check(async () => (await mp.getByTestId('music-song-pick').locator('option').allTextContents()).join('|') === 'Song', '🗑 at the top deletes it (after asking)');
+    await mp.locator('.ms-title').click();
+    await mp.keyboard.press('Control+z');
+    await check(async () => (await mp.getByTestId('music-song-pick').locator('option').count()) === 2, '(Undo brings it back)');
     // And in the Instruments tab: the open instrument is reshaped.
     await mp.getByTestId('music-tab-instruments').click();
     await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, '(switching tabs, a click outside, closed the card)');
@@ -4445,7 +4462,7 @@ try {
     await check(async () => (await mp.getByTestId('ins-vibratoDepth').inputValue()) === '0.8' && (await mp.getByTestId('ins-picture').evaluate((c) => c.toDataURL())) !== pictureBefore, "the Instruments tab's prompt reshapes the instrument (its sliders move)");
     await check(aiRequests.at(-1).context.scope === 'instrument' && aiRequests.at(-1).context.instrument.instrument.filter === 'lowpass', 'the AI is told every setting of the instrument');
     await mp.getByTestId('music-tab-songs').click();
-    await mp.getByTestId('music-item-Song').locator('.ms-item-name').click();
+    await mp.getByTestId('music-song-pick').selectOption({ label: 'Song' });
     await mp.keyboard.press('Escape');
     await check(async () => (await mp.getByTestId('music-studio').count()) === 0, 'Esc closes the music machine');
     // The level's music plays in Play.

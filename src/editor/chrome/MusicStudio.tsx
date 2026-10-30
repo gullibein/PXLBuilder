@@ -35,6 +35,7 @@ import { instrumentsOf, playNote, playSong, type SongPlayer } from '../audio/mus
 import { audio, keepAudioAwake } from '../audio/synth';
 import { useEditor } from '../store';
 import { PromptBox } from '../prompt/PromptBox';
+import { ContextMenu } from './Dock';
 import { useCloseOutside } from '../prompt/closeOutside';
 
 export const CHANNEL_COLORS = ['#ff5d73', '#4cc9f0', '#ffd166', '#06d6a0', '#c77dff', '#ff9f1c', '#a3e635', '#f472b6', '#60a5fa', '#fb7185', '#facc15', '#2dd4bf'];
@@ -72,6 +73,7 @@ export function MusicStudio() {
           >
             ✦
           </button>
+          {tab === 'songs' && <SongBar />}
           <span className="grow" />
           <button className="icon-btn" aria-label="Close" title="Close (Esc)" data-testid="music-close" onClick={close}>
             ×
@@ -671,23 +673,112 @@ function newSong(chip: Chip): void {
   useEditor.getState().setMusicStudio({ tab: 'songs', songId: id });
 }
 
+/**
+ * The Songs tab's part of the top bar: which song is open (a list), NEW (an 8-bit or a 16-bit song), and renaming
+ * or deleting the open one.
+ */
+function SongBar() {
+  const project = useEditor((s) => s.project);
+  const wanted = useEditor((s) => s.musicStudio?.songId ?? null);
+  const items = musicAssets(project, 'music');
+  const asset = items.find((a) => a.id === wanted) ?? items[0];
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const rename = (name: string) => {
+    if (!asset) return;
+    let err: string | null = null;
+    useEditor.getState().edit(`Rename song ${asset.name}`, (p) => void (err = renameMusicAsset(p, asset.id, name)));
+    setProblem(err);
+    if (!err) setRenaming(false);
+  };
+  return (
+    <div className="ms-songbar" data-testid="music-songbar">
+      {renaming && asset ? (
+        <input
+          className="ms-rename"
+          autoFocus
+          defaultValue={asset.name}
+          aria-label="Rename song"
+          data-testid="music-rename-input"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setRenaming(false);
+              setProblem(null);
+            }
+            if (e.key === 'Enter') rename(e.currentTarget.value);
+          }}
+          onBlur={() => (setRenaming(false), setProblem(null))}
+        />
+      ) : (
+        <select className="ms-select ms-song-pick" aria-label="Song" data-testid="music-song-pick" value={asset?.id ?? ''} disabled={!items.length} onChange={(e) => useEditor.getState().setMusicStudio({ songId: e.target.value })}>
+          {!items.length && <option value="">No songs yet</option>}
+          {items.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {asset && !renaming && (
+        <>
+          <button className="icon-btn small" aria-label={`Rename ${asset.name}`} title="Rename" data-testid="music-rename" onClick={() => setRenaming(true)}>
+            ✎
+          </button>
+          <button className="icon-btn small" aria-label={`Delete ${asset.name}`} title="Delete this song" data-testid="music-delete" onClick={() => setDeleting(true)}>
+            🗑
+          </button>
+        </>
+      )}
+      <button
+        className="chip-btn small ms-new-btn"
+        data-testid="music-new"
+        aria-haspopup="menu"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenu({ x: r.left, y: r.bottom + 4 });
+        }}
+      >
+        NEW ▾
+      </button>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: '8-bit song', testId: 'music-new-song-8bit', run: () => newSong('8bit') },
+            { label: '16-bit song', testId: 'music-new-song-16bit', run: () => newSong('16bit') },
+          ]}
+        />
+      )}
+      {problem && <span className="ms-problem">{problem}</span>}
+      {deleting && asset && (
+        <div className="ms-confirm" data-testid="music-delete-confirm">
+          Delete “{asset.name}”?
+          <button className="danger-btn small" data-testid="music-delete-yes" onClick={() => (setDeleting(false), useEditor.getState().edit(`Delete song ${asset.name}`, (p) => removeMusicAsset(p, asset.id)))}>
+            Delete
+          </button>
+          <button className="chip-btn small" onClick={() => setDeleting(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SongsTab() {
   const project = useEditor((s) => s.project);
   const wanted = useEditor((s) => s.musicStudio?.songId ?? null);
   const items = musicAssets(project, 'music');
   const asset = items.find((a) => a.id === wanted) ?? items[0];
   return (
-    <div className="ms-body">
-      <AssetList kind="music" items={items} selected={asset?.id ?? null} onSelect={(id) => useEditor.getState().setMusicStudio({ songId: id })}>
-        <button className="chip-btn small" data-testid="music-new-song-8bit" onClick={() => newSong('8bit')}>
-          + 8-bit song
-        </button>
-        <button className="chip-btn small" data-testid="music-new-song-16bit" onClick={() => newSong('16bit')}>
-          + 16-bit song
-        </button>
-      </AssetList>
+    <div className="ms-body single">
       <div className="ms-main">
-        {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song: + 8-bit song (NES, Game Boy) or + 16-bit song (SNES, Mega Drive). Each comes with three instruments (a lead, a second voice and a bass) and three drums (kick, snare, hi-hat). Or describe the song you want (✦ at the top).</p>}
+        {asset ? <SongEditor key={asset.id} asset={asset} project={project} /> : <p className="ms-empty muted">Start a song with NEW at the top: an 8-bit song (NES, Game Boy) or a 16-bit song (SNES, Mega Drive). Each comes with three instruments (a lead, a second voice and a bass) and three drums (kick, snare, hi-hat). Or describe the song you want (✦ at the top).</p>}
       </div>
     </div>
   );
