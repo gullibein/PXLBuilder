@@ -48,6 +48,11 @@ export type Stmt =
   | { do: 'chase'; target: string; speed: string }
   | { do: 'heading'; x: string; y: string }
   | { do: 'carry'; x: string; y: string }
+  | { do: 'climbing'; value: string }
+  | { do: 'stand_on_ladder' }
+  | { do: 'grab_ledge'; dir: string }
+  | { do: 'climb_ledge' }
+  | { do: 'let_go' }
   | { do: 'glide_to'; x: string; y: string; speed: string; on: string | null }
   | { do: 'position'; x: string; y: string; on: string | null }
   | { do: 'jump'; force: string; on: string | null }
@@ -197,6 +202,8 @@ export const MEMBERS: Record<string, string> = {
   spawn_y: 'y where it started',
   gravity: 'its gravity scale now (1 = normal)',
   speed_factor: 'its walking/running speed factor now (1 = normal)',
+  feet: 'the y of the bottom of its body (what ladder tops are compared with)',
+  hang_side: 'the side of the ledge it hangs from (1 right, -1 left; 0 when not hanging)',
   grip: 'how well it grips the floor it stands on (1 = normal, less on ice, more on rough ground): its own friction times the floor\'s',
   name: 'its name',
 };
@@ -261,6 +268,10 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   can_see: { args: 'e', min: 1, max: 1, doc: 'no wall between self and e' },
   touching: { args: 'tag, e?', min: 1, max: 2, doc: 'self (or e) overlaps a living entity with the tag right now: touching("water"), touching("water", other)' },
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
+  ladder_here: { args: '', min: 0, max: 0, doc: 'there is a ladder it can climb where it is (at least half of it in the ladder\'s width)' },
+  ladder_x: { args: '', min: 0, max: 0, doc: 'the middle x of the ladder it is at (0 when there is none)' },
+  ladder_top: { args: '', min: 0, max: 0, doc: 'the y of the top of the ladder it is at (0 when there is none): compare self.feet with it' },
+  floor_below_ladder: { args: '', min: 0, max: 0, doc: 'it stands on the floor (not on a ladder top): Down there does not climb' },
   on_ladder: { args: 'e?', min: 0, max: 1, doc: 'self (or e) is at a ladder it can climb (at least half of it in the ladder\'s width), or climbing one' },
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
   field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
@@ -294,6 +305,14 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     example: '{"do":"chase","target":"nearest_player()","speed":"100"}',
     doc: 'one step of chasing it as enemies do: flyers (no gravity) straight at it; walkers sideways, and up or down by ladder when it is higher or lower (walking to a ladder that goes that way, lining up, climbing, stepping off level with it); sets facing',
   },
+  climbing: {
+    example: '{"do":"climbing","value":"true"}',
+    doc: 'start (true) or stop (false) climbing the ladder it is at: while climbing nothing pulls it down and ladder tops don\'t hold it up; its speed is what the script sets (the player\'s Climbing script does this with Up/Down)',
+  },
+  stand_on_ladder: { example: '{"do":"stand_on_ladder"}', doc: 'climbing up and at the top of its ladder: put its feet on the ladder\'s top, stop and end the climb; the engine\'s controls do nothing more with it this step' },
+  grab_ledge: { example: '{"do":"grab_ledge","dir":"1"}', doc: 'hang from the ledge on that side (-1 left, 1 right) if there is one at hand height with room to stand on top (the engine\'s ledge test): stops it, self.hanging becomes true and "ledge_grabbed" happens' },
+  climb_ledge: { example: '{"do":"climb_ledge"}', doc: 'hanging from a ledge: climb up onto it (standing on top); the engine\'s controls do nothing more with it this step' },
+  let_go: { example: '{"do":"let_go"}', doc: 'stop hanging from the ledge (it falls)' },
   carry: {
     example: '{"do":"carry","x":"2","y":"0"}',
     doc: 'what stands on top of it moves along by x, y px (sideways only as far as walls let it): for a platform that moves itself, by how far it moves this step',
@@ -435,6 +454,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('chase'), target: expr, speed: expr }),
     z.object({ do: z.literal('heading'), x: expr, y: expr }),
     z.object({ do: z.literal('carry'), x: expr, y: expr }),
+    z.object({ do: z.literal('climbing'), value: expr }),
+    z.object({ do: z.literal('stand_on_ladder') }),
+    z.object({ do: z.literal('grab_ledge'), dir: expr }),
+    z.object({ do: z.literal('climb_ledge') }),
+    z.object({ do: z.literal('let_go') }),
     z.object({ do: z.literal('glide_to'), x: expr, y: expr, speed: expr.default('60'), on: nexpr }),
     z.object({ do: z.literal('position'), x: expr, y: expr, on: nexpr }),
     z.object({ do: z.literal('jump'), force: expr, on: nexpr }),
@@ -535,7 +559,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['running', 'jumping', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -605,6 +629,14 @@ export function exprSlots(s: Stmt): string[] {
     case 'heading':
     case 'carry':
       return [s.x, s.y];
+    case 'climbing':
+      return [s.value];
+    case 'grab_ledge':
+      return [s.dir];
+    case 'stand_on_ladder':
+    case 'climb_ledge':
+    case 'let_go':
+      return [];
     case 'glide_to':
       return [s.x, s.y, s.speed, ...(s.on ? [s.on] : [])];
     case 'jump':

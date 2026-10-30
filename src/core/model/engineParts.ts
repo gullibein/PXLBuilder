@@ -573,7 +573,109 @@ function runningScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Climbing ladders as the engine does it (runs just before the engine moves the character, as its controls do):
+ * at a ladder, Up (unless it already stands on the ladder's top) or Down (unless it stands on the floor) starts
+ * a climb; Up/Down climb and Left/Right move along it at its running speed, easing into the ladder's middle when
+ * going straight up or down; Jump lets go, so does moving off it; at the top it stands on it. Its speed is the
+ * Character Controller's, read every step. (Reaching the floor ends a climb in the engine's physics, as before.)
+ */
+function climbingScript(): BehaviorScript {
+  const speed = "field(self, 'CharacterController.speed') * self.speed_factor";
+  const key = (k: string) => `(key('${k}') ? 1 : 0)`;
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Climbing',
+    description: 'Climbing ladders with Up/Down (Left/Right moves along it, Jump lets go), as the engine does it: at running speed, easing into the middle, standing on the top when it gets there.',
+    takesOver: 'climbing',
+    vars: [
+      { name: 'centering', value: 10, setting: true },
+      { name: 'mx', value: 0 },
+      { name: 'vert', value: 0 },
+      { name: 'here', value: false },
+    ],
+    handlers: [
+      {
+        when: { on: 'tick' },
+        if: "field(self, 'CharacterController.movement') != 'topdown'",
+        do: [
+          set('mx', `${key('right')} - ${key('left')}`),
+          set('here', 'ladder_here()'),
+          // Starting: Up below its top, or Down anywhere but on the floor.
+          when("here and not self.climbing and ((key('up') and self.feet > ladder_top() + 0.5) or (key('down') and not floor_below_ladder()))", [
+            { do: 'climbing', value: 'true' },
+            vel('0', null),
+          ]),
+          when("self.climbing and pressed('jump')", [{ do: 'climbing', value: 'false' }], [
+            // Moved off the side, or climbed down off its bottom: lets go (no climbing speed kept).
+            when('self.climbing and not here', [{ do: 'climbing', value: 'false' }, vel(null, '0')]),
+          ]),
+          when('self.climbing and here', [
+            set('vert', `${key('down')} - ${key('up')}`),
+            vel(`mx * ${speed}`, `vert * ${speed}`),
+            // Straight up or down eases it into the ladder's middle (Left/Right overrides it).
+            when('vert != 0 and mx == 0', [{ do: 'position', x: 'self.x + (ladder_x() - self.x) * min(1, dt * centering)', y: 'self.y', on: null }]),
+            when('vert < 0 and self.feet + self.vy * dt <= ladder_top()', [{ do: 'stand_on_ladder' }]),
+          ]),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/**
+ * Ledge grabs as the engine does it (LedgeGrab): falling (or at the top of a jump) against a wall while pressing
+ * toward it, with the wall's top at hand height and room to stand on it, it hangs there ("ledge_grabbed"); Up or
+ * Jump climbs up onto it, Down or pressing away lets go; for a moment after (climb_wait, drop_wait) it grabs nothing.
+ */
+function ledgeGrabScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Ledge grab',
+    description: 'Grabbing ledges while falling against a wall and pressing toward it; Up or Jump climbs up, Down or pressing away lets go: as the engine does it.',
+    takesOver: 'ledge_grab',
+    vars: [
+      { name: 'climb_wait', value: 0.2, setting: true },
+      { name: 'drop_wait', value: 0.3, setting: true },
+      { name: 'cooldown', value: 0 },
+      { name: 'mx', value: 0 },
+    ],
+    handlers: [
+      {
+        when: { on: 'tick' },
+        if: "field(self, 'CharacterController.movement') != 'topdown' and not self.climbing",
+        do: [
+          set('mx', "(key('right') ? 1 : 0) - (key('left') ? 1 : 0)"),
+          set('cooldown', 'max(0, cooldown - dt)'),
+          when(
+            'self.hanging',
+            [
+              vel('0', '0'),
+              when("pressed('jump') or key('up')", [{ do: 'climb_ledge' }, set('cooldown', 'climb_wait')], [
+                when("key('down') or mx == -self.hang_side", [{ do: 'let_go' }, set('cooldown', 'drop_wait')]),
+              ]),
+            ],
+            [when("has_component(self, 'LedgeGrab') and not self.grounded and self.vy >= 0 and mx != 0 and cooldown <= 0", [{ do: 'grab_ledge', dir: 'mx' }])],
+          ),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  climbing: {
+    label: 'climbing',
+    covers: "the player climbing ladders: Up/Down to start and climb (not Up on the ladder's top, not Down on the floor), Left/Right along it, at its running speed, easing into the middle, Jump or moving off to let go, standing on the top when it gets there; not enemies climbing (that is their Patrol)",
+    component: 'CharacterController',
+    script: climbingScript,
+  },
+  ledge_grab: {
+    label: 'ledge grab',
+    covers: 'hanging from a ledge (LedgeGrab): grabbing it while falling against a wall and pressing toward it, Up or Jump to climb up, Down or pressing away to let go, a moment after when it grabs nothing',
+    component: 'LedgeGrab',
+    script: ledgeGrabScript,
+  },
   running: {
     label: 'running',
     covers: 'Left/Right running (seen from above: walking in eight directions): how fast (speed, times its speed factor), speeding up and slowing down (acceleration, as much as the floor\'s grip allows: slippery on ice), steering in the air (airControl), and facing the way it runs; not climbing ladders or hanging from ledges',

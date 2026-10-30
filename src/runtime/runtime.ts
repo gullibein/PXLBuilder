@@ -133,6 +133,8 @@ export interface RuntimeEntity {
   beh: Behaviors;
   /** Hanging from a ledge (LedgeGrab): which side the wall is on, its top, and its face. */
   hanging: { side: 1 | -1; top: number; edgeX: number } | null;
+  /** A script moved it itself this step (onto a ladder's top, up onto a ledge): its controls do nothing more until the next step. */
+  controlsDone: boolean;
   /** Seconds before it can grab a ledge again (after letting go). */
   grabCooldown: number;
   /** A shot: who fired it, the tags of its side (it never hurts them), and how far it may still fly. */
@@ -183,6 +185,12 @@ function boxOf(e: RuntimeEntity): Box | null {
 }
 
 /** The area an entity covers on screen (its sprite), used for ladders: you climb the tile you see. */
+/** The y of the bottom of its body (what ladder tops are compared with). */
+export function feetOf(e: RuntimeEntity): number {
+  const z = zoneOf(e);
+  return z.y + z.hh;
+}
+
 function zoneOf(e: RuntimeEntity): Box {
   const size = getEntitySize(e.base);
   const scale = e.base.transform.scale;
@@ -420,6 +428,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     spin: 0,
     beh: readBehaviors(c, r.transform.position),
     hanging: null,
+    controlsDone: false,
     grabCooldown: 0,
     projectile: null,
     hiddenBySwitch: false,
@@ -802,8 +811,17 @@ export class Runtime {
     // leaves its speed and which way it faces to it.
     const ownRun = ownPart(e, 'running');
     if (c.movement === 'topdown') return this.walkTopDown(e, input, dt, ownRun);
+    if (e.controlsDone) {
+      e.controlsDone = false;
+      return;
+    }
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
-    const ladder = this.ladderAt(e);
+    // Climbing and hanging from ledges done by scripts of its own instead ("Climbing", "Ledge grab"): while it
+    // climbs or hangs, the engine leaves it to them (and doesn't run or jump it either, as when it does them itself).
+    const ownClimb = ownPart(e, 'climbing');
+    const ownLedge = ownPart(e, 'ledge_grab');
+    if (ownClimb && e.climbing) return;
+    const ladder = ownClimb ? null : this.ladderAt(e);
 
     // Climbing: Up/Down on a ladder (at least half of you inside it, by width), at running speed.
     // Left/Right moves you along it; once less than half of you is on it you let go. Up does nothing
@@ -829,12 +847,7 @@ export class Runtime {
       if (vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
       e.grounded = false;
       // Reaching the top: stop there, standing on it.
-      if (vertical < 0 && me.y + me.hh + e.vy * dt <= ladder.top) {
-        e.y = ladder.top - me.hh;
-        e.vy = 0;
-        e.climbing = false;
-        e.grounded = true;
-      }
+      if (vertical < 0 && me.y + me.hh + e.vy * dt <= ladder.top) this.standOn(e, ladder);
       return;
     }
 
@@ -843,7 +856,7 @@ export class Runtime {
     const ownJump = ownPart(e, 'jumping');
     if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
     if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
-    if (e.hanging && this.hang(e, input, dir)) return;
+    if (e.hanging && (ownLedge || this.hang(e, input, dir))) return;
 
     if (!ownRun) {
       // (The ready-made Running script does exactly this: engineParts.ts.)
@@ -855,7 +868,7 @@ export class Runtime {
     }
 
     if (ownJump) {
-      if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
+      if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
       return;
     }
     // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
@@ -874,7 +887,7 @@ export class Runtime {
       e.vy = -c.jumpForce;
       e.jumpBuffer = 0;
     }
-    if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
+    if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
     // Releasing jump early makes a shorter hop.
     if (input.wasReleased('jump') && e.vy < 0) e.vy *= 0.5;
   }
@@ -916,6 +929,44 @@ export class Runtime {
    * pressing toward it, with the wall's top edge at about hand height and room
    * to stand on top: hang there.
    */
+  /** A script's grab_ledge: the same test and grab as the engine's. */
+  grabLedge(e: RuntimeEntity, dir: 1 | -1): void {
+    this.tryGrabLedge(e, dir);
+  }
+
+  /** Standing on a ladder's top after climbing up to it (the engine's, or a script's stand_on_ladder). */
+  private standOn(e: RuntimeEntity, ladder: Ladder): void {
+    const me = zoneOf(e);
+    e.y = ladder.top - me.hh;
+    e.vy = 0;
+    e.climbing = false;
+    e.grounded = true;
+  }
+
+  /** A script's stand_on_ladder: on the top of the ladder it is at; its controls rest for the rest of this step. */
+  standOnLadder(e: RuntimeEntity): void {
+    const l = this.ladderAt(e);
+    if (!l) return;
+    this.standOn(e, l);
+    e.controlsDone = true;
+  }
+
+  /** Standing on the ledge it hangs from (the engine's climb up, or a script's climb_ledge). */
+  climbLedge(e: RuntimeEntity, script = true): void {
+    const h = e.hanging;
+    const box = boxOf(e);
+    if (!h || !box) return;
+    e.x = h.edgeX + h.side * (box.hw + 1) - (box.x - e.x);
+    e.y = h.top - box.hh - (box.y - e.y);
+    e.hanging = null;
+    if (script) e.controlsDone = true;
+  }
+
+  /** It stands on the floor (not on a ladder's top): Down there doesn't climb. */
+  floorBelowLadder(e: RuntimeEntity): boolean {
+    return this.isOnFloorBelowLadder(e);
+  }
+
   private tryGrabLedge(e: RuntimeEntity, dir: 1 | -1): void {
     const box = boxOf(e);
     if (!box) return;
@@ -942,14 +993,11 @@ export class Runtime {
   /** While hanging: Up or Jump climbs onto the ledge, Down or pressing away lets go. Returns true while still hanging. */
   private hang(e: RuntimeEntity, input: InputView, dir: number): boolean {
     const h = e.hanging!;
-    const box = boxOf(e)!;
     e.vx = 0;
     e.vy = 0;
     e.grounded = false;
     if (input.wasPressed('jump') || input.isDown('up')) {
-      e.x = h.edgeX + h.side * (box.hw + 1) - (box.x - e.x);
-      e.y = h.top - box.hh - (box.y - e.y);
-      e.hanging = null;
+      this.climbLedge(e, false);
       e.grabCooldown = 0.2;
       return true;
     }
@@ -1262,6 +1310,7 @@ export class Runtime {
     const held = this.lastInput ? ALL_ACTIONS.filter((a) => this.lastInput!.isDown(a)) : [];
     e.heldBlock = held.length ? new Set(held) : null;
     e.hanging = null;
+    e.controlsDone = false;
     e.coyote = 0;
     e.jumpBuffer = 0;
     // What scripts did to how it looks, and the states they put it in (dying…), start over; their variables stay.

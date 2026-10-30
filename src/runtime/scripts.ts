@@ -19,7 +19,7 @@ import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
 
 import { overlaps, type Box } from './physics';
-import { groundGrip, STEP, type Runtime, type RuntimeEntity } from './runtime';
+import { feetOf, groundGrip, STEP, type Runtime, type RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
@@ -388,6 +388,24 @@ export class ScriptSystem {
       }
       case 'carry':
         this.rt.behaviors.carryRiders(e, n(s.x), n(s.y));
+        break;
+      case 'climbing':
+        e.climbing = truthy(this.eval(s.value, ctx));
+        e.climbDir = 0;
+        break;
+      case 'stand_on_ladder':
+        this.rt.standOnLadder(e);
+        break;
+      case 'grab_ledge': {
+        const d = n(s.dir);
+        if (d !== 0 && !e.hanging) this.rt.grabLedge(e, d < 0 ? -1 : 1);
+        break;
+      }
+      case 'climb_ledge':
+        this.rt.climbLedge(e);
+        break;
+      case 'let_go':
+        e.hanging = null;
         break;
       case 'heading': {
         const x = Math.sign(n(s.x));
@@ -1033,6 +1051,14 @@ export class ScriptSystem {
       }
       case 'wall_ahead':
         return this.rt.wallAhead(self, Math.sign(n(0)), Math.sign(n(1)));
+      case 'ladder_here':
+        return this.rt.ladderHere(self) !== null;
+      case 'ladder_x':
+        return this.rt.ladderHere(self)?.x ?? 0;
+      case 'ladder_top':
+        return this.rt.ladderHere(self)?.top ?? 0;
+      case 'floor_below_ladder':
+        return this.rt.floorBelowLadder(self);
       case 'ledge_ahead':
         return this.rt.ledgeAhead(self, Math.sign(n(0)));
       case 'ladder_choice':
@@ -1160,6 +1186,10 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.speedFactor;
     case 'grip':
       return groundGrip(e.friction, e.groundFriction);
+    case 'feet':
+      return feetOf(e);
+    case 'hang_side':
+      return e.hanging?.side ?? 0;
     case 'name':
       return e.name;
   }

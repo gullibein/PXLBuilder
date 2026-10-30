@@ -92,6 +92,16 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`look ${x(s.x)}, ${x(s.y)}`);
     case 'carry':
       return one(`carry what stands on it by ${x(s.x)}, ${x(s.y)}`);
+    case 'climbing':
+      return one(`climbing: ${x(s.value)}`);
+    case 'stand_on_ladder':
+      return one('stand on the top of the ladder');
+    case 'grab_ledge':
+      return one(`grab the ledge on side ${x(s.dir)}`);
+    case 'climb_ledge':
+      return one('climb up onto the ledge');
+    case 'let_go':
+      return one('let go of the ledge');
     case 'move_toward':
       return one(`move toward ${x(s.target)} at ${x(s.speed)}`);
     case 'glide_to':

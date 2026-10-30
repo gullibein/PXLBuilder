@@ -552,3 +552,81 @@ describe('running, done by a script instead', () => {
     expect(Number(slow[119].split(',')[2])).toBeCloseTo(100, 3);
   });
 });
+
+describe('climbing ladders and ledge grabs, done by scripts instead', () => {
+  const give = (d: Project, part: 'climbing' | 'ledge_grab' | 'running' | 'jumping') => {
+    const player = d.definitions.find((x) => x.name === 'Player')!;
+    player.scripts = [...(player.scripts ?? []), ENGINE_PART_INFO[part].script()];
+  };
+  function trace(rt: Runtime, keys: Record<number, Action[]>, steps: number): string[] {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      out.push(`${p.x.toFixed(6)},${p.y.toFixed(6)},${p.vx.toFixed(6)},${p.vy.toFixed(6)},${p.grounded},${p.climbing},${p.hanging ? p.hanging.side : 0},${p.facing}`);
+    }
+    expect(rt.scripts.errors).toEqual([]);
+    return out;
+  }
+  /** The same keys with the engine and with the scripts for `parts`: the same, step by step. */
+  const same = (parts: ('climbing' | 'ledge_grab' | 'running' | 'jumping')[], keys: Record<number, Action[]>, steps: number, edit: (d: Project) => void = () => {}) => {
+    const engine = trace(level(false, edit), keys, steps);
+    const script = trace(
+      level(false, (d) => {
+        edit(d);
+        for (const p of parts) give(d, p);
+      }),
+      keys,
+      steps,
+    );
+    const first = script.findIndex((s, i) => s !== engine[i]);
+    expect(first === -1 ? 'same' : `step ${first}: engine ${engine[first]} script ${script[first]}`).toBe('same');
+    return engine;
+  };
+
+  it('climbs up to the top and stands on it, climbs down again, jumps off, and steps off the side, exactly as the engine does', () => {
+    // Walk left to the ladder and climb all the way up (it stands on top, then walks off it).
+    const up = same(['climbing'], { 0: ['left'], 60: ['left', 'up'], 80: ['up'], 260: ['right'], 300: [] }, 400);
+    expect(up.some((t) => t.split(',')[5] === 'true')).toBe(true);
+    expect(Math.min(...up.map((t) => Number(t.split(',')[1])))).toBeLessThan(-80);
+    // Up a little, down to the floor, up again and jump off; then up and step off to the side.
+    same(['climbing'], { 0: ['left'], 60: ['left', 'up'], 80: ['up'], 120: ['down'], 200: ['up'], 230: ['jump'], 231: [], 300: ['up'], 330: ['up', 'right'], 360: [] }, 460);
+    // Climbed up, then down from the top.
+    same(['climbing'], { 0: ['left'], 60: ['left', 'up'], 80: ['up'], 260: [], 280: ['down'], 340: [] }, 420);
+    // With Running and Jumping scripts too.
+    same(['running', 'jumping', 'climbing'], { 0: ['left'], 60: ['left', 'up'], 80: ['up'], 230: ['jump'], 231: [], 300: ['up', 'right'], 360: [] }, 420);
+  });
+
+  it('grabs a ledge, climbs up onto it or lets go, exactly as the engine does', () => {
+    // A wall two tiles high right of the player (its top at y = -16), and the Player can grab ledges.
+    const wall = (d: Project) => {
+      const sceneId = d.scenes[0].id;
+      for (const y of [16, -16]) m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === 'Platform')!, { x: 64, y }));
+      m.addDefinitionComponent(d, d.definitions.find((x) => x.name === 'Player')!.id, 'LedgeGrab', registry);
+    };
+    const grab = (d: Project) => wall(d);
+    // Jump against the wall pressing right: it hangs; Up climbs on top.
+    const climbed = same(['ledge_grab'], { 0: ['jump', 'right'], 40: ['right'], 150: ['up'], 160: [] }, 260, grab);
+    expect(climbed.some((t) => t.split(',')[6] === '1')).toBe(true);
+    /** Hanging (h) or not (-) over time, runs merged: "-h-h-" is hang, let go, hang again. */
+    const hangs = (trace: string[]) => trace.map((x) => (x.split(',')[6] === '0' ? '-' : 'h')).join('').replace(/(.)\1+/g, '$1');
+    // (Climbed up: it ends standing on top of the wall, at y = -48.)
+    expect(hangs(climbed)).toBe('-h-');
+    expect(Number(climbed.at(-1)!.split(',')[1])).toBeCloseTo(-48, 3);
+    // Hangs, then lets go with Down; hangs again after the wait.
+    const dropped = same(['ledge_grab'], { 0: ['jump', 'right'], 40: ['right'], 150: ['down'], 160: ['right'], 200: ['jump', 'right'], 240: ['right'] }, 360, grab);
+    expect(hangs(dropped)).toBe('-h-h');
+    // Pressing away lets go too; Jump climbs up.
+    const away = same(['ledge_grab'], { 0: ['jump', 'right'], 40: ['right'], 120: ['left'], 140: [], 160: ['jump', 'right'], 200: ['right'], 320: ['jump'], 321: [] }, 420, grab);
+    expect(hangs(away)).toBe('-h-h-');
+    // With the other scripts too.
+    same(['running', 'jumping', 'climbing', 'ledge_grab'], { 0: ['jump', 'right'], 40: ['right'], 150: ['up'], 160: [] }, 260, grab);
+  });
+});
