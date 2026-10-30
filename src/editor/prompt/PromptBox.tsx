@@ -1,4 +1,6 @@
 import { AIPicker } from './AIPicker';
+import { AddPictureButton, PictureStrip, usePictures } from './Pictures';
+import type { AIPicture } from '../../core/ai/protocol';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
@@ -46,8 +48,8 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
   return {
     state,
     thread,
-    submit(request: string) {
-      startJob(ctx, request);
+    submit(request: string, images?: AIPicture[]) {
+      startJob(ctx, request, images?.length ? { images } : {});
     },
     stop() {
       stopJob(key);
@@ -180,15 +182,18 @@ export function PromptBox(props: PromptBoxProps) {
     el.setSelectionRange(el.value.length, el.value.length);
   }, [props.autoFocus]);
 
+  const pics = usePictures();
   const submit = () => {
-    const request = text.trim();
-    if (!request || working) return;
-    runner.submit(request);
+    // (Pictures alone are a request too: what to do with them is in the pictures guidance.)
+    const request = text.trim() || (pics.pictures.length ? 'Use these pictures.' : '');
+    if (!request || working || pics.reading) return;
+    runner.submit(request, pics.pictures.map((p) => p.picture));
     setText('');
+    pics.clear();
   };
 
   return (
-    <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId}>
+    <div className={`prompt${working ? ' is-working' : ''}${props.header ? ' has-header' : ''}`} data-testid={props.testId} {...pics.dropProps}>
       {props.onClose && props.header && closeButton}
       {props.header && <div className="prompt-header">{props.header}</div>}
       {(runner.thread.length > 0 || runner.state.phase !== 'idle') && (
@@ -235,6 +240,7 @@ export function PromptBox(props: PromptBoxProps) {
           </div>
         </div>
       )}
+      <PictureStrip pics={pics} />
       {/* More than a line of words: they get the card's whole width, and the AI and Send buttons go under them. */}
       <div className={`prompt-field${text.length > 26 || text.includes('\n') ? ' stacked' : ''}`} data-stacked={text.length > 26 || text.includes('\n') ? '' : undefined}>
         <div className="prompt-line">
@@ -250,6 +256,7 @@ export function PromptBox(props: PromptBoxProps) {
             aria-label="Describe a change"
             data-testid="prompt-input"
             onChange={(e) => setText(e.target.value)}
+            onPaste={pics.onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -267,8 +274,9 @@ export function PromptBox(props: PromptBoxProps) {
           {!props.header && closeButton}
         </div>
         <div className="prompt-actions">
+          <AddPictureButton pics={pics} disabled={working} />
           <AIPicker />
-          <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={!text.trim() || working} onClick={submit}>
+          <button className="send-btn" aria-label="Send" data-testid="prompt-send" disabled={(!text.trim() && !pics.pictures.length) || working || pics.reading} onClick={submit}>
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path d="M3 7h8M7.5 3.5 11 7l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>

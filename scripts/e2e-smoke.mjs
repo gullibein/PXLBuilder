@@ -162,6 +162,17 @@ function stubModel(body) {
     const got = body.code.find((c) => c.id === coin.id);
     return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
   }
+  if (req.includes('a game like this picture')) {
+    // A new game shown with pictures: what came along is said back, and something is built.
+    const pics = body.images ?? [];
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    return {
+      kind: 'apply',
+      message: `Saw ${pics.length} pictures: ${pics.map((p) => `${p.name} ${p.mediaType} ${p.sourceWidth}x${p.sourceHeight} sent ${p.width}x${p.height}`).join('; ')}. Guidance: ${(body.topics ?? []).includes('pictures')}.`,
+      changes: ['A player'],
+      operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null }],
+    };
+  }
   if (req.includes('dig for diamonds')) {
     // A new game told in words: the platformer starter doesn't fit, so the top-down one, then built on it.
     if (body.context.newGame?.current === 'platformer') return { kind: 'switch_starter', message: 'Seen from above suits this better.', changes: [], operations: [], needCode: null, starter: 'topdown' };
@@ -3311,6 +3322,63 @@ try {
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
     await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 2, 'the starters were described with the first request (one more only because it switched)');
+  }
+  {
+    // A new game shown with pictures: pasted into the field, or picked with the picture button; thumbnails with ×.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    const chooser = page.getByTestId('game-chooser');
+    const paste = () =>
+      page.getByTestId('game-idea').evaluate(async (el) => {
+        const c = document.createElement('canvas');
+        c.width = 160;
+        c.height = 144;
+        const g = c.getContext('2d');
+        g.fillStyle = '#5fa83f';
+        g.fillRect(0, 100, 160, 44);
+        g.fillStyle = '#e5534b';
+        g.fillRect(40, 84, 16, 16);
+        const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'level.png', { type: 'image/png' }));
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+    await paste();
+    await check(async () => (await chooser.getByTestId('picture-thumb').count()) === 1 && (await page.getByTestId('game-idea').inputValue()) === '', 'a picture pasted into the New game field is attached (a thumbnail), not pasted as text');
+    await check(async () => (await page.getByTestId('game-idea-go').isDisabled()) === false, '(a picture alone is enough to make it)');
+    const sheet = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 32;
+      const g = c.getContext('2d');
+      g.fillStyle = '#4fa3ff';
+      g.fillRect(4, 4, 24, 24);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await chooser.getByTestId('picture-file').setInputFiles({ name: 'sheet.png', mimeType: 'image/png', buffer: Buffer.from(sheet, 'base64') });
+    await check(async () => (await chooser.getByTestId('picture-thumb').count()) === 2, 'the picture button adds a picture from the computer');
+    await paste();
+    await check(async () => (await chooser.getByTestId('picture-thumb').count()) === 3, '(a third one)');
+    await chooser.getByTestId('picture-remove').nth(2).click();
+    await check(async () => (await chooser.getByTestId('picture-thumb').count()) === 2, '× takes a picture off again');
+    await page.screenshot({ path: `${OUT}/00c-new-game-pictures.png` });
+    await page.getByTestId('game-idea').fill('A game like this picture, with the hero from the sheet');
+    await page.getByTestId('game-idea').press('Enter');
+    await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+    const said = await page.getByTestId('global-prompt').innerText();
+    await check(
+      said.includes('Saw 2 pictures: level.png image/png 160x144 sent 1120x1008; sheet.png image/png 64x32 sent 1472x736') && said.includes('Guidance: true'),
+      `the pictures went to the AI with the request (small pixel art enlarged with sharp pixels), with the guidance on reading them: ${said.slice(0, 300)}`,
+    );
+    await check(said.includes('[2 pictures attached: level.png, sheet.png]'), 'the chat says the request came with pictures (which later requests remember, without sending them again)');
+    const asked = aiRequests.filter((b) => b.request.includes('a game like this picture') || b.request.includes('A game like this picture'));
+    await check(asked.length >= 1 && asked.every((b) => b.images?.length === 2 && !b.request.includes('pictures attached')), `(the request is sent as typed, the pictures with it, also when the app asks the AI again to fix its answer: ${asked.length} ask(s))`);
+    await page.getByTestId('global-prompt').getByTestId('prompt-input').fill('Make the hero faster');
+    await page.getByTestId('global-prompt').getByTestId('prompt-input').press('Enter');
+    await page.waitForTimeout(500);
+    const next = aiRequests.at(-1);
+    await check(!next.images && next.history.some((h) => h.request.includes('[2 pictures attached')), 'the next request carries no pictures, only the memory that there were some');
+    await page.keyboard.press('Escape');
   }
   await page.unroute('**/api/ai');
   await page.getByTestId('project-menu').click();

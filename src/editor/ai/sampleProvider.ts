@@ -9,7 +9,7 @@
  * operation is applied.
  */
 import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
-import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
+import { AIUnavailableError, aiResponseSchema, type AIPicture, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
@@ -18,10 +18,20 @@ interface SampleError {
   code: string;
   message: string;
 }
-type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean };
+type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean; images?: Blob[] };
 /** The viewer's sample: called, it gives the answer's text (read here, forgivingly); `json` parses it strictly. */
 type SampleInput = string | { role: 'user' | 'assistant'; content: string }[];
-type SampleFn = ((input: SampleInput, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & { json?(input: string, options?: SampleOptions): Promise<unknown> };
+type SampleFn = ((input: SampleInput, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & {
+  json?(input: string, options?: SampleOptions): Promise<unknown>;
+  /** What this view can send: `images` only where pictures can go along. */
+  limits?(): Promise<{ images?: { maxCount: number; maxInputBytes: number; mediaTypes: string[] } }>;
+};
+
+/** A picture as a file again (the viewer takes files, not base64). */
+function pictureBlob(p: AIPicture): Blob {
+  const bytes = Uint8Array.from(atob(p.data), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: p.mediaType });
+}
 
 /** The viewer's `sample` function, or null outside a claude.ai artifact viewer (local dev, a saved copy). */
 export function claudeSample(): Promise<SampleFn | null> {
@@ -40,6 +50,8 @@ const MESSAGES: Record<string, string> = {
   refused: 'Claude declined this request.',
   invalid_json: "claude.ai couldn't get an answer from the AI this time (it was asked 3 times). Try again in a moment.",
   prompt_too_large: 'This level is too big to send in one request. Try asking about a selected part.',
+  images_unavailable: "Pictures can't be sent to Claude from here. Remove them and describe the game in words instead.",
+  image_rejected: "claude.ai didn't accept one of the pictures (too big, or a kind of file it can't read). Try a smaller PNG or JPEG.",
 };
 
 /**
@@ -70,12 +82,19 @@ export class SampleAIProvider implements AIProvider {
 
   private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<{ text: string; truncated: boolean }> {
     const size = typeof input === 'string' ? input.length : input.reduce((n, t) => n + t.content.length, 0);
-    trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}`);
+    const pictures = body.images ?? [];
+    if (pictures.length) {
+      // Only where this view can send pictures, and no more than it takes.
+      const can = await this.sample.limits?.().catch(() => null);
+      if (!can?.images) throw new AIUnavailableError(MESSAGES.images_unavailable);
+      if (pictures.length > can.images.maxCount) throw new AIUnavailableError(`claude.ai takes at most ${can.images.maxCount} picture${can.images.maxCount === 1 ? '' : 's'} with one request here. Remove some and send again.`);
+    }
+    trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}${pictures.length ? `, ${pictures.length} picture(s)` : ''}`);
     for (let attempt = 0; ; attempt++) {
       try {
         // Every request is new work: no replay of an earlier answer.
         // Fast: claude.ai's quicker model tier.
-        const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}) });
+        const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}), ...(pictures.length ? { images: pictures.map(pictureBlob) } : {}) });
         trace?.('reply', `${answer.truncated ? '[cut off by the length limit] ' : ''}${answer.text}`);
         return answer;
       } catch (e) {

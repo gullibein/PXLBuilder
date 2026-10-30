@@ -93,7 +93,8 @@ export class GeminiProvider implements AIProvider {
         signal,
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}` }] },
-          contents: [{ role: 'user', parts: [{ text: userMessage(body) }] }],
+          // (Pictures the user attached go with the request, before its words.)
+          contents: [{ role: 'user', parts: [...(body.images ?? []).map((p) => ({ inlineData: { mimeType: p.mediaType, data: p.data } })), { text: userMessage(body) }] }],
           generationConfig: {
             responseMimeType: 'application/json',
             maxOutputTokens: 32768,

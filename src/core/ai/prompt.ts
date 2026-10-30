@@ -36,7 +36,19 @@ export function userMessageParts(body: AIRequestBody): { context: string; rest: 
   // Guidance only this request needs (music, sound effects…): sent with it instead of with every request.
   const topics = (body.topics ?? []).filter((t) => TOPICS[t]);
   const guide = topics.length ? `GUIDANCE FOR THIS REQUEST (part of your instructions):\n${topics.map((t) => TOPICS[t].text).join('\n')}\n\n` : '';
-  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${guide}${code}${history}REQUEST\n${body.request}` };
+  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${guide}${code}${history}${picturesText(body)}REQUEST\n${body.request}` };
+}
+
+/** What the attached pictures are (they are shown with this message, in this order). */
+export function picturesText(body: AIRequestBody): string {
+  const pics = body.images ?? [];
+  if (!pics.length) return '';
+  const lines = pics.map((p, i) => {
+    const scale = p.width / p.sourceWidth;
+    const how = Math.abs(scale - 1) < 0.01 ? 'shown at its own size' : scale > 1 ? `shown enlarged ${Math.round(scale)}× with sharp pixels` : `shown scaled down to ${p.width}×${p.height}`;
+    return `- Picture ${i + 1} ("${p.name.replace(/"/g, "'")}"): ${p.sourceWidth}×${p.sourceHeight} pixels as the user's file is, ${how}.`;
+  });
+  return `PICTURES THE USER ATTACHED (shown with this message, in this order; see the pictures guidance):\n${lines.join('\n')}\n\n`;
 }
 
 export function userMessage(body: AIRequestBody): string {

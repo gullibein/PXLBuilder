@@ -14,6 +14,24 @@ export interface AIExchange {
 /** best: the most capable setting; fast: answers sooner, may handle hard requests less well. */
 export type AISpeed = 'best' | 'fast';
 
+/** A picture the user attached to a request (an example of the game they want, a sprite sheet…), ready to send. */
+export interface AIPicture {
+  /** Its file name, or "pasted picture". */
+  name: string;
+  mediaType: 'image/png' | 'image/jpeg';
+  /** Base64, without a data: prefix. */
+  data: string;
+  /** As sent. */
+  width: number;
+  height: number;
+  /** As the user's file was (what pixel sizes in it are counted in). */
+  sourceWidth: number;
+  sourceHeight: number;
+}
+
+/** At most this many pictures go with one request. */
+export const MAX_PICTURES = 4;
+
 export interface AIRequestBody {
   context: AIPayload;
   request: string;
@@ -30,6 +48,8 @@ export interface AIRequestBody {
   topics?: string[];
   /** Other objects' code the AI asked for (kind "need_code"), sent with the request asked again. */
   code?: { id: string; name: string; scripts: unknown[] }[];
+  /** Pictures attached to this request (only this one: later requests get a line saying they were there). */
+  images?: AIPicture[];
 }
 
 export const aiResponseSchema = z.object({

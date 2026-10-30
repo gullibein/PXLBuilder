@@ -1,4 +1,5 @@
 import { AIPicker } from '../prompt/AIPicker';
+import { AddPictureButton, PictureStrip, usePictures } from '../prompt/Pictures';
 import { useMemo, useState } from 'react';
 import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
 import { createStarterAssets } from '../../core/model/factory';
@@ -21,20 +22,24 @@ export function GameChooser() {
   const close = useEditor((s) => s.setGameChooser);
   const [res, setRes] = useState<SpriteResolution>(DEFAULT_SPRITE_RESOLUTION);
   const [idea, setIdea] = useState('');
+  const pics = usePictures();
   if (!mode) return null;
   const pick = (type: GameType) => {
     startNewGame(type, mode === 'first', res);
     close(null);
   };
   const describe = () => {
-    const request = idea.trim();
-    if (!request) return;
+    // (Pictures alone are a request too: a game like them.)
+    const request = idea.trim() || (pics.pictures.length ? 'Make a game like this.' : '');
+    if (!request || pics.reading) return;
+    const images = pics.pictures.map((p) => p.picture);
+    pics.clear();
     startNewGame('platformer', mode === 'first', res);
     close(null);
     setIdea('');
     const { activeSceneId, setGlobalPrompt } = useEditor.getState();
     setGlobalPrompt(true, 'project');
-    startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true });
+    startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true, ...(images.length ? { images } : {}) });
   };
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close(null)}>
@@ -49,6 +54,7 @@ export function GameChooser() {
         </header>
         <form
           className="game-idea"
+          {...pics.dropProps}
           onSubmit={(e) => {
             e.preventDefault();
             describe();
@@ -58,10 +64,11 @@ export function GameChooser() {
             value={idea}
             rows={2}
             autoFocus
-            placeholder="Tell the AI what game you want, e.g. “a Boulder Dash game: dig through dirt, collect diamonds, dodge falling rocks”"
+            placeholder="Tell the AI what game you want, e.g. “a Boulder Dash game: dig through dirt, collect diamonds, dodge falling rocks”. Paste or drop a picture of one (a screenshot, a sprite sheet) to show it."
             aria-label="Describe the game you want"
             data-testid="game-idea"
             onChange={(e) => setIdea(e.target.value)}
+            onPaste={pics.onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -69,11 +76,13 @@ export function GameChooser() {
               }
             }}
           />
+          <AddPictureButton pics={pics} />
           <AIPicker />
-          <button type="submit" className="btn-primary" disabled={!idea.trim()} data-testid="game-idea-go">
+          <button type="submit" className="btn-primary" disabled={(!idea.trim() && !pics.pictures.length) || pics.reading} data-testid="game-idea-go">
             Make it
           </button>
         </form>
+        <PictureStrip pics={pics} />
         <p className="muted small game-or">The AI picks the best starting point and builds it. Or start from one yourself:</p>
         <div className="game-grid">
           <button className="style-card game-card" data-testid="game-platformer" onClick={() => pick('platformer')}>

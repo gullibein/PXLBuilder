@@ -135,6 +135,8 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
         role: 'user' as const,
         content: [
           { type: 'text' as const, text: context, cache_control: { type: 'ephemeral' as const } },
+          // Pictures the user attached (after the cached game data: they come with this request only).
+          ...(body.images ?? []).map((p) => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: p.mediaType, data: p.data } })),
           { type: 'text' as const, text: rest },
         ],
       },

@@ -14,7 +14,8 @@ function readBody(req: IncomingMessage): Promise<string> {
     let data = '';
     req.on('data', (chunk) => {
       data += chunk;
-      if (data.length > 2_000_000) reject(new Error('Request too large'));
+      // (Room for attached pictures: up to 4, a few MB each as base64.)
+      if (data.length > 25_000_000) reject(new Error('Request too large'));
     });
     req.on('end', () => resolve(data));
     req.on('error', reject);

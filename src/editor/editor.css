@@ -1004,3 +1004,14 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .move-grip:hover { opacity: 1; }
 .is-moving { transition: none !important; animation: none !important; }
 body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-select: none !important; }
+/* Pictures attached to a prompt before it is sent (prompt/Pictures.tsx). */
+.picture-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 2px 2px; }
+.picture-thumb { position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: var(--checker, #222); border: 1px solid var(--card-line, var(--line)); }
+.picture-thumb img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+.picture-thumb.reading { color: var(--muted); }
+.picture-remove { position: absolute; top: 1px; right: 1px; width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; line-height: 14px; font-size: 12px; background: rgba(0, 0, 0, 0.6); color: #fff; cursor: pointer; }
+.picture-problem { color: var(--warn); }
+.picture-btn { color: var(--card-muted, var(--muted)); }
+.game-dialog .picture-strip { padding: 0 16px; }
+/* (The placeholder stays on one line, so the picture button doesn't make an empty card taller.) */
+.prompt textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

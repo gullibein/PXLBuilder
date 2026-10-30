@@ -9,7 +9,7 @@ import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
 import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from '../../core/ai/context';
-import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
+import { AIUnavailableError, type AIPicture, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
 import { chatHistory, conversationKey, unusableReply } from './aiLog';
@@ -121,12 +121,20 @@ const STARTERS: { id: GameType; is: string }[] = [
 export interface PromptOptions {
   /** The first request of a game just made in the New game window: the AI may move it to a better starter first. */
   newGame?: boolean;
+  /** Pictures the user attached (an example of the game they want, a sprite sheet…): sent with this request only. */
+  images?: AIPicture[];
+}
+
+/** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
+export function withPictureNote(request: string, images: readonly AIPicture[] | undefined): string {
+  if (!images?.length) return request;
+  return `${request}\n[${images.length} picture${images.length === 1 ? '' : 's'} attached: ${images.map((p) => p.name).join(', ')}]`;
 }
 
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn, options: PromptOptions = {}): Promise<PromptOutcome> {
   const state = useEditor.getState();
   // Plain editing commands ("delete", "duplicate 3 times to the right", "paste"…) are done by the app itself, at once.
-  const quick = quickCommandFor(ctx, request);
+  const quick = options.images?.length ? null : quickCommandFor(ctx, request);
   if (quick) {
     trace?.('note', `Done by the app itself (no AI): ${quick.kind}`);
     return quick.kind === 'connection-delete' ? deleteConnection(ctx) : runQuickCommand(ctx, quick);
@@ -148,6 +156,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topics = topicsFor(ctx, request, body.history);
+  // Pictures attached: they go along, with how to read them.
+  if (options.images?.length) {
+    body.images = options.images;
+    topics.unshift('pictures');
+    trace?.('note', `Pictures sent along: ${options.images.map((p) => `${p.name} (${p.sourceWidth}×${p.sourceHeight}, sent ${p.width}×${p.height})`).join(', ')}`);
+  }
   if (topics.length) {
     body.topics = topics;
     trace?.('note', `Guidance sent along: ${topics.join(', ')}`);
