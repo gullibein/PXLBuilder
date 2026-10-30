@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { usesMenuKey } from '../../core/script/language';
 import { componentRegistry } from '../../core/components/builtin';
 import { gameFromText } from '../../core/serialization/serialize';
 import type { Project } from '../../core/types';
@@ -151,8 +152,10 @@ function Browse({ close }: { close: () => void }) {
   };
   if (playing) {
     const stop = () => setPlaying(null);
+    // A game with a menu of its own (a pause menu) gets Escape; Back to PXLGameSite leaves it.
+    const ownMenu = usesMenuKey(playing.project);
     return (
-      <div className="gamesite-play" data-testid="gamesite-play" onKeyDown={(e) => e.key === 'Escape' && stop()}>
+      <div className="gamesite-play" data-testid="gamesite-play" onKeyDown={(e) => e.key === 'Escape' && !ownMenu && stop()}>
         <header className="gamesite-play-bar">
           <span className="gs-title">{playing.game.name}</span>
           <span className="grow" />
@@ -164,7 +167,7 @@ function Browse({ close }: { close: () => void }) {
           </button>
         </header>
         <div className="gamesite-play-stage">
-          <PlayView project={playing.project} startSceneId={playing.project.scenes[0]?.id ?? ''} playPixels={() => useEditor.getState().layout.playPixels} stopHint="Esc goes back" touchControls />
+          <PlayView project={playing.project} startSceneId={playing.project.scenes[0]?.id ?? ''} playPixels={() => useEditor.getState().layout.playPixels} stopHint={ownMenu ? undefined : 'Esc goes back'} touchControls />
         </div>
       </div>
     );

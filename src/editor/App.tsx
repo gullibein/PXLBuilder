@@ -1,4 +1,5 @@
 import { AutotileEditor } from './chrome/AutotileEditor';
+import { usesMenuKey } from '../core/script/language';
 import { ObjectCard } from './chrome/ObjectCard';
 import { GameSite } from './gamesite/GameSite';
 import { OpenDialog } from './chrome/OpenDialog';
@@ -68,7 +69,7 @@ export function App() {
             project={useEditor.getState().project}
             startSceneId={useEditor.getState().activeSceneId}
             playPixels={() => useEditor.getState().layout.playPixels}
-            stopHint="Esc stops"
+            stopHint={usesMenuKey(useEditor.getState().project) ? 'Ctrl+Enter stops' : 'Esc stops'}
             touchControls
             onEnd={(report, project) => {
               const { setLastPlay, logMessage } = useEditor.getState();
@@ -140,8 +141,9 @@ function useGlobalShortcuts() {
       // PXLGameSite is open: its keys are its own (and a game played there gets the game's).
       if (state.gameSite) return;
       if (state.mode === 'play') {
-        // While playing, keys belong to the game; Esc (or Ctrl/Cmd+Enter) stops.
-        if (e.key === 'Escape' || (mod && e.key === 'Enter')) {
+        // While playing, keys belong to the game; Esc (or Ctrl/Cmd+Enter) stops. A game with a menu of its own
+        // (a pause menu on the menu key) gets Escape: Ctrl/Cmd+Enter or Stop stops it then.
+        if ((e.key === 'Escape' && !usesMenuKey(state.project)) || (mod && e.key === 'Enter')) {
           e.preventDefault();
           state.setMode('edit');
         }

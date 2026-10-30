@@ -41,4 +41,29 @@ export const SCRIPT_EXAMPLES: { title: string; json: string }[] = [
     json: `{"name":"Swim","description":"Pressing Jump while in water pushes the player up.","vars":[{"name":"stroke","value":160}],"states":[],"handlers":[
  {"when":{"on":"key","key":"jump","edge":"pressed"},"state":null,"if":"touching('water')","do":[{"do":"velocity","x":null,"y":"-stroke"}]}]}`,
   },
+  {
+    title: 'a pause menu (put it on the player): Esc / P / Start opens it; Up/Down choose, Jump picks; Resume, Sound on/off, Music on/off, Restart',
+    json: `{"name":"Pause menu","description":"Esc pauses the game and shows a menu: Resume, Sound, Music, Restart.","vars":[{"name":"choice","value":0},{"name":"shown","value":false}],"states":[],"handlers":[
+ {"when":{"on":"key","key":"menu","edge":"pressed"},"state":null,"if":null,"do":[{"do":"if","cond":"paused","then":[{"do":"resume"}],"else":[{"do":"set","var":"choice","value":"0"},{"do":"pause"}]}]},
+ {"when":{"on":"key","key":"up","edge":"pressed"},"state":null,"if":"paused","do":[{"do":"set","var":"choice","value":"(choice + 3) % 4"}]},
+ {"when":{"on":"key","key":"down","edge":"pressed"},"state":null,"if":"paused","do":[{"do":"set","var":"choice","value":"(choice + 1) % 4"}]},
+ {"when":{"on":"key","key":"jump","edge":"pressed"},"state":null,"if":"paused","do":[{"do":"if","cond":"choice == 0","then":[{"do":"resume"}],"else":[]},{"do":"if","cond":"choice == 1","then":[{"do":"set_sound","enabled":"not sound_on"}],"else":[]},{"do":"if","cond":"choice == 2","then":[{"do":"set_music","enabled":"not music_on"}],"else":[]},{"do":"if","cond":"choice == 3","then":[{"do":"resume"},{"do":"restart_level"}],"else":[]}]},
+ {"when":{"on":"paused"},"state":null,"if":null,"do":[{"do":"draw","id":"menu_bg","shape":"rect","anchor":"center","x":"0","y":"0","w":"180","h":"130","color":"#000000","alpha":"0.75"},{"do":"draw","id":"menu_sel","shape":"rect","anchor":"center","x":"0","y":"-36 + choice * 24","w":"160","h":"20","color":"#3a6df0"},{"do":"draw","id":"menu_0","shape":"text","anchor":"center","x":"0","y":"-36","text":"Resume","size":"14","color":"#ffffff"},{"do":"draw","id":"menu_1","shape":"text","anchor":"center","x":"0","y":"-12","text":"Sound: {pick(sound_on, 'on', 'off')}","size":"14","color":"#ffffff"},{"do":"draw","id":"menu_2","shape":"text","anchor":"center","x":"0","y":"12","text":"Music: {pick(music_on, 'on', 'off')}","size":"14","color":"#ffffff"},{"do":"draw","id":"menu_3","shape":"text","anchor":"center","x":"0","y":"36","text":"Restart","size":"14","color":"#ffffff"},{"do":"set","var":"shown","value":"true"}]},
+ {"when":{"on":"tick"},"state":null,"if":"shown","do":[{"do":"erase","id":"menu_bg"},{"do":"erase","id":"menu_sel"},{"do":"repeat","times":"4","then":[{"do":"erase","id":"menu_{i}"}]},{"do":"set","var":"shown","value":"false"}]}]}`,
+  },
+  {
+    title: 'a score shown in the top right corner (another script adds to "score", e.g. a coin: {"do":"set","var":"score","value":"score + 10","on":"other"})',
+    json: `{"name":"Score","description":"Shows the score in the top right corner.","vars":[{"name":"score","value":0}],"states":[],"handlers":[
+ {"when":{"on":"tick"},"state":null,"if":null,"do":[{"do":"draw","id":"score","shape":"text","anchor":"top_right","x":"-16","y":"16","text":"Score {score}","size":"16","color":"#ffffff"}]}]}`,
+  },
+  {
+    title: 'hearts in the top left corner showing the player\'s health (on the player)',
+    json: `{"name":"Hearts","description":"Draws one heart per point of health, faded when lost.","vars":[],"states":[],"handlers":[
+ {"when":{"on":"tick"},"state":null,"if":null,"do":[{"do":"repeat","times":"self.max_health","then":[{"do":"draw","id":"heart{i}","shape":"circle","anchor":"top_left","x":"16 + i * 26","y":"16","w":"20","h":"20","color":"#ff4d6d","alpha":"i < self.health ? 1 : 0.25"}]}]}]}`,
+  },
+  {
+    title: 'a health bar in the top left corner (on the player)',
+    json: `{"name":"Health bar","description":"A bar that shrinks as the player loses health.","vars":[],"states":[],"handlers":[
+ {"when":{"on":"tick"},"state":null,"if":null,"do":[{"do":"draw","id":"bar_back","shape":"rect","anchor":"top_left","x":"16","y":"16","w":"104","h":"14","color":"#222222"},{"do":"draw","id":"bar","shape":"rect","anchor":"top_left","x":"18","y":"18","w":"100 * self.health / max(1, self.max_health)","h":"10","color":"#4ade80"}]}]}`,
+  },
 ];

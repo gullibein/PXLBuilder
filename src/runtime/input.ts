@@ -3,8 +3,8 @@
  * so the keyboard, touch buttons and game controllers all drive the same
  * actions (bindings change in one place).
  */
-export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire';
-export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire'];
+export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
+export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'];
 
 /** What reading the input needs (an InputState, or a view of it that leaves some keys out). */
 export interface InputView {
@@ -26,6 +26,9 @@ export const KEY_BINDINGS: Record<string, Action> = {
   KeyZ: 'jump',
   KeyE: 'interact',
   KeyX: 'fire',
+  // The game's menu (a pause menu, if the game has one): Escape or P.
+  Escape: 'menu',
+  KeyP: 'menu',
 };
 
 /** Where an action comes from: the keyboard and touch buttons, or a game controller. Held if any source holds it. */
@@ -87,7 +90,7 @@ export class InputState {
  * Game controllers (Xbox, PlayStation, Switch Pro, Steam Deck…), in the browser's standard layout: d-pad or left
  * stick to move, the bottom face button (A / Cross) to jump, the right one (B / Circle) and the top one (Y /
  * Triangle) to interact, the left one (X / Square) and the right trigger to fire. Select/Back (or the Share/minus
- * button) restarts the level. Read once a frame; every connected controller counts.
+ * button) restarts the level; Start (Options / plus) is the game's menu key. Read once a frame; every connected controller counts.
  */
 export const PAD_BUTTONS: Record<number, Action | 'restart'> = {
   0: 'jump',
@@ -96,6 +99,7 @@ export const PAD_BUTTONS: Record<number, Action | 'restart'> = {
   2: 'fire',
   7: 'fire',
   8: 'restart',
+  9: 'menu',
   12: 'up',
   13: 'down',
   14: 'left',

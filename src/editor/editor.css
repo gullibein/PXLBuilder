@@ -741,6 +741,8 @@ input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; bord
 .touch-btn:active { background: rgba(123, 108, 246, 0.6); }
 .touch-btn.big { width: 88px; height: 88px; border-radius: 50%; font-size: 17px; }
 .touch-btn.small { width: 62px; height: 62px; border-radius: 50%; }
+.touch-menu { position: absolute; z-index: 6; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); pointer-events: none; }
+.touch-btn.menu { width: 48px; height: 48px; font-size: 20px; }
 /* With the buttons on screen, the keyboard hints aren't needed. */
 .touch-controls ~ .hud-keys { display: none; }
 

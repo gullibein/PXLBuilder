@@ -27,13 +27,14 @@ export type ScriptValue = number | boolean | string;
 export type Trigger =
   | { on: 'start' }
   | { on: 'tick' }
+  | { on: 'paused' }
   | { on: 'every'; seconds: number }
   | { on: 'enter_state' }
   | { on: 'event'; event: string; with: string | null }
   | { on: 'key'; key: KeyName; edge: 'pressed' | 'held' | 'released' }
   | { on: 'signal'; name: string };
 
-export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire';
+export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
 
 export type Stmt =
   | { do: 'set'; var: string; value: string; on: string | null }
@@ -93,6 +94,11 @@ export type Stmt =
   | { do: 'stop_music' }
   | { do: 'respawn'; target: string | null }
   | { do: 'restart_level' }
+  | { do: 'restart_game' }
+  | { do: 'pause' }
+  | { do: 'resume' }
+  | { do: 'set_sound'; enabled: string }
+  | { do: 'set_music'; enabled: string }
   | { do: 'complete_level' }
   | { do: 'camera_shake'; strength: string; seconds: string }
   | { do: 'camera_flash'; color: string; seconds: string }
@@ -128,7 +134,7 @@ export interface BehaviorScript {
 
 // ---------------------------------------------------------------- reference tables
 
-export const KEYS: KeyName[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire'];
+export const KEYS: KeyName[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'];
 
 /** Names every expression can use (plus the script's variables). */
 export const BUILTIN_NAMES: Record<string, string> = {
@@ -141,6 +147,9 @@ export const BUILTIN_NAMES: Record<string, string> = {
   screen_w: 'width of the play screen (px), for drawing',
   screen_h: 'height of the play screen (px), for drawing',
   pi: '3.14159…',
+  paused: 'true while the game is paused (pause / resume)',
+  sound_on: 'true while sound effects are on (set_sound)',
+  music_on: 'true while music is on (set_music)',
 };
 /** Names that exist only in some handlers. */
 export const CONTEXT_NAMES: Record<string, string> = {
@@ -185,6 +194,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   min: { args: 'a, b, …', min: 2, max: 8, doc: 'smallest' },
   max: { args: 'a, b, …', min: 2, max: 8, doc: 'largest' },
   clamp: { args: 'x, lo, hi', min: 3, max: 3, doc: 'x limited to lo..hi' },
+  pick: { args: 'cond, a, b', min: 3, max: 3, doc: 'a if cond is true, else b: pick(music_on, "on", "off"), pick(choice == 1, "#ffd84a", "#ffffff")' },
   sign: { args: 'x', min: 1, max: 1, doc: '-1, 0 or 1' },
   sqrt: { args: 'x', min: 1, max: 1, doc: 'square root' },
   floor: { args: 'x', min: 1, max: 1, doc: 'round down' },
@@ -206,7 +216,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   exists: { args: 'e', min: 1, max: 1, doc: 'e is not null and still in play' },
   has_tag: { args: 'e, tag', min: 2, max: 2, doc: 'e has the tag' },
   items: { args: 'e, item', min: 2, max: 2, doc: 'how many of the item e carries' },
-  key: { args: '"left"|"right"|"up"|"down"|"jump"|"interact"|"fire"', min: 1, max: 1, doc: 'the key is held down' },
+  key: { args: '"left"|"right"|"up"|"down"|"jump"|"interact"|"fire"|"menu"', min: 1, max: 1, doc: 'the key is held down ("menu": Escape, P or a controller\'s Start)' },
   pressed: { args: 'key', min: 1, max: 1, doc: 'the key was pressed this step' },
   solid_at: { args: 'x, y', min: 2, max: 2, doc: 'a wall/floor (or a Pushable thing) is at that point (for ledge and wall checks, and whether a grid square is free)' },
   thing_at: { args: 'x, y, tag?', min: 2, max: 3, doc: 'the living entity (not self) at that point, optionally only one with the tag, or null: what is on a grid square (thing_at(self.x + 32, self.y, "enemy"), thing_at(x, y, "barrel"))' },
@@ -300,11 +310,19 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   play_music: { example: '{"do":"play_music","music":"Boss theme"}', doc: 'play a song from the music list (by name or id) instead of the music playing now (the level\'s music, or another song); it loops if the song is set to loop' },
   stop_music: { example: '{"do":"stop_music"}', doc: 'stop the music' },
-  builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'hide or show the built-in display (hearts, items, or all of it), e.g. when scripts draw their own' },
+  builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'show or hide the built-in display (hearts, items, or all of it). A game starts with it hidden (nothing is on the screen until asked for): show true is a quick way to get plain hearts or a list of carried items; anything else (score, lives, a health bar, a level counter…) is drawn by a script' },
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
   restart_level: { example: '{"do":"restart_level"}', doc: 'start the level again' },
+  restart_game: { example: '{"do":"restart_game"}', doc: 'start the whole game again, from its first level' },
+  pause: {
+    example: '{"do":"pause"}',
+    doc: 'pause the game (for a pause menu): everything stops (movement, enemies, timers, "tick" and "every" handlers, events); only "key" handlers and "paused" handlers still run (the menu reads keys in "key" handlers and draws itself in a "paused" handler) and drawings stay. "paused" is true meanwhile',
+  },
+  resume: { example: '{"do":"resume"}', doc: 'the game goes on after pause' },
+  set_sound: { example: '{"do":"set_sound","enabled":"not sound_on"}', doc: 'sound effects on (true) or off (false) for the whole game, every level; "sound_on" tells which' },
+  set_music: { example: '{"do":"set_music","enabled":"not music_on"}', doc: 'music on (true) or off (false) for the whole game (it goes on silently, so it comes back where it is); "music_on" tells which' },
   complete_level: { example: '{"do":"complete_level"}', doc: 'the level is won: play goes on to the next level' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
   camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
@@ -316,6 +334,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
 export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> = {
   start: { example: '{"on":"start"}', doc: 'once, when the level starts or it appears' },
   tick: { example: '{"on":"tick"}', doc: 'every step (60 times a second): steering, checks' },
+  paused: { example: '{"on":"paused"}', doc: 'every step WHILE THE GAME IS PAUSED (and only then): draw a pause menu here, from its variables' },
   every: { example: '{"on":"every","seconds":2}', doc: 'every N seconds (min 0.05)' },
   enter_state: { example: '{"on":"enter_state"}', doc: 'when the handler\'s "state" is entered (needs "state")' },
   event: { example: '{"on":"event","event":"touch_started","with":"player"}', doc: 'a game event this entity takes part in (as subject or other); "with" = only when the other party has that tag (null: anything)' },
@@ -416,6 +435,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('stop_music') }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
     z.object({ do: z.literal('restart_level') }),
+    z.object({ do: z.literal('restart_game') }),
+    z.object({ do: z.literal('pause') }),
+    z.object({ do: z.literal('resume') }),
+    z.object({ do: z.literal('set_sound'), enabled: expr }),
+    z.object({ do: z.literal('set_music'), enabled: expr }),
     z.object({ do: z.literal('complete_level') }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
     z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
@@ -429,6 +453,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
 const trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('start') }),
   z.object({ on: z.literal('tick') }),
+  z.object({ on: z.literal('paused') }),
   z.object({ on: z.literal('every'), seconds: z.number().min(0.05).max(3600) }),
   z.object({ on: z.literal('enter_state') }),
   z.object({ on: z.literal('event'), event: z.string().min(1), with: z.string().min(1).nullable().default(null) }),
@@ -489,8 +514,14 @@ export function exprSlots(s: Stmt): string[] {
     case 'state':
     case 'signal':
     case 'restart_level':
+    case 'restart_game':
+    case 'pause':
+    case 'resume':
     case 'complete_level':
       return [];
+    case 'set_sound':
+    case 'set_music':
+      return [s.enabled];
     case 'velocity':
       return [s.x, s.y, s.on].filter((x): x is string => x !== null);
     case 'push':
@@ -572,6 +603,14 @@ export function exprSlots(s: Stmt): string[] {
 }
 
 /** The {expression} parts of a message text. */
+/** The game reads the menu key (Escape / P / a controller's Start) somewhere: then Escape is the game's, not the editor's. */
+export function usesMenuKey(project: Project): boolean {
+  const scripts = [...project.definitions.flatMap((d) => d.scripts ?? []), ...project.scenes.flatMap((s) => s.entities.flatMap((e) => e.scripts ?? []))];
+  if (!scripts.length) return false;
+  const text = JSON.stringify(scripts);
+  return text.includes('"key":"menu"') || /\b(key|pressed)\(\s*\\?["']menu\\?["']\s*\)/.test(text);
+}
+
 /** A song by id, or by name (any case). */
 export function findSong(project: Project, idOrName: string): Project['assets'][number] | undefined {
   const songs = project.assets.filter((a) => a.kind === 'music' && a.song);

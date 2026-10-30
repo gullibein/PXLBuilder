@@ -262,6 +262,13 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('pause menu')) {
+    // The example the AI learns from, as it is.
+    const examples = readFileSync('src/core/script/examples.ts', 'utf8');
+    const scriptJson = examples.match(/json: `(\{"name":"Pause menu"[\s\S]*?)`/)[1];
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: 'The player now has a pause menu (Esc).', changes: ['Player: pause menu'], operations: [{ op: 'set_script', target: 'definition', id: player, scriptJson }] };
+  }
   if (req.includes('hearts bigger')) {
     // Not a setting: a script on the player that draws its own, bigger hearts and hides the built-in ones.
     const player = body.context.library.find((d) => d.name === 'Player').id;
@@ -976,6 +983,25 @@ try {
   await page.screenshot({ path: `${OUT}/5d-script-hearts.png` });
   await page.keyboard.press('Escape');
   await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'back to editing');
+  await page.getByTestId('undo').click();
+
+  step = 'pause menu';
+  await page.mouse.dblclick(emptySpot.x, emptySpot.y);
+  await ask('Add a pause menu with Resume, Sound on/off, Music on/off and Restart.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'asking for a pause menu is applied, as a script on the player');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('play').click();
+  const menuCanvas = page.getByTestId('play-canvas');
+  const drawn = async () => (await menuCanvas.getAttribute('data-drawings')) ?? '';
+  await check(async () => (await page.locator('.hud-keys').innerText()).includes('Esc menu') && (await page.locator('.hud-keys').innerText()).includes('Ctrl+Enter stops'), 'the key hints say Esc opens the menu and Ctrl+Enter stops');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await check(async () => (await menuCanvas.count()) === 1 && /menu_bg/.test(await drawn()), 'in play, Esc opens the game\'s menu (and doesn\'t stop play)');
+  await page.screenshot({ path: `${OUT}/5e-pause-menu.png` });
+  await page.keyboard.press('Escape');
+  await check(async () => (await menuCanvas.count()) === 1 && !/menu_bg/.test(await drawn()), 'Esc again closes the menu');
+  await page.keyboard.press('Control+Enter');
+  await check(async () => (await page.getByTestId('viewport-canvas').count()) === 1, 'Ctrl+Enter stops play');
   await page.getByTestId('undo').click();
 
   step = 'sounds';
@@ -3131,15 +3157,14 @@ try {
   const lps = async () => ((await lPlay.getAttribute('data-player')) ?? '').split(',').map(Number);
   const evs = async () => (await lPlay.getAttribute('data-events')) ?? '';
   await check(async () => (await lps())[2] === 1, 'play: the player lands');
-  await check(async () => (await lp.getByTestId('hud-health').getAttribute('aria-label')) === 'Health 3 of 3', 'the HUD shows the player\'s hearts');
-  await check(async () => (await lp.getByTestId('hud-heart').count()) === 3 && ((await lp.getByTestId('hud-heart').first().getAttribute('src')) ?? '').startsWith('data:image/svg'), "(drawn with the Heart object's picture)");
+  await check(async () => (await lp.getByTestId('hud-health').count()) === 0 && (await lp.getByTestId('hud-item').count()) === 0, 'a game starts bare: no hearts or items on the screen until asked for');
   const walkUntil = async (x) => {
     await lp.keyboard.down('ArrowRight');
     for (let i = 0; i < 150 && (await lps())[0] < x; i++) await lp.waitForTimeout(20);
     await lp.keyboard.up('ArrowRight');
   };
   await walkUntil(-80);
-  await check(async () => (await lp.getByTestId('hud-item').innerText()) === 'key', 'walking over the key picks it up (HUD shows it)');
+  await check(async () => (await evs()).includes('collected:Player>Key'), 'walking over the key picks it up');
   await check(async () => (await lp.getByTestId('hud-message').innerText()) === 'Got the key!', 'the rule shows its message');
   await lp.waitForTimeout(150);
   await lp.keyboard.press('KeyE');

@@ -20,6 +20,8 @@ export function describeTrigger(t: Trigger): string {
       return 'when the level starts';
     case 'tick':
       return 'every step';
+    case 'paused':
+      return 'every step while paused';
     case 'every':
       return `every ${t.seconds} s`;
     case 'enter_state':
@@ -134,6 +136,16 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
     case 'restart_level':
       return one('restart the level');
+    case 'restart_game':
+      return one('restart the game');
+    case 'pause':
+      return one('pause the game');
+    case 'resume':
+      return one('resume the game');
+    case 'set_sound':
+      return one(`sound effects on: ${x(s.enabled)}`);
+    case 'set_music':
+      return one(`music on: ${x(s.enabled)}`);
     case 'complete_level':
       return one('complete the level');
     case 'camera_shake':

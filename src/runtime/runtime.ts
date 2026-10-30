@@ -451,8 +451,18 @@ export class Runtime {
   readonly scene: Scene;
   /** What scripts drew on the screen, by id (kept until erased or the level restarts). */
   readonly drawings = new Map<string, ScreenDrawing>();
-  /** Parts of the built-in play display that scripts turned off. */
-  readonly builtinHidden = new Set<'hearts' | 'items'>();
+  /**
+   * Parts of the built-in play display (hearts, items) that are off. A game starts bare: both are off until a script
+   * shows them (builtin_display), and scores, hearts, lives and the like are the game's own drawings.
+   */
+  readonly builtinHidden = new Set<'hearts' | 'items'>(['hearts', 'items']);
+  /** Paused by a script (a pause menu): the world stands still; only "key" handlers run. */
+  paused = false;
+  /** Sound effects and music on (scripts switch them for the whole game: the play view keeps them across levels). */
+  soundOn = true;
+  musicOn = true;
+  /** A script asked to start the whole game again (the play view goes back to the first level). */
+  restartGameRequested = false;
   /** The input of the step being run (what is held when something respawns). */
   private lastInput: InputState | null = null;
   /** Sounds to play (the play view plays and empties it every frame; the runtime itself makes no sound). */
@@ -491,6 +501,8 @@ export class Runtime {
     this.soundQueue.length = 0;
     this.soundsPlayed = 0;
     this.builtinHidden.clear();
+    this.builtinHidden.add('hearts').add('items');
+    this.paused = false;
     this.solidsDirty = true;
     this.rebuildLadders();
 
@@ -544,8 +556,13 @@ export class Runtime {
   }
 
   step(dt: number, input: InputState): void {
-    this.time += dt;
     this.lastInput = input;
+    // Paused (a pause menu): nothing moves and no time passes; only "key" handlers run (the menu).
+    if (this.paused) {
+      this.scripts.whilePaused(input);
+      return;
+    }
+    this.time += dt;
     // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
     if (this.completed !== null) return;
 

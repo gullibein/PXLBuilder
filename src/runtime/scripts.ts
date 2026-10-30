@@ -27,7 +27,7 @@ import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 const NO_KEYS: InputView = { isDown: () => false, wasPressed: () => false, wasReleased: () => false };
 
 /** Statements that never move, add, remove or retag anything, nor change what is solid (the level's index stays valid). */
-const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
+const KEEPS_INDEX = new Set<string>(['set', 'if', 'each', 'repeat', 'velocity', 'push', 'glide_to', 'face', 'state', 'signal', 'message', 'alpha', 'draw', 'erase', 'play_sound', 'play_music', 'stop_music', 'pause', 'resume', 'set_sound', 'set_music', 'builtin_display', 'camera_shake', 'camera_flash', 'camera_zoom', 'camera_focus']);
 
 export interface ScriptInstance {
   script: BehaviorScript;
@@ -97,12 +97,12 @@ export class ScriptSystem {
     this.generation++;
   }
 
-  before(dt: number, input: InputState): void {
+  before(dt: number, input: InputState, keysOnly = false): void {
     // While the scripts run, nothing moves but what they move: point and tag questions use an index of the level,
     // brought up to date whenever a statement may have moved, added, removed or retagged something.
     this.indexing = true;
     try {
-      this.beforeAll(dt, input);
+      this.beforeAll(dt, input, keysOnly);
     } finally {
       this.indexing = false;
       this.index = null;
@@ -144,7 +144,7 @@ export class ScriptSystem {
     return { x: o.x, y: o.y, hw: (Number(sp?.width) || 0) / 2, hh: (Number(sp?.height) || 0) / 2 };
   }
 
-  private beforeAll(dt: number, input: InputState): void {
+  private beforeAll(dt: number, input: InputState, keysOnly = false): void {
     this.input = input;
     this.stepBudget = STEP_BUDGET;
     const gen = this.generation;
@@ -164,7 +164,8 @@ export class ScriptSystem {
         inst.script.handlers.forEach((h, i) => {
           if (gen !== this.generation || !e.alive) return;
           const w = h.when;
-          if (w.on === 'tick') this.run(e, inst, h, null);
+          if (keysOnly ? w.on !== 'key' && w.on !== 'paused' : w.on === 'paused') return;
+          if (w.on === 'tick' || w.on === 'paused') this.run(e, inst, h, null);
           else if (w.on === 'every') {
             inst.timers[i] += dt;
             if (inst.timers[i] >= w.seconds) {
@@ -183,6 +184,11 @@ export class ScriptSystem {
     }
     // (Events handled later this step hear the keys as they are.)
     this.input = input;
+  }
+
+  /** While the game is paused: only "key" handlers run (a pause menu reads its keys there; they may resume). */
+  whilePaused(input: InputState): void {
+    this.before(0, input, true);
   }
 
   /**
@@ -623,6 +629,21 @@ export class ScriptSystem {
       case 'restart_level':
         this.rt.restart();
         break;
+      case 'restart_game':
+        this.rt.restartGameRequested = true;
+        break;
+      case 'pause':
+        this.rt.paused = true;
+        break;
+      case 'resume':
+        this.rt.paused = false;
+        break;
+      case 'set_sound':
+        this.rt.soundOn = truthy(this.eval(s.enabled, ctx));
+        break;
+      case 'set_music':
+        this.rt.musicOn = truthy(this.eval(s.enabled, ctx));
+        break;
       case 'complete_level':
         this.rt.completeLevel(e);
         break;
@@ -746,6 +767,12 @@ export class ScriptSystem {
         return ctx.inst.stateTime;
       case 'pi':
         return Math.PI;
+      case 'paused':
+        return this.rt.paused;
+      case 'sound_on':
+        return this.rt.soundOn;
+      case 'music_on':
+        return this.rt.musicOn;
     }
     return ctx.inst.vars.get(name) ?? 0;
   }
@@ -812,6 +839,8 @@ export class ScriptSystem {
         return Math.max(...v.map(num));
       case 'clamp':
         return Math.min(n(2), Math.max(n(1), n(0)));
+      case 'pick':
+        return truthy(v[0]) ? v[1] : v[2];
       case 'sign':
         return Math.sign(n(0));
       case 'sqrt':

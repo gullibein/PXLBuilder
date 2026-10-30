@@ -64,6 +64,8 @@ export function songAsset(project: Pick<Project, 'assets'>, id: string | null | 
 }
 
 export interface SongPlayer {
+  /** Silent (music off) or heard again; it goes on playing meanwhile, so it comes back where it is. */
+  setMuted(muted: boolean): void;
   /** The song (or its instruments) changed: heard from the next pattern on. */
   update(song: Song, instruments: InstrumentLookup): void;
   stop(): void;
@@ -189,7 +191,13 @@ export function playSong(first: Song, firstInstruments: InstrumentLookup, opts: 
   tick();
   const timer = setInterval(tick, 25);
 
+  let muted = false;
   return {
+    setMuted(m) {
+      if (m === muted || stopped) return;
+      muted = m;
+      master.gain.setTargetAtTime(m ? 0 : (opts.volume ?? 1), ac.currentTime, 0.02);
+    },
     update(s, i) {
       song = s;
       instruments = i;

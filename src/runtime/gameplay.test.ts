@@ -1099,6 +1099,97 @@ describe('the example scripts the AI learns from', () => {
     expect(rt.scripts.errors).toEqual([]);
   });
 
+  const tap = (rt: Runtime, input: InputState, key: Parameters<InputState['press']>[0]) => {
+    input.press(key);
+    run(rt, input, 1 / 60);
+    input.release(key);
+    run(rt, input, 2 / 60);
+  };
+
+  it('Pause menu: the menu key pauses everything and shows the menu; Up/Down choose, Jump picks', () => {
+    const { rt, input, p } = level((b) => {
+      setScript(b.d, { target: 'instance', id: rt0(b, 'Player') }, example('Pause menu'));
+      b.place('Enemy', { x: 100, y: 17 });
+    });
+    const enemy = rt.find('Enemy')!;
+    enemy.vx = -40;
+    run(rt, input, 0.2);
+    tap(rt, input, 'menu');
+    expect(rt.paused).toBe(true);
+    const time = rt.time;
+    const at = { px: p.x, py: p.y, ex: enemy.x };
+    input.press('right');
+    run(rt, input, 0.5);
+    input.release('right');
+    // Nothing moved, no time passed, and the menu is on the screen.
+    expect(rt.time).toBe(time);
+    expect({ px: p.x, py: p.y, ex: enemy.x }).toEqual(at);
+    expect([...rt.drawings.keys()]).toEqual(expect.arrayContaining(['menu_bg', 'menu_sel', 'menu_0', 'menu_1', 'menu_2', 'menu_3']));
+    expect(rt.drawings.get('menu_1')!.text).toBe('Sound: on');
+    // Down to Sound, Jump: sound off (and the menu says so); Down to Music, Jump: music off.
+    tap(rt, input, 'down');
+    tap(rt, input, 'jump');
+    expect(rt.soundOn).toBe(false);
+    expect(rt.drawings.get('menu_1')!.text).toBe('Sound: off');
+    tap(rt, input, 'down');
+    tap(rt, input, 'jump');
+    expect(rt.musicOn).toBe(false);
+    expect(rt.paused).toBe(true);
+    // Up twice to Resume, Jump: the game goes on, the menu is gone, and the player didn't jump.
+    tap(rt, input, 'up');
+    tap(rt, input, 'up');
+    tap(rt, input, 'jump');
+    expect(rt.paused).toBe(false);
+    run(rt, input, 0.1);
+    expect([...rt.drawings.keys()].filter((k) => k.startsWith('menu'))).toEqual([]);
+    expect(p.y).toBeCloseTo(16, 0);
+    expect(rt.time).toBeGreaterThan(time);
+    // The menu key again opens it, and again closes it.
+    tap(rt, input, 'menu');
+    expect(rt.paused).toBe(true);
+    tap(rt, input, 'menu');
+    expect(rt.paused).toBe(false);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('Pause menu: Restart starts the level again, not paused', () => {
+    const { rt, input, p } = level((b) => setScript(b.d, { target: 'instance', id: rt0(b, 'Player') }, example('Pause menu')));
+    walkRight(rt, input, 0.5);
+    expect(p.x).toBeGreaterThan(30);
+    tap(rt, input, 'menu');
+    tap(rt, input, 'up'); // wraps around to Restart
+    tap(rt, input, 'jump');
+    run(rt, input, 0.1);
+    expect(rt.paused).toBe(false);
+    expect(rt.find('Player')!.x).toBeCloseTo(0, 0);
+    expect([...rt.drawings.keys()].filter((k) => k.startsWith('menu'))).toEqual([]);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('Score, Hearts and Health bar draw what they show (nothing is on the screen before)', () => {
+    const plain = level();
+    run(plain.rt, plain.input, 0.1);
+    expect(plain.rt.drawings.size).toBe(0);
+    expect(plain.rt.builtinHidden.has('hearts') && plain.rt.builtinHidden.has('items')).toBe(true);
+    const { rt, input, p } = level((b) => {
+      const id = rt0(b, 'Player');
+      setScript(b.d, { target: 'instance', id }, example('Score'));
+      setScript(b.d, { target: 'instance', id }, example('Hearts'));
+      setScript(b.d, { target: 'instance', id }, example('Health bar'));
+    });
+    run(rt, input, 0.1);
+    expect(rt.drawings.get('score')!.text).toBe('Score 0');
+    p.scripts.find((s) => s.script.name === 'Score')!.vars.set('score', 30);
+    p.health!.current = p.health!.max - 1;
+    run(rt, input, 0.1);
+    expect(rt.drawings.get('score')!.text).toBe('Score 30');
+    const hearts = [...rt.drawings.keys()].filter((k) => k.startsWith('heart'));
+    expect(hearts.length).toBe(p.health!.max);
+    expect(rt.drawings.get(`heart${p.health!.max - 1}`)!.alpha).toBeLessThan(1);
+    expect(rt.drawings.get('bar')!.w).toBeLessThan(100);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
   it('Crumble: gives way under the player shortly after landing, and comes back', () => {
     const { rt, input, p } = level((b) => setScript(b.d, { target: 'instance', id: b.place('Stone', { x: 208, y: 48 }) }, example('Crumble')));
     const stone = rt.entities.find((e) => e.name === 'Stone' && e.scripts.length)!;

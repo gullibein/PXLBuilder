@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
 import { checkExpr, formatExpr, parseExpr } from './expr';
-import { checkScript, describeScriptLanguage, FUNCTIONS, MEMBERS, STATEMENTS } from './language';
+import { checkScript, describeScriptLanguage, FUNCTIONS, MEMBERS, STATEMENTS, usesMenuKey } from './language';
+import { produce } from 'immer';
 
 const project = createProject(createBuiltinRegistry());
 const scope = { names: new Set(['self', 'player', 'speed']), functions: { dist: { min: 1, max: 2 }, abs: { min: 1, max: 1 } }, members: new Set(['x', 'grounded']) };
@@ -112,5 +113,19 @@ describe('scripts', () => {
     for (const k of Object.keys(STATEMENTS)) expect(text).toContain(`  ${k}:`);
     for (const k of Object.keys(FUNCTIONS)) expect(text).toContain(`  ${k}(`);
     for (const k of Object.keys(MEMBERS)) expect(text).toContain(`  ${k}:`);
+  });
+});
+
+describe('menu key', () => {
+  const withScript = (handlers: unknown[]) =>
+    produce(project, (d) => {
+      d.definitions[0].scripts = [{ name: 'M', description: '', vars: [], states: [], handlers } as never];
+    });
+
+  it('a game uses the menu key (Esc) when a script reads it; otherwise Esc stops play as before', () => {
+    expect(usesMenuKey(project)).toBe(false);
+    expect(usesMenuKey(withScript([{ when: { on: 'key', key: 'menu', edge: 'pressed' }, state: null, if: null, do: [{ do: 'pause' }] }]))).toBe(true);
+    expect(usesMenuKey(withScript([{ when: { on: 'tick' }, state: null, if: "pressed('menu')", do: [{ do: 'pause' }] }]))).toBe(true);
+    expect(usesMenuKey(withScript([{ when: { on: 'key', key: 'jump', edge: 'pressed' }, state: null, if: null, do: [{ do: 'message', text: 'menu', seconds: 1 }] }]))).toBe(false);
   });
 });
