@@ -139,7 +139,9 @@ function stmtLines(s: Stmt, indent: string): string[] {
     case 'take_item':
       return one(`take ${x(s.count)} × ${s.item} from ${x(s.target)}`);
     case 'set_open':
-      return one(`${x(s.target)} open = ${x(s.open)}`);
+      return one(`${x(s.target)} open = ${x(s.open)}${s.by ? ` (by ${x(s.by)})` : ''}`);
+    case 'set_switch':
+      return one(`${x(s.target)} switched on = ${x(s.value)}`);
     case 'state':
       return one(`→ state ${s.name}`);
     case 'signal':

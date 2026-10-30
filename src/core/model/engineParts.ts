@@ -8,11 +8,15 @@
 import { generateId } from '../ids';
 import { itemNameOf } from '../graph/graph';
 import { scriptSchema, type BehaviorScript, type EnginePart } from '../script/language';
+import type { Condition, EntityRef } from '../types';
+import { ModelError } from './mutations';
 
 /** The object a part's script is made for (what the script needs to know of it, e.g. the item it gives). */
 export interface PartOwner {
   name: string;
   components: Record<string, Record<string, unknown>>;
+  /** Its "requires" connections (a door and the key it needs): the item, whether opening uses it up, and the conditions. */
+  requires?: { item: string; consume: boolean; conditions: Condition[] }[];
 }
 
 export interface EnginePartInfo {
@@ -663,7 +667,112 @@ function ledgeGrabScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Being used as the engine does it (Switch): a player touching it presses Interact (activation "interact"), or a
+ * player walks into it ("touch"); it flips on/off (only the first time with "once") and "switch_activated"
+ * happens, the player as the other party: what it "controls" opens, closes, disappears or moves (the connections
+ * do that, as before), and rules and scripts can react.
+ */
+function switchScript(): BehaviorScript {
+  const use: Step[] = [
+    when("not (field(self, 'Switch.once') and used)", [
+      set('used', 'true'),
+      { do: 'set_switch', target: 'self', value: 'not self.on' },
+      { do: 'emit', event: 'switch_activated', other: 'other' },
+    ]),
+  ];
+  const player = "has_component(other, 'CharacterController')";
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Switch',
+    description: 'Used by a player pressing Interact (E) while touching it, or by walking into it (Switch.activation): flips on/off (once only with Switch.once) and "switch_activated" happens, so what it controls reacts.',
+    takesOver: 'switching',
+    vars: [{ name: 'used', value: false }],
+    handlers: [
+      { when: { on: 'contact' }, if: `field(self, 'Switch.activation') == 'interact' and pressed('interact') and ${player}`, do: use },
+      { when: { on: 'event', event: 'touch_started', with: null }, if: `field(self, 'Switch.activation') == 'touch' and ${player}`, do: use },
+    ],
+  }) as BehaviorScript;
+}
+
+/** A connection's condition as a script expression, from the door's side ("subject" is whoever touched it). */
+function conditionExpr(c: Condition): string {
+  const who = (ref: EntityRef): string => {
+    if (ref.kind === 'subject') return 'other';
+    if (ref.kind === 'other') return 'self';
+    throw new ModelError('its key connection has a condition about something other than the door or who touches it; change that condition first');
+  };
+  const q = (t: string) => `'${t.replace(/'/g, '')}'`;
+  let e: string;
+  switch (c.type) {
+    case 'has_item':
+      e = `items(${who(c.entity)}, ${q(c.item)}) >= ${c.count}`;
+      break;
+    case 'health':
+      e = `${who(c.entity)}.health ${c.compare} ${c.value}`;
+      break;
+    case 'is_open':
+      e = `${who(c.entity)}.open`;
+      break;
+    case 'switch_on':
+      e = `${who(c.entity)}.on`;
+      break;
+    case 'none_left':
+      throw new ModelError('its key connection has a "none left" condition; change that condition first');
+  }
+  return c.not ? `not (${e})` : e;
+}
+
+/**
+ * Opening for its key as the engine does it (a "requires" connection: Door requires Key): when something touches
+ * it while it is closed, carrying the item, it opens (using the item up when the connection says so), the toucher
+ * as the other party of "opened"; a player without it gets "locked". Made from its connections when taken over.
+ */
+function lockScript(owner?: PartOwner): BehaviorScript {
+  const requires = owner?.requires ?? [];
+  if (!requires.length) throw new ModelError(`${owner?.name ?? 'It'} has no key connection ("requires"), so there is no unlocking to take over`);
+  const q = (t: string) => `'${t.replace(/'/g, '')}'`;
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Lock',
+    description: `Opens when touched by something carrying ${requires.map((r) => `a "${r.item}"`).join(' or ')}${requires.some((r) => r.consume) ? ' (using it up)' : ''}; a player without it gets "locked".`,
+    takesOver: 'unlocking',
+    vars: [],
+    handlers: [
+      {
+        when: { on: 'event', event: 'touch_started', with: null },
+        do: requires.map((r) =>
+          when('not self.open', [
+            when(
+              `items(other, ${q(r.item)}) < 1`,
+              [when("has_component(other, 'CharacterController')", [{ do: 'emit', event: 'locked', other: 'other', detail: { needs: q(r.item) } }])],
+              [
+                when(r.conditions.length ? r.conditions.map(conditionExpr).join(' and ') : 'true', [
+                  ...(r.consume ? [{ do: 'take_item', target: 'other', item: r.item, count: '1' }] : []),
+                  { do: 'set_open', target: 'self', open: 'true', by: 'other' },
+                ]),
+              ],
+            ),
+          ]),
+        ),
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  switching: {
+    label: 'switching',
+    covers: 'a switch being used: a player pressing Interact (E) while touching it, or walking into it (Switch.activation), flipping it on/off (Switch.once: only the first time), and "switch_activated" (what it "controls" still reacts through its connections)',
+    component: 'Switch',
+    script: switchScript,
+  },
+  unlocking: {
+    label: 'unlocking',
+    covers: 'a door opening for its key (its "requires" connection): touched by something carrying the item it opens (using it up when the connection says consume), a player without it gets "locked"',
+    component: 'Openable',
+    script: lockScript,
+  },
   climbing: {
     label: 'climbing',
     covers: "the player climbing ladders: Up/Down to start and climb (not Up on the ladder's top, not Down on the floor), Left/Right along it, at its running speed, easing into the middle, Jump or moving off to let go, standing on the top when it gets there; not enemies climbing (that is their Patrol)",

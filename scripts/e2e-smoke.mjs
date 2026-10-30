@@ -383,6 +383,10 @@ function stubModel(body) {
     const key = body.context.library.find((d) => d.name === 'Key').id;
     return { kind: 'confirm', message: "Being picked up is built into the engine. To make keys need E, I'd turn the Key's picking up into a script. Do it?", changes: ['Key: picking up is a script (the Picked up script)'], operations: [{ op: 'use_script_for', target: 'definition', id: key, part: 'picking_up', scriptJson: null }] };
   }
+  if (req.includes('flips back after 3 seconds')) {
+    const sw = body.context.library.find((d) => d.name === 'Switch').id;
+    return { kind: 'apply', message: 'The switch flips back by itself after 3 seconds.', changes: ['Switch: being used is a script (the Switch script)'], operations: [{ op: 'use_script_for', target: 'definition', id: sw, part: 'switching', scriptJson: null }] };
+  }
   if (req.includes('climbing ladders is twice as fast')) {
     const player = body.context.library.find((d) => d.name === 'Player').id;
     return { kind: 'confirm', message: "Climbing is built into the engine. To make it twice as fast I'd turn the Player's climbing into a script. Do it?", changes: ['Player: climbing is a script (the Climbing script)'], operations: [{ op: 'use_script_for', target: 'definition', id: player, part: 'climbing', scriptJson: null }] };
@@ -1962,6 +1966,13 @@ try {
   await result.getByTestId('result-confirm-yes').click();
   await prompts.getByTestId('prompt-close').click();
   await check(async () => (await codeFiles()).includes('code-file-Climbing'), "yes: the player's climbing is its Climbing script, in the Code editor");
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('The switch flips back after 3 seconds.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', "turning the engine's switch use into a script is asked first (also when the AI didn't ask)");
+  await result.getByTestId('result-confirm-yes').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: the Switch gets its Switch script)');
+  await prompts.getByTestId('prompt-close').click();
   await page.getByTestId('undo').click();
   await clickWorld(-256, 0);
   await ask('Keys are picked up only by pressing E.');

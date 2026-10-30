@@ -535,9 +535,14 @@ export class ScriptSystem {
         }
         break;
       }
-      case 'emit':
-        gp.emit(s.event, s.subject ? ent(s.subject) : e, s.other === null ? null : ent(s.other));
+      case 'emit': {
+        const subject = s.subject ? ent(s.subject) : e;
+        // (A switch's "switch_activated" says which way it went, as the engine's does.)
+        const detail: Record<string, unknown> = s.event === 'switch_activated' && subject?.switch ? { on: subject.switch.on } : {};
+        for (const [k, v] of Object.entries(s.detail ?? {})) detail[k] = this.eval(v, ctx);
+        gp.emit(s.event, subject, s.other === null ? null : ent(s.other), Object.keys(detail).length ? detail : undefined);
         break;
+      }
       case 'kill': {
         const t = ent(s.target);
         // Killing itself (stomped, say): the one it was dealing with did it.
@@ -558,7 +563,12 @@ export class ScriptSystem {
       }
       case 'set_open': {
         const t = ent(s.target);
-        if (t) gp.setOpen(t, truthy(this.eval(s.open, ctx)), e);
+        if (t) gp.setOpen(t, truthy(this.eval(s.open, ctx)), s.by ? ent(s.by) : e);
+        break;
+      }
+      case 'set_switch': {
+        const t = ent(s.target);
+        if (t?.switch) t.switch.on = truthy(this.eval(s.value, ctx));
         break;
       }
       case 'state':

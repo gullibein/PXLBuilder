@@ -70,10 +70,11 @@ export type Stmt =
   | { do: 'heal'; target: string; amount: string }
   | { do: 'give_item'; target: string; item: string; count: string }
   | { do: 'take_item'; target: string; item: string; count: string }
-  | { do: 'set_open'; target: string; open: string }
+  | { do: 'set_open'; target: string; open: string; by?: string | null }
+  | { do: 'set_switch'; target: string; value: string }
   | { do: 'state'; name: string }
   | { do: 'signal'; name: string }
-  | { do: 'emit'; event: string; other: string | null; subject?: string | null }
+  | { do: 'emit'; event: string; other: string | null; subject?: string | null; detail?: Record<string, string> }
   | { do: 'bounce'; speed: string; on: string | null }
   | { do: 'message'; text: string; seconds: number }
   | { do: 'alpha'; value: string; on: string | null }
@@ -345,7 +346,8 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   heal: { example: '{"do":"heal","target":"self","amount":"1"}', doc: 'give health, up to the maximum' },
   give_item: { example: '{"do":"give_item","target":"other","item":"coin","count":"1"}', doc: 'add to its inventory' },
   take_item: { example: '{"do":"take_item","target":"other","item":"key","count":"1"}', doc: 'remove from its inventory' },
-  set_open: { example: '{"do":"set_open","target":"self","open":"true"}', doc: 'open (not solid, faded) or close' },
+  set_open: { example: '{"do":"set_open","target":"self","open":"true","by":"other"}', doc: 'open (not solid, faded) or close; "opened"/"closed" happen with "by" as the other party (null: this entity)' },
+  set_switch: { example: '{"do":"set_switch","target":"self","value":"not self.on"}', doc: 'turn a switch on (true) or off (false) without "switch_activated" (emit it to make what it controls react)' },
   state: { example: '{"do":"state","name":"chase"}', doc: 'switch to another state (runs its enter_state handlers)' },
   bounce: {
     example: '{"do":"bounce","speed":"320","on":"other"}',
@@ -353,7 +355,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   emit: {
     example: '{"do":"emit","event":"stomped","other":"other"}',
-    doc: 'announce a game event with this entity as its subject (or "subject": another, e.g. "other" for "collected", whose subject is who picks it up) and "other" as its other party (or null): rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
+    doc: 'announce a game event with this entity as its subject (or "subject": another, e.g. "other" for "collected", whose subject is who picks it up) and "other" as its other party (or null), with an optional "detail" of named values ({"needs": "\'key\'"}) shown in the play log: rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
   },
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
   message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
@@ -484,10 +486,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('heal'), target: expr, amount: expr.default('1') }),
     z.object({ do: z.literal('give_item'), target: expr, item: z.string().min(1), count: expr.default('1') }),
     z.object({ do: z.literal('take_item'), target: expr, item: z.string().min(1), count: expr.default('1') }),
-    z.object({ do: z.literal('set_open'), target: expr, open: expr }),
+    z.object({ do: z.literal('set_open'), target: expr, open: expr, by: nexpr.optional() }),
+    z.object({ do: z.literal('set_switch'), target: expr, value: expr }),
     z.object({ do: z.literal('state'), name: z.string().min(1) }),
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
-    z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr, subject: nexpr.optional() }),
+    z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr, subject: nexpr.optional(), detail: z.record(z.string().regex(/^[A-Za-z_]\w*$/), expr).optional() }),
     z.object({ do: z.literal('bounce'), speed: expr.default('320'), on: nexpr }),
     z.object({ do: z.literal('message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(2) }),
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
@@ -559,7 +562,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -664,7 +667,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'heal':
       return [s.target, s.amount];
     case 'emit':
-      return [...(s.other ? [s.other] : []), ...(s.subject ? [s.subject] : [])];
+      return [...(s.other ? [s.other] : []), ...(s.subject ? [s.subject] : []), ...Object.values(s.detail ?? {})];
     case 'bounce':
       return [s.speed, ...(s.on ? [s.on] : [])];
     case 'kill':
@@ -673,7 +676,9 @@ export function exprSlots(s: Stmt): string[] {
     case 'take_item':
       return [s.target, s.count];
     case 'set_open':
-      return [s.target, s.open];
+      return [s.target, s.open, ...(s.by ? [s.by] : [])];
+    case 'set_switch':
+      return [s.target, s.value];
     case 'message':
       return messageParts(s.text);
     case 'alpha':

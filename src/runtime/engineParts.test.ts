@@ -312,7 +312,7 @@ describe('the ready-made scripts', () => {
     const project = createProject(registry);
     for (const [part, info] of Object.entries(ENGINE_PART_INFO)) {
       const def = project.definitions.find((d) => d.components[info.component]) ?? { name: 'Thing', components: { [info.component]: {} } };
-      expect([part, checkScript(info.script({ name: def.name, components: def.components }), project)]).toEqual([part, { script: expect.anything() }]);
+      expect([part, checkScript(info.script({ name: def.name, components: def.components, requires: [{ item: 'key', consume: true, conditions: [] }] }), project)]).toEqual([part, { script: expect.anything() }]);
     }
   });
 });
@@ -628,5 +628,106 @@ describe('climbing ladders and ledge grabs, done by scripts instead', () => {
     expect(hangs(away)).toBe('-h-h-');
     // With the other scripts too.
     same(['running', 'jumping', 'climbing', 'ledge_grab'], { 0: ['jump', 'right'], 40: ['right'], 150: ['up'], 160: [] }, 260, grab);
+  });
+});
+
+describe('switches and locked doors, done by scripts instead', () => {
+  type Part = 'switching' | 'unlocking';
+  /**
+   * Floor y=48; the Player at x=0; a Switch at x=64 that controls a Door at x=200; a Key at x=-80 and a second
+   * Door at x=-200 that requires it. With `parts`, the Switch and the Doors use their ready-made scripts.
+   */
+  function world(parts: Part[], edit: (d: Project, ids: Record<string, string>) => void = () => {}): Runtime {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const def = (name: string) => d.definitions.find((x) => x.name === name)!;
+      const place = (name: string, pos: Vec2) => {
+        const e = instantiateDefinition(def(name), pos);
+        m.addEntity(d, sceneId, e);
+        return e.id;
+      };
+      for (let x = -320; x <= 320; x += 32) place('Platform', { x, y: 48 });
+      place('Player', { x: 0, y: 16 });
+      const ids = { switch: place('Switch', { x: 64, y: 16 }), door: place('Door', { x: 200, y: 0 }), key: place('Key', { x: -80, y: 20 }), locked: place('Door', { x: -200, y: 0 }) };
+      addRelationship(d, sceneId, { type: 'controls', source: { kind: 'entity', id: ids.switch }, target: { kind: 'entity', id: ids.door }, params: {}, conditions: [] });
+      addRelationship(d, sceneId, { type: 'requires', source: { kind: 'entity', id: ids.locked }, target: { kind: 'object', id: def('Key').id }, params: { consume: true }, conditions: [] });
+      edit(d, ids);
+      if (parts.includes('switching')) applyOperations(d, [{ op: 'use_script_for', target: 'entity', id: ids.switch, part: 'switching', scriptJson: null }] as never, registry);
+      if (parts.includes('unlocking')) applyOperations(d, [{ op: 'use_script_for', target: 'entity', id: ids.locked, part: 'unlocking', scriptJson: null }] as never, registry);
+    });
+    return new Runtime(project, sceneId, registry);
+  }
+  /** Each step: where the player is, what it carries, the switch, the doors; and what happened (the event log). */
+  function trace(rt: Runtime, keys: Record<number, Action[]>, steps: number): { steps: string[]; events: string[] } {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      const doors = rt.entities.filter((e) => e.name === 'Door');
+      const sw = rt.entities.find((e) => e.name === 'Switch')!;
+      out.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.inventory?.get('key') ?? 0},${sw.switch!.on},${doors.map((dd) => dd.open).join('/')}`);
+    }
+    expect(rt.scripts.errors).toEqual([]);
+    const events = rt.gameplay.log.filter((e) => !['touch_started', 'touch_ended', 'level_started'].includes(e.type)).map((e) => `${e.time} ${e.type} ${e.subject}>${e.other} ${JSON.stringify(e.detail ?? {})}`);
+    return { steps: out, events };
+  }
+  const same = (parts: Part[], keys: Record<number, Action[]>, steps: number, edit?: (d: Project, ids: Record<string, string>) => void) => {
+    const engine = trace(world([], edit), keys, steps);
+    const script = trace(world(parts, edit), keys, steps);
+    const first = script.steps.findIndex((t, i) => t !== engine.steps[i]);
+    expect(first === -1 ? 'same' : `step ${first}: engine ${engine.steps[first]} script ${script.steps[first]}`).toBe('same');
+    expect(script.events).toEqual(engine.events);
+    return engine;
+  };
+
+  it('a switch used with E (on, off, on again) opens and closes what it controls exactly as the engine does', () => {
+    const t = same(['switching'], { 0: ['right'], 30: [], 60: ['interact'], 62: [], 120: ['interact'], 122: [], 180: ['interact'], 182: [] }, 240);
+    expect(t.events.filter((e) => e.includes('switch_activated')).length).toBe(3);
+    expect(t.steps.at(-1)!.endsWith('true,true/false')).toBe(true);
+  });
+
+  it('…once only, and one used by walking into it', () => {
+    const once = (d: Project, ids: Record<string, string>) => m.setEntityComponentField(d, d.scenes[0].id, ids.switch, 'Switch', 'once', true, registry);
+    const t = same(['switching'], { 0: ['right'], 30: [], 60: ['interact'], 62: [], 120: ['interact'], 122: [] }, 200, once);
+    expect(t.events.filter((e) => e.includes('switch_activated')).length).toBe(1);
+    const touch = (d: Project, ids: Record<string, string>) => m.setEntityComponentField(d, d.scenes[0].id, ids.switch, 'Switch', 'activation', 'touch', registry);
+    const w = same(['switching'], { 0: ['right'], 60: ['left'], 120: ['right'], 180: [] }, 260, touch);
+    expect(w.events.filter((e) => e.includes('switch_activated')).length).toBeGreaterThan(1);
+  });
+
+  it('a locked door: "locked" without the key, opens with it (using it up), exactly as the engine does', () => {
+    const t = same(['unlocking'], { 0: ['left'], 200: [] }, 260);
+    expect(t.events.some((e) => e.includes('locked'))).toBe(false);
+    expect(t.steps.at(-1)!.split(',')[2]).toBe('0');
+    expect(t.steps.at(-1)!.endsWith('false/true')).toBe(true);
+    // Without picking the key up first (it is elsewhere): locked, stays shut.
+    const away = (d: Project, ids: Record<string, string>) => m.setEntityTransform(d, d.scenes[0].id, ids.key, { position: { x: 280, y: 20 } });
+    const l = same(['unlocking'], { 0: ['left'], 200: [] }, 260, away);
+    expect(l.events.some((e) => e.includes('locked'))).toBe(true);
+    // Both scripted at once.
+    same(['switching', 'unlocking'], { 0: ['right'], 30: [], 60: ['interact'], 62: [], 80: ['left'], 300: [] }, 360);
+  });
+
+  it('a key connection with conditions is turned into the same script conditions', () => {
+    const healthy = (d: Project) => {
+      const r = d.scenes[0].relationships.find((x) => x.type === 'requires')!;
+      r.conditions = [{ type: 'health', entity: { kind: 'subject' }, compare: '>=', value: 3, not: false }];
+    };
+    const t = same(['unlocking'], { 0: ['left'], 200: [] }, 260, healthy);
+    expect(t.steps.at(-1)!.endsWith('false/true')).toBe(true);
+    const tooHigh = (d: Project) => {
+      const r = d.scenes[0].relationships.find((x) => x.type === 'requires')!;
+      r.conditions = [{ type: 'health', entity: { kind: 'subject' }, compare: '>=', value: 99, not: false }];
+    };
+    const shut = same(['unlocking'], { 0: ['left'], 200: [] }, 260, tooHigh);
+    expect(shut.steps.at(-1)!.endsWith('false/false')).toBe(true);
   });
 });

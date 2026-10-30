@@ -190,7 +190,7 @@ export class Gameplay {
       if (!e.alive || !e.controller) continue;
       for (const id of e.touching) {
         const s = this.rt.byId(id);
-        if (s?.alive && s.switch?.activation === 'interact') this.activate(s, e);
+        if (s?.alive && s.switch?.activation === 'interact' && !ownPart(s, 'switching')) this.activate(s, e);
       }
     }
   }
@@ -455,12 +455,13 @@ export class Gameplay {
   private react(ev: GameEvent): void {
     if (ev.type === 'touch_started' && ev.subject && ev.other) {
       const [toucher, touched] = [ev.subject, ev.other];
-      if (touched.switch?.activation === 'touch' && toucher.controller) this.activate(touched, toucher);
+      // (A switch with a script doing its switching (its "Switch" script) is used by that instead; so is a lock.)
+      if (touched.switch?.activation === 'touch' && toucher.controller && !ownPart(touched, 'switching')) this.activate(touched, toucher);
       // A Goal wins the level for the player who reaches it (seen from above: who stands on it, see standOnGoals).
       if (touched.base.components.Goal && toucher.controller && !this.standsOn(toucher, touched)) this.rt.completeLevel(toucher);
       // "Door requires Key": opens for whoever touches it carrying the item.
       for (const r of this.relationships('requires')) {
-        if (!refMatches(r.source, touched) || touched.open) continue;
+        if (!refMatches(r.source, touched) || touched.open || ownPart(touched, 'unlocking')) continue;
         const item = this.itemOfRef(r.target);
         if (!item) continue;
         if ((toucher.inventory?.get(item) ?? 0) < 1) {

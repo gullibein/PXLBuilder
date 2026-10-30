@@ -7,7 +7,8 @@ import { ENGINE_PART_INFO, type PartOwner } from '../model/engineParts';
 import type { EnginePart } from './language';
 import { generateId } from '../ids';
 import { getDefinition, ModelError } from '../model/mutations';
-import type { BehaviorScript, Id, Project } from '../types';
+import type { BehaviorScript, Condition, EntityRef, Id, Project } from '../types';
+import { itemNameOf } from '../graph/graph';
 import { checkScript } from './language';
 
 export type ScriptOwner = { target: 'definition' | 'instance'; id: Id };
@@ -48,15 +49,25 @@ export function useScriptFor(project: Project, owner: ScriptOwner, part: EngineP
   const info = ENGINE_PART_INFO[part];
   // What it is made for: the object, or a placed one (its object's components with its own on top).
   let made: PartOwner;
+  let matches: (ref: EntityRef) => boolean;
   if (owner.target === 'definition') {
     const def = getDefinition(project, owner.id);
     made = { name: def.name, components: def.components };
+    matches = (ref) => (ref.kind === 'object' && ref.id === def.id) || (ref.kind === 'tag' && def.tags.includes(ref.tag));
   } else {
     const e = project.scenes.flatMap((sc) => sc.entities).find((x) => x.id === owner.id);
     if (!e) throw new ModelError(`Entity "${owner.id}" not found`);
     const def = e.definitionId ? project.definitions.find((d) => d.id === e.definitionId) : undefined;
     made = { name: def?.name ?? e.name, components: { ...(def?.components ?? {}), ...e.components } };
+    const tags = [...(def?.tags ?? []), ...e.tags];
+    matches = (ref) => (ref.kind === 'entity' && ref.id === e.id) || (ref.kind === 'object' && ref.id === e.definitionId) || (ref.kind === 'tag' && tags.includes(ref.tag));
   }
+  // Its key connections ("Door requires Key"), in every level, for a lock made from them.
+  made.requires = project.scenes
+    .flatMap((sc) => sc.relationships)
+    .filter((r) => r.type === 'requires' && matches(r.source))
+    .map((r) => ({ item: itemOfRef(project, r.target), consume: r.params.consume === true, conditions: r.conditions }))
+    .filter((r): r is { item: string; consume: boolean; conditions: Condition[] } => r.item !== null);
   if (!made.components[info.component]) throw new ModelError(`${made.name} has no ${info.component}, so there is no ${info.label} to take over`);
   const script = raw === null ? info.script(made) : { ...(raw as Record<string, unknown>), takesOver: part };
   const o = ownerOf(project, owner);
@@ -68,6 +79,21 @@ export function useScriptFor(project: Project, owner: ScriptOwner, part: EngineP
     o.set(before);
     throw e;
   }
+}
+
+/** The item a "requires" target stands for (as the engine reads it): what that object gives when collected, or the tag. */
+function itemOfRef(project: Project, ref: EntityRef): string | null {
+  if (ref.kind === 'tag') return ref.tag;
+  const objectId = ref.kind === 'object' ? ref.id : ref.kind === 'entity' ? project.scenes.flatMap((s) => s.entities).find((x) => x.id === ref.id)?.definitionId : null;
+  const def = objectId ? project.definitions.find((d) => d.id === objectId) : undefined;
+  if (ref.kind === 'object') return def ? (itemNameOf(def.components, def.name) ?? def.name.toLowerCase()) : null;
+  if (ref.kind === 'entity') {
+    const e = project.scenes.flatMap((s) => s.entities).find((x) => x.id === ref.id);
+    if (!e) return null;
+    const name = def?.name ?? e.name;
+    return itemNameOf({ ...(def?.components ?? {}), ...e.components }, name) ?? name.toLowerCase();
+  }
+  return null;
 }
 
 export function removeScript(project: Project, owner: ScriptOwner, scriptId: Id): void {
