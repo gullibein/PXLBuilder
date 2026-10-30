@@ -16,6 +16,12 @@ export interface Topic {
 }
 
 export const TOPICS: Record<string, Topic> = {
+  panels: {
+    title: 'Editor panels for objects',
+    scopes: [],
+    words: /\bpanel\b|slider|knob/i,
+    text: `- EDITOR PANELS (scope note says EDITOR PANEL). An object's own panel shows beside any selected copy in the editor (never in the game), with controls for the settings the user wants at hand. set_panel {id: the object's definition id, panelJson: {"title": short, "controls": [{"label", "target", "control", "min", "max", "step"}]}}; it replaces the whole panel, so to change one control send all of them (object.panel has the current ones). target: "Component.field" of a NUMBER field the object has (Details, e.g. "CharacterController.jumpForce", "CharacterController.speed", "PhysicsBody.gravityScale", "MovingPlatform.offset.x" for one of two numbers), or "script:<script name>.<variable>" for a number variable of one of its scripts. control: "slider" (the default), "knob" or "number" (a plain number field): use what the user asks for, for one control or all. min/max: a sensible range around the current value (jumpForce 150-700, speed 50-500, gravityScale 0-3); step fitting it (1, 5, 10, 0.05…). label: the user's words ("Jump height" for jumpForce is fine; say in message which setting a label moves when it isn't obvious). Only what the object has: to show something it doesn't have (a new ability), add that first in the same answer (add_component, or a script with the variable marked "setting"). remove_panel when asked to take it away.`,
+  },
   music: {
     title: "Music: songs and instruments (make_instrument, make_song, edit_song, set_level_music, the music machine)",
     scopes: ['song', 'instrument'],
@@ -74,6 +80,6 @@ export const TOPICS: Record<string, Topic> = {
 export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = []): string[] {
   const text = [request, ...history.slice(-2).map((h) => h.request)].join('\n');
   return Object.entries(TOPICS)
-    .filter(([, t]) => t.scopes.includes(ctx.kind) || t.words.test(text))
+    .filter(([k, t]) => t.scopes.includes(ctx.kind) || t.words.test(text) || (k === 'panels' && ctx.kind === 'object' && ctx.panel === true))
     .map(([k]) => k);
 }

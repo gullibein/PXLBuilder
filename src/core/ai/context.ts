@@ -6,6 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { EnginePart } from '../script/language';
 import { songSeconds, type Instrument } from '../audio/music';
@@ -52,7 +53,7 @@ export type AIContext =
   /** The editor itself (layout, look, controls), not the game. */
   | { kind: 'editor'; sceneId: Id }
   /** One object in the object library (every copy of it), asked from the Objects tab. */
-  | { kind: 'object'; sceneId: Id; definitionId: Id }
+  | { kind: 'object'; sceneId: Id; definitionId: Id; panel?: boolean }
   /** One of the game's sounds, asked from the Sounds tab or the sound editor (null: the Sounds list, or none open). */
   | { kind: 'sound'; sceneId: Id; assetId: Id | null }
   /** A library object's 16 autotile pictures, asked from the Autotile editor. */
@@ -90,7 +91,8 @@ export function contextKey(ctx: AIContext): string {
     case 'connection':
       return `connection:${ctx.relationshipId}`;
     case 'object':
-      return `object:${ctx.definitionId}`;
+      // (Its editor panel is a conversation of its own.)
+      return ctx.panel ? `panel:${ctx.definitionId}` : `object:${ctx.definitionId}`;
     case 'sound':
       return `sound:${ctx.assetId ?? 'new'}`;
     case 'autotile':
@@ -151,6 +153,8 @@ export interface ObjectDetail {
   spriteGrid: { width: number; height: number };
   look: EntityDetail['look'];
   scripts: BehaviorScript[];
+  /** Its own editor panel, if it has one. */
+  panel?: ObjectPanel;
 }
 
 export interface EntityBrief {
@@ -444,6 +448,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       spriteGrid: gridFor(getEntitySize(r), project.settings.spriteResolution),
       look: lookOf(d.components),
       scripts: d.scripts ?? [],
+      ...(panelOf(d) ? { panel: panelOf(d)! } : {}),
     };
   };
   const autotileDef = ctx.kind === 'autotile' ? project.definitions.find((d) => d.id === ctx.definitionId) : undefined;
@@ -467,7 +472,10 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
 
   return {
     scope: ctx.kind,
-    scope_note: SCOPE_NOTES[ctx.kind],
+    scope_note:
+      ctx.kind === 'object' && ctx.panel
+        ? "EDITOR PANEL for this library object: the user asks what its own panel (beside it in the editor, never in the game) shows and how. Answer with set_panel (or remove_panel); the object's current panel is object.panel. See the panels guidance."
+        : SCOPE_NOTES[ctx.kind],
     ...(editor ? { editor } : {}),
     ...(connection ? { connection: { id: connection.id, text: describeRelationship(project, scene, connection), type: connection.type, source: connection.source, target: connection.target, params: connection.params, conditions: connection.conditions } } : {}),
     level: {

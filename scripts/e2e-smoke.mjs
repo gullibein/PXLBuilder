@@ -388,6 +388,13 @@ function stubModel(body) {
     const player = body.context.library.find((d) => d.name === 'Player').id;
     return { kind: 'apply', message: "To make the jump float at the top, the Player's jumping becomes a script.", changes: ['Player: jumping is a script (the Jumping script)'], operations: [{ op: 'use_script_for', target: 'definition', id: player, part: 'jumping', scriptJson: null }] };
   }
+  if (body.context.scope === 'object' && req.includes('jump height and run speed')) {
+    // "Add panel…": the object's own editor panel, with sliders (the default); asked again, knobs.
+    const o = body.context.object;
+    const control = req.includes('knobs') ? 'knob' : 'slider';
+    const panelJson = JSON.stringify({ title: 'Player tuning', controls: [{ label: 'Jump height', target: 'CharacterController.jumpForce', control, min: 150, max: 700, step: 10 }, { label: 'Run speed', target: 'CharacterController.speed', control, min: 50, max: 500, step: 10 }] });
+    return { kind: 'apply', message: `The ${o.name} has a panel with Jump height and Run speed.`, changes: [`${o.name}: editor panel`], operations: [{ op: 'set_panel', id: o.id, panelJson }] };
+  }
   if (req.includes('wall jump')) {
     const examples = readFileSync('src/core/script/examples.ts', 'utf8');
     const scriptJson = examples.match(/json: `(\{"name":"Wall jump"[\s\S]*?)`/)[1];
@@ -1951,6 +1958,56 @@ try {
   await check(async () => (await codeFiles()).includes('code-file-Wall jump'), '(the Wall jump script is there)');
   await page.getByTestId('undo').click();
 
+  step = 'object panel';
+  {
+    // Right-click the Player → Add panel… → describe it: a panel beside it with sliders that change the object.
+    await page.keyboard.press('Escape');
+    const [cx, cy, zoom] = ((await canvas.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+    const at = { x: box.x + center.x + (-256 - cx) * zoom, y: box.y + center.y + (0 - cy) * zoom };
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await check(async () => (await page.getByTestId('menu-panel').innerText()).includes('Add panel'), 'right-clicking an object offers "Add panel…"');
+    await page.getByTestId('menu-panel').click();
+    const panel = page.getByTestId('object-panel');
+    await check(async () => (await panel.isVisible()) && (await panel.getByTestId('panel-prompt').count()) === 1, 'Add panel… opens a panel beside the object with a prompt to describe it');
+    const panelInput = panel.getByTestId('prompt-input');
+    await panelInput.fill('Jump height and run speed');
+    await panelInput.press('Enter');
+    await check(async () => (await panel.getByTestId('panel-slider').count()) === 2, 'the panel shows Jump height and Run speed as sliders (the default)');
+    const panelBox = await panel.boundingBox();
+    await check(async () => panelBox.x > at.x, 'the panel is beside the Player (to its right)');
+    const jump = panel.getByTestId('panel-control-Jump height');
+    await check(async () => (await jump.getByTestId('panel-value').innerText()) === '350', 'the Jump height slider shows the jump force (350)');
+    await jump.getByTestId('panel-slider').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await check(async () => (await jump.getByTestId('panel-value').innerText()) === '370', 'moving the slider changes it (350 -> 370)');
+    await check(async () => (await page.getByTestId('undo').getAttribute('title')).includes('Change Jump height'), 'the slider moves as one undo step');
+    await page.keyboard.press('Escape');
+    await clickWorld(200, 200, { single: true });
+    await check(async () => (await panel.count()) === 0, 'deselecting the Player hides its panel');
+    await clickWorld(-256, 0, { single: true });
+    await check(async () => (await panel.isVisible()) && (await panel.getByTestId('panel-prompt').count()) === 0, 'selecting the Player again shows its panel (without the prompt)');
+    await openDetails();
+    await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '370', 'the jump force in Details is the one set on the panel');
+    await page.getByTestId('close-details').click();
+    await panel.getByTestId('object-panel-ask').click();
+    await panelInput.fill('Jump height and run speed, but as knobs');
+    await panelInput.press('Enter');
+    await check(async () => (await panel.getByTestId('panel-knob').count()) === 2 && (await panel.getByTestId('panel-slider').count()) === 0, 'asked for knobs, the panel has knobs');
+    const knob = panel.getByTestId('panel-control-Run speed').getByTestId('panel-knob');
+    await knob.focus();
+    await page.keyboard.press('ArrowUp');
+    await check(async () => (await panel.getByTestId('panel-control-Run speed').getByTestId('panel-value').innerText()) === '210', 'turning a knob changes the run speed (200 -> 210)');
+    await page.screenshot({ path: `${OUT}/object-panel.png` });
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await check(async () => (await page.getByTestId('menu-panel').innerText()).includes('Edit panel'), 'with a panel, the menu says "Edit panel…"');
+    await page.getByTestId('menu-panel-remove').click();
+    await check(async () => (await panel.count()) === 0, 'Remove panel takes it away');
+    await page.getByTestId('undo').click();
+    await check(async () => (await panel.count()) === 1, '(undo brings it back)');
+    for (let i = 0; i < 5; i++) await page.getByTestId('undo').click();
+  }
+
   step = 'play';
   await clickWorld(-256, 0);
   await check(async () => (await prompts.count()) === 1, 'clicking the Player selects it');
@@ -2577,7 +2634,7 @@ try {
     };
     await rightClick(-256, 0);
     const menu = page.getByTestId('object-menu');
-    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Copy Cut Delete', 'right-clicking a placed object: Ask AI…, Details…, Edit sprite, Code, Copy, Cut, Delete');
+    await check(async () => (await menu.innerText()).replace(/\s+/g, ' ').trim() === 'Ask AI… Details… Edit sprite Code Add panel… Copy Cut Delete', 'right-clicking a placed object: Ask AI…, Details…, Edit sprite, Code, Add panel…, Copy, Cut, Delete');
     await check(async () => (await canvas.getAttribute('data-context')) === 'entity' && (await prompts.count()) === 0, '(and it is selected; no card yet)');
     await page.getByTestId('ctx-ask-ai').click();
     await check(async () => (await prompts.isVisible()) && (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', 'Ask AI… opens its AI prompt card');

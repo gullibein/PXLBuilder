@@ -131,6 +131,9 @@ export interface EditorState {
    * connection or empty level. A single click elsewhere closes it; the app's own selection changes keep it.
    */
   promptOpen: boolean;
+  /** The object whose own editor panel is being described to the AI ("Add panel…"; its prompt shows on the panel). */
+  panelAsk: Id | null;
+  setPanelAsk(definitionId: Id | null): void;
   /** The "Export sprites" window: these pictures (null: all of the game's), named after `name`. */
   spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The Code Editor: the behavior code of a library object, or of one placed thing (and its object). */
@@ -283,6 +286,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     saveDialog: false,
     openDialog: false,
     fileFix: null,
+    panelAsk: null,
     gameSite: null,
     backgroundTarget: null,
     exportGameOpen: false,
@@ -554,6 +558,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     setFileFix(fileFix) {
       set({ fileFix });
+    },
+    setPanelAsk(panelAsk) {
+      set({ panelAsk });
     },
 
     setSaveDialog(saveDialog) {

@@ -7,6 +7,7 @@
  * mutation functions the inspector uses. A list of operations is applied
  * all-or-nothing inside one transaction.
  */
+import { removePanel, setPanel } from '../model/panels';
 import { onlyOnTouch, touchHarm } from '../model/ruleScripts';
 import { gridFor } from '../model/spriteResolution';
 import { produce } from 'immer';
@@ -249,6 +250,17 @@ export const operationSchema = z.union([
     op: z.literal('remove_rule'),
     sceneId: z.string(),
     id: z.string(),
+  }),
+  z.object({
+    op: z.literal('set_panel'),
+    id: z.string().describe('The library object (definition id) the panel belongs to'),
+    panelJson: z
+      .string()
+      .describe('The whole panel as JSON: {"title","controls":[{"label","target","control","min","max","step"}]} (see the "panels" guidance); replaces the one it had'),
+  }).describe("Gives an object its own editor panel (shown beside it when selected, never in the game)"),
+  z.object({
+    op: z.literal('remove_panel'),
+    id: z.string().describe('The library object (definition id) whose panel goes'),
   }),
   z.object({
     op: z.literal('open_sprite_editor'),
@@ -1012,6 +1024,12 @@ export function applyOperations(
         scripts.useScriptFor(project, owner, op.part, op.scriptJson === null ? null : logicJson(op.scriptJson, 'Script'));
         break;
       }
+      case 'set_panel':
+        setPanel(project, refs.get(op.id) ?? op.id, logicJson(op.panelJson, 'Panel'), registry);
+        break;
+      case 'remove_panel':
+        removePanel(project, refs.get(op.id) ?? op.id);
+        break;
       case 'set_script':
       case 'remove_script':
       case 'set_script_enabled': {

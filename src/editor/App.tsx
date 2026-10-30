@@ -1,4 +1,5 @@
 import { AutotileEditor } from './chrome/AutotileEditor';
+import { ObjectPanel } from './prompt/ObjectPanel';
 import { usesMenuKey } from '../core/script/language';
 import { ObjectCard } from './chrome/ObjectCard';
 import { GameSite } from './gamesite/GameSite';
@@ -96,6 +97,7 @@ export function App() {
       <main className="stage">
         <Viewport />
         <ContextPrompt />
+        <ObjectPanel />
         <ToolPanel />
         <ObjectCard />
         <BackgroundPanel />

@@ -1,4 +1,5 @@
 import { levelPerPixel, placeBackground, playZoom } from '../background';
+import { panelOf, removePanel } from '../../core/model/panels';
 import { touchHarm } from '../../core/model/ruleScripts';
 import { MAX_ZOOM, MIN_ZOOM } from './zoomLimits';
 import { ZoomBar } from './ZoomBar';
@@ -1068,6 +1069,8 @@ export function Viewport() {
             },
             ...(menu.definitionId ? [{ label: 'Edit sprite', testId: 'menu-edit-sprite', run: () => editSpriteOf(menu.definitionId!) }] : []),
             ...(menu.entityId ? [{ label: 'Code', testId: 'menu-code', run: () => useEditor.getState().openCodeEditor({ definitionId: menu.definitionId, entityId: menu.entityId }) }] : []),
+            // The object's own editor panel: described to the AI on the panel itself, beside the object.
+            ...(menu.entityId && menu.definitionId ? panelEntries(menu.definitionId) : []),
             ...(menu.entityId
               ? [
                   { label: 'Copy', testId: 'menu-copy', run: () => void runQuickCommand(null, { kind: 'copy' }) },
@@ -1847,3 +1850,17 @@ function drawMarquee(ctx: CanvasRenderingContext2D, a: Vec2, b: Vec2, zoom: numb
 
 /** The zoom Play will use for this level: its camera's, or the one the game's resolution makes (as Play works it out). */
 
+
+/** "Add panel…" (or "Edit panel…" and "Remove panel") for an object's own editor panel (prompt/ObjectPanel.tsx). */
+function panelEntries(definitionId: string) {
+  const state = useEditor.getState();
+  const has = !!panelOf(state.project.definitions.find((d) => d.id === definitionId));
+  const remove = () => {
+    useEditor.getState().setPanelAsk(null);
+    useEditor.getState().edit('Remove panel', (p) => removePanel(p, definitionId));
+  };
+  return [
+    { label: has ? 'Edit panel…' : 'Add panel…', testId: 'menu-panel', run: () => useEditor.getState().setPanelAsk(definitionId) },
+    ...(has ? [{ label: 'Remove panel', testId: 'menu-panel-remove', run: remove }] : []),
+  ];
+}
