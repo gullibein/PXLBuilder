@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
@@ -145,6 +146,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     body.code = codeFor(state.project, along);
     trace?.('note', `Sent along: the code of ${body.code.map((c) => c.name).join(', ')}`);
   }
+  // Guidance only some requests need (music, sound effects…), by what this one is about.
+  const topics = topicsFor(ctx, request, body.history);
+  if (topics.length) {
+    body.topics = topics;
+    trace?.('note', `Guidance sent along: ${topics.join(', ')}`);
+  }
   const starterNow = (): GameType => useEditor.getState().project.settings.gameType ?? 'platformer';
   if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS };
   let response: AIResponse;
@@ -168,13 +175,22 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
     for (let round = 0; round < 2 && response.kind === 'need_code'; round++) {
+      const asked = response.needCode ?? [];
+      // Guidance it asked for ("topic:music"), and code.
+      const newTopics = asked.flatMap((id) => (id.startsWith('topic:') ? [id.slice(6)] : [])).filter((t) => TOPICS[t] && !(body.topics ?? []).includes(t));
       const sent = new Set((body.code ?? []).map((c) => c.id));
-      const fresh = codeFor(useEditor.getState().project, response.needCode ?? []).filter((c) => !sent.has(c.id));
-      if (!fresh.length) break;
-      const names = fresh.map((c) => c.name).join(', ');
-      trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
-      state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
-      body.code = [...(body.code ?? []), ...fresh];
+      const fresh = codeFor(useEditor.getState().project, asked.filter((id) => !id.startsWith('topic:'))).filter((c) => !sent.has(c.id));
+      if (!fresh.length && !newTopics.length) break;
+      if (newTopics.length) {
+        trace?.('note', `The AI asked for the guidance on: ${newTopics.join(', ')}; asking again with it`);
+        body.topics = [...(body.topics ?? []), ...newTopics];
+      }
+      if (fresh.length) {
+        const names = fresh.map((c) => c.name).join(', ');
+        trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
+        state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
+        body.code = [...(body.code ?? []), ...fresh];
+      }
       response = await provider.respond(body, signal, trace);
     }
     if (response.kind === 'need_code') {

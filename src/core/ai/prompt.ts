@@ -1,4 +1,5 @@
 /** The request text sent to the model (shared by every way of reaching the AI). */
+import { TOPICS } from './topics';
 import { z } from 'zod';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
@@ -32,7 +33,10 @@ export function userMessageParts(body: AIRequestBody): { context: string; rest: 
   const code = body.code?.length
     ? `FULL CODE (the full scripts of these library objects: the ones this request names, and any you asked for; use their ids and script ids as given):\n${JSON.stringify(body.code)}\n\n`
     : '';
-  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${code}${history}REQUEST\n${body.request}` };
+  // Guidance only this request needs (music, sound effects…): sent with it instead of with every request.
+  const topics = (body.topics ?? []).filter((t) => TOPICS[t]);
+  const guide = topics.length ? `GUIDANCE FOR THIS REQUEST (part of your instructions):\n${topics.map((t) => TOPICS[t].text).join('\n')}\n\n` : '';
+  return { context: `CONTEXT\n${JSON.stringify(body.context)}\n\n`, rest: `${guide}${code}${history}REQUEST\n${body.request}` };
 }
 
 export function userMessage(body: AIRequestBody): string {

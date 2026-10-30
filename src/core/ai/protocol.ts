@@ -26,6 +26,8 @@ export interface AIRequestBody {
    * every request, so it is cached with the instructions instead of being sent as new input each time.
    */
   reference?: string;
+  /** Guidance only some requests need (topics.ts): attached by what the request is about, or asked for (need_code "topic:<name>"). */
+  topics?: string[];
   /** Other objects' code the AI asked for (kind "need_code"), sent with the request asked again. */
   code?: { id: string; name: string; scripts: unknown[] }[];
 }

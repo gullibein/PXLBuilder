@@ -1,0 +1,79 @@
+/**
+ * Guidance only some requests need (music, sound effects, falling-block puzzles…): attached to a request when it is
+ * asked from a card about it (the Music Studio, the Sounds panel…) or names it, instead of being in the instructions
+ * sent with every request; the AI can also ask for one (need_code "topic:<name>"). The instructions keep a one-line
+ * pointer to each.
+ */
+import type { AIContext } from './context';
+
+export interface Topic {
+  title: string;
+  /** Cards it always goes with. */
+  scopes: AIContext['kind'][];
+  /** Words in a request that bring it. */
+  words: RegExp;
+  text: string;
+}
+
+export const TOPICS: Record<string, Topic> = {
+  music: {
+    title: "Music: songs and instruments (make_instrument, make_song, edit_song, set_level_music, the music machine)",
+    scopes: ['song', 'instrument'],
+    words: /music|song|tune|melod|soundtrack|instrument|chiptune|bpm|drum|bass|jingle|theme|8.?bit|16.?bit|snes|nes\b/i,
+    text: `- MUSIC (the music machine). Songs play as level music (set_level_music) or from a script (play_music "name" / stop_music: a boss theme when the boss appears, a victory tune). A song plays INSTRUMENTS (assets made with make_instrument, listed in context.music.instruments; reuse them). Make the instruments first, then the song, then set_level_music, all in one answer.
+  Instrument (instrumentJson; missing fields take defaults): chip "8bit" (NES/Game Boy: waves pulse50 = square, pulse25, pulse12 (thin), triangle (soft; bass, also kick drums with pitchDrop), noise (snare, explosions), metal (hi-hats, cymbals); volume moves in steps) or "16bit" (SNES/Mega Drive: saw (bright lead, brass), square, triangle, sine (pure, kick with pitchDrop), fm (fmRatio 1-2 warm bass/electric piano, 3.5-7 bells; fmIndex = brightness), pluck (guitar, harp), supersaw (lush pads, strings), noise). Fields: volume 0-1, attack/decay/release seconds, sustain 0-1 (0 = a hit that dies away: drums, plucks), pitchDrop semitones the note slides from (+24 over pitchTime 0.07 = kick drum), vibratoRate/vibratoDepth (semitones)/vibratoDelay, arp [0,4,7] (a chord on one channel, the chiptune way) at arpSpeed notes/s; 16bit only: filter "lowpass"/"highpass"/"bandpass" with cutoff Hz, resonance 0-0.95, filterEnv 0-1 (a sweep on each note), detune (supersaw cents), echoTime s with echoFeedback 0-0.9 and echoMix 0-1. Ready-made: 8bit lead {"chip":"8bit","wave":"pulse50","decay":0.2,"sustain":0.6,"vibratoRate":6,"vibratoDepth":0.2,"vibratoDelay":0.25}; 8bit bass {"chip":"8bit","wave":"triangle","volume":0.9,"sustain":1,"release":0.03}; 8bit kick {"chip":"8bit","wave":"triangle","volume":1,"attack":0,"decay":0.12,"sustain":0,"pitchDrop":24,"pitchTime":0.07}; 8bit snare {"chip":"8bit","wave":"noise","volume":0.7,"attack":0,"decay":0.15,"sustain":0}; 8bit hat {"chip":"8bit","wave":"metal","volume":0.35,"attack":0,"decay":0.05,"sustain":0}; 16bit pad {"chip":"16bit","wave":"supersaw","attack":0.4,"sustain":0.8,"release":0.8,"filter":"lowpass","cutoff":1800,"echoTime":0.35,"echoFeedback":0.4,"echoMix":0.3,"volume":0.35}; 16bit bass {"chip":"16bit","wave":"fm","fmRatio":1,"fmIndex":4,"decay":0.25,"sustain":0.5}.
+  Song (songJson): bpm 40-300, steps per pattern (16 = one bar of 16th notes; 4 steps = one beat), loop true for level music, channels (up to 12) [{"instrument":"<instrument name>","volume":0.8,"pan":0,"drum":false}] (the melodic instruments first, then the drum channels with "drum":true: usually 3 + 3, e.g. lead, harmony/chords, bass + kick, snare, hi-hat), patterns (up to 64) [{"name":"A","notes":[[channel, step 0..steps-1, pitch, length in steps, velocity 0-1],…]}] with pitch as MIDI (60 = C4 middle C, 48 = C3, 72 = C5) or a name "C4"/"F#3"/"Bb2", and order: the patterns' numbers (from 0) in the order they play, e.g. [0,0,1,0,2,2] (repeat patterns rather than writing them again). Write real music: a key and chord progression (e.g. C–Am–F–G), a singable melody on the lead, a bass on chord roots (octaves 2-3), drums (kick on beats 0 and 8, snare on 4 and 12, hats on even steps), variation between patterns (verse, chorus, a bridge). One channel plays one note at a time per pitch; chords: several notes at the same step on one channel are fine, or arp. A 16-step pattern at 120 bpm lasts 2 s: a level theme is usually 8-16 patterns in the order. To change part of a song use edit_song with only what changes (e.g. just the drum channels' notes, just the lead's, just the bpm): every other note stays as it is. Rewrite a whole song with make_song replaceId only when most of it changes. To reshape an instrument, make_instrument replaceId with only the settings that change.`,
+  },
+  sounds: {
+    title: "Sound effects: make_sound (step sounds) and examples",
+    scopes: ['sound'],
+    words: /sound|sfx|noise|beep|bleep|quack|boing|audio|jingle|ding|chime|explosion|laser|whoosh|blip|plays? a/i,
+    text: `- SOUNDS. Make any sound effect the user asks for with make_sound, as a step sound (like PICO-8's): {"type":"steps","speed":S,"notes":[[pitch,wave,volume,effect],…]}, 1–32 notes played one after another, each lasting S/120 s (speed 1–60: 2–4 snappy blips, 6–10 effects, 12–20 slow jingles). pitch 0–63 in semitones above C2 (12 = C3, 24 = C4 middle C, 33 = A4 440 Hz, 36 = C5, 48 = C6). wave: 0 triangle (soft, flute), 1 tilted saw (reedy), 2 saw (buzzy, nasal), 3 square (hollow, retro), 4 pulse (thin, bright), 5 organ, 6 noise (hiss: explosions, hits, wind, splashes; higher pitch = brighter), 7 phaser (wobbly, sci-fi). volume 0–7 (0 = a silent note: a gap). effect: 0 none, 1 slide (glides from the previous note's pitch), 2 vibrato, 3 drop (pitch falls away: zaps, hits), 4 fade in, 5 fade out (good on the last note). Optional "smooth": 0–7 softens the whole sound (filters its harsh highs away: noise with smooth 3–5 is a whoosh, wind or rumble rather than a hiss; 0 or missing = as is). The user can open the sound in the sound editor and change it note by note, so keep it simple and tidy. Think like a sound designer: what the real sound is made of (a quack = a nasal buzz dipping in pitch, twice; a spring = a quick rise with a wobble; a splash = noise fading out). Then make things play it: a script statement play_sound (on an event, a key, a state…) or a rule action play_sound, by the sound's name. "The duck quacks when the player touches it" -> make_sound "Quack" + a script on the Duck: on event touch_started with "player": play_sound "Quack". Reuse a sound from context.sounds instead of making a new one with the same purpose; to change one ("make the quack deeper"), remake it with make_sound replaceId, starting from its notes in context.sounds[].sound (the user may have edited them by hand: change only what was asked). Sounds that work (adapt them):
+  coin: {"type":"steps","speed":4,"notes":[[47,4,5,0],[52,4,5,0],[52,4,4,0],[52,4,2,5]]}
+  jump: {"type":"steps","speed":3,"notes":[[15,3,5,0],[22,3,5,1],[29,3,4,1],[34,3,2,5]]}
+  quack: {"type":"steps","speed":6,"notes":[[22,2,6,0],[20,2,5,1],[18,2,3,5],[0,0,0,0],[21,2,5,0],[17,2,3,5]]}
+  spring / boing: {"type":"steps","speed":4,"notes":[[10,0,6,0],[29,0,6,1],[26,0,5,2],[24,0,4,2],[22,0,2,5]]}
+  hurt: {"type":"steps","speed":3,"notes":[[30,2,6,3],[24,6,5,0],[20,6,3,5]]}
+  explosion: {"type":"steps","speed":6,"smooth":3,"notes":[[20,6,7,0],[16,6,6,0],[12,6,5,0],[10,6,4,0],[8,6,3,0],[6,6,2,5]]}
+  laser / shoot: {"type":"steps","speed":2,"notes":[[50,4,6,3],[44,4,4,3]]}
+  power-up jingle: {"type":"steps","speed":5,"notes":[[24,5,5,0],[28,5,5,0],[31,5,5,0],[36,5,6,0],[36,5,5,2],[36,5,3,5]]}`,
+  },
+  falling_blocks: {
+    title: "Falling-block puzzles (Tetris, Columns, Dr. Mario)",
+    scopes: [],
+    words: /tetris|columns|dr\.? ?mario|puyo|falling.?blocks?|blocks? (that )?fall|match.?(3|three)|tetromino|puzzle/i,
+    text: `- Falling-block puzzles (Tetris, Columns, Dr. Mario) ARE possible: never say a piece can't move as one. Build them with the group statements: a well of solid walls (draw_tiles: two columns and a floor, e.g. 10 cells wide, 20 tall, seen from above so nothing falls by gravity), a Block object (a 32x32 Sprite, NO Collider, no PhysicsBody) and one Board object (placed outside the well) whose script does everything: vars px, py (the piece's pivot, a cell center), and handlers: (1) signal "new_piece": set px, py to the top middle, pick a shape (floor(rand(0, 7)) and an "if" per shape), spawn its four blocks with "tag": "active" at px/py plus the shape's offsets in cells times 32 (I: (-1,0)(0,0)(1,0)(2,0); O: (0,0)(1,0)(0,1)(1,1); T: (-1,0)(0,0)(1,0)(0,1); S: (0,0)(1,0)(-1,1)(0,1); Z: (-1,0)(0,0)(0,1)(1,1); J: (-1,0)(0,0)(1,0)(1,1); L: (-1,0)(0,0)(1,0)(-1,1)), color them with set_field Sprite.color "on":"it" in an each over "active"; if not fits("active", 0, 0, "locked") then restart_level (game over); (2) key left/right pressed: if fits("active", ±32, 0, "locked") then move_group and px ± 32; key up pressed: if fits_turned("active", px, py, 1, "locked") then turn_group around px, py (skip turning the O piece); key down held: faster drop; (3) every 0.5 s (less as rows are cleared): if fits("active", 0, 32, "locked") then move_group down and py + 32, else lock: each "active" → tag "locked" add and "active" remove on it; then repeat over the rows from the top (row = top + i * 32): if count_in("locked", left, row - 1, right, row + 1) == columns then each "locked": remove it when abs(it.y - row) < 1, else move it down 32 when it.y < row; add to the score (draw it); then signal "new_piece". A start handler sends "new_piece". The same pieces (spawn … tag, fits, move_group, count_in) make Columns, Puyo-like and Dr. Mario-like games.`,
+  },
+  backgrounds: {
+    title: "Backgrounds: set_background, parallax, images",
+    scopes: ['background'],
+    words: /background|parallax|backdrop|sky\b|scroll/i,
+    text: `- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level as the camera moves (0 fixed on screen, 1 with the level), both ways; parallaxY sets up and down on its own when it should differ ("stays on screen when the camera goes left/right but not up/down" -> parallax 0, parallaxY 1). Fill (cover) always fills the screen's height, so only its left/right movement shows. You cannot draw background pictures; the user uploads them.`,
+  },
+  grid_games: {
+    title: "Grid and turn-based games (Rogue, Sokoban, one square per key press)",
+    scopes: [],
+    words: /grid|turn.?based|sokoban|rogue|square|tile by tile|chess|checkers|board game|step by step|per (key )?press/i,
+    text: `- Grid and turn-based games (Rogue, Sokoban, "one square per key press"): keep everything on its square. Give every character DamageReceiver.knockback 0, and move them with scripts by exactly 32 px (position or glide_to). When a script moves the player itself (it reads key(...) and steps with position or glide_to), set the player's CharacterController.speed to 0 in the same reply: otherwise the controller also walks it with the arrow keys between steps, nudging it off its square, and a glide worked out from that spot can cut straight through a wall (glide_to doesn't stop at walls). Keep the Character Controller itself: it is what makes it the player (respawning, goals, switches, the camera). Before stepping into a square, look at it: solid_at(x, y) for walls (and Pushable things), thing_at(x, y, "enemy") for who stands there (attack instead of moving; never two creatures on one square). Pushing in a scripted turn: if thing_at(x, y, "barrel") is in the way and the square beyond it is free (not solid_at, thing_at null), move the barrel one square on (position or glide_to with "on") and then step; otherwise don't move. For real-time pushing (the player walks freely), the Pushable component does all of this by itself (step 32 keeps it on the grid).`,
+  },
+  autotiling: {
+    title: "Autotiling: draw_autotile, 16 edge and corner pictures",
+    scopes: ['autotile'],
+    words: /autotil|edge|corner|seamless|join|connect(ed)? tiles|tileset/i,
+    text: `- AUTOTILING: an object laid out in a grid (ground, platforms, walls) can autotile: each tile is drawn with the one of 16 pictures (Sprite.autotileSheet) that fits the tiles of the same object above, right, below and left of it (ends, edges, corners). draw_autotile draws them (all 16 for a new look, or some to change; index = up 1 + right 2 + down 4 + left 8 for the joined sides; open sides get the edges, joined sides continue seamlessly) and turns autotiling on: "make the platforms autotile as stone bricks". Each picture has the object's pixel grid (its Sprite size times context.level.spriteResolution / 32, as for draw_sprite). The user can also make them in a style in the Autotile editor (Details → Autotile…). If the object already has them (Sprite.autotileSheet set), switching autotiling on or off is set_component_field Sprite.autotile true/false on the definition.`,
+  },
+  rounded_corners: {
+    title: "Rounded tile corners (Sprite.roundCorners)",
+    scopes: [],
+    words: /round|corner|smooth edge|dig|tunnel|boulder|dirt/i,
+    text: `- ROUNDED TILE CORNERS (dirt, rock, grass edges, tunnels dug through tiles, Boulder Dash or Dig Dug style): set_component_field Sprite roundCorners 1-3 (picture pixels) on the object (any object laid out in a grid, tile or not; library[].look shows it when set). The engine rounds outside corners and fills inside corners from the tiles around, every frame, also as tiles are dug away in play. Never write a script for corners (no drawing squares over corners, no neighbor checks): remove such a script when you set roundCorners.`,
+  },
+};
+
+/** The topics a request needs: by the card it was asked on, and the words in it (or in what it follows up on). */
+export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = []): string[] {
+  const text = [request, ...history.slice(-2).map((h) => h.request)].join('\n');
+  return Object.entries(TOPICS)
+    .filter(([, t]) => t.scopes.includes(ctx.kind) || t.words.test(text))
+    .map(([k]) => k);
+}

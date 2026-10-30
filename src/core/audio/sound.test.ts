@@ -1,7 +1,7 @@
 import { produce } from 'immer';
+import { TOPICS } from '../ai/topics';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
-import { buildSystemPrompt } from '../ai/capabilities';
 import { applyOperations, checkOperations, type Operation } from '../commands/operations';
 import { createProject } from '../model/factory';
 import { projectFromBundle, projectToBundle } from '../serialization/serialize';
@@ -82,7 +82,8 @@ describe('sounds', () => {
   });
 
   it('every sound example the AI is given is a valid step sound', () => {
-    const prompt = buildSystemPrompt(registry);
+    // (They are in the sound-effects guidance, sent with requests about sounds.)
+    const prompt = TOPICS.sounds.text;
     const examples = [...prompt.matchAll(/^ {2}[a-z /]+: (\{"type":"steps".*\})$/gm)].map((m) => m[1]);
     expect(examples.length).toBeGreaterThanOrEqual(6);
     for (const e of examples) expect(parseSteps(e)).not.toHaveProperty('error');

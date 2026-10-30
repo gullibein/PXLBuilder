@@ -888,7 +888,10 @@ export function applyOperations(
             if (!resolveEntity(project, entity, registry).components.SpriteStates) m.addEntityComponent(project, sceneId, op.id, 'SpriteStates', registry);
             m.setEntityComponentField(project, sceneId, op.id, 'SpriteStates', situation, asset.id, registry);
           }
-        } else if (op.target === 'definition') m.useDefinitionSprite(project, op.id, { assetId: asset.id, frame: 1 }, registry);
+        } else if (op.target === 'definition') {
+          // A new look: the object's old pictures go (those this answer drew stay), so styles never mix.
+          m.replaceDefinitionLook(project, op.id, { assetId: asset.id, frame: 1 }, result.createdAssetIds, registry);
+        }
         else {
           const sceneId = sceneOfEntity(project, op.id);
           if (!resolveEntity(project, entity, registry).components.Sprite) m.addEntityComponent(project, sceneId, op.id, 'Sprite', registry, { width: size.x, height: size.y });

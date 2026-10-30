@@ -551,6 +551,45 @@ export function useDefinitionSprite(project: Project, definitionId: Id, ref: Spr
 }
 
 /**
+ * The AI drew a new look for the object: it is drawn with it, and the old pictures leave it: its old look, the
+ * other sprites it had collected, and its looks for situations (running, jumping…) not drawn anew in the same answer
+ * (`fresh`: the pictures that answer made), so a restyled object never mixes old and new pictures. Pictures nothing
+ * shows any more are removed from the game. (Choosing a look by hand in the Sprites panel keeps the old one instead.)
+ */
+export function replaceDefinitionLook(project: Project, definitionId: Id, ref: SpriteRef, fresh: readonly Id[], registry: ComponentRegistry): void {
+  const def = getDefinition(project, definitionId);
+  const old = new Set<Id>();
+  const keep = (id: Id) => id === ref.assetId || fresh.includes(id);
+  const before = def.components.Sprite?.assetId;
+  if (typeof before === 'string' && !keep(before)) old.add(before);
+  for (const r of getDefinitionSprites(def)) if (!keep(r.assetId)) old.add(r.assetId);
+  const states = def.components.SpriteStates as Record<string, unknown> | undefined;
+  if (states) {
+    for (const [k, v] of Object.entries(states)) {
+      if (typeof v === 'string' && v && !keep(v)) {
+        old.add(v);
+        states[k] = null;
+      }
+    }
+  }
+  def.metadata.sprites = getDefinitionSprites(def).filter((r) => !old.has(r.assetId));
+  addDefinitionSprite(project, definitionId, ref);
+  if (!def.components.Sprite) def.components.Sprite = registry.createDefault('Sprite');
+  def.components.Sprite.assetId = ref.assetId;
+  def.components.Sprite.frame = ref.frame;
+  removeUnusedPictures(project, old);
+}
+
+/** Of these pictures, those nothing mentions any more (no object, level, setting or other picture) leave the game. */
+export function removeUnusedPictures(project: Project, ids: Iterable<Id>): void {
+  const candidates = [...ids].filter((id) => project.assets.some((a) => a.id === id && a.kind !== 'sound' && a.kind !== 'music' && a.kind !== 'instrument'));
+  if (!candidates.length) return;
+  const mentions = JSON.stringify(project.scenes) + JSON.stringify(project.definitions) + JSON.stringify(project.settings);
+  const unused = new Set(candidates.filter((id) => !mentions.includes(id) && !project.assets.some((a) => a.id !== id && JSON.stringify(a).includes(id))));
+  if (unused.size) project.assets = project.assets.filter((a) => !unused.has(a.id));
+}
+
+/**
  * An animation made from cells of a sprite sheet: a new sprite (sharing the
  * sheet's picture) that plays `frames` (cell numbers from 1) at `fps`. A sheet
  * can hold several (a walk row, a jump row). Returns the new sprite's id.
