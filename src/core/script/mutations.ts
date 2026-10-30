@@ -3,6 +3,8 @@
  * copy) or single entities. Every script is checked (checkScript) before it
  * is stored, whoever wrote it.
  */
+import { ENGINE_PART_INFO } from '../model/engineParts';
+import type { EnginePart } from './language';
 import { generateId } from '../ids';
 import { getDefinition, ModelError } from '../model/mutations';
 import type { BehaviorScript, Id, Project } from '../types';
@@ -36,6 +38,26 @@ export function setScript(project: Project, owner: ScriptOwner, raw: unknown): I
   const i = o.scripts.findIndex((s) => s.id === checked.script.id);
   o.set(i >= 0 ? o.scripts.map((s, j) => (j === i ? checked.script : s)) : [...o.scripts, checked.script]);
   return checked.script.id;
+}
+
+/**
+ * A part of the engine's own code (jumping…) is done by a script for this owner from now on: its ready-made script
+ * (exactly what the engine did), or `raw`, a changed one. One taking over the same part already is replaced.
+ */
+export function useScriptFor(project: Project, owner: ScriptOwner, part: EnginePart, raw: unknown | null): Id {
+  const info = ENGINE_PART_INFO[part];
+  const components = owner.target === 'definition' ? getDefinition(project, owner.id).components : null;
+  if (components && !components[info.component]) throw new ModelError(`${getDefinition(project, owner.id).name} has no ${info.component}, so there is no ${info.label} to take over`);
+  const script = raw === null ? info.script() : { ...(raw as Record<string, unknown>), takesOver: part };
+  const o = ownerOf(project, owner);
+  const before = o.scripts;
+  o.set(o.scripts.filter((s) => s.takesOver !== part));
+  try {
+    return setScript(project, owner, script);
+  } catch (e) {
+    o.set(before);
+    throw e;
+  }
 }
 
 export function removeScript(project: Project, owner: ScriptOwner, scriptId: Id): void {

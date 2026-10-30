@@ -833,6 +833,8 @@ export class Runtime {
     }
 
     if (dir !== 0) e.facing = dir as 1 | -1;
+    // Jumping done by a script of its own instead (its "Jumping" script, which took it over): the engine leaves it.
+    const ownJump = e.scripts.some((i) => i.script.enabled && i.script.takesOver === 'jumping');
     if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
     if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
     if (e.hanging && this.hang(e, input, dir)) return;
@@ -843,8 +845,12 @@ export class Runtime {
     const diff = target - e.vx;
     e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
 
+    if (ownJump) {
+      if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
+      return;
+    }
     // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
-    // Only the jump button jumps; Up is for climbing.
+    // Only the jump button jumps; Up is for climbing. (The ready-made Jumping script does exactly this: engineParts.ts.)
     if (input.wasPressed('jump')) e.jumpBuffer = JUMP_BUFFER;
     else e.jumpBuffer = Math.max(0, e.jumpBuffer - dt);
     e.coyote = e.grounded ? COYOTE_TIME : Math.max(0, e.coyote - dt);

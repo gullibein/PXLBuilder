@@ -4,6 +4,8 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
+import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
 import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from '../../core/ai/context';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
@@ -53,6 +55,8 @@ export type PromptOutcome =
   | { status: 'applied'; message: string; changes: string[]; result: ApplyResult; editor?: boolean; touched?: Touched[]; transactionId?: number; asNew?: ObjectChange; note?: string; undone?: boolean; movedTo?: AIContext }
   /** `movedTo`: the exchange was about something else, and went to that one's card (this says so, with a way there). */
   | { status: 'message'; message: string; tone: 'info' | 'warn'; movedTo?: AIContext }
+  /** The AI asks before changing (turning engine code into a script): applied only on yes (applyResponse). */
+  | { status: 'confirm'; message: string; changes: string[]; response: AIResponse; ctx: AIContext; answered?: 'yes' | 'no' }
   | { status: 'error'; message: string };
 
 let override: AIProvider | null = null;
@@ -249,6 +253,46 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };
   }
+  // Turning a part of the engine's own code into a script (or anything the AI asks about first) waits for a yes.
+  const parts = enginePartsTakenOver(useEditor.getState().project, response.operations);
+  if (response.kind === 'confirm' || parts.length) {
+    const question = parts.length && response.kind !== 'confirm' ? `${response.message} This turns ${parts.join(' and ')} (the engine's own code) into a script. Do it?` : response.message;
+    trace?.('note', `Waiting for the user's yes${parts.length ? ` (turns ${parts.join(', ')} into a script)` : ''}`);
+    return { status: 'confirm', message: question, changes: response.changes, response, ctx };
+  }
+  return applyResponse(ctx, request, response);
+}
+
+/**
+ * What an engine part taken over by these operations is called, per owner ("the Player's jumping"): a use_script_for,
+ * or a script set with takesOver where the owner has none for that part yet.
+ */
+export function enginePartsTakenOver(project: Project, operations: AIResponse['operations']): string[] {
+  const out: string[] = [];
+  for (const op of operations) {
+    if (op.op !== 'use_script_for' && op.op !== 'set_script') continue;
+    let part: EnginePart | undefined;
+    if (op.op === 'use_script_for') part = op.part;
+    else {
+      try {
+        part = (JSON.parse(op.scriptJson) as { takesOver?: EnginePart }).takesOver;
+      } catch {
+        part = undefined;
+      }
+    }
+    if (!part) continue;
+    const def = op.target === 'definition' ? project.definitions.find((d) => d.id === op.id) : undefined;
+    const entity = op.target === 'instance' ? project.scenes.flatMap((sc) => sc.entities).find((e) => e.id === op.id) : undefined;
+    const scripts = def?.scripts ?? entity?.scripts;
+    if (op.op === 'set_script' && scriptedPart(scripts, part)) continue;
+    const name = def?.name ?? entity?.name ?? 'the new object';
+    out.push(`the ${name}'s ${ENGINE_PART_INFO[part].label}`);
+  }
+  return [...new Set(out)];
+}
+
+/** Applies an answer's changes (also one the user said yes to): to the object (with "a new object instead"), or as they are. */
+export function applyResponse(ctx: AIContext, request: string, response: AIResponse): PromptOutcome {
   // Asked on one thing's card about another ("make the enemy faster" on the player's): the exchange goes to that one's card.
   const elsewhere = aboutSomethingElse(useEditor.getState().project, ctx, response.operations);
   const moved = (out: PromptOutcome): PromptOutcome => (out.status === 'applied' && elsewhere ? { ...out, movedTo: elsewhere } : out);

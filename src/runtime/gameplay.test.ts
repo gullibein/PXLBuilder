@@ -1219,6 +1219,45 @@ describe('the example scripts the AI learns from', () => {
     expect(rt.scripts.errors).toEqual([]);
   });
 
+  it('Wall jump: Jump in the air against a wall leaps up and away from it; holding toward it while falling slides down slowly', () => {
+    const { rt, input, p } = level((b) => {
+      for (let y = 16; y >= -400; y -= 32) b.place('Stone', { x: 96, y });
+      setScript(b.d, { target: 'instance', id: rt0(b, 'Player') }, example('Wall jump'));
+    });
+    // Run at the wall and jump (held); near the top, in the air against the wall, jump again.
+    input.press('right');
+    run(rt, input, 0.3);
+    input.press('jump');
+    run(rt, input, 0.3);
+    input.release('jump');
+    run(rt, input, 1 / 60);
+    expect(p.grounded).toBe(false);
+    expect(p.x).toBeGreaterThan(96 - 16 - 14 - 1);
+    const yBefore = p.y;
+    input.press('jump');
+    run(rt, input, 0.12);
+    input.release('jump');
+    // Up and away from the wall (to the left), though Right is still held: control comes back a moment later.
+    expect(p.vx).toBeLessThan(-100);
+    expect(p.y).toBeLessThan(yBefore - 20);
+    expect(rt.scripts.errors).toEqual([]);
+    // High up against the wall, falling while holding toward it: it slides down slowly; not holding, it falls.
+    run(rt, input, 1.5);
+    const fall = (hold: boolean) => {
+      p.x = 96 - 16 - 14;
+      p.y = -300;
+      p.vy = 0;
+      if (!hold) input.release('right');
+      let fastest = 0;
+      run(rt, input, 0.4, () => (fastest = Math.max(fastest, p.vy)));
+      return fastest;
+    };
+    expect(fall(true)).toBeLessThanOrEqual(90 + 980 / 120 + 0.01);
+    expect(fall(false)).toBeGreaterThan(200);
+    // (Control in the air is back to what it was.)
+    expect(rt.find('Player')!.controller!.airControl).toBeCloseTo(0.6);
+  });
+
   it('Crumble: gives way under the player shortly after landing, and comes back', () => {
     const { rt, input, p } = level((b) => setScript(b.d, { target: 'instance', id: b.place('Stone', { x: 208, y: 48 }) }, example('Crumble')));
     const stone = rt.entities.find((e) => e.name === 'Stone' && e.scripts.length)!;

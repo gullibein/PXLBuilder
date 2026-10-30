@@ -66,4 +66,12 @@ export const SCRIPT_EXAMPLES: { title: string; json: string }[] = [
     json: `{"name":"Health bar","description":"A bar that shrinks as the player loses health.","vars":[],"states":[],"handlers":[
  {"when":{"on":"tick"},"state":null,"if":null,"do":[{"do":"draw","id":"bar_back","shape":"rect","anchor":"top_left","x":"16","y":"16","w":"104","h":"14","color":"#222222"},{"do":"draw","id":"bar","shape":"rect","anchor":"top_left","x":"18","y":"18","w":"100 * self.health / max(1, self.max_health)","h":"10","color":"#4ade80"}]}]}`,
   },
+  {
+    title: 'a wall jump (on the player; adds to the normal jump, which stays as it is): Jump in the air while touching a wall leaps up and away from it; holding toward a wall while falling slides down it slowly',
+    json: `{"name":"Wall jump","description":"Press Jump in the air against a wall to leap up and away from it; hold toward a wall while falling to slide down slowly.","vars":[{"name":"push","value":220},{"name":"lift","value":0.95},{"name":"slide","value":90},{"name":"lock","value":0},{"name":"control","value":0.6}],"states":[],"handlers":[
+ {"when":{"on":"start"},"state":null,"if":null,"do":[{"do":"set","var":"control","value":"field(self, 'CharacterController.airControl')"}]},
+ {"when":{"on":"tick"},"state":null,"if":"not self.grounded and not self.climbing and pressed('jump') and (solid_at(self.x - self.width / 2 - 2, self.y) or solid_at(self.x + self.width / 2 + 2, self.y))","do":[{"do":"velocity","x":"pick(solid_at(self.x - self.width / 2 - 2, self.y), push, -push)","y":"-field(self, 'CharacterController.jumpForce') * lift"},{"do":"set_field","component":"CharacterController","field":"airControl","value":"0","on":null},{"do":"set","var":"lock","value":"0.2"}]},
+ {"when":{"on":"tick"},"state":null,"if":"not self.grounded and self.vy > slide and ((key('left') and solid_at(self.x - self.width / 2 - 2, self.y)) or (key('right') and solid_at(self.x + self.width / 2 + 2, self.y)))","do":[{"do":"velocity","x":null,"y":"slide"}]},
+ {"when":{"on":"tick"},"state":null,"if":"lock > 0","do":[{"do":"set","var":"lock","value":"pick(self.grounded, 0, lock - dt)"},{"do":"if","cond":"lock <= 0","then":[{"do":"set_field","component":"CharacterController","field":"airControl","value":"control","on":null}],"else":[]}]}]}`,
+  },
 ];

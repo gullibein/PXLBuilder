@@ -18,7 +18,7 @@ import { soundDataUrl } from '../audio/sound';
 import { parseSteps } from '../audio/steps';
 import { parseInstrument, parseNoteName, parseSong } from '../audio/music';
 import * as music from '../model/music';
-import { findSong } from '../script/language';
+import { ENGINE_PARTS, findSong } from '../script/language';
 import { generateId } from '../ids';
 import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt';
 import * as logic from '../logic/mutations';
@@ -278,6 +278,16 @@ export const operationSchema = z.union([
     target,
     id: z.string().describe('Object definition id (definition: every copy runs it) or entity id (instance: only this one); also a create_definition / place_instance ref from earlier in this list'),
     scriptJson: z.string().describe('The whole behavior script as JSON (see "Behavior scripts"). Same "id" as an existing script of that owner replaces it; a new id (or none) adds one'),
+  }),
+  z.object({
+    op: z.literal('use_script_for'),
+    target,
+    id: z.string().describe('The object (definition) or entity (instance) whose engine part a script takes over'),
+    part: z.enum(ENGINE_PARTS).describe("The part of the engine's own code (see ENGINE PARTS)"),
+    scriptJson: z
+      .string()
+      .nullable()
+      .describe("null: the part's ready-made script, exactly what the engine does. Or the script as JSON: the ready-made one changed as the user asked (keep what wasn't asked about as it is)"),
   }),
   z.object({
     op: z.literal('edit_script'),
@@ -992,6 +1002,11 @@ export function applyOperations(
         // (A single edit, or {"edits": […]}, is taken as the list it means.)
         const edits = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { edits?: unknown }).edits) ? (parsed as { edits: unknown[] }).edits : [parsed];
         scripts.editScript(project, owner, op.scriptId, edits as scripts.ScriptEdit[]);
+        break;
+      }
+      case 'use_script_for': {
+        const owner = { target: op.target, id: op.target === 'definition' ? (refs.get(op.id) ?? op.id) : (entityRefs.get(op.id) ?? op.id) };
+        scripts.useScriptFor(project, owner, op.part, op.scriptJson === null ? null : logicJson(op.scriptJson, 'Script'));
         break;
       }
       case 'set_script':

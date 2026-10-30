@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import { cardOpened, setJobOutcome, startJob, startNewChat, stopJob, useJobs } from '../ai/jobs';
 import { chatEntries, contextName, conversationKey, useAILog, type AILogEntry } from '../ai/aiLog';
-import { applyObjectChoice, type PromptOutcome } from '../ai/runPrompt';
+import { applyObjectChoice, applyResponse, type PromptOutcome } from '../ai/runPrompt';
 import { useEditor } from '../store';
 import { playSound } from '../audio/synth';
 
@@ -62,6 +62,12 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
       const change = state.outcome.asNew;
       useEditor.getState().undo();
       setJobOutcome(key, applyObjectChoice(state.request, change, 'new'));
+    },
+    /** The user answered the AI's question (turn engine code into a script?): yes applies its changes, no changes nothing. */
+    answer(yes: boolean) {
+      if (state.phase !== 'done' || state.outcome.status !== 'confirm' || state.outcome.answered) return;
+      const asked = state.outcome;
+      setJobOutcome(key, yes ? applyResponse(asked.ctx, state.request, asked.response) : { ...asked, answered: 'no' });
     },
     /** The change was undone from the card: it stays in the chat, marked. */
     markUndone() {
@@ -217,6 +223,7 @@ export function PromptBox(props: PromptBoxProps) {
               <Outcome
                 outcome={runner.state.outcome}
                 onAsNew={runner.asNew}
+                onAnswer={runner.answer}
                 onUndo={undoThis}
                 canUndo={canUndo}
                 renderApplied={props.renderApplied}
@@ -382,6 +389,8 @@ function Outcome(props: {
   outcome: PromptOutcome;
   /** Make an object change a new object instead. */
   onAsNew: () => void;
+  /** Answer the AI's question (yes: apply its changes). */
+  onAnswer?: (yes: boolean) => void;
   onUndo: () => void;
   /** The change is still the latest one (so Undo undoes exactly it). */
   canUndo: boolean;
@@ -461,6 +470,31 @@ function Outcome(props: {
           )}
           <MadeSounds ids={outcome.result.createdAssetIds} />
           {props.renderApplied?.(outcome)}
+        </div>
+      );
+    case 'confirm':
+      return (
+        <div className="prompt-result note info confirm" data-testid="prompt-result" data-status="confirm">
+          <p className="result-message" data-testid="result-message">
+            {outcome.message}
+          </p>
+          {outcome.changes.length > 0 && list(outcome.changes, 'changes')}
+          {outcome.answered === 'no' ? (
+            <p className="muted small" data-testid="result-answered-no">
+              You said no: nothing was changed.
+            </p>
+          ) : (
+            props.onAnswer && (
+              <div className="confirm-row">
+                <button className="btn-primary" data-testid="result-confirm-yes" onClick={() => props.onAnswer!(true)}>
+                  Yes, do it
+                </button>
+                <button className="chip-btn" data-testid="result-confirm-no" onClick={() => props.onAnswer!(false)}>
+                  No
+                </button>
+              </div>
+            )
+          )}
         </div>
       );
     case 'message':

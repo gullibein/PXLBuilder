@@ -19,7 +19,7 @@ import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
 
 import { overlaps, type Box } from './physics';
-import type { Runtime, RuntimeEntity } from './runtime';
+import { STEP, type Runtime, type RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
@@ -83,6 +83,8 @@ export class ScriptSystem {
   private readonly valid = new WeakMap<BehaviorScript, boolean>();
   private readonly reported = new Set<string>();
   private input: InputView | null = null;
+  /** The length of the step being run (what "dt" is; the game's fixed step). */
+  private stepDt = STEP;
   private budget = 0;
   private stepBudget = 0;
   private generation = 0;
@@ -145,6 +147,7 @@ export class ScriptSystem {
   }
 
   private beforeAll(dt: number, input: InputState, keysOnly = false): void {
+    if (dt > 0) this.stepDt = dt;
     this.input = input;
     this.stepBudget = STEP_BUDGET;
     const gen = this.generation;
@@ -790,7 +793,7 @@ export class ScriptSystem {
       case 'time':
         return this.rt.time;
       case 'dt':
-        return 1 / 60;
+        return this.stepDt;
       case 'state':
         return ctx.inst.state;
       case 'state_time':
@@ -948,6 +951,8 @@ export class ScriptSystem {
         return this.input?.isDown(show(v[0]) as never) ?? false;
       case 'pressed':
         return this.input?.wasPressed(show(v[0]) as never) ?? false;
+      case 'released':
+        return this.input?.wasReleased(show(v[0]) as never) ?? false;
       case 'solid_at':
         return this.solidAt(n(0), n(1));
       case 'thing_at': {
@@ -1083,6 +1088,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.grounded;
     case 'climbing':
       return e.climbing;
+    case 'hanging':
+      return e.hanging !== null;
     case 'facing':
       return e.facing;
     case 'angle':

@@ -130,6 +130,8 @@ export interface BehaviorScript {
   /** What it does, in plain words (shown in the editor). */
   description: string;
   enabled: boolean;
+  /** The part of the engine's own code it does instead of the engine (the engine leaves that part to it). */
+  takesOver?: EnginePart;
   vars: { name: string; value: ScriptValue }[];
   /** State names; the first is where it starts. Empty: no states. */
   states: string[];
@@ -145,7 +147,7 @@ export const BUILTIN_NAMES: Record<string, string> = {
   self: 'this entity',
   player: 'the nearest entity tagged "player" (null if none)',
   time: 'seconds since the level started',
-  dt: 'seconds since the last step (1/60)',
+  dt: 'seconds since the last step (1/120: the game runs 120 steps a second)',
   state: 'the current state name ("" without states)',
   state_time: 'seconds since the current state started',
   screen_w: 'width of the play screen (px), for drawing',
@@ -172,6 +174,7 @@ export const MEMBERS: Record<string, string> = {
   height: 'height (px)',
   grounded: 'standing on something',
   climbing: 'on a ladder, climbing or holding on',
+  hanging: 'hanging from a ledge (LedgeGrab)',
   facing: '1 facing right, -1 facing left',
   angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
@@ -222,6 +225,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   items: { args: 'e, item', min: 2, max: 2, doc: 'how many of the item e carries' },
   key: { args: '"left"|"right"|"up"|"down"|"jump"|"interact"|"fire"|"menu"', min: 1, max: 1, doc: 'the key is held down ("menu": Escape, P or a controller\'s Start)' },
   pressed: { args: 'key', min: 1, max: 1, doc: 'the key was pressed this step' },
+  released: { args: 'key', min: 1, max: 1, doc: 'the key was let go this step' },
   solid_at: { args: 'x, y', min: 2, max: 2, doc: 'a wall/floor (or a Pushable thing) is at that point (for ledge and wall checks, and whether a grid square is free)' },
   thing_at: { args: 'x, y, tag?', min: 2, max: 3, doc: 'the living entity (not self) at that point, optionally only one with the tag, or null: what is on a grid square (thing_at(self.x + 32, self.y, "enemy"), thing_at(x, y, "barrel"))' },
   fits: {
@@ -345,7 +349,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
 
 export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> = {
   start: { example: '{"on":"start"}', doc: 'once, when the level starts or it appears' },
-  tick: { example: '{"on":"tick"}', doc: 'every step (60 times a second): steering, checks' },
+  tick: { example: '{"on":"tick"}', doc: 'every step (120 times a second): steering, checks' },
   paused: { example: '{"on":"paused"}', doc: 'every step WHILE THE GAME IS PAUSED (and only then): draw a pause menu here, from its variables' },
   every: { example: '{"on":"every","seconds":2}', doc: 'every N seconds (min 0.05)' },
   enter_state: { example: '{"on":"enter_state"}', doc: 'when the handler\'s "state" is entered (needs "state")' },
@@ -492,11 +496,20 @@ const handler = z.object({
   do: z.array(stmt).min(1),
 });
 
+/**
+ * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
+ * script, as long as the script is there and switched on).
+ */
+export const ENGINE_PARTS = ['jumping'] as const;
+export type EnginePart = (typeof ENGINE_PARTS)[number];
+
 export const scriptSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(60),
   description: z.string().max(400).default(''),
   enabled: z.boolean().default(true),
+  /** The part of the engine's code this script does instead of the engine (see ENGINE_PARTS). */
+  takesOver: z.enum(ENGINE_PARTS).optional(),
   vars: z
     .array(z.object({ name: z.string().min(1), value: z.union([z.number().finite(), z.boolean(), z.string().max(200)]) }))
     .default([]),

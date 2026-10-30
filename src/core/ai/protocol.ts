@@ -32,9 +32,9 @@ export interface AIRequestBody {
 
 export const aiResponseSchema = z.object({
   kind: z
-    .enum(['apply', 'preview', 'clarify', 'answer', 'unsupported', 'need_code', 'switch_starter'])
+    .enum(['apply', 'preview', 'confirm', 'clarify', 'answer', 'unsupported', 'need_code', 'switch_starter'])
     .describe(
-      'apply: small, explicit change. preview: larger or interpretive change. Both are applied at once as one undoable step. clarify: request too ambiguous - ask one short question, no operations. answer: a question about the game - answer it, no operations. unsupported: the engine cannot do this yet. need_code: you need the code of other objects (not sent) to answer well: list their library ids in needCode, no operations; the same request comes back at once with that code. switch_starter: only for a new game (context.newGame) whose starter does not fit the request: name the better one in starter, no operations; the same request comes back at once on that starter.',
+      'apply: small, explicit change. preview: larger or interpretive change. Both are applied at once as one undoable step. confirm: the operations wait for the user to say yes: message is the question (what will change and why it needs asking, e.g. turning code built into the engine into a script); on yes they are applied as they are. clarify: request too ambiguous - ask one short question, no operations. answer: a question about the game - answer it, no operations. unsupported: the engine cannot do this yet. need_code: you need the code of other objects (not sent) to answer well: list their library ids in needCode, no operations; the same request comes back at once with that code. switch_starter: only for a new game (context.newGame) whose starter does not fit the request: name the better one in starter, no operations; the same request comes back at once on that starter.',
     ),
   message: z.string().describe('One or two short sentences for the user (an explanation of why something happened may take up to four). Plain language, no engine jargon, no ids.'),
   changes: z.array(z.string()).describe('One short line per change, in plain language, e.g. "Player: 3 hearts". Empty when there are no operations.'),

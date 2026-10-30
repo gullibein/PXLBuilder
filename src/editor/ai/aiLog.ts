@@ -141,6 +141,11 @@ function fields(outcome: PromptOutcome): Pick<AILogEntry, 'status' | 'message' |
   if (outcome.status === 'applied') {
     return { status: 'applied', message: outcome.message, changes: outcome.changes, warn: false, transactionId: outcome.transactionId ?? null, undone: outcome.undone === true, note: outcome.note ?? null };
   }
+  if (outcome.status === 'confirm') {
+    // A question waiting for (or given) an answer: said like a message, with what it would change.
+    const note = outcome.answered === 'no' ? 'You said no: nothing was changed.' : 'Waiting for your answer.';
+    return { status: 'message', message: outcome.message, changes: outcome.changes, warn: false, transactionId: null, undone: false, note };
+  }
   return { status: outcome.status, message: outcome.message, changes: [], warn: outcome.status === 'error' || outcome.tone === 'warn', transactionId: null, undone: false, note: null };
 }
 

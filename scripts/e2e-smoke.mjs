@@ -374,6 +374,17 @@ function stubModel(body) {
   if (req.includes('take your time') && req.includes('propose')) {
     return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
   }
+  if (req.includes('jump float')) {
+    // The AI forgets to ask: the app asks anyway (turning engine code into a script needs a yes).
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: "To make the jump float at the top, the Player's jumping becomes a script.", changes: ['Player: jumping is a script (the Jumping script)'], operations: [{ op: 'use_script_for', target: 'definition', id: player, part: 'jumping', scriptJson: null }] };
+  }
+  if (req.includes('wall jump')) {
+    const examples = readFileSync('src/core/script/examples.ts', 'utf8');
+    const scriptJson = examples.match(/json: `(\{"name":"Wall jump"[\s\S]*?)`/)[1];
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: 'The player can jump off walls now.', changes: ['Player: wall jump'], operations: [{ op: 'set_script', target: 'definition', id: player, scriptJson }] };
+  }
   if (req.includes('squished')) {
     // First the mistake the real AI made: a separate object for the look. Sent back, it draws the look in the object.
     const g = t[0].spriteGrid;
@@ -1847,6 +1858,54 @@ try {
   await check(async () => (await result.innerText()).includes('squished (defeated) picture'), 'the squished picture was drawn in the enemy itself (its defeated look)');
   await prompts.getByTestId('prompt-close').click();
   await check(async () => (await objectCount()) === objectsBefore, 'no new object was made');
+  await page.getByTestId('undo').click();
+
+  step = 'engine code into a script, only after a yes';
+  await clickWorld(-256, 0);
+  await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', '(the player is selected)');
+  const codeFiles = async () => {
+    await page.getByTestId('dock-library').click();
+    await page.getByTestId('definition-Player').click({ button: 'right' });
+    await page.getByTestId('menu-code').click();
+    const names = await page.locator('[data-testid^="code-file-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+    await page.getByTestId('code-close').click();
+    await page.getByTestId('dock-library').click();
+    return names;
+  };
+  await ask('Make the jump float at the top.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm' && /Do it\?$/.test(await result.getByTestId('result-message').innerText()), "turning the engine's jumping into a script is asked first (also when the AI didn't ask)");
+  await page.screenshot({ path: `${OUT}/4f-confirm.png` });
+  await result.getByTestId('result-confirm-no').click();
+  await check(async () => (await result.getByTestId('result-answered-no').count()) === 1, 'No: nothing is changed (and the card says so)');
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => !(await codeFiles()).includes('code-file-Jumping'), '(the player has no Jumping script)');
+  await clickWorld(-256, 0);
+  await ask('Make the jump float at the top, please.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', '(asked again)');
+  await result.getByTestId('result-confirm-yes').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'Yes: the change is applied');
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await codeFiles()).includes('code-file-Jumping'), "the player's jumping is now its Jumping script, in the Code editor");
+  await page.getByTestId('play').click();
+  {
+    const y0 = Number(((await page.getByTestId('play-canvas').getAttribute('data-player')) ?? '0,0').split(',')[1]);
+    await page.waitForTimeout(400);
+    await page.keyboard.down('Space');
+    let top = y0;
+    for (let i = 0; i < 25; i++) {
+      top = Math.min(top, Number(((await page.getByTestId('play-canvas').getAttribute('data-player')) ?? '0,0').split(',')[1]));
+      await page.waitForTimeout(20);
+    }
+    await page.keyboard.up('Space');
+    await check(top < y0 - 30, 'in play, the player jumps with its Jumping script (the engine left jumping to it)');
+  }
+  await page.keyboard.press('Control+Enter');
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('Add a wall jump.');
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', 'a wall jump is a ready-made script, added at once (no question: the normal jump stays as it is)');
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await codeFiles()).includes('code-file-Wall jump'), '(the Wall jump script is there)');
   await page.getByTestId('undo').click();
 
   step = 'play';
@@ -3416,7 +3475,7 @@ try {
     await op.getByTestId('definition-Enemy').click({ button: 'right' });
     await op.getByTestId('menu-code').click();
     await check(async () => (await op.getByTestId('code-file-Stomp').count()) === 1 && (await op.getByTestId('code-file-Hurts on touch').count()) === 1, "its enemy's stomping and hurting are now scripts, to read and change in the Code editor");
-    await op.keyboard.press('Escape');
+    await op.getByTestId('code-close').click();
 
     // A file that doesn't open as it is: a script this version can't read.
     const broken = JSON.parse(saves[0].text);
