@@ -197,6 +197,7 @@ export const MEMBERS: Record<string, string> = {
   spawn_y: 'y where it started',
   gravity: 'its gravity scale now (1 = normal)',
   speed_factor: 'its walking/running speed factor now (1 = normal)',
+  grip: 'how well it grips the floor it stands on (1 = normal, less on ice, more on rough ground): its own friction times the floor\'s',
   name: 'its name',
 };
 
@@ -534,7 +535,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['jumping', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['running', 'jumping', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({

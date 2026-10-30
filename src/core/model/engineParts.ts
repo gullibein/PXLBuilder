@@ -513,7 +513,73 @@ function timerScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Running as the engine does it (runs just before the engine moves the character, as its controls do): Left/Right
+ * speed it up toward its running speed (CharacterController.speed, times its speed factor) by its acceleration, as
+ * much as its grip on the floor allows (ice: slippery), in the air by its air control; it faces the way it runs.
+ * Seen from above it walks in eight directions instead (diagonals no faster), turning smoothly. Its settings are
+ * read every step, so the Character Controller's still work. (Climbing ladders and hanging from ledges stay the
+ * engine's.)
+ */
+function runningScript(): BehaviorScript {
+  const cc = (name: string) => `field(self, 'CharacterController.${name}')`;
+  const dirOf = (plus: string, minus: string) => `(key('${plus}') ? 1 : 0) - (key('${minus}') ? 1 : 0)`;
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Running',
+    description: 'Running with Left/Right (seen from above: walking with the arrow keys), as the engine does it: speeding up by its acceleration, slipping on ice, steering less in the air; it faces the way it runs.',
+    takesOver: 'running',
+    vars: [
+      { name: 'mx', value: 0 },
+      { name: 'my', value: 0 },
+      { name: 'target', value: 0 },
+      { name: 'rate', value: 0 },
+      { name: 'tx', value: 0 },
+      { name: 'ty', value: 0 },
+      { name: 'off', value: 0 },
+      { name: 'step', value: 0 },
+    ],
+    handlers: [
+      {
+        when: { on: 'tick' },
+        // (Not while hanging from a ledge, nor on a ladder unless jumping off it: those are the engine's.)
+        if: "field(self, 'CharacterController.movement') == 'topdown' or (not self.hanging and (not self.climbing or pressed('jump')))",
+        do: [
+          set('mx', dirOf('right', 'left')),
+          when('mx != 0', [{ do: 'face', dir: 'mx', on: null }]),
+          when(
+            `${cc('movement')} == 'topdown'`,
+            [
+              // Eight ways, diagonals no faster; toward that velocity by at most "acceleration" a second, as one turn.
+              set('my', dirOf('down', 'up')),
+              when('mx != 0 or my != 0', [{ do: 'heading', x: 'mx', y: 'my' }]),
+              set('off', 'mx != 0 or my != 0 ? sqrt(mx * mx + my * my) : 1'),
+              set('tx', `mx / off * ${cc('speed')} * self.speed_factor`),
+              set('ty', `my / off * ${cc('speed')} * self.speed_factor`),
+              set('off', 'sqrt((tx - self.vx) * (tx - self.vx) + (ty - self.vy) * (ty - self.vy))'),
+              set('step', `${cc('acceleration')} * dt`),
+              when('off <= step', [vel('tx', 'ty')], [vel('self.vx + (tx - self.vx) / off * step', 'self.vy + (ty - self.vy) / off * step')]),
+            ],
+            [
+              // On the ground as much as its grip allows (its friction and the floor's); in the air, its air control.
+              set('target', `mx * ${cc('speed')} * self.speed_factor`),
+              set('rate', `${cc('acceleration')} * (self.grounded ? self.grip : ${cc('airControl')})`),
+              vel('self.vx + sign(target - self.vx) * min(abs(target - self.vx), rate * dt)', null),
+            ],
+          ),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  running: {
+    label: 'running',
+    covers: 'Left/Right running (seen from above: walking in eight directions): how fast (speed, times its speed factor), speeding up and slowing down (acceleration, as much as the floor\'s grip allows: slippery on ice), steering in the air (airControl), and facing the way it runs; not climbing ladders or hanging from ledges',
+    component: 'CharacterController',
+    script: runningScript,
+  },
   jumping: {
     label: 'jumping',
     covers: 'the jump key, how high (jumpForce), a press just before landing or just after leaving a ledge still jumping, double jumps (DoubleJump), and the shorter hop when the key is let go early',

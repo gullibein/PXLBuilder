@@ -19,7 +19,7 @@ import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
 
 import { overlaps, type Box } from './physics';
-import { STEP, type Runtime, type RuntimeEntity } from './runtime';
+import { groundGrip, STEP, type Runtime, type RuntimeEntity } from './runtime';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
@@ -1158,6 +1158,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.gravityScale;
     case 'speed_factor':
       return e.speedFactor;
+    case 'grip':
+      return groundGrip(e.friction, e.groundFriction);
     case 'name':
       return e.name;
   }

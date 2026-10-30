@@ -798,7 +798,10 @@ export class Runtime {
   /** Player-style movement for entities with a CharacterController. */
   private control(e: RuntimeEntity, input: InputView, dt: number): void {
     const c = e.controller!;
-    if (c.movement === 'topdown') return this.walkTopDown(e, input, dt);
+    // Running (and walking, seen from above) done by a script of its own instead (its "Running" script): the engine
+    // leaves its speed and which way it faces to it.
+    const ownRun = ownPart(e, 'running');
+    if (c.movement === 'topdown') return this.walkTopDown(e, input, dt, ownRun);
     const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
     const ladder = this.ladderAt(e);
 
@@ -835,18 +838,21 @@ export class Runtime {
       return;
     }
 
-    if (dir !== 0) e.facing = dir as 1 | -1;
+    if (dir !== 0 && !ownRun) e.facing = dir as 1 | -1;
     // Jumping done by a script of its own instead (its "Jumping" script, which took it over): the engine leaves it.
     const ownJump = ownPart(e, 'jumping');
     if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
     if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
     if (e.hanging && this.hang(e, input, dir)) return;
 
-    const target = dir * c.speed * e.speedFactor;
-    // On the ground, as much as its grip there allows (its own friction and the floor's); in the air, its air control.
-    const rate = c.acceleration * (e.grounded ? groundGrip(e.friction, e.groundFriction) : c.airControl);
-    const diff = target - e.vx;
-    e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
+    if (!ownRun) {
+      // (The ready-made Running script does exactly this: engineParts.ts.)
+      const target = dir * c.speed * e.speedFactor;
+      // On the ground, as much as its grip there allows (its own friction and the floor's); in the air, its air control.
+      const rate = c.acceleration * (e.grounded ? groundGrip(e.friction, e.groundFriction) : c.airControl);
+      const diff = target - e.vx;
+      e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
+    }
 
     if (ownJump) {
       if (e.beh.ledgeGrab && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
@@ -878,7 +884,11 @@ export class Runtime {
    * the same speed (diagonals aren't faster), speeding up and slowing down by
    * its acceleration. Walls stop it; nothing pulls it down.
    */
-  private walkTopDown(e: RuntimeEntity, input: InputView, dt: number): void {
+  private walkTopDown(e: RuntimeEntity, input: InputView, dt: number, scripted = false): void {
+    e.grounded = false;
+    e.climbing = false;
+    e.hanging = null;
+    if (scripted) return;
     const c = e.controller!;
     const dx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
     const dy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
@@ -899,9 +909,6 @@ export class Runtime {
       e.vx += (ex / off) * step;
       e.vy += (ey / off) * step;
     }
-    e.grounded = false;
-    e.climbing = false;
-    e.hanging = null;
   }
 
   /**

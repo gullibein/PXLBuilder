@@ -470,3 +470,85 @@ describe('shooting, moving platforms, hopping and timers, done by a script inste
     expect(trace.at(-1)).toMatch(/timer:Enemy/);
   });
 });
+
+describe('running, done by a script instead', () => {
+  const running = (d: Project) => {
+    const player = d.definitions.find((x) => x.name === 'Player')!;
+    player.scripts = [...(player.scripts ?? []), ENGINE_PART_INFO.running.script()];
+  };
+  /** Where the player is (and which way it faces) every step, with `edit` and optionally the Running script. */
+  function trace(rt: Runtime, keys: Record<number, Action[]>, steps: number): string[] {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      out.push(`${p.x.toFixed(6)},${p.y.toFixed(6)},${p.vx.toFixed(6)},${p.vy.toFixed(6)},${p.grounded},${p.facing}`);
+    }
+    expect(rt.scripts.errors).toEqual([]);
+    return out;
+  }
+  const same = (keys: Record<number, Action[]>, steps: number, edit: (d: Project) => void = () => {}) => {
+    const engine = trace(level(false, edit), keys, steps);
+    const script = trace(
+      level(false, (d) => {
+        edit(d);
+        running(d);
+      }),
+      keys,
+      steps,
+    );
+    expect(script.findIndex((s, i) => s !== engine[i])).toBe(-1);
+    return engine;
+  };
+
+  it('runs, stops, turns and steers in the air exactly as the engine does', () => {
+    const t = same({ 10: ['right'], 80: [], 120: ['left'], 200: ['left', 'jump'], 210: ['right'], 260: [] }, 360);
+    // (It really ran right, then turned to face left.)
+    expect(Number(t[79].split(',')[0])).toBeGreaterThan(20);
+    expect(t[150].endsWith(',-1')).toBe(true);
+  });
+
+  it('…slips on ice the same way, and keeps to its speed setting and speed factor', () => {
+    const ice = (d: Project) => {
+      for (const def of d.definitions.filter((x) => x.name === 'Platform')) m.setDefinitionComponentField(d, def.id, 'PhysicsBody', 'friction', 0.03, registry);
+    };
+    const slide = same({ 10: ['right'], 60: [], 140: ['left'] }, 240, ice);
+    const grippy = same({ 10: ['right'], 60: [], 140: ['left'] }, 240);
+    expect(slide).not.toEqual(grippy);
+    same({ 10: ['right'], 100: [] }, 160, (d) => m.setDefinitionComponentField(d, d.definitions.find((x) => x.name === 'Player')!.id, 'CharacterController', 'speed', 320, registry));
+  });
+
+  it('seen from above, walks in eight directions exactly as the engine does', () => {
+    const topdown = (scripted: boolean) => {
+      let project = createProject(registry, 'Test', 'topdown');
+      const sceneId = project.scenes[0].id;
+      project = produce(project, (d) => {
+        m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === 'Player')!, { x: 0, y: 0 }));
+        m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === 'Wall')!, { x: 96, y: 0 }));
+        if (scripted) running(d);
+      });
+      return new Runtime(project, sceneId, registry);
+    };
+    const keys: Record<number, Action[]> = { 5: ['right'], 40: ['right', 'down'], 90: ['up'], 130: ['left', 'up'], 170: [], 200: ['right'] };
+    const engine = trace(topdown(false), keys, 300);
+    const script = trace(topdown(true), keys, 300);
+    expect(script.findIndex((s, i) => s !== engine[i])).toBe(-1);
+  });
+
+  it('changed, it runs as the script says (the engine no longer sets its speed)', () => {
+    const rt = level(false, (d) => {
+      running(d);
+      const s = d.definitions.find((x) => x.name === 'Player')!.scripts!.find((x) => x.takesOver === 'running')!;
+      s.handlers[0].do = s.handlers[0].do.map((st) => JSON.parse(JSON.stringify(st).replaceAll("field(self, 'CharacterController.speed')", "field(self, 'CharacterController.speed') * 0.5")));
+    });
+    const slow = trace(rt, { 10: ['right'] }, 120);
+    expect(Number(slow[119].split(',')[2])).toBeCloseTo(100, 3);
+  });
+});

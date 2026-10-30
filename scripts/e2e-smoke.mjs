@@ -383,6 +383,10 @@ function stubModel(body) {
     const key = body.context.library.find((d) => d.name === 'Key').id;
     return { kind: 'confirm', message: "Being picked up is built into the engine. To make keys need E, I'd turn the Key's picking up into a script. Do it?", changes: ['Key: picking up is a script (the Picked up script)'], operations: [{ op: 'use_script_for', target: 'definition', id: key, part: 'picking_up', scriptJson: null }] };
   }
+  if (req.includes('speeds up the longer')) {
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: "To make the player speed up the longer you hold Right, its running becomes a script.", changes: ['Player: running is a script (the Running script)'], operations: [{ op: 'use_script_for', target: 'definition', id: player, part: 'running', scriptJson: null }] };
+  }
   if (req.includes('jump float')) {
     // The AI forgets to ask: the app asks anyway (turning engine code into a script needs a yes).
     const player = body.context.library.find((d) => d.name === 'Player').id;
@@ -1927,6 +1931,24 @@ try {
     }
     await page.keyboard.up('Space');
     await check(top < y0 - 30, 'in play, the player jumps with its Jumping script (the engine left jumping to it)');
+  }
+  await page.keyboard.press('Control+Enter');
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('The player speeds up the longer Right is held.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', "turning the engine's running into a script is asked first");
+  await result.getByTestId('result-confirm-yes').click();
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await codeFiles()).includes('code-file-Running'), "yes: the player's running is its Running script, in the Code editor");
+  await page.getByTestId('play').click();
+  {
+    await page.waitForTimeout(400);
+    const x0 = Number(((await page.getByTestId('play-canvas').getAttribute('data-player')) ?? '0').split(',')[0]);
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(500);
+    await page.keyboard.up('ArrowRight');
+    const x1 = Number(((await page.getByTestId('play-canvas').getAttribute('data-player')) ?? '0').split(',')[0]);
+    await check(x1 > x0 + 40, `in play, the player runs with its Running script (${Math.round(x0)} -> ${Math.round(x1)})`);
   }
   await page.keyboard.press('Control+Enter');
   await page.getByTestId('undo').click();
