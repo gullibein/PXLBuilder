@@ -36,6 +36,8 @@ export function describeTrigger(t: Trigger): string {
       return 'when something lands on it';
     case 'contact':
       return 'while touching something';
+    case 'hurt':
+      return 'when it is hurt';
   }
 }
 
@@ -140,6 +142,16 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`take ${x(s.count)} × ${s.item} from ${x(s.target)}`);
     case 'set_open':
       return one(`${x(s.target)} open = ${x(s.open)}${s.by ? ` (by ${x(s.by)})` : ''}`);
+    case 'set_health':
+      return one(`${x(s.target)} health = ${x(s.value)}`);
+    case 'invincible':
+      return one(`${who(s.on)}blink, unhurtable, for ${x(s.seconds)} s`);
+    case 'knock_back':
+      return one(`knocked back from ${x(s.from)} (${x(s.strength)})`);
+    case 'respawn_after':
+      return one(`come back at the start after ${x(s.seconds)} s`);
+    case 'defeated':
+      return one(`${x(s.target)} is defeated (leaves play)`);
     case 'set_switch':
       return one(`${x(s.target)} switched on = ${x(s.value)}`);
     case 'state':

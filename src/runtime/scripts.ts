@@ -75,6 +75,8 @@ interface Ctx {
   it: RuntimeEntity | null;
   /** The count inside "repeat". */
   i: number;
+  /** How much it was hurt (in "hurt" handlers). */
+  amount: number;
 }
 
 export class ScriptSystem {
@@ -270,17 +272,26 @@ export class ScriptSystem {
     return ok;
   }
 
-  private runWhere(e: RuntimeEntity, inst: ScriptInstance, pick: (h: Handler) => boolean, other: RuntimeEntity | null): void {
+  private runWhere(e: RuntimeEntity, inst: ScriptInstance, pick: (h: Handler) => boolean, other: RuntimeEntity | null, amount = 0): void {
     const gen = this.generation;
     for (const h of inst.script.handlers) {
       if (gen !== this.generation) return;
-      if (pick(h)) this.run(e, inst, h, other);
+      if (pick(h)) this.run(e, inst, h, other, 0, amount);
     }
   }
 
-  private run(e: RuntimeEntity, inst: ScriptInstance, h: Handler, other: RuntimeEntity | null, chain = 0): void {
+  /** It is hurt and a script of its own took being hurt over: its "hurt" handlers do what a hit does. */
+  onHurt(e: RuntimeEntity, source: RuntimeEntity | null, amount: number): void {
+    const gen = this.generation;
+    for (const inst of e.scripts) {
+      if (gen !== this.generation || !e.alive) return;
+      if (this.usable(e, inst)) this.runWhere(e, inst, (h) => h.when.on === 'hurt', source, amount);
+    }
+  }
+
+  private run(e: RuntimeEntity, inst: ScriptInstance, h: Handler, other: RuntimeEntity | null, chain = 0, amount = 0): void {
     if (h.state !== null && h.state !== inst.state) return;
-    const ctx: Ctx = { self: e, inst, other, it: null, i: 0 };
+    const ctx: Ctx = { self: e, inst, other, it: null, i: 0, amount };
     this.budget = RUN_BUDGET;
     try {
       if (h.if !== null && !truthy(this.eval(h.if, ctx))) return;
@@ -566,6 +577,32 @@ export class ScriptSystem {
         if (t) gp.setOpen(t, truthy(this.eval(s.open, ctx)), s.by ? ent(s.by) : e);
         break;
       }
+      case 'set_health': {
+        const t = ent(s.target);
+        if (t?.health) t.health.current = Math.min(t.health.max, Math.max(0, n(s.value)));
+        break;
+      }
+      case 'invincible': {
+        const t = ent(s.on);
+        if (t) {
+          t.invincible = Math.max(0, n(s.seconds));
+          if (t.invincible > 0) t.hurtAt = this.rt.time;
+        }
+        break;
+      }
+      case 'knock_back': {
+        const from = ent(s.from);
+        if (from) gp.knockBack(e, from, n(s.strength));
+        break;
+      }
+      case 'respawn_after':
+        if (e.controller && e.alive) gp.waitToRespawn(e, n(s.seconds));
+        break;
+      case 'defeated': {
+        const t = ent(s.target);
+        if (t?.alive) gp.defeated(t);
+        break;
+      }
       case 'set_switch': {
         const t = ent(s.target);
         if (t?.switch) t.switch.on = truthy(this.eval(s.value, ctx));
@@ -831,6 +868,8 @@ export class ScriptSystem {
         return ctx.it;
       case 'i':
         return ctx.i;
+      case 'damage_taken':
+        return ctx.amount;
       case 'screen_w':
         return this.rt.screen.w;
       case 'screen_h':
@@ -1175,6 +1214,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.health?.max ?? 0;
     case 'alive':
       return e.alive;
+    case 'dead':
+      return e.dying > 0 || !e.alive;
     case 'open':
       return e.open;
     case 'on':

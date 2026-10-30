@@ -795,3 +795,101 @@ describe('reaching the goal, done by a script instead', () => {
     expect(won.events.some((e) => e.includes('level_completed Player>'))).toBe(true);
   });
 });
+
+describe('being hurt and dying, done by scripts instead', () => {
+  type Part = 'being_hurt' | 'dying';
+  /** Floor y=48 (platformer) from -480 to 480; the Player at x=0; `edit` places more. `parts` go on every object with Health. */
+  function world(parts: Part[], edit: (d: Project, place: (name: string, at: Vec2) => string) => void, gameType: 'platformer' | 'topdown' = 'platformer'): Runtime {
+    let project = createProject(registry, 'Test', gameType);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const place = (name: string, pos: Vec2) => {
+        const e = instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos);
+        m.addEntity(d, sceneId, e);
+        return e.id;
+      };
+      if (gameType === 'platformer') for (let x = -480; x <= 480; x += 32) place('Platform', { x, y: 48 });
+      place('Player', { x: 0, y: 16 });
+      edit(d, place);
+      for (const def of d.definitions.filter((x) => x.components.Health))
+        for (const part of parts) applyOperations(d, [{ op: 'use_script_for', target: 'definition', id: def.id, part, scriptJson: null }] as never, registry);
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    let seed = 7;
+    rt.random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    return rt;
+  }
+  function trace(rt: Runtime, keys: Record<number, Action[]>, steps: number): { steps: string[]; events: string[] } {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      out.push(
+        rt.entities
+          .filter((e) => e.health || e.controller || e.name === 'Enemy')
+          .map((e) => `${e.name}:${e.alive}:${e.x.toFixed(3)},${e.y.toFixed(3)},${e.vx.toFixed(3)},${e.vy.toFixed(3)}:${e.health?.current}:${e.invincible.toFixed(4)}:${Number.isFinite(e.dying) ? e.dying.toFixed(4) : e.dying}:${e.vanishing.toFixed(3)}:${e.hurtAt}`)
+          .join(' '),
+      );
+    }
+    expect(rt.scripts.errors).toEqual([]);
+    const events = rt.gameplay.log.filter((e) => !['touch_started', 'touch_ended'].includes(e.type)).map((e) => `${e.time} ${e.type} ${e.subject}>${e.other} ${JSON.stringify(e.detail ?? {})}`);
+    return { steps: out, events };
+  }
+  const same = (parts: Part[], edit: (d: Project, place: (name: string, at: Vec2) => string) => void, keys: Record<number, Action[]>, steps: number, gameType: 'platformer' | 'topdown' = 'platformer') => {
+    const engine = trace(world([], edit, gameType), keys, steps);
+    const script = trace(world(parts, edit, gameType), keys, steps);
+    const first = script.steps.findIndex((t, i) => t !== engine.steps[i]);
+    expect(first === -1 ? 'same' : `step ${first}:\n engine ${engine.steps[first]}\n script ${script.steps[first]}`).toBe('same');
+    expect(script.events).toEqual(engine.events);
+    return engine;
+  };
+  const spikes = (_d: Project, place: (name: string, at: Vec2) => string) => {
+    for (let x = 64; x <= 160; x += 32) place('Hazard', { x, y: 24 });
+    // (A wall past them: pushing right, the player stays on them.)
+    for (const y of [16, -16, -48]) place('Stone', { x: 192, y });
+  };
+
+  it('spikes hurt the player again and again (blinking, knocked back), it dies at 0, waits, comes back: exactly as the engine does', () => {
+    const keys: Record<number, Action[]> = { 0: ['right'] };
+    for (const parts of [['being_hurt'], ['dying'], ['being_hurt', 'dying']] as Part[][]) {
+      const t = same(parts, spikes, keys, 900);
+      expect(t.events.filter((e) => !e.includes('level_started'))).toEqual([
+        '0.242 damaged Player>Hazard {"amount":1,"health":2}',
+        '1.25 damaged Player>Hazard {"amount":1,"health":1}',
+        '2.258 damaged Player>Hazard {"amount":1,"health":0}',
+        '2.258 died Player>Hazard {}',
+        '3.267 respawned Player>null {"reason":"died"}',
+      ]);
+    }
+  });
+
+  it('an enemy with health, stomped or run into: defeated and gone, or hurting the player, exactly as the engine does', () => {
+    const enemies = (d: Project, place: (name: string, at: Vec2) => string) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      // (Standing still, so the jump lands on the one on the right.)
+      delete enemy.components.Patrol;
+      enemy.components.Health = registry.createDefault('Health', { maxHealth: 1, currentHealth: 1 });
+      place('Enemy', { x: 110, y: 17 });
+      place('Enemy', { x: -140, y: 17 });
+    };
+    // Jump onto the right one, then walk into the left one.
+    const t = same(['being_hurt', 'dying'], enemies, { 0: ['right', 'jump'], 60: ['right'], 90: ['left'], 500: [] }, 800);
+    expect(t.events.filter((e) => !e.includes('level_started')).slice(0, 3)).toEqual(['0.617 stomped Enemy>Player {}', '0.617 died Enemy>Player {}', '2.392 damaged Player>Enemy {"amount":1,"health":2}']);
+    // (The stomped one is gone.)
+    expect(t.steps.at(-1)!.split(' ').filter((x) => x.startsWith('Enemy:true')).length).toBe(1);
+  });
+
+  it('seen from above: knocked straight back, exactly as the engine does', () => {
+    const enemy = (_d: Project, place: (name: string, at: Vec2) => string) => {
+      place('Enemy', { x: 100, y: 0 });
+    };
+    const t = same(['being_hurt', 'dying'], enemy, { 0: ['right'], 200: ['down'], 300: [] }, 600, 'topdown');
+    expect(t.events.some((e) => e.includes(' damaged Player'))).toBe(true);
+  });
+});

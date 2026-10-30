@@ -383,6 +383,10 @@ function stubModel(body) {
     const key = body.context.library.find((d) => d.name === 'Key').id;
     return { kind: 'confirm', message: "Being picked up is built into the engine. To make keys need E, I'd turn the Key's picking up into a script. Do it?", changes: ['Key: picking up is a script (the Picked up script)'], operations: [{ op: 'use_script_for', target: 'definition', id: key, part: 'picking_up', scriptJson: null }] };
   }
+  if (req.includes('only hurt when hit from the front')) {
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: 'The player is only hurt by hits from the front now.', changes: ['Player: being hurt is a script (the Being hurt script)'], operations: [{ op: 'use_script_for', target: 'definition', id: player, part: 'being_hurt', scriptJson: null }] };
+  }
   if (req.includes('goal wins only when the player presses up')) {
     const goal = body.context.library.find((d) => d.name === 'Goal').id;
     return { kind: 'confirm', message: "Reaching the goal is built into the engine. To make it need Up I'd turn the Goal's reaching into a script. Do it?", changes: ['Goal: reaching it is a script (the Goal script)'], operations: [{ op: 'use_script_for', target: 'definition', id: goal, part: 'goal', scriptJson: null }] };
@@ -1984,6 +1988,13 @@ try {
   await result.getByTestId('result-confirm-yes').click();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: the Goal gets its Goal script)');
   await prompts.getByTestId('prompt-close').click();
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('The player is only hurt when hit from the front.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', "turning the engine's being hurt into a script is asked first (also when the AI didn't ask)");
+  await result.getByTestId('result-confirm-yes').click();
+  await prompts.getByTestId('prompt-close').click();
+  await check(async () => (await codeFiles()).includes('code-file-Being hurt'), "yes: the player's being hurt is its Being hurt script, in the Code editor");
   await page.getByTestId('undo').click();
   await clickWorld(-256, 0);
   await ask('Keys are picked up only by pressing E.');

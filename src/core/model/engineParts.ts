@@ -781,7 +781,81 @@ function goalScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Being hurt as the engine does it (Health): a hit (a "damages" connection, a shot, a script's damage, a rule)
+ * takes that much health, makes it blink and unhurtable for a moment (DamageReceiver.invincibilityDuration; 1 s
+ * without one), knocks it back away from what hurt it (DamageReceiver.knockback; 160 without one, less the
+ * heavier it is), announces "damaged" (how much, and the health left) and, at 0, it dies (what hurt it as the
+ * killer). The engine still decides what can be hurt at all (with health, not blinking, not dying).
+ */
+function beingHurtScript(): BehaviorScript {
+  const receiver = "has_component(self, 'DamageReceiver')";
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Being hurt',
+    description: 'A hit takes that much health, makes it blink (unhurtable) for a moment, knocks it back and announces "damaged"; at 0 health it dies. As the engine does it (the Damage Receiver settings).',
+    takesOver: 'being_hurt',
+    vars: [
+      { name: 'blink_time', value: 1, setting: true },
+      { name: 'knock', value: 160, setting: true },
+    ],
+    handlers: [
+      {
+        when: { on: 'hurt' },
+        do: [
+          { do: 'set_health', target: 'self', value: 'max(0, self.health - damage_taken)' },
+          { do: 'invincible', seconds: `${receiver} ? field(self, 'DamageReceiver.invincibilityDuration') : blink_time`, on: null },
+          { do: 'knock_back', from: 'other', strength: `${receiver} ? field(self, 'DamageReceiver.knockback') : knock` },
+          { do: 'emit', event: 'damaged', other: 'other', detail: { amount: 'damage_taken', health: 'self.health' } },
+          when('self.health <= 0', [{ do: 'kill', target: 'self' }]),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/**
+ * Dying as the engine does it (Health): a player-controlled character stays where it died, without controls,
+ * Health.respawnDelay seconds (its death animation plays meanwhile), then the engine brings it back at its start
+ * with full health; anything else leaves play (shown a moment in its defeated look, if it has one).
+ */
+function dyingScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Dying',
+    description: 'When it dies: a player waits out its respawn delay where it died, then comes back at its start; anything else is defeated and leaves play. As the engine does it.',
+    takesOver: 'dying',
+    vars: [],
+    handlers: [
+      {
+        when: { on: 'event', event: 'died', with: null },
+        // (Its own death, not one it caused.)
+        if: 'self.dead',
+        do: [
+          when(
+            "has_component(self, 'CharacterController')",
+            [{ do: 'respawn_after', seconds: "field(self, 'Health.respawnDelay')" }],
+            [{ do: 'defeated', target: 'self' }],
+          ),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  being_hurt: {
+    label: 'being hurt',
+    covers: 'what a hit does to it: taking the health, blinking unhurtable for a moment (DamageReceiver.invincibilityDuration), the knock back (DamageReceiver.knockback), "damaged", dying at 0',
+    component: 'Health',
+    script: beingHurtScript,
+  },
+  dying: {
+    label: 'dying',
+    covers: 'what dying does: a player waits Health.respawnDelay where it died, then comes back at its start with full health; anything else leaves play (in its defeated look, if it has one)',
+    component: 'Health',
+    script: dyingScript,
+  },
   goal: {
     label: 'reaching the goal',
     covers: 'winning the level when a player reaches it: walking into it, or seen from above standing on it (its middle inside the goal); the player who reached it is who won',

@@ -294,11 +294,20 @@ export class Gameplay {
 
   hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
     if (!victim.health || !victim.alive || victim.dying > 0) return;
+    // Being hurt done by a script of its own instead (its "Being hurt" script): its "hurt" handlers do it all.
+    if (ownPart(victim, 'being_hurt')) return this.rt.scripts.onHurt(victim, source, amount);
     victim.health.current = Math.max(0, victim.health.current - amount);
     victim.hurtAt = this.rt.time;
     victim.invincible = victim.receiver?.invincibility ?? 1;
-    // Heavier things are shoved less.
-    const strength = (victim.receiver?.knockback ?? KNOCKBACK.x) / victim.mass;
+    // (The ready-made Being hurt script does exactly this: engineParts.ts.)
+    this.knockBack(victim, source, victim.receiver?.knockback ?? KNOCKBACK.x);
+    this.emit('damaged', victim, source, { amount, health: victim.health.current });
+    if (victim.health.current <= 0) this.die(victim, source);
+  }
+
+  /** Shoved away from `source` for a moment, as a hit does: `force` divided by its mass (heavier things are shoved less). */
+  knockBack(victim: RuntimeEntity, source: RuntimeEntity | null, force: number): void {
+    const strength = force / victim.mass;
     if (victim.body === 'dynamic' && source && strength > 0) {
       // A small knock back, away from what hurt it (seen from above: straight away from it), for a moment.
       const restore = victim.knock?.restore ?? { vx: victim.vx, vy: victim.vy };
@@ -315,8 +324,6 @@ export class Gameplay {
       victim.knock = { t: KNOCK_TIME, restore };
       victim.climbing = false;
     }
-    this.emit('damaged', victim, source, { amount, health: victim.health.current });
-    if (victim.health.current <= 0) this.die(victim, source);
   }
 
   /**
@@ -329,13 +336,26 @@ export class Gameplay {
     if (!victim.alive || victim.dying > 0) return;
     if (victim.health) victim.health.current = 0;
     this.emit('died', victim, source);
-    if (victim.controller) {
-      victim.dying = Math.max(victim.health?.respawnDelay ?? 0, 1e-6);
-      victim.knock = null;
-      victim.vx = 0;
-      victim.climbing = false;
-      victim.hanging = null;
-    } else this.gone(victim);
+    // Dying done by a script of its own instead (its "Dying" script): dead from now on (nothing hurts it, it does
+    // nothing), and its "died" handler decides what comes of it (waiting to respawn, or leaving play).
+    if (ownPart(victim, 'dying')) victim.dying = Infinity;
+    else if (victim.controller) this.waitToRespawn(victim, victim.health?.respawnDelay ?? 0);
+    else this.gone(victim);
+  }
+
+  /** A player that died stays where it died, without controls, `seconds`, then comes back at its start. */
+  waitToRespawn(victim: RuntimeEntity, seconds: number): void {
+    victim.dying = Math.max(seconds, 1e-6);
+    victim.knock = null;
+    victim.vx = 0;
+    victim.climbing = false;
+    victim.hanging = null;
+  }
+
+  /** A script's "defeated": it leaves play as the engine's defeated things do. */
+  defeated(e: RuntimeEntity): void {
+    e.dying = 0;
+    this.gone(e);
   }
 
   /** A defeated thing leaves play; with a defeated look (SpriteStates.defeated) it is shown in it a moment, fading. */

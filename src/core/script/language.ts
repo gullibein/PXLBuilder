@@ -34,7 +34,8 @@ export type Trigger =
   | { on: 'key'; key: KeyName; edge: 'pressed' | 'held' | 'released' }
   | { on: 'signal'; name: string }
   | { on: 'landed_on' }
-  | { on: 'contact' };
+  | { on: 'contact' }
+  | { on: 'hurt' };
 
 export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
 
@@ -72,6 +73,11 @@ export type Stmt =
   | { do: 'take_item'; target: string; item: string; count: string }
   | { do: 'set_open'; target: string; open: string; by?: string | null }
   | { do: 'set_switch'; target: string; value: string }
+  | { do: 'set_health'; target: string; value: string }
+  | { do: 'invincible'; seconds: string; on: string | null }
+  | { do: 'knock_back'; from: string; strength: string }
+  | { do: 'respawn_after'; seconds: string }
+  | { do: 'defeated'; target: string }
   | { do: 'state'; name: string }
   | { do: 'signal'; name: string }
   | { do: 'emit'; event: string; other: string | null; subject?: string | null; detail?: Record<string, string> }
@@ -197,6 +203,7 @@ export const MEMBERS: Record<string, string> = {
   health: 'current health (0 without Health)',
   max_health: 'maximum health',
   alive: 'still in play',
+  dead: 'it has died: waiting to come back (a player) or leaving play',
   open: 'opened (doors)',
   on: 'switched on (switches)',
   spawn_x: 'x where it started',
@@ -348,6 +355,11 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   give_item: { example: '{"do":"give_item","target":"other","item":"coin","count":"1"}', doc: 'add to its inventory' },
   take_item: { example: '{"do":"take_item","target":"other","item":"key","count":"1"}', doc: 'remove from its inventory' },
   set_open: { example: '{"do":"set_open","target":"self","open":"true","by":"other"}', doc: 'open (not solid, faded) or close; "opened"/"closed" happen with "by" as the other party (null: this entity)' },
+  set_health: { example: '{"do":"set_health","target":"self","value":"self.health - damage_taken"}', doc: 'set its current health (kept between 0 and its maximum); nothing else happens by itself (kill it at 0 with kill)' },
+  invincible: { example: '{"do":"invincible","seconds":"1"}', doc: 'it blinks (its hurt look) and can\'t be hurt for that long (0: no longer)' },
+  knock_back: { example: '{"do":"knock_back","from":"other","strength":"160"}', doc: 'shove it away from "from" for a moment, as a hit does (sideways and a little up; seen from above straight away), less the heavier it is (PhysicsBody mass); it stops climbing' },
+  respawn_after: { example: '{"do":"respawn_after","seconds":"1"}', doc: 'a player that died: stays where it died, without controls, that long, then comes back at its start with full health (the engine does the coming back)' },
+  defeated: { example: '{"do":"defeated","target":"self"}', doc: 'it leaves play as a defeated thing: shown a moment in its defeated look (SpriteStates.defeated) if it has one, fading' },
   set_switch: { example: '{"do":"set_switch","target":"self","value":"not self.on"}', doc: 'turn a switch on (true) or off (false) without "switch_activated" (emit it to make what it controls react)' },
   state: { example: '{"do":"state","name":"chase"}', doc: 'switch to another state (runs its enter_state handlers)' },
   bounce: {
@@ -417,6 +429,10 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
   contact: {
     example: '{"on":"contact"}',
     doc: 'every step while something touches this one (overlapping, standing on it or pressed against it; "other" is it), after "landed_on" handlers and picking things up. For what touching does: hurting, pushing, slowing down',
+  },
+  hurt: {
+    example: '{"on":"hurt"}',
+    doc: 'it is hit (a "damages" connection, a shot, a script\'s damage, a rule), only when a script of its own took being hurt over (its "Being hurt" script): "other" is what hurt it (null: nothing), "damage_taken" how much. The engine does nothing else: the handler takes the health (set_health), makes it blink (invincible), knocks it back, announces "damaged" and kills it at 0',
   },
 };
 
@@ -489,6 +505,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('take_item'), target: expr, item: z.string().min(1), count: expr.default('1') }),
     z.object({ do: z.literal('set_open'), target: expr, open: expr, by: nexpr.optional() }),
     z.object({ do: z.literal('set_switch'), target: expr, value: expr }),
+    z.object({ do: z.literal('set_health'), target: expr, value: expr }),
+    z.object({ do: z.literal('invincible'), seconds: expr, on: nexpr }),
+    z.object({ do: z.literal('knock_back'), from: expr, strength: expr }),
+    z.object({ do: z.literal('respawn_after'), seconds: expr }),
+    z.object({ do: z.literal('defeated'), target: expr }),
     z.object({ do: z.literal('state'), name: z.string().min(1) }),
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
     z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr, subject: nexpr.optional(), detail: z.record(z.string().regex(/^[A-Za-z_]\w*$/), expr).optional() }),
@@ -550,6 +571,7 @@ const trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('signal'), name: z.string().min(1) }),
   z.object({ on: z.literal('landed_on') }),
   z.object({ on: z.literal('contact') }),
+  z.object({ on: z.literal('hurt') }),
 ]);
 
 const handler = z.object({
@@ -563,7 +585,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'goal', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['being_hurt', 'dying', 'running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'goal', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -680,7 +702,16 @@ export function exprSlots(s: Stmt): string[] {
     case 'set_open':
       return [s.target, s.open, ...(s.by ? [s.by] : [])];
     case 'set_switch':
+    case 'set_health':
       return [s.target, s.value];
+    case 'invincible':
+      return [s.seconds, ...(s.on ? [s.on] : [])];
+    case 'knock_back':
+      return [s.from, s.strength];
+    case 'respawn_after':
+      return [s.seconds];
+    case 'defeated':
+      return [s.target];
     case 'message':
       return messageParts(s.text);
     case 'alpha':
@@ -784,7 +815,8 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
       return { error: `${where}: unknown event "${h.when.event}"${suggest(h.when.event, eventRegistry.list().map((e) => e.type))}` };
     }
     const base = new Set([...Object.keys(BUILTIN_NAMES), ...varNames]);
-    if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'contact') base.add('other');
+    if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'contact' || h.when.on === 'hurt') base.add('other');
+    if (h.when.on === 'hurt') base.add('damage_taken');
     const scopeOf = (names: Set<string>): Scope => ({ names, functions, members });
     const checkText = (text: string, names: Set<string>, what: string): string | null => {
       try {
