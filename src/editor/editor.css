@@ -973,3 +973,7 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .file-fix-list li { margin: 2px 0; overflow-wrap: anywhere; }
 /* The AI asks before turning engine code into a script: Yes / No under its question. */
 .prompt-result.confirm .confirm-row { display: flex; gap: 8px; margin-top: 8px; }
+/* A script's settings (the variables it marks to tune), under its description in Details. */
+.script-settings { display: grid; gap: 4px; margin: 6px 0 2px; }
+.script-setting { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 8px; font-size: 12px; }
+.script-setting input[type='number'], .script-setting input[type='text'] { width: 100%; }

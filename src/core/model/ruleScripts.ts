@@ -26,8 +26,8 @@ export function stompScript(opts: { by: readonly string[]; bounce: number; hits:
     name: STOMP_SCRIPT_NAME,
     description: `Jumping on it from above ${opts.hits > 0 ? `takes ${opts.hits} health` : 'defeats it'}; whoever jumped bounces off unhurt.`,
     vars: [
-      { name: 'bounce', value: opts.bounce },
-      { name: 'hits', value: opts.hits },
+      { name: 'bounce', value: opts.bounce, setting: true },
+      { name: 'hits', value: opts.hits, setting: true },
     ],
     handlers: [
       {
@@ -50,7 +50,7 @@ export function hurtsScript(opts: { amount: number; who: readonly string[] }): B
     id: generateId('scr'),
     name: HURTS_SCRIPT_NAME,
     description: `Touching it hurts ${cond ? opts.who.join(' or ') : 'anything with health'} (${opts.amount} health a hit).`,
-    vars: [{ name: 'amount', value: opts.amount }],
+    vars: [{ name: 'amount', value: opts.amount, setting: true }],
     handlers: [{ when: { on: 'contact' }, if: cond ?? 'other.max_health > 0', do: [{ do: 'damage', target: 'other', amount: 'amount' }] }],
   }) as BehaviorScript;
 }

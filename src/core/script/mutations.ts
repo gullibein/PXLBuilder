@@ -76,6 +76,17 @@ export function removeScript(project: Project, owner: ScriptOwner, scriptId: Id)
   o.set(o.scripts.filter((s) => s.id !== scriptId));
 }
 
+/** What one of its variables starts at (a setting changed in Details). */
+export function setScriptVar(project: Project, owner: ScriptOwner, scriptId: Id, name: string, value: number | boolean | string): void {
+  const o = ownerOf(project, owner);
+  const s = o.scripts.find((x) => x.id === scriptId);
+  if (!s) throw new ModelError(`${o.name} has no script "${scriptId}"`);
+  const v = s.vars.find((x) => x.name === name);
+  if (!v) throw new ModelError(`Script ${s.name} has no variable "${name}"`);
+  if (typeof value !== typeof v.value) throw new ModelError(`${name} needs ${typeof v.value === 'number' ? 'a number' : typeof v.value === 'boolean' ? 'on or off' : 'text'}`);
+  v.value = value;
+}
+
 export function setScriptEnabled(project: Project, owner: ScriptOwner, scriptId: Id, enabled: boolean): void {
   const o = ownerOf(project, owner);
   const s = o.scripts.find((x) => x.id === scriptId);

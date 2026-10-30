@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { describeScript } from '../../core/script/describe';
 import { checkScript } from '../../core/script/language';
-import { removeScript, setScript, setScriptEnabled, type ScriptOwner } from '../../core/script/mutations';
+import { removeScript, setScript, setScriptEnabled, setScriptVar, type ScriptOwner } from '../../core/script/mutations';
 import type { BehaviorScript } from '../../core/types';
 import { useEditor } from '../store';
 
@@ -78,6 +78,7 @@ function ScriptCard({ owner, script }: { owner: ScriptOwner; script: BehaviorScr
         </button>
       </div>
       {script.description && <div className="script-desc">{script.description}</div>}
+      <ScriptSettings owner={owner} script={script} />
       {open && draft === null && (
         <>
           <pre className="script-code" data-testid="script-code">
@@ -112,6 +113,40 @@ function ScriptCard({ owner, script }: { owner: ScriptOwner; script: BehaviorScr
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The variables a script marks as settings, to change here (what they start at in play). */
+function ScriptSettings({ owner, script }: { owner: ScriptOwner; script: BehaviorScript }) {
+  const edit = useEditor((s) => s.edit);
+  const settings = script.vars.filter((v) => v.setting);
+  if (!settings.length) return null;
+  const set = (name: string, value: number | boolean | string) =>
+    edit(`Set ${script.name} ${name}`, (p) => setScriptVar(p, owner, script.id, name, value), { coalesceKey: `${owner.id}.${script.id}.${name}` });
+  return (
+    <div className="script-settings" data-testid="script-settings">
+      {settings.map((v) => (
+        <label key={v.name} className="script-setting">
+          <span>{v.name.replace(/_/g, ' ')}</span>
+          {typeof v.value === 'boolean' ? (
+            <input type="checkbox" checked={v.value} data-testid={`script-setting-${v.name}`} onChange={(e) => set(v.name, e.target.checked)} />
+          ) : typeof v.value === 'number' ? (
+            <input
+              type="number"
+              step="any"
+              value={v.value}
+              data-testid={`script-setting-${v.name}`}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (e.target.value.trim() !== '' && Number.isFinite(n)) set(v.name, n);
+              }}
+            />
+          ) : (
+            <input type="text" value={v.value} data-testid={`script-setting-${v.name}`} onChange={(e) => set(v.name, e.target.value)} />
+          )}
+        </label>
+      ))}
     </div>
   );
 }

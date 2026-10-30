@@ -1869,6 +1869,19 @@ try {
   await check(async () => (await objectCount()) === objectsBefore, 'no new object was made');
   await page.getByTestId('undo').click();
 
+  step = "a script's settings in Details";
+  await clickWorld(96, 0);
+  await openDetails();
+  {
+    const stomp = page.getByTestId('script-Stomp');
+    await check(async () => (await stomp.getByTestId('script-setting-bounce').inputValue()) === '320' && (await page.getByTestId('script-Hurts on touch').getByTestId('script-setting-amount').inputValue()) === '1', "the enemy's Details show its scripts' settings (Stomp: bounce, hits; Hurts on touch: amount)");
+    await stomp.getByTestId('script-setting-bounce').fill('500');
+    await check(async () => (await stomp.getByTestId('script-setting-bounce').inputValue()) === '500', 'a setting can be changed right there');
+    await page.screenshot({ path: `${OUT}/4g-script-settings.png` });
+  }
+  await page.getByTestId('close-details').click();
+  await page.getByTestId('undo').click();
+
   step = 'engine code into a script, only after a yes';
   await clickWorld(-256, 0);
   await check(async () => (await prompts.getByTestId('entity-header').innerText()).trim() === 'Player', '(the player is selected)');

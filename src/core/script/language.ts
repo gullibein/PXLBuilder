@@ -135,7 +135,8 @@ export interface BehaviorScript {
   enabled: boolean;
   /** The part of the engine's own code it does instead of the engine (the engine leaves that part to it). */
   takesOver?: EnginePart;
-  vars: { name: string; value: ScriptValue }[];
+  /** Its variables and what they start at; `setting`: one to tune (shown in the object's Details to change). */
+  vars: { name: string; value: ScriptValue; setting?: boolean }[];
   /** State names; the first is where it starts. Empty: no states. */
   states: string[];
   handlers: Handler[];
@@ -544,7 +545,7 @@ export const scriptSchema = z.object({
   /** The part of the engine's code this script does instead of the engine (see ENGINE_PARTS). */
   takesOver: z.enum(ENGINE_PARTS).optional(),
   vars: z
-    .array(z.object({ name: z.string().min(1), value: z.union([z.number().finite(), z.boolean(), z.string().max(200)]) }))
+    .array(z.object({ name: z.string().min(1), value: z.union([z.number().finite(), z.boolean(), z.string().max(200)]), setting: z.boolean().optional() }))
     .default([]),
   // A list, but a slip the AI makes is read as the list it means: one name ("falling"), names in one string
   // ("idle, falling"), the list as JSON text ("[\"idle\",\"falling\"]"), or null (no states).

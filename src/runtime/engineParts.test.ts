@@ -10,6 +10,7 @@ import { addRelationship } from '../core/logic/mutations';
 import { InputState, type Action } from './input';
 import { Runtime } from './runtime';
 import { checkScript } from '../core/script/language';
+import { setScriptVar } from '../core/script/mutations';
 
 const registry = createBuiltinRegistry();
 
@@ -410,6 +411,52 @@ describe('shooting, moving platforms, hopping and timers, done by a script inste
     const ride = same({ player: { x: 0, y: -8 }, edit: lift }, 1600, { 900: ['right'], 960: [] });
     // (The player rode it: carried right and up with it.)
     expect(ride.some((t) => /^Player@(1[0-9]{2})\./.test(t))).toBe(true);
+  });
+
+  it('after the switch, the Details settings still decide: a faster platform and a quicker turret, the same as the engine with them', () => {
+    const tuned = (d: Project, place: (n: string, at: Vec2) => string) => {
+      const platform = createDefinition('Lift', {
+        Sprite: registry.createDefault('Sprite', { width: 64, height: 16 }),
+        Collider: registry.createDefault('Collider', { size: { x: 64, y: 16 } }),
+        PhysicsBody: registry.createDefault('PhysicsBody', { bodyType: 'kinematic' }),
+        MovingPlatform: registry.createDefault('MovingPlatform', { offset: { x: 160, y: 0 }, speed: 140, pause: 0.1 }),
+      });
+      m.addDefinition(d, platform, registry);
+      place('Lift', { x: -200, y: -100 });
+      shooter({ interval: 0.2, speed: 400, range: 300 })(d, place);
+    };
+    const trace = same({ player: { x: 0, y: 16 }, edit: tuned }, 600);
+    // (The platform went the whole 160 px at that speed, and the turret fired often.)
+    expect(trace.some((t) => t.includes('Lift@-40.0000'))).toBe(true);
+    expect(Number(trace.at(-1)!.split('| ')[1].split(' ')[0])).toBeGreaterThan(10);
+  });
+
+  it("a script's settings (its marked variables) change how it plays: a higher Stomp bounce", () => {
+    const bounce = (high: boolean) => {
+      let project = createProject(registry);
+      const sceneId = project.scenes[0].id;
+      project = produce(project, (d) => {
+        const place = (name: string, at: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, at));
+        for (let x = -160; x <= 160; x += 32) place('Platform', { x, y: 48 });
+        place('Player', { x: 60, y: -80 });
+        place('Enemy', { x: 60, y: 17 });
+        const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+        delete enemy.components.Patrol;
+        const stomp = enemy.scripts!.find((x) => x.name === 'Stomp')!;
+        expect(stomp.vars.filter((v) => v.setting).map((v) => v.name)).toEqual(['bounce', 'hits']);
+        if (high) setScriptVar(d, { target: 'definition', id: enemy.id }, stomp.id, 'bounce', 520);
+      });
+      const rt = new Runtime(project, sceneId, registry);
+      const input = new InputState();
+      let fastest = 0;
+      for (let i = 0; i < 120; i++) {
+        rt.update(1 / 120, input);
+        fastest = Math.min(fastest, rt.find('Player')!.vy);
+      }
+      return fastest;
+    };
+    expect(bounce(false)).toBeCloseTo(-320, 0);
+    expect(bounce(true)).toBeCloseTo(-520, 0);
   });
 
   it('Hopping and Timer, exactly as the engine', () => {

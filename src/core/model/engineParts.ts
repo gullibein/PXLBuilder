@@ -41,9 +41,9 @@ function jumpingScript(): BehaviorScript {
     description: "Jumping (Space, or a controller's A), as the engine does it: a press just before landing still jumps, so does one just after walking off a ledge; DoubleJump gives jumps in the air; letting go early makes a shorter hop.",
     takesOver: 'jumping',
     vars: [
-      { name: 'buffer_time', value: 0.12 },
-      { name: 'coyote_time', value: 0.1 },
-      { name: 'short_hop', value: 0.5 },
+      { name: 'buffer_time', value: 0.12, setting: true },
+      { name: 'coyote_time', value: 0.1, setting: true },
+      { name: 'short_hop', value: 0.5, setting: true },
       { name: 'buffer', value: 0 },
       { name: 'coyote', value: 0 },
       { name: 'air_jumps', value: 0 },
@@ -100,7 +100,7 @@ function pickedUpScript(owner?: PartOwner): BehaviorScript {
     name: 'Picked up',
     description: `Picked up when something that collects things touches it: it ${keep ? `gives one "${item}"` : 'is used up at once'}${heal ? ` and ${heal} health back` : ''}.`,
     takesOver: 'picking_up',
-    vars: [{ name: 'heal', value: heal }],
+    vars: [{ name: 'heal', value: heal, setting: true }],
     handlers: [
       {
         when: { on: 'contact' },
@@ -147,7 +147,7 @@ function patrolScript(): BehaviorScript {
       { name: 'chase_speed', value: 0 },
       { name: 'reaction', value: 0 },
       { name: 'vertical', value: false },
-      { name: 'lose_sight', value: 3 },
+      { name: 'lose_sight', value: 3, setting: true },
       { name: 'dir', value: 1 },
       { name: 'hunting', value: false },
       { name: 'lost', value: 0 },
@@ -334,7 +334,7 @@ function shootingScript(owner?: PartOwner): BehaviorScript {
   return scriptSchema.parse({
     id: generateId('scr'),
     name: 'Shooting',
-    description: 'Fires shots as the engine does it; its settings are this script\'s variables (trigger "auto" or "key", interval, direction, target_tag, speed, damage, range).',
+    description: 'Fires shots as the engine does it (the Shooter settings in Details).',
     takesOver: 'shooting',
     vars: [
       { name: 'trigger', value: c.trigger === 'key' ? 'key' : 'auto' },
@@ -344,11 +344,24 @@ function shootingScript(owner?: PartOwner): BehaviorScript {
       { name: 'speed', value: num(c.speed, 240) },
       { name: 'damage', value: num(c.damage, 1) },
       { name: 'range', value: num(c.range, 480) },
-      // Fired by a key: ready at once; automatic: the first shot after one interval.
-      { name: 'wait', value: c.trigger === 'key' ? num(c.interval, 2) : 0 },
+      { name: 'wait', value: 0 },
       { name: 'aim', value: false },
     ],
     handlers: [
+      {
+        when: { on: 'start' },
+        do: [
+          set('trigger', "field(self, 'Shooter.trigger')"),
+          set('interval', "field(self, 'Shooter.interval')"),
+          set('direction', "field(self, 'Shooter.direction')"),
+          set('target_tag', "field(self, 'Shooter.targetTag')"),
+          set('speed', "field(self, 'Shooter.speed')"),
+          set('damage', "field(self, 'Shooter.damage')"),
+          set('range', "field(self, 'Shooter.range')"),
+          // Fired by a key: ready at once; automatic: the first shot after one interval.
+          set('wait', "trigger == 'key' ? interval : 0"),
+        ],
+      },
       {
         when: { on: 'tick' },
         do: [
@@ -399,7 +412,7 @@ function movingScript(owner?: PartOwner): BehaviorScript {
   return scriptSchema.parse({
     id: generateId('scr'),
     name: 'Moving',
-    description: 'Glides to its start + offset and back, waiting at each end, carrying what stands on it; its settings are this script\'s variables.',
+    description: 'Glides to its start + offset and back, waiting at each end, carrying what stands on it (the Moving Platform settings in Details).',
     takesOver: 'moving',
     vars: [
       { name: 'offset_x', value: num(off.x, 96) },
@@ -415,6 +428,15 @@ function movingScript(owner?: PartOwner): BehaviorScript {
       { name: 'my', value: 0 },
     ],
     handlers: [
+      {
+        when: { on: 'start' },
+        do: [
+          set('offset_x', "field(self, 'MovingPlatform.offset.x')"),
+          set('offset_y', "field(self, 'MovingPlatform.offset.y')"),
+          set('speed', "field(self, 'MovingPlatform.speed')"),
+          set('pause', "field(self, 'MovingPlatform.pause')"),
+        ],
+      },
       {
         when: { on: 'tick' },
         do: [
