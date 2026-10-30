@@ -8,6 +8,7 @@
  * Events are processed in order, once per step, with a cap so a rule that
  * keeps triggering itself cannot freeze the game. Every event is logged.
  */
+import type { EnginePart } from '../core/script/language';
 import { itemNameOf } from '../core/graph/graph';
 import { LiveGrid } from './spatialIndex';
 import { refMatches, type EventEntities } from '../core/logic/refs';
@@ -53,6 +54,11 @@ const TOUCH_SLOP = 0.5;
 export const DEFEATED_LOOK = 0.6;
 /** How far below a thing's top the feet may have been and still count as landing on it. */
 const STOMP_SLOP = 6;
+
+/** Whether `e`'s scripts do `part` instead of the engine (one taking it over is there and switched on). */
+export function ownPart(e: RuntimeEntity, part: EnginePart): boolean {
+  return e.scripts.some((i) => i.script.enabled && i.script.takesOver === part);
+}
 
 export class Gameplay {
   readonly log: LoggedEvent[] = [];
@@ -219,7 +225,8 @@ export class Gameplay {
         if (!o?.alive || !e.alive) continue;
         // Shots hit in the behavior system (once, then they're gone).
         if (o.projectile || e.projectile) continue;
-        if (o.collectible && e.dying <= 0 && this.canCollect(e, o)) {
+        // (An item whose "Picked up" script took picking up over is picked up by that script: "contact" below.)
+        if (o.collectible && e.dying <= 0 && !ownPart(o, 'picking_up') && this.canCollect(e, o)) {
           this.collect(e, o);
           continue;
         }
@@ -257,8 +264,9 @@ export class Gameplay {
     return this.scene.relationships.filter((r) => r.type === type);
   }
 
-  private canCollect(collector: RuntimeEntity, item: RuntimeEntity): boolean {
-    if (collector.inventory) return true;
+  canCollect(collector: RuntimeEntity, item: RuntimeEntity): boolean {
+    // (An Inventory: anything. Carrying something without one, given by a "collects" connection, isn't one.)
+    if (collector.base.components.Inventory) return true;
     return this.relationships('collects').some((r) => refMatches(r.source, collector) && refMatches(r.target, item) && this.check(r.conditions, { subject: collector, other: item }));
   }
 

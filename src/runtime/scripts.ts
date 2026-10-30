@@ -504,7 +504,7 @@ export class ScriptSystem {
         break;
       }
       case 'emit':
-        gp.emit(s.event, e, s.other === null ? null : ent(s.other));
+        gp.emit(s.event, s.subject ? ent(s.subject) : e, s.other === null ? null : ent(s.other));
         break;
       case 'kill': {
         const t = ent(s.target);
@@ -1010,6 +1010,10 @@ export class ScriptSystem {
           return null;
         }
         return r as Value;
+      }
+      case 'collects': {
+        const a = asEntity(v[0]);
+        return !!a && this.rt.gameplay.canCollect(a, ctx.self);
       }
       case 'has_component': {
         const a = asEntity(v[0]);

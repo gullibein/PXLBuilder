@@ -3,7 +3,7 @@
  * copy) or single entities. Every script is checked (checkScript) before it
  * is stored, whoever wrote it.
  */
-import { ENGINE_PART_INFO } from '../model/engineParts';
+import { ENGINE_PART_INFO, type PartOwner } from '../model/engineParts';
 import type { EnginePart } from './language';
 import { generateId } from '../ids';
 import { getDefinition, ModelError } from '../model/mutations';
@@ -46,9 +46,19 @@ export function setScript(project: Project, owner: ScriptOwner, raw: unknown): I
  */
 export function useScriptFor(project: Project, owner: ScriptOwner, part: EnginePart, raw: unknown | null): Id {
   const info = ENGINE_PART_INFO[part];
-  const components = owner.target === 'definition' ? getDefinition(project, owner.id).components : null;
-  if (components && !components[info.component]) throw new ModelError(`${getDefinition(project, owner.id).name} has no ${info.component}, so there is no ${info.label} to take over`);
-  const script = raw === null ? info.script() : { ...(raw as Record<string, unknown>), takesOver: part };
+  // What it is made for: the object, or a placed one (its object's components with its own on top).
+  let made: PartOwner;
+  if (owner.target === 'definition') {
+    const def = getDefinition(project, owner.id);
+    made = { name: def.name, components: def.components };
+  } else {
+    const e = project.scenes.flatMap((sc) => sc.entities).find((x) => x.id === owner.id);
+    if (!e) throw new ModelError(`Entity "${owner.id}" not found`);
+    const def = e.definitionId ? project.definitions.find((d) => d.id === e.definitionId) : undefined;
+    made = { name: def?.name ?? e.name, components: { ...(def?.components ?? {}), ...e.components } };
+  }
+  if (!made.components[info.component]) throw new ModelError(`${made.name} has no ${info.component}, so there is no ${info.label} to take over`);
+  const script = raw === null ? info.script(made) : { ...(raw as Record<string, unknown>), takesOver: part };
   const o = ownerOf(project, owner);
   const before = o.scripts;
   o.set(o.scripts.filter((s) => s.takesOver !== part));

@@ -6,6 +6,7 @@ import { createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { applyOperations } from '../core/commands/operations';
+import { addRelationship } from '../core/logic/mutations';
 import { InputState, type Action } from './input';
 import { Runtime } from './runtime';
 
@@ -135,5 +136,59 @@ describe('use_script_for (the AI turning an engine part into a script, after the
     const base = createProject(registry);
     const coin = base.definitions.find((x) => x.name === 'Coin')!;
     expect(() => apply(base, [{ op: 'use_script_for', target: 'definition', id: coin.id, part: 'jumping', scriptJson: null }])).toThrow(/no CharacterController/);
+  });
+});
+
+describe('picking things up, done by a script instead', () => {
+  /** Coins, a key and a heart in a row to the right of the player (hurt once, so the heart heals); with `scripted`, each item's object has its ready-made "Picked up" script. */
+  function items(scripted: boolean, edit: (d: Project) => void = () => {}): Runtime {
+    return level(false, (d) => {
+      const sceneId = d.scenes[0].id;
+      const place = (name: string, x: number) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((n) => n.name === name)!, { x, y: 20 }));
+      place('Coin', 40);
+      place('Coin', 56);
+      place('Key', 72);
+      place('Heart', 88);
+      d.definitions.find((x) => x.name === 'Player')!.components.Health.currentHealth = 2;
+      if (scripted) {
+        for (const def of d.definitions.filter((x) => x.components.Collectible)) {
+          def.scripts = [...(def.scripts ?? []), ENGINE_PART_INFO.picking_up.script({ name: def.name, components: def.components })];
+        }
+      }
+      edit(d);
+    });
+  }
+  /** Walking right: step by step, what the player carries, its health, what is left and what happened. */
+  function walk(rt: Runtime): string[] {
+    const input = new InputState();
+    input.press('right');
+    const out: string[] = [];
+    for (let i = 0; i < 160; i++) {
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      const left = rt.entities.filter((e) => e.collectible && e.alive).length;
+      const events = rt.eventLog.filter((e) => !e.type.startsWith('touch')).map((e) => `${e.type}:${e.subject}>${e.other}`);
+      out.push(`${p.x.toFixed(4)} ${JSON.stringify([...(p.inventory ?? new Map())])} hp${p.health?.current} left${left} ${events.join('|')}`);
+    }
+    return out;
+  }
+
+  it('the ready-made script picks things up exactly as the engine does: items, health back, what is left, the events', () => {
+    const engine = walk(items(false));
+    expect(walk(items(true))).toEqual(engine);
+    // (It really picked them up: two coins, a key, a heart's health back.)
+    expect(engine.at(-1)).toContain('[["coin",2],["key",1]] hp3 left0');
+    expect(engine.at(-1)).toContain('collected:Player>Coin');
+  });
+
+  it('…also by a "collects" connection (a player without an Inventory picks up only coins)', () => {
+    const connection = (d: Project) => {
+      const player = d.definitions.find((x) => x.name === 'Player')!;
+      delete player.components.Inventory;
+      addRelationship(d, d.scenes[0].id, { type: 'collects', source: { kind: 'object', id: player.id }, target: { kind: 'object', id: d.definitions.find((x) => x.name === 'Coin')!.id }, params: {}, conditions: [] });
+    };
+    const engine = walk(items(false, connection));
+    expect(walk(items(true, connection))).toEqual(engine);
+    expect(engine.at(-1)).toContain('left2');
   });
 });

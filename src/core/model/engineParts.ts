@@ -6,7 +6,14 @@
  * Removing or switching off the script gives the part back to the engine.
  */
 import { generateId } from '../ids';
+import { itemNameOf } from '../graph/graph';
 import { scriptSchema, type BehaviorScript, type EnginePart } from '../script/language';
+
+/** The object a part's script is made for (what the script needs to know of it, e.g. the item it gives). */
+export interface PartOwner {
+  name: string;
+  components: Record<string, Record<string, unknown>>;
+}
 
 export interface EnginePartInfo {
   /** What it is, in a few words ("jumping"). */
@@ -15,8 +22,8 @@ export interface EnginePartInfo {
   covers: string;
   /** The component it belongs to (an object without it has nothing to take over). */
   component: string;
-  /** The ready-made script that does what the engine does. */
-  script(): BehaviorScript;
+  /** The ready-made script that does what the engine does, for this object (its name and components). */
+  script(owner?: PartOwner): BehaviorScript;
 }
 
 /**
@@ -78,12 +85,49 @@ function jumpingScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Being picked up as the engine does it: when something that may pick it up touches it (an Inventory, or a
+ * "collects" connection), it leaves the level, the collector gets the item (unless it is used up at once) and the
+ * health it gives back (up to its most), and "collected" is announced (the collector as its subject).
+ */
+function pickedUpScript(owner?: PartOwner): BehaviorScript {
+  const c = owner?.components.Collectible ?? {};
+  const item = (owner && itemNameOf(owner.components, owner.name)) || 'item';
+  const keep = c.collectionBehavior !== 'consume';
+  const heal = Math.max(0, Number(c.heal) || 0);
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Picked up',
+    description: `Picked up when something that collects things touches it: it ${keep ? `gives one "${item}"` : 'is used up at once'}${heal ? ` and ${heal} health back` : ''}.`,
+    takesOver: 'picking_up',
+    vars: [{ name: 'heal', value: heal }],
+    handlers: [
+      {
+        when: { on: 'contact' },
+        if: 'collects(other)',
+        do: [
+          { do: 'remove', target: null },
+          ...(keep ? [{ do: 'give_item', target: 'other', item, count: '1' }] : []),
+          { do: 'if', cond: 'heal > 0', then: [{ do: 'heal', target: 'other', amount: 'heal' }], else: [] },
+          { do: 'emit', event: 'collected', subject: 'other', other: 'self' },
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
   jumping: {
     label: 'jumping',
     covers: 'the jump key, how high (jumpForce), a press just before landing or just after leaving a ledge still jumping, double jumps (DoubleJump), and the shorter hop when the key is let go early',
     component: 'CharacterController',
     script: jumpingScript,
+  },
+  picking_up: {
+    label: 'picking up',
+    covers: 'being picked up: when something with an Inventory (or a "collects" connection) touches it, it leaves the level, the collector gets the item (Collectible.itemId; none when collectionBehavior is "consume") and its heal back, and "collected" happens',
+    component: 'Collectible',
+    script: pickedUpScript,
   },
 };
 

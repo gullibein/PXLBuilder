@@ -65,7 +65,7 @@ export type Stmt =
   | { do: 'set_open'; target: string; open: string }
   | { do: 'state'; name: string }
   | { do: 'signal'; name: string }
-  | { do: 'emit'; event: string; other: string | null }
+  | { do: 'emit'; event: string; other: string | null; subject?: string | null }
   | { do: 'bounce'; speed: string; on: string | null }
   | { do: 'message'; text: string; seconds: number }
   | { do: 'alpha'; value: string; on: string | null }
@@ -253,6 +253,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
   field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
   has_component: { args: 'e, "Component"', min: 2, max: 2, doc: 'e has that component now' },
+  collects: { args: 'e', min: 1, max: 1, doc: 'e may pick this up (it has an Inventory, or a "collects" connection lets it)' },
 };
 
 export interface StatementInfo {
@@ -302,7 +303,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   emit: {
     example: '{"do":"emit","event":"stomped","other":"other"}',
-    doc: 'announce a game event with this entity as its subject (and "other" as its other party, or null): rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
+    doc: 'announce a game event with this entity as its subject (or "subject": another, e.g. "other" for "collected", whose subject is who picks it up) and "other" as its other party (or null): rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
   },
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
   message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
@@ -428,7 +429,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_open'), target: expr, open: expr }),
     z.object({ do: z.literal('state'), name: z.string().min(1) }),
     z.object({ do: z.literal('signal'), name: z.string().min(1) }),
-    z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr }),
+    z.object({ do: z.literal('emit'), event: z.string().min(1), other: nexpr, subject: nexpr.optional() }),
     z.object({ do: z.literal('bounce'), speed: expr.default('320'), on: nexpr }),
     z.object({ do: z.literal('message'), text: z.string().min(1).max(200), seconds: z.number().positive().max(60).default(2) }),
     z.object({ do: z.literal('alpha'), value: expr, on: nexpr }),
@@ -500,7 +501,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['jumping'] as const;
+export const ENGINE_PARTS = ['jumping', 'picking_up'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -593,7 +594,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'heal':
       return [s.target, s.amount];
     case 'emit':
-      return s.other ? [s.other] : [];
+      return [...(s.other ? [s.other] : []), ...(s.subject ? [s.subject] : [])];
     case 'bounce':
       return [s.speed, ...(s.on ? [s.on] : [])];
     case 'kill':

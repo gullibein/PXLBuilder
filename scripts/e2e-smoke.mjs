@@ -374,6 +374,11 @@ function stubModel(body) {
   if (req.includes('take your time') && req.includes('propose')) {
     return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
   }
+  if (req.includes('only by pressing e')) {
+    // This time the AI asks itself (kind "confirm"): the card shows its question, once.
+    const key = body.context.library.find((d) => d.name === 'Key').id;
+    return { kind: 'confirm', message: "Being picked up is built into the engine. To make keys need E, I'd turn the Key's picking up into a script. Do it?", changes: ['Key: picking up is a script (the Picked up script)'], operations: [{ op: 'use_script_for', target: 'definition', id: key, part: 'picking_up', scriptJson: null }] };
+  }
   if (req.includes('jump float')) {
     // The AI forgets to ask: the app asks anyway (turning engine code into a script needs a yes).
     const player = body.context.library.find((d) => d.name === 'Player').id;
@@ -1900,6 +1905,13 @@ try {
     await check(top < y0 - 30, 'in play, the player jumps with its Jumping script (the engine left jumping to it)');
   }
   await page.keyboard.press('Control+Enter');
+  await page.getByTestId('undo').click();
+  await clickWorld(-256, 0);
+  await ask('Keys are picked up only by pressing E.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm' && ((await result.getByTestId('result-message').innerText()).match(/Do it\?/g) ?? []).length === 1, "when the AI asks itself, the card shows its question once (the app doesn't add its own)");
+  await result.getByTestId('result-confirm-yes').click();
+  await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: applied)');
+  await prompts.getByTestId('prompt-close').click();
   await page.getByTestId('undo').click();
   await clickWorld(-256, 0);
   await ask('Add a wall jump.');

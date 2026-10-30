@@ -17,7 +17,7 @@ import type { Camera, RenderEntity } from '../render/renderer';
 import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
-import { DEFEATED_LOOK, Gameplay, type LoggedEvent } from './gameplay';
+import { DEFEATED_LOOK, Gameplay, ownPart, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import { ALL_ACTIONS, type Action, type InputState, type InputView } from './input';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
@@ -834,7 +834,7 @@ export class Runtime {
 
     if (dir !== 0) e.facing = dir as 1 | -1;
     // Jumping done by a script of its own instead (its "Jumping" script, which took it over): the engine leaves it.
-    const ownJump = e.scripts.some((i) => i.script.enabled && i.script.takesOver === 'jumping');
+    const ownJump = ownPart(e, 'jumping');
     if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
     if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
     if (e.hanging && this.hang(e, input, dir)) return;
