@@ -374,6 +374,10 @@ function stubModel(body) {
   if (req.includes('take your time') && req.includes('propose')) {
     return { kind: 'preview', message: 'Here is an idea: make it green.', changes: [`${t[0].name}: green`], operations: [{ op: 'set_component_field', ...own(t[0]), component: 'Sprite', field: 'color', valueJson: '"#00aa00"' }] };
   }
+  if (req.includes('own floor')) {
+    const enemy = body.context.library.find((d) => d.name === 'Enemy').id;
+    return { kind: 'confirm', message: "Patrolling and chasing are built into the engine. To make enemies chase only on their own floor I'd turn the Enemy's patrolling into a script. Do it?", changes: ['Enemy: patrolling is a script (the Patrol script)'], operations: [{ op: 'use_script_for', target: 'definition', id: enemy, part: 'patrolling', scriptJson: null }] };
+  }
   if (req.includes('only by pressing e')) {
     // This time the AI asks itself (kind "confirm"): the card shows its question, once.
     const key = body.context.library.find((d) => d.name === 'Key').id;
@@ -1912,6 +1916,20 @@ try {
   await result.getByTestId('result-confirm-yes').click();
   await check(async () => (await result.getAttribute('data-status')) === 'applied', '(yes: applied)');
   await prompts.getByTestId('prompt-close').click();
+  await page.getByTestId('undo').click();
+  await clickWorld(96, 0);
+  await ask('Enemies only chase the player on their own floor.');
+  await check(async () => (await result.getAttribute('data-status')) === 'confirm', "changing how enemies chase asks first (patrolling is the engine's)");
+  await result.getByTestId('result-confirm-yes').click();
+  await prompts.getByTestId('prompt-close').click();
+  {
+    await page.getByTestId('dock-library').click();
+    await page.getByTestId('definition-Enemy').click({ button: 'right' });
+    await page.getByTestId('menu-code').click();
+    await check(async () => (await page.getByTestId('code-file-Patrol').count()) === 1, "yes: the Enemy's patrolling is its Patrol script, in the Code editor");
+    await page.getByTestId('code-close').click();
+    await page.getByTestId('dock-library').click();
+  }
   await page.getByTestId('undo').click();
   await clickWorld(-256, 0);
   await ask('Add a wall jump.');

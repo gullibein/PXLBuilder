@@ -45,6 +45,8 @@ export type Stmt =
   | { do: 'velocity'; x: string | null; y: string | null; on: string | null }
   | { do: 'push'; x: string; y: string; on: string | null }
   | { do: 'move_toward'; target: string; speed: string }
+  | { do: 'chase'; target: string; speed: string }
+  | { do: 'heading'; x: string; y: string }
   | { do: 'glide_to'; x: string; y: string; speed: string; on: string | null }
   | { do: 'position'; x: string; y: string; on: string | null }
   | { do: 'jump'; force: string; on: string | null }
@@ -175,6 +177,11 @@ export const MEMBERS: Record<string, string> = {
   grounded: 'standing on something',
   climbing: 'on a ladder, climbing or holding on',
   hanging: 'hanging from a ledge (LedgeGrab)',
+  bumped: 'the side it bumped into a wall on in the last step (-1 left, 1 right, 0 none)',
+  following: 'being steered by a "follows" connection right now',
+  blinking: 'blinking after a hit (it can\'t be hurt meanwhile)',
+  floats: 'not pulled down: no gravity, or it isn\'t a falling body (fliers, things seen from above)',
+  climb_dir: 'which way it is climbing a ladder (-1 up, 1 down, 0 not)',
   facing: '1 facing right, -1 facing left',
   angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
@@ -253,6 +260,15 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   get: { args: 'e, "var"', min: 2, max: 2, doc: "another entity's script variable (0 if it has none)" },
   field: { args: 'e, "Component.field"', min: 2, max: 2, doc: 'any component field of e as it is now: field(self, "Sprite.width"), field(player, "Health.maxHealth"), field(self, "Collider.size.x"), field(self, "Transform.rotation"); null if e lacks the component' },
   has_component: { args: 'e, "Component"', min: 2, max: 2, doc: 'e has that component now' },
+  wall_ahead: { args: 'dx, dy', min: 2, max: 2, doc: 'a wall right in front of it that way (dx -1/1 sideways, or dy -1/1 up/down): what makes a patroller turn' },
+  ledge_ahead: { args: 'dir', min: 1, max: 1, doc: 'no floor just ahead of its feet that way (-1 left, 1 right; a ladder top counts as floor): a ledge to turn at' },
+  ladder_choice: {
+    args: 'dir, reach',
+    min: 2,
+    max: 2,
+    doc: 'walking dir and reaching a ladder\'s middle within reach px: which ways it could climb it (1 up, 2 down, 3 both, 0 none); asked again at the same ladder it says 0 (it decides once per ladder it passes)',
+  },
+  nearest_player: { args: '', min: 0, max: 0, doc: 'the nearest player-controlled character (null when there is none)' },
   collects: { args: 'e', min: 1, max: 1, doc: 'e may pick this up (it has an Inventory, or a "collects" connection lets it)' },
 };
 
@@ -268,6 +284,11 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   each: { example: '{"do":"each","tag":"enemy","then":[{"do":"damage","target":"it","amount":"1"}]}', doc: 'run "then" for every living entity with the tag, as "it" (at most 2000)' },
   velocity: { example: '{"do":"velocity","x":"-80","y":null}', doc: 'set speed in px/s; null keeps that axis. Things with gravity keep falling; set y only to fly or launch' },
   push: { example: '{"do":"push","x":"0","y":"-200","on":"other"}', doc: 'add to speed, divided by its PhysicsBody mass (here: bounce whoever touched it upward; mass 2 goes half as fast)' },
+  chase: {
+    example: '{"do":"chase","target":"nearest_player()","speed":"100"}',
+    doc: 'one step of chasing it as enemies do: flyers (no gravity) straight at it; walkers sideways, and up or down by ladder when it is higher or lower (walking to a ladder that goes that way, lining up, climbing, stepping off level with it); sets facing',
+  },
+  heading: { example: '{"do":"heading","x":"1","y":"0"}', doc: 'which way it looks (x, y each -1, 0 or 1): what top-down looks and shots aimed "facing" go by' },
   move_toward: { example: '{"do":"move_toward","target":"player","speed":"90"}', doc: 'head for an entity: walkers (with gravity) only sideways, flyers (gravity 0) straight at it; sets facing' },
   glide_to: { example: '{"do":"glide_to","x":"self.spawn_x","y":"self.spawn_y - 64","speed":"60"}', doc: 'move smoothly to a point (no gravity while gliding; speed 0 = at once)' },
   position: { example: '{"do":"position","x":"self.x","y":"self.y - 32"}', doc: 'jump to a point instantly' },
@@ -401,6 +422,8 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('velocity'), x: nexpr, y: nexpr, on: nexpr }),
     z.object({ do: z.literal('push'), x: expr.default('0'), y: expr.default('0'), on: nexpr }),
     z.object({ do: z.literal('move_toward'), target: expr, speed: expr }),
+    z.object({ do: z.literal('chase'), target: expr, speed: expr }),
+    z.object({ do: z.literal('heading'), x: expr, y: expr }),
     z.object({ do: z.literal('glide_to'), x: expr, y: expr, speed: expr.default('60'), on: nexpr }),
     z.object({ do: z.literal('position'), x: expr, y: expr, on: nexpr }),
     z.object({ do: z.literal('jump'), force: expr, on: nexpr }),
@@ -501,7 +524,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['jumping', 'picking_up'] as const;
+export const ENGINE_PARTS = ['jumping', 'picking_up', 'patrolling', 'wandering'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -566,7 +589,10 @@ export function exprSlots(s: Stmt): string[] {
     case 'position':
       return [s.x, s.y, ...(s.on ? [s.on] : [])];
     case 'move_toward':
+    case 'chase':
       return [s.target, s.speed];
+    case 'heading':
+      return [s.x, s.y];
     case 'glide_to':
       return [s.x, s.y, s.speed, ...(s.on ? [s.on] : [])];
     case 'jump':

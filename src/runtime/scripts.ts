@@ -381,6 +381,17 @@ export class ScriptSystem {
         if (t.vy < 0) t.grounded = false;
         break;
       }
+      case 'chase': {
+        const t = ent(s.target);
+        if (t && t !== e) this.rt.chase(e, t, n(s.speed));
+        break;
+      }
+      case 'heading': {
+        const x = Math.sign(n(s.x));
+        const y = Math.sign(n(s.y));
+        e.heading = { x, y };
+        break;
+      }
       case 'move_toward': {
         const t = ent(s.target);
         const speed = n(s.speed);
@@ -731,7 +742,12 @@ export class ScriptSystem {
       case 'id':
         return this.name(e.name, ctx);
       case 'mem':
-        return member(asEntity(this.value(e.obj, ctx)), e.name);
+        {
+          const who = asEntity(this.value(e.obj, ctx));
+          // (Whether it floats needs the level's gravity.)
+          if (e.name === 'floats') return !!who && (this.rt.floats(who) || who.body !== 'dynamic');
+          return member(who, e.name);
+        }
       case 'un': {
         const a = this.value(e.a, ctx);
         return e.op === '-' ? -num(a) : !truthy(a);
@@ -892,12 +908,13 @@ export class ScriptSystem {
         return Math.atan2(n(0), n(1));
       case 'lerp':
         return n(0) + (n(1) - n(0)) * n(2);
+      // (The game's own random numbers, as the engine draws them.)
       case 'rand':
-        return n(0) + Math.random() * (n(1) - n(0));
+        return n(0) + this.rt.random() * (n(1) - n(0));
       case 'randint':
-        return Math.floor(n(0) + Math.random() * (Math.floor(n(1)) - Math.floor(n(0)) + 1));
+        return Math.floor(n(0) + this.rt.random() * (Math.floor(n(1)) - Math.floor(n(0)) + 1));
       case 'chance':
-        return Math.random() < n(0);
+        return this.rt.random() < n(0);
       case 'dist': {
         const a = asEntity(v[0]);
         const b = v.length > 1 ? asEntity(v[1]) : self;
@@ -1011,6 +1028,14 @@ export class ScriptSystem {
         }
         return r as Value;
       }
+      case 'wall_ahead':
+        return this.rt.wallAhead(self, Math.sign(n(0)), Math.sign(n(1)));
+      case 'ledge_ahead':
+        return this.rt.ledgeAhead(self, Math.sign(n(0)));
+      case 'ladder_choice':
+        return this.rt.ladderChoice(self, Math.sign(n(0)), n(1));
+      case 'nearest_player':
+        return this.rt.nearestPlayer(self);
       case 'collects': {
         const a = asEntity(v[0]);
         return !!a && this.rt.gameplay.canCollect(a, ctx.self);
@@ -1110,6 +1135,14 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.switch?.on ?? false;
     case 'spawn_x':
       return e.spawn.x;
+    case 'bumped':
+      return e.bumped;
+    case 'following':
+      return e.chasing;
+    case 'blinking':
+      return e.invincible > 0;
+    case 'climb_dir':
+      return e.climbDir;
     case 'spawn_y':
       return e.spawn.y;
     case 'gravity':

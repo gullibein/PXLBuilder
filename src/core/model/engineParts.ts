@@ -116,6 +116,207 @@ function pickedUpScript(owner?: PartOwner): BehaviorScript {
   }) as BehaviorScript;
 }
 
+
+type Step = Record<string, unknown>;
+const set = (v: string, value: string): Step => ({ do: 'set', var: v, value });
+const when = (cond: string, then: Step[], otherwise: Step[] = []): Step => ({ do: 'if', cond, then, else: otherwise });
+const vel = (x: string | null, y: string | null): Step => ({ do: 'velocity', x, y });
+
+/**
+ * Patrolling as the engine does it (Patrol's settings, read when play starts): walking back and forth, turning at
+ * walls, at ledges and after "distance" from its start; with "ladders", deciding once at each ladder it passes
+ * whether to climb it (half the time) and which way; with "range", chasing the nearest player it sees within range
+ * (by ladder too), giving up 3 s after losing sight of it (or when it is twice the range away), slowing down for
+ * "reaction" seconds before it turns while chasing, and stopping at walls and ledges instead of running off; things
+ * with no gravity set to go up/down patrol up and down.
+ */
+function patrolScript(): BehaviorScript {
+  const f = (name: string) => `field(self, 'Patrol.${name}')`;
+  const player = 'nearest_player()';
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Patrol',
+    description: 'Walks back and forth, turning at walls and ledges; climbs ladders it passes now and then; chases the player it sees, as the engine does it (the Patrol settings).',
+    takesOver: 'patrolling',
+    vars: [
+      { name: 'speed', value: 60 },
+      { name: 'distance', value: 0 },
+      { name: 'ledges', value: true },
+      { name: 'ladders', value: false },
+      { name: 'range', value: 0 },
+      { name: 'chase_speed', value: 0 },
+      { name: 'reaction', value: 0 },
+      { name: 'vertical', value: false },
+      { name: 'lose_sight', value: 3 },
+      { name: 'dir', value: 1 },
+      { name: 'hunting', value: false },
+      { name: 'lost', value: 0 },
+      { name: 'turn_t', value: 0 },
+      { name: 'cs', value: 0 },
+      { name: 'want', value: 0 },
+      { name: 'side', value: 0 },
+      { name: 'ways', value: 0 },
+      { name: 'k', value: 0 },
+    ],
+    handlers: [
+      {
+        when: { on: 'start' },
+        do: [
+          set('speed', f('speed')),
+          set('distance', f('distance')),
+          set('ledges', f('turnAtLedges')),
+          set('ladders', f('climbLadders')),
+          set('range', f('chaseRange')),
+          set('chase_speed', f('chaseSpeed')),
+          set('reaction', f('reaction')),
+          set('dir', `${f('startDirection')} == 'left' or ${f('startDirection')} == 'up' ? -1 : 1`),
+          set('vertical', `${f('startDirection')} == 'up' or ${f('startDirection')} == 'down'`),
+        ],
+      },
+      {
+        when: { on: 'tick' },
+        // (Not while a "follows" connection steers it, nor while it blinks after a hit.)
+        if: 'not self.following and not self.blinking',
+        do: [
+          // Sees the player (within range, no wall between): hunts it; out of sight: gives up after a while.
+          when('range > 0', [
+            when(
+              `${player} and dist(${player}) <= range and can_see(${player})`,
+              [set('hunting', 'true'), set('lost', '0')],
+              [when('hunting', [set('lost', 'lost + dt'), when(`not ${player} or lost > lose_sight or dist(${player}) > range * 2`, [set('hunting', 'false')])])],
+            ),
+          ]),
+          when(
+            `range > 0 and hunting and ${player}`,
+            [
+              set('cs', '(chase_speed > 0 ? chase_speed : speed) * self.speed_factor'),
+              { do: 'chase', target: player, speed: 'cs' },
+              // On foot: slows down for "reaction" before turning; stops at walls and ledges.
+              when('not self.floats and not self.climbing and self.climb_dir == 0', [
+                set('want', 'sign(self.vx)'),
+                when(
+                  'want != 0 and want != dir',
+                  [
+                    when('reaction > 0', [set('turn_t', 'turn_t + dt')]),
+                    when('reaction > 0 and turn_t < reaction', [vel('dir * cs * (1 - turn_t / reaction)', null), { do: 'face', dir: 'dir', on: null }], [set('dir', 'want'), set('turn_t', '0')]),
+                  ],
+                  [set('turn_t', '0')],
+                ),
+                set('side', 'sign(self.vx)'),
+                when('side != 0 and (wall_ahead(side, 0) or (ledges and self.grounded and ledge_ahead(side)))', [vel('0', null)]),
+              ]),
+              { do: 'heading', x: 'self.facing', y: '0' },
+            ],
+            [
+              when('range > 0', [set('turn_t', '0')]),
+              when(
+                'vertical and self.floats',
+                [
+                  // Up and down: turns at walls above and below, and after "distance".
+                  when('(distance > 0 and (self.y - self.spawn_y) * dir >= distance) or wall_ahead(0, dir)', [set('dir', '-dir')]),
+                  vel('0', 'dir * speed * self.speed_factor'),
+                  { do: 'heading', x: '0', y: 'dir' },
+                ],
+                [
+                  when(
+                    'self.climbing',
+                    // On a ladder: on to its end.
+                    [when('self.climb_dir == 0', [{ do: 'climb', dir: '-1', speed: null, on: null }])],
+                    [
+                      set('ways', '0'),
+                      when('ladders and not self.floats and self.grounded', [set('ways', 'ladder_choice(dir, speed * self.speed_factor * dt)')]),
+                      when(
+                        'ways > 0 and chance(0.5)',
+                        [
+                          set('k', 'randint(0, ways == 3 ? 1 : 0)'),
+                          { do: 'climb', dir: 'ways == 3 ? (k == 0 ? -1 : 1) : (ways == 1 ? -1 : 1)', speed: 'speed', on: null },
+                          vel('0', null),
+                        ],
+                        [
+                          when(`self.bumped == dir or (distance > 0 and (self.x - self.spawn_x) * dir >= distance) or wall_ahead(dir, 0) or (ledges and not self.floats and self.grounded and ledge_ahead(dir))`, [set('dir', '-dir')]),
+                          vel('dir * speed * self.speed_factor', null),
+                          when('self.floats', [vel(null, '0')]),
+                          { do: 'face', dir: 'dir', on: null },
+                          { do: 'heading', x: 'dir', y: '0' },
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/**
+ * Wandering as the engine does it (Wander's settings): keeps going one way; when its time is up, or a wall is in
+ * the way, it picks another way at random (not the same, not into a wall: four ways without gravity, left and right
+ * with it), and with "pauses" now and then stands still for a moment. Things that also patrol don't wander.
+ */
+function wanderScript(): BehaviorScript {
+  const ok = (wx: number, wy: number, floatsOnly: boolean) =>
+    `${floatsOnly ? 'self.floats and ' : ''}not (wx == ${wx} and wy == ${wy}) and not wall_ahead(${wx}, ${wy})`;
+  const take = (n: number, wx: number, wy: number): Step => when(`ok${n}`, [when('seen == k', [set('wx', String(wx)), set('wy', String(wy))]), set('seen', 'seen + 1')]);
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Wander',
+    description: 'Walks around at random, turning at walls and now and then standing still, as the engine does it (the Wander settings).',
+    takesOver: 'wandering',
+    vars: [
+      { name: 'speed', value: 50 },
+      { name: 'interval', value: 2 },
+      { name: 'pauses', value: true },
+      { name: 'wx', value: 0 },
+      { name: 'wy', value: 0 },
+      { name: 't', value: 0 },
+      { name: 'stop', value: false },
+      { name: 'ok1', value: false },
+      { name: 'ok2', value: false },
+      { name: 'ok3', value: false },
+      { name: 'ok4', value: false },
+      { name: 'n', value: 0 },
+      { name: 'k', value: 0 },
+      { name: 'seen', value: 0 },
+    ],
+    handlers: [
+      {
+        when: { on: 'start' },
+        do: [set('speed', "field(self, 'Wander.speed')"), set('interval', "max(0.2, field(self, 'Wander.interval'))"), set('pauses', "field(self, 'Wander.pauses')")],
+      },
+      {
+        when: { on: 'tick' },
+        if: "not self.following and not self.blinking and not has_component(self, 'Patrol')",
+        do: [
+          set('t', 't - dt'),
+          when('t <= 0 or wall_ahead(wx, wy) or (self.bumped != 0 and self.bumped == wx)', [
+            set('ok1', ok(1, 0, false)),
+            set('ok2', ok(-1, 0, false)),
+            set('ok3', ok(0, 1, true)),
+            set('ok4', ok(0, -1, true)),
+            set('n', '(ok1 ? 1 : 0) + (ok2 ? 1 : 0) + (ok3 ? 1 : 0) + (ok4 ? 1 : 0)'),
+            set('stop', 'pauses and (wx != 0 or wy != 0) and chance(0.25)'),
+            when(
+              'stop or n == 0',
+              [set('wx', '0'), set('wy', '0')],
+              [set('k', 'randint(0, n - 1)'), set('seen', '0'), take(1, 1, 0), take(2, -1, 0), take(3, 0, 1), take(4, 0, -1)],
+            ),
+            // Stops are short; walks last about the interval.
+            set('t', '(stop ? 0.4 : 0.5 + rand(0, 1)) * interval'),
+          ]),
+          vel('wx * speed * self.speed_factor', null),
+          when('self.floats', [vel(null, 'wy * speed * self.speed_factor')]),
+          when('wx != 0', [{ do: 'face', dir: 'wx', on: null }]),
+          when('wx != 0 or wy != 0', [{ do: 'heading', x: 'wx', y: 'wy' }]),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
   jumping: {
     label: 'jumping',
@@ -128,6 +329,18 @@ export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
     covers: 'being picked up: when something with an Inventory (or a "collects" connection) touches it, it leaves the level, the collector gets the item (Collectible.itemId; none when collectionBehavior is "consume") and its heal back, and "collected" happens',
     component: 'Collectible',
     script: pickedUpScript,
+  },
+  patrolling: {
+    label: 'patrolling',
+    covers: 'walking back and forth (turning at walls, ledges and after its distance), climbing ladders it passes, chasing the player it sees (by ladder too), giving up after losing sight of it, slowing down before turning while chasing',
+    component: 'Patrol',
+    script: patrolScript,
+  },
+  wandering: {
+    label: 'wandering',
+    covers: 'walking around at random: a new way now and then and at walls, sometimes standing still',
+    component: 'Wander',
+    script: wanderScript,
   },
 };
 

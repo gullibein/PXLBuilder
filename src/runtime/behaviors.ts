@@ -8,6 +8,7 @@
  */
 import type { InputState } from './input';
 import { moveAndCollide, overlaps, type Box } from './physics';
+import { ownPart } from './gameplay';
 import type { Runtime, RuntimeEntity } from './runtime';
 
 /** A chasing patroller gives up after this many seconds without seeing its target. */
@@ -26,8 +27,14 @@ export class BehaviorSystem {
       if (!e.alive) continue;
       const b = e.beh;
       if (b.mover) this.moveOnPath(e, dt);
-      if (b.patrol && !e.chasing && e.invincible <= 0) this.patrol(e, dt);
-      if (b.wander && !b.patrol && !e.chasing && e.invincible <= 0) this.wander(e, dt);
+      if ((b.patrol || b.wander) && (e.body === 'static' || e.body === 'none')) {
+        // Something that never moved on its own now does: it moves without gravity.
+        e.body = 'kinematic';
+        this.rt.markSolidsDirty();
+      }
+      // (Done by its script instead, where its "Patrol" / "Wander" script took it over.)
+      if (b.patrol && !ownPart(e, 'patrolling') && !e.chasing && e.invincible <= 0) this.patrol(e, dt);
+      if (b.wander && !b.patrol && !ownPart(e, 'wandering') && !e.chasing && e.invincible <= 0) this.wander(e, dt);
       if (b.jumper && e.body === 'dynamic' && !this.rt.floats(e)) {
         b.jumper.t += dt;
         if (e.grounded && b.jumper.t >= b.jumper.interval) {
@@ -98,13 +105,7 @@ export class BehaviorSystem {
     } else p.turnT = 0;
     const dir = Math.sign(e.vx);
     if (!box || dir === 0) return;
-    const front: Box = { x: box.x + dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 };
-    let blocked = this.rt.solids.some((s) => overlaps(front, s));
-    if (!blocked && p.turnAtLedges && e.grounded) {
-      const below: Box = { x: box.x + dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 };
-      blocked = !this.rt.floorIn(below);
-    }
-    if (blocked) e.vx = 0;
+    if (this.rt.wallAhead(e, dir, 0) || (p.turnAtLedges && e.grounded && this.rt.ledgeAhead(e, dir))) e.vx = 0;
   }
 
   /**
@@ -114,15 +115,10 @@ export class BehaviorSystem {
    */
   private patrol(e: RuntimeEntity, dt: number): void {
     const p = e.beh.patrol!;
-    if (e.body === 'static' || e.body === 'none') {
-      // Something that never moved on its own now does: it moves without gravity.
-      e.body = 'kinematic';
-      this.rt.markSolidsDirty();
-    }
     const box = this.rt.boxOf(e);
     const floats = this.rt.floats(e) || e.body !== 'dynamic';
     if (p.chaseRange > 0) {
-      const target = this.nearestPlayer(e);
+      const target = this.rt.nearestPlayer(e);
       const d = target ? Math.hypot(target.x - e.x, target.y - e.y) : Infinity;
       if (target && d <= p.chaseRange && this.rt.canSee(e, target)) {
         p.hunting = true;
@@ -140,44 +136,29 @@ export class BehaviorSystem {
       }
       p.turnT = 0;
     }
-    if (p.vertical && floats) return this.patrolUpDown(e, box);
+    if (p.vertical && floats) return this.patrolUpDown(e);
     if (e.climbing) {
       // On a ladder (it chose to climb, or stopped chasing on one): on to its end.
       if (e.climbDir === 0) e.climbDir = -1;
       return;
     }
     if (p.climbLadders && !floats && e.grounded) {
-      const l = this.rt.ladderHere(e);
-      if (!l) p.lastLadder = null;
-      else {
-        const key = `${l.x},${l.top}`;
-        const ahead = (l.x - e.x) * p.dir;
-        // Passing the ladder's middle: decide once whether to climb it (about half the time), and which way.
-        if (p.lastLadder !== key && ahead <= p.speed * e.speedFactor * dt + 1) {
-          p.lastLadder = key;
-          const ways = this.rt.ladderWays(e, l);
-          const choices = [...(ways.up ? [-1 as const] : []), ...(ways.down ? [1 as const] : [])];
-          if (choices.length && this.rt.random() < 0.5) {
-            e.climbDir = choices[Math.floor(this.rt.random() * choices.length) % choices.length];
-            e.climbSpeed = p.speed;
-            e.vx = 0;
-            return;
-          }
-        }
+      // Passing a ladder's middle: decide once whether to climb it (about half the time), and which way.
+      const ways = this.rt.ladderChoice(e, p.dir, p.speed * e.speedFactor * dt);
+      const choices = [...(ways & 1 ? [-1 as const] : []), ...(ways & 2 ? [1 as const] : [])];
+      if (choices.length && this.rt.random() < 0.5) {
+        e.climbDir = choices[Math.floor(this.rt.random() * choices.length) % choices.length];
+        e.climbSpeed = p.speed;
+        e.vx = 0;
+        return;
       }
     }
     let turn = e.bumped === p.dir;
     if (p.distance > 0 && (e.x - p.originX) * p.dir >= p.distance) turn = true;
-    if (box && !turn) {
-      // A wall right in front.
-      const front: Box = { x: box.x + p.dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 };
-      if (this.rt.solids.some((s) => overlaps(front, s))) turn = true;
-      // No floor ahead (walkers only, and only while on the ground).
-      else if (p.turnAtLedges && !floats && e.grounded) {
-        // (The top of a ladder is floor: it walks over it.)
-        const below: Box = { x: box.x + p.dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 };
-        if (!this.rt.floorIn(below)) turn = true;
-      }
+    if (!turn) {
+      // A wall right in front, or (walkers on the ground) no floor ahead; the top of a ladder is floor.
+      if (this.rt.wallAhead(e, p.dir, 0)) turn = true;
+      else if (p.turnAtLedges && !floats && e.grounded && this.rt.ledgeAhead(e, p.dir)) turn = true;
     }
     if (turn) p.dir = p.dir === 1 ? -1 : 1;
     e.vx = p.dir * p.speed * e.speedFactor;
@@ -194,17 +175,8 @@ export class BehaviorSystem {
    */
   private wander(e: RuntimeEntity, dt: number): void {
     const w = e.beh.wander!;
-    if (e.body === 'static' || e.body === 'none') {
-      e.body = 'kinematic';
-      this.rt.markSolidsDirty();
-    }
     const floats = this.rt.floats(e) || e.body !== 'dynamic';
-    const box = this.rt.boxOf(e);
-    const blocked = (dx: number, dy: number) => {
-      if (!box || (dx === 0 && dy === 0)) return false;
-      const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
-      return this.rt.solids.some((s) => overlaps(front, s));
-    };
+    const blocked = (dx: number, dy: number) => this.rt.wallAhead(e, dx, dy);
     w.t -= dt;
     if (w.t <= 0 || blocked(w.dx, w.dy) || (e.bumped !== 0 && e.bumped === w.dx)) {
       const ways = (floats ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 0], [-1, 0]]).filter(([dx, dy]) => !(dx === w.dx && dy === w.dy) && !blocked(dx, dy));
@@ -221,29 +193,11 @@ export class BehaviorSystem {
     if (w.dx !== 0 || w.dy !== 0) e.heading = { x: w.dx, y: w.dy };
   }
 
-  /** The nearest living player-controlled character (what a patroller chases). */
-  private nearestPlayer(e: RuntimeEntity): RuntimeEntity | null {
-    let best: RuntimeEntity | null = null;
-    let bestD = Infinity;
-    for (const o of this.rt.entities) {
-      if (o === e || !o.alive || !o.controller) continue;
-      const d = Math.hypot(o.x - e.x, o.y - e.y);
-      if (d < bestD) {
-        best = o;
-        bestD = d;
-      }
-    }
-    return best;
-  }
-
   /** Up and down (no gravity): turns at walls above and below and after `distance`. */
-  private patrolUpDown(e: RuntimeEntity, box: Box | null): void {
+  private patrolUpDown(e: RuntimeEntity): void {
     const p = e.beh.patrol!;
     let turn = p.distance > 0 && (e.y - p.originY) * p.dir >= p.distance;
-    if (box && !turn) {
-      const front: Box = { x: box.x, y: box.y + p.dir * (box.hh + 1), hw: box.hw - 1, hh: 1 };
-      if (this.rt.solids.some((s) => overlaps(front, s))) turn = true;
-    }
+    if (!turn && this.rt.wallAhead(e, 0, p.dir)) turn = true;
     if (turn) p.dir = p.dir === 1 ? -1 : 1;
     e.vx = 0;
     e.vy = p.dir * p.speed * e.speedFactor;

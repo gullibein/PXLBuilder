@@ -86,6 +86,10 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`${who(s.on)}speed ${[s.x !== null ? `x = ${x(s.x)}` : '', s.y !== null ? `y = ${x(s.y)}` : ''].filter(Boolean).join(', ')}`);
     case 'push':
       return one(`${who(s.on)}push by ${x(s.x)}, ${x(s.y)}`);
+    case 'chase':
+      return one(`chase ${x(s.target)} at ${x(s.speed)}`);
+    case 'heading':
+      return one(`look ${x(s.x)}, ${x(s.y)}`);
     case 'move_toward':
       return one(`move toward ${x(s.target)} at ${x(s.speed)}`);
     case 'glide_to':

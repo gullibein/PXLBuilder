@@ -110,6 +110,8 @@ export interface RuntimeEntity {
   facing: 1 | -1;
   /** The way it last moved or looked, as a direction (x, y each -1, 0 or 1; diagonals too): where a top-down character shoots. */
   heading: { x: number; y: number };
+  /** The ladder a script's patrol last decided about (ladderChoice: once per ladder it passes). */
+  ladderSeen: string | null;
   /** The side it bumped into a wall on in the last step (-1 left, 1 right, 0 none). */
   bumped: -1 | 0 | 1;
   /** Behavior scripts this entity runs (its own copy: variables, state). */
@@ -407,6 +409,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     facing: c.Patrol?.startDirection === 'left' ? -1 : 1,
     heading: c.Patrol?.startDirection === 'up' ? { x: 0, y: -1 } : c.Patrol?.startDirection === 'down' ? { x: 0, y: 1 } : { x: c.Patrol?.startDirection === 'left' ? -1 : 1, y: 0 },
     bumped: 0,
+    ladderSeen: null,
     hurtAt: -Infinity,
     shotAt: -Infinity,
     chasing: false,
@@ -1140,6 +1143,53 @@ export class Runtime {
       }
     }
     if (Math.abs(dx) > 2) f.facing = dx < 0 ? -1 : 1;
+  }
+
+  /** A wall right in front of it that way (sideways, or up/down): the box a patroller turns at. */
+  wallAhead(e: RuntimeEntity, dx: number, dy: number): boolean {
+    const box = boxOf(e);
+    if (!box || (dx === 0 && dy === 0)) return false;
+    const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
+    return this.solids.some((s) => overlaps(front, s));
+  }
+
+  /** No floor just ahead of its feet that way (a ladder's top is floor). */
+  ledgeAhead(e: RuntimeEntity, dir: number): boolean {
+    const box = boxOf(e);
+    if (!box || dir === 0) return false;
+    return !this.floorIn({ x: box.x + dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 });
+  }
+
+  /**
+   * Walking `dir` and reaching a ladder's middle within `reach`: the ways it could climb it (1 up, 2 down, 3 both,
+   * 0 none), once per ladder it passes (asked again at the same ladder: 0; off any ladder it forgets).
+   */
+  ladderChoice(e: RuntimeEntity, dir: number, reach: number): number {
+    const l = this.ladderAt(e);
+    if (!l) {
+      e.ladderSeen = null;
+      return 0;
+    }
+    const key = `${l.x},${l.top}`;
+    if (e.ladderSeen === key || (l.x - e.x) * dir > reach + 1) return 0;
+    e.ladderSeen = key;
+    const ways = this.ladderWays(e, l);
+    return (ways.up ? 1 : 0) + (ways.down ? 2 : 0);
+  }
+
+  /** The nearest living player-controlled character (what a patroller chases). */
+  nearestPlayer(e: RuntimeEntity): RuntimeEntity | null {
+    let best: RuntimeEntity | null = null;
+    let bestD = Infinity;
+    for (const o of this.entities) {
+      if (o === e || !o.alive || !o.controller) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d < bestD) {
+        best = o;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /** The ladder a character could climb where it is (public for behaviors). */

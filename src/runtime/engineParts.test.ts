@@ -9,6 +9,7 @@ import { applyOperations } from '../core/commands/operations';
 import { addRelationship } from '../core/logic/mutations';
 import { InputState, type Action } from './input';
 import { Runtime } from './runtime';
+import { checkScript } from '../core/script/language';
 
 const registry = createBuiltinRegistry();
 
@@ -190,5 +191,127 @@ describe('picking things up, done by a script instead', () => {
     const engine = walk(items(false, connection));
     expect(walk(items(true, connection))).toEqual(engine);
     expect(engine.at(-1)).toContain('left2');
+  });
+});
+
+describe('enemy movement, done by a script instead', () => {
+  /** Random numbers that are the same every run (so both games draw the same ones). */
+  const seeded = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+
+  /**
+   * A side-view level: a long floor with a wall at each end, a raised ledge on the right, ladders up to it, the
+   * player at `player`; enemies placed at `enemies`. With `scripted`, the enemies' objects have their ready-made
+   * Patrol / Wander scripts.
+   */
+  function world(scripted: boolean, opts: { player: Vec2; enemies: Vec2[]; gameType?: 'platformer' | 'topdown'; edit?: (d: Project) => void }): Runtime {
+    let project = createProject(registry, 'Test', opts.gameType ?? 'platformer');
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      const wall = opts.gameType === 'topdown' ? 'Wall' : 'Stone';
+      const floor = opts.gameType === 'topdown' ? 'Wall' : 'Platform';
+      for (let x = -480; x <= 480; x += 32) place(floor, { x, y: 48 });
+      for (let y = 16; y >= -144; y -= 32) {
+        place(wall, { x: -480, y });
+        place(wall, { x: 480, y });
+      }
+      if (opts.gameType === 'topdown') for (let x = -480; x <= 480; x += 32) place(wall, { x, y: -176 });
+      else {
+        for (let x = 224; x <= 448; x += 32) place('Platform', { x, y: -80 });
+        for (let y = 16; y >= -80; y -= 32) place('Ladder', { x: 192, y });
+        for (let y = 16; y >= -80; y -= 32) place('Ladder', { x: -160, y });
+        for (let x = -224; x <= -96; x += 32) place('Platform', { x, y: -112 });
+      }
+      place('Player', opts.player);
+      for (const at of opts.enemies) place('Enemy', at);
+      opts.edit?.(d);
+      if (scripted) {
+        for (const def of d.definitions) {
+          const parts = (['patrolling', 'wandering'] as const).filter((p) => def.components[ENGINE_PART_INFO[p].component]);
+          if (parts.length) def.scripts = [...(def.scripts ?? []), ...parts.map((p) => ENGINE_PART_INFO[p].script({ name: def.name, components: def.components }))];
+        }
+      }
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    rt.random = seeded(7);
+    return rt;
+  }
+
+  /** Plays `keys` (step -> keys held from then on); the enemies, step by step. */
+  function watch(rt: Runtime, steps: number, keys: Record<number, Action[]> = {}): string[] {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      out.push(
+        rt.entities
+          .filter((e) => e.name === 'Enemy')
+          .map((e) => `${e.x.toFixed(5)},${e.y.toFixed(5)},${e.vx.toFixed(5)},${e.vy.toFixed(5)},${e.facing},${e.climbing ? 'c' : ''}${e.climbDir},${e.heading.x}/${e.heading.y}`)
+          .join(' '),
+      );
+    }
+    return out;
+  }
+
+  function same(opts: Parameters<typeof world>[1], steps: number, keys?: Record<number, Action[]>) {
+    const engine = watch(world(false, opts), steps, keys);
+    const script = watch(world(true, opts), steps, keys);
+    const at = script.findIndex((s, i) => s !== engine[i]);
+    expect(at === -1 ? 'same' : `step ${at}: engine ${engine[at]} / script ${script[at]}`).toBe('same');
+    return engine;
+  }
+
+  it('Patrol: walks back and forth, turns at walls and ledges and after its distance, climbs ladders it passes, exactly as the engine', () => {
+    // The player far away behind a wall (never seen): only patrolling. Enemies on the floor and on the ledge.
+    const trace = same({ player: { x: -400, y: -400 }, enemies: [{ x: 0, y: 17 }, { x: 300, y: -113 }, { x: -140, y: 17 }] }, 2600);
+    // (They really moved, turned, and one climbed.)
+    expect(new Set(trace.map((t) => t.split(' ')[0].split(',')[4])).size).toBe(2);
+    expect(trace.some((t) => t.includes(',c'))).toBe(true);
+  });
+
+  it('Patrol: chases the player it sees, slowing down to turn when the player gets behind it, and follows up a ladder', () => {
+    // The player runs right past the enemy, then back, then climbs the ladder at x=192 onto the ledge.
+    same({ player: { x: -100, y: 16 }, enemies: [{ x: 60, y: 17 }] }, 2400, { 0: ['right'], 180: [], 300: ['left'], 420: ['right'], 560: ['up'], 700: ['right'], 760: [] });
+  });
+
+  it('Patrol for fliers: up and down, and chasing straight at the player', () => {
+    const flier = (d: Project) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      enemy.components.PhysicsBody = { ...enemy.components.PhysicsBody, gravityScale: 0 };
+      enemy.components.Patrol = { ...enemy.components.Patrol, startDirection: 'up', distance: 64, chaseRange: 0 };
+    };
+    same({ player: { x: -400, y: 16 }, enemies: [{ x: 0, y: -40 }], edit: flier }, 1200);
+    const chaser = (d: Project) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      enemy.components.PhysicsBody = { ...enemy.components.PhysicsBody, gravityScale: 0 };
+    };
+    same({ player: { x: -100, y: 16 }, enemies: [{ x: 100, y: -60 }], edit: chaser }, 1200, { 0: ['left'], 300: ['right'], 600: [] });
+  });
+
+  it('Wander: walks around at random, turning at walls and standing still now and then, exactly as the engine (also seen from above)', () => {
+    const wanderer = (d: Project) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      delete enemy.components.Patrol;
+      enemy.components.Wander = registry.createDefault('Wander', { speed: 60, interval: 1 });
+    };
+    const side = same({ player: { x: -400, y: -400 }, enemies: [{ x: 0, y: 17 }, { x: 200, y: 17 }], edit: wanderer }, 2400);
+    expect(new Set(side.map((t) => t.split(' ')[0].split(',')[2])).size).toBeGreaterThan(2);
+    same({ player: { x: -400, y: -100 }, enemies: [{ x: 0, y: -60 }, { x: 120, y: -20 }], gameType: 'topdown' }, 2400);
+  });
+});
+
+describe('the ready-made scripts', () => {
+  it('every one checks out (a script that does not would not run, and the engine would leave the part undone)', () => {
+    const project = createProject(registry);
+    for (const [part, info] of Object.entries(ENGINE_PART_INFO)) {
+      const def = project.definitions.find((d) => d.components[info.component]) ?? { name: 'Thing', components: { [info.component]: {} } };
+      expect([part, checkScript(info.script({ name: def.name, components: def.components }), project)]).toEqual([part, { script: expect.anything() }]);
+    }
   });
 });
