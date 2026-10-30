@@ -439,7 +439,7 @@ export class Runtime {
   /** Events, rules and gameplay systems. */
   readonly gameplay: Gameplay;
   /** What things do on their own (patrol, shoot, move…). */
-  private readonly behaviors: BehaviorSystem;
+  readonly behaviors: BehaviorSystem;
   /** Behavior scripts. */
   readonly scripts: ScriptSystem;
   time = 0;

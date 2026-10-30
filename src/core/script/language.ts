@@ -47,6 +47,7 @@ export type Stmt =
   | { do: 'move_toward'; target: string; speed: string }
   | { do: 'chase'; target: string; speed: string }
   | { do: 'heading'; x: string; y: string }
+  | { do: 'carry'; x: string; y: string }
   | { do: 'glide_to'; x: string; y: string; speed: string; on: string | null }
   | { do: 'position'; x: string; y: string; on: string | null }
   | { do: 'jump'; force: string; on: string | null }
@@ -182,6 +183,8 @@ export const MEMBERS: Record<string, string> = {
   blinking: 'blinking after a hit (it can\'t be hurt meanwhile)',
   floats: 'not pulled down: no gravity, or it isn\'t a falling body (fliers, things seen from above)',
   climb_dir: 'which way it is climbing a ladder (-1 up, 1 down, 0 not)',
+  heading_x: 'which way it looks, sideways (-1, 0, 1; see "heading")',
+  heading_y: 'which way it looks, up or down (-1, 0, 1)',
   facing: '1 facing right, -1 facing left',
   angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
@@ -268,6 +271,7 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
     max: 2,
     doc: 'walking dir and reaching a ladder\'s middle within reach px: which ways it could climb it (1 up, 2 down, 3 both, 0 none); asked again at the same ladder it says 0 (it decides once per ladder it passes)',
   },
+  shots_in_air: { args: '', min: 0, max: 0, doc: 'how many shots are flying (at most 100 at once: no more are fired meanwhile)' },
   nearest_player: { args: '', min: 0, max: 0, doc: 'the nearest player-controlled character (null when there is none)' },
   collects: { args: 'e', min: 1, max: 1, doc: 'e may pick this up (it has an Inventory, or a "collects" connection lets it)' },
 };
@@ -287,6 +291,10 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   chase: {
     example: '{"do":"chase","target":"nearest_player()","speed":"100"}',
     doc: 'one step of chasing it as enemies do: flyers (no gravity) straight at it; walkers sideways, and up or down by ladder when it is higher or lower (walking to a ladder that goes that way, lining up, climbing, stepping off level with it); sets facing',
+  },
+  carry: {
+    example: '{"do":"carry","x":"2","y":"0"}',
+    doc: 'what stands on top of it moves along by x, y px (sideways only as far as walls let it): for a platform that moves itself, by how far it moves this step',
   },
   heading: { example: '{"do":"heading","x":"1","y":"0"}', doc: 'which way it looks (x, y each -1, 0 or 1): what top-down looks and shots aimed "facing" go by' },
   move_toward: { example: '{"do":"move_toward","target":"player","speed":"90"}', doc: 'head for an entity: walkers (with gravity) only sideways, flyers (gravity 0) straight at it; sets facing' },
@@ -424,6 +432,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('move_toward'), target: expr, speed: expr }),
     z.object({ do: z.literal('chase'), target: expr, speed: expr }),
     z.object({ do: z.literal('heading'), x: expr, y: expr }),
+    z.object({ do: z.literal('carry'), x: expr, y: expr }),
     z.object({ do: z.literal('glide_to'), x: expr, y: expr, speed: expr.default('60'), on: nexpr }),
     z.object({ do: z.literal('position'), x: expr, y: expr, on: nexpr }),
     z.object({ do: z.literal('jump'), force: expr, on: nexpr }),
@@ -524,7 +533,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['jumping', 'picking_up', 'patrolling', 'wandering'] as const;
+export const ENGINE_PARTS = ['jumping', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -592,6 +601,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'chase':
       return [s.target, s.speed];
     case 'heading':
+    case 'carry':
       return [s.x, s.y];
     case 'glide_to':
       return [s.x, s.y, s.speed, ...(s.on ? [s.on] : [])];

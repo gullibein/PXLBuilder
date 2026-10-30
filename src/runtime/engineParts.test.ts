@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
 import { ENGINE_PART_INFO, scriptedPart } from '../core/model/engineParts';
-import { createProject, instantiateDefinition } from '../core/model/factory';
+import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Project, Vec2 } from '../core/types';
 import { applyOperations } from '../core/commands/operations';
@@ -313,5 +313,113 @@ describe('the ready-made scripts', () => {
       const def = project.definitions.find((d) => d.components[info.component]) ?? { name: 'Thing', components: { [info.component]: {} } };
       expect([part, checkScript(info.script({ name: def.name, components: def.components }), project)]).toEqual([part, { script: expect.anything() }]);
     }
+  });
+});
+
+describe('shooting, moving platforms, hopping and timers, done by a script instead', () => {
+  type Part = 'shooting' | 'moving' | 'hopping' | 'timer';
+  /** Floor y=48 from -480 to 480 with walls at the ends; the player at `player`; `edit` adds things. With `scripted`, the parts' ready-made scripts. */
+  function game(scripted: boolean, opts: { player: Vec2; gameType?: 'platformer' | 'topdown'; edit: (d: Project, place: (name: string, at: Vec2) => string) => void }): Runtime {
+    let project = createProject(registry, 'Test', opts.gameType ?? 'platformer');
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const place = (name: string, at: Vec2) => {
+        const e = instantiateDefinition(d.definitions.find((x) => x.name === name)!, at);
+        m.addEntity(d, sceneId, e);
+        return e.id;
+      };
+      const solid = opts.gameType === 'topdown' ? 'Wall' : 'Platform';
+      for (let x = -480; x <= 480; x += 32) place(solid, { x, y: 48 });
+      for (let y = 16; y >= -144; y -= 32) {
+        place(solid, { x: -480, y });
+        place(solid, { x: 480, y });
+      }
+      place('Player', opts.player);
+      opts.edit(d, place);
+      if (scripted) {
+        for (const def of d.definitions) {
+          const parts = (['shooting', 'moving', 'hopping', 'timer'] as Part[]).filter((p) => def.components[ENGINE_PART_INFO[p].component]);
+          if (parts.length) def.scripts = [...(def.scripts ?? []), ...parts.map((p) => ENGINE_PART_INFO[p].script({ name: def.name, components: def.components }))];
+        }
+      }
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    rt.random = (() => 0.5) as () => number;
+    return rt;
+  }
+  /** Everything that moves, the shots, and what happened, step by step. */
+  function film(rt: Runtime, steps: number, keys: Record<number, Action[]> = {}): string[] {
+    const input = new InputState();
+    let held: Action[] = [];
+    const out: string[] = [];
+    for (let i = 0; i < steps; i++) {
+      if (keys[i]) {
+        for (const k of held) if (!keys[i].includes(k)) input.release(k);
+        for (const k of keys[i]) if (!held.includes(k)) input.press(k);
+        held = keys[i];
+      }
+      rt.update(1 / 120, input);
+      const things = rt.entities.filter((e) => e.alive && (e.body !== 'static' || e.projectile)).map((e) => `${e.name}${e.projectile ? `(${e.projectile.left.toFixed(1)})` : ''}@${e.x.toFixed(4)},${e.y.toFixed(4)},${e.facing},${e.heading.x}/${e.heading.y}${e.health ? ` hp${e.health.current}` : ''}`);
+      const events = rt.eventLog.filter((e) => ['shot', 'damaged', 'timer', 'died'].includes(e.type)).map((e) => `${e.type}:${e.subject}>${e.other}`);
+      out.push(`${things.join(' ')} | ${events.length} ${events.slice(-1)}`);
+    }
+    return out;
+  }
+  function same(opts: Parameters<typeof game>[1], steps: number, keys?: Record<number, Action[]>) {
+    const engine = film(game(false, opts), steps, keys);
+    const script = film(game(true, opts), steps, keys);
+    const at = script.findIndex((s, i) => s !== engine[i]);
+    expect(at === -1 ? 'same' : `step ${at}:\nengine ${engine[at]}\nscript ${script[at]}`).toBe('same');
+    return engine;
+  }
+  const shooter = (props: Record<string, unknown>) => (d: Project, place: (n: string, at: Vec2) => string) => {
+    const turret = createDefinition('Turret', { Sprite: registry.createDefault('Sprite', { width: 24, height: 24 }), Collider: registry.createDefault('Collider', { size: { x: 24, y: 24 } }), Shooter: registry.createDefault('Shooter', props) }, ['enemy']);
+    m.addDefinition(d, turret, registry);
+    place('Turret', { x: 200, y: 20 });
+  };
+
+  it('Shooting: an auto turret fires at the player in range (facing it, or straight at it), hurting it, exactly as the engine', () => {
+    const facing = same({ player: { x: 0, y: 16 }, edit: shooter({ interval: 0.5, range: 400 }) }, 900, { 200: ['right'], 260: [], 400: ['left'], 520: [] });
+    expect(facing.at(-1)).toMatch(/shot:Turret>Shot/);
+    expect(facing.some((t) => t.includes('damaged'))).toBe(true);
+    same({ player: { x: 0, y: -60 }, edit: shooter({ interval: 0.4, direction: 'atTarget', range: 500 }) }, 600);
+    // Out of range: nothing.
+    expect(same({ player: { x: -400, y: 16 }, edit: shooter({ interval: 0.3, range: 100 }) }, 300).at(-1)).toMatch(/\| 0 $/);
+  });
+
+  it('Shooting: the player fires with X (left, right as it faces), and seen from above the way it last walked', () => {
+    const gun = (d: Project) => {
+      const p = d.definitions.find((x) => x.name === 'Player')!;
+      p.components.Shooter = registry.createDefault('Shooter', { trigger: 'key', interval: 0.3, speed: 300 });
+    };
+    same({ player: { x: 0, y: 16 }, edit: gun }, 500, { 10: ['fire'], 12: [], 60: ['left'], 80: ['left', 'fire'], 82: ['left'], 150: [], 200: ['fire'], 202: [] });
+    same({ player: { x: 0, y: -60 }, gameType: 'topdown', edit: gun }, 500, { 10: ['up'], 40: ['up', 'fire'], 42: [], 100: ['down', 'right'], 140: ['fire'], 142: [] });
+  });
+
+  it('Moving: a moving platform glides to its offset and back, waiting at each end, carrying the player standing on it', () => {
+    const lift = (d: Project, place: (n: string, at: Vec2) => string) => {
+      const platform = createDefinition('Lift', {
+        Sprite: registry.createDefault('Sprite', { width: 64, height: 16 }),
+        Collider: registry.createDefault('Collider', { size: { x: 64, y: 16 } }),
+        PhysicsBody: registry.createDefault('PhysicsBody', { bodyType: 'kinematic' }),
+        MovingPlatform: registry.createDefault('MovingPlatform', { offset: { x: 128, y: -64 }, speed: 60, pause: 0.4 }),
+      });
+      m.addDefinition(d, platform, registry);
+      place('Lift', { x: 0, y: 24 });
+    };
+    const ride = same({ player: { x: 0, y: -8 }, edit: lift }, 1600, { 900: ['right'], 960: [] });
+    // (The player rode it: carried right and up with it.)
+    expect(ride.some((t) => /^Player@(1[0-9]{2})\./.test(t))).toBe(true);
+  });
+
+  it('Hopping and Timer, exactly as the engine', () => {
+    const hop = (d: Project) => {
+      const p = d.definitions.find((x) => x.name === 'Enemy')!;
+      delete p.components.Patrol;
+      p.components.Jumper = registry.createDefault('Jumper', { interval: 0.7, jumpForce: 280 });
+      p.components.Timer = registry.createDefault('Timer', { interval: 0.45, repeat: true });
+    };
+    const trace = same({ player: { x: -400, y: 16 }, edit: (d, place) => (hop(d), place('Enemy', { x: 100, y: 17 })) }, 900);
+    expect(trace.at(-1)).toMatch(/timer:Enemy/);
   });
 });

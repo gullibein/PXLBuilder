@@ -90,6 +90,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`chase ${x(s.target)} at ${x(s.speed)}`);
     case 'heading':
       return one(`look ${x(s.x)}, ${x(s.y)}`);
+    case 'carry':
+      return one(`carry what stands on it by ${x(s.x)}, ${x(s.y)}`);
     case 'move_toward':
       return one(`move toward ${x(s.target)} at ${x(s.speed)}`);
     case 'glide_to':

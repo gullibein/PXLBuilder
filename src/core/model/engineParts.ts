@@ -317,6 +317,180 @@ function wanderScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+
+/**
+ * Shooting as the engine does it (Shooter's settings, kept in the script): "auto" fires every interval while
+ * something tagged target_tag is within range (none needed without a tag), "key" when the player presses X, at most
+ * once per interval; aimed left/right/up/down, at the target ("atTarget"), or the way it faces (a thing that stands
+ * still turns to face its target; without gravity, the way it last went). At most 100 shots fly at once.
+ */
+function shootingScript(owner?: PartOwner): BehaviorScript {
+  const c = owner?.components.Shooter ?? {};
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const tag = typeof c.targetTag === 'string' ? c.targetTag : 'player';
+  const target = `nearest(target_tag)`;
+  const found = `trigger == 'auto' and target_tag != '' and ${target}`;
+  const shot = (x: string, y: string): Step => ({ do: 'shoot', dx: x, dy: y, speed: 'speed', damage: 'damage', range: 'range', object: typeof c.projectile === 'string' && c.projectile ? c.projectile : null });
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Shooting',
+    description: 'Fires shots as the engine does it; its settings are this script\'s variables (trigger "auto" or "key", interval, direction, target_tag, speed, damage, range).',
+    takesOver: 'shooting',
+    vars: [
+      { name: 'trigger', value: c.trigger === 'key' ? 'key' : 'auto' },
+      { name: 'interval', value: num(c.interval, 2) },
+      { name: 'direction', value: typeof c.direction === 'string' ? c.direction : 'facing' },
+      { name: 'target_tag', value: tag },
+      { name: 'speed', value: num(c.speed, 240) },
+      { name: 'damage', value: num(c.damage, 1) },
+      { name: 'range', value: num(c.range, 480) },
+      // Fired by a key: ready at once; automatic: the first shot after one interval.
+      { name: 'wait', value: c.trigger === 'key' ? num(c.interval, 2) : 0 },
+      { name: 'aim', value: false },
+    ],
+    handlers: [
+      {
+        when: { on: 'tick' },
+        do: [
+          set('wait', 'wait + dt'),
+          when(`(trigger == 'key' ? pressed('fire') : true) and wait >= interval and shots_in_air() < 100`, [
+            // An "auto" shooter with a target tag fires only when one is within range.
+            set('aim', `${found} and (range <= 0 or dist(${target}) <= range)`),
+            when(`trigger != 'auto' or target_tag == '' or aim`, [
+              when("direction == 'left'", [shot('-1', '0')]),
+              when("direction == 'right'", [shot('1', '0')]),
+              when("direction == 'up'", [shot('0', '-1')]),
+              when("direction == 'down'", [shot('0', '1')]),
+              when("direction == 'atTarget'", [
+                // (shoot makes the direction one long, exactly as the engine does: not twice.)
+                when('aim', [shot(`dx(${target})`, `dy(${target})`)], [shot('self.facing', '0')]),
+              ]),
+              when("direction != 'left' and direction != 'right' and direction != 'up' and direction != 'down' and direction != 'atTarget'", [
+                // Facing: something standing still turns to its target first.
+                when(`aim and not has_component(self, 'Patrol') and not has_component(self, 'CharacterController')`, [
+                  { do: 'face', dir: `dx(${target}) < 0 ? -1 : 1`, on: null },
+                  when(`abs(dy(${target})) > abs(dx(${target}))`, [{ do: 'heading', x: '0', y: `dy(${target})` }], [{ do: 'heading', x: 'self.facing', y: '0' }]),
+                ]),
+                when(
+                  'self.floats',
+                  [
+                    when('self.heading_x != 0 or self.heading_y != 0', [shot('self.heading_x', 'self.heading_y')], [shot('self.facing', '0')]),
+                  ],
+                  [shot('self.facing', '0')],
+                ),
+              ]),
+              set('wait', '0'),
+            ]),
+          ]),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/**
+ * A moving platform as the engine does it (MovingPlatform's settings, kept in the script): glides to its start +
+ * offset and back at speed, waiting "pause" seconds at each end, carrying what stands on it.
+ */
+function movingScript(owner?: PartOwner): BehaviorScript {
+  const c = owner?.components.MovingPlatform ?? {};
+  const off = (c.offset as { x?: number; y?: number } | undefined) ?? { x: 96, y: 0 };
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Moving',
+    description: 'Glides to its start + offset and back, waiting at each end, carrying what stands on it; its settings are this script\'s variables.',
+    takesOver: 'moving',
+    vars: [
+      { name: 'offset_x', value: num(off.x, 96) },
+      { name: 'offset_y', value: num(off.y, 0) },
+      { name: 'speed', value: num(c.speed, 64) },
+      { name: 'pause', value: num(c.pause, 0.5) },
+      { name: 'to_end', value: true },
+      { name: 'wait', value: 0 },
+      { name: 'gx', value: 0 },
+      { name: 'gy', value: 0 },
+      { name: 'gd', value: 0 },
+      { name: 'mx', value: 0 },
+      { name: 'my', value: 0 },
+    ],
+    handlers: [
+      {
+        when: { on: 'tick' },
+        do: [
+          vel('0', '0'),
+          when(
+            'wait > 0',
+            [set('wait', 'wait - dt')],
+            [
+              set('gx', 'self.spawn_x + (to_end ? offset_x : 0) - self.x'),
+              set('gy', 'self.spawn_y + (to_end ? offset_y : 0) - self.y'),
+              set('gd', 'sqrt(gx * gx + gy * gy)'),
+              when(
+                'gd <= speed * dt or speed <= 0',
+                [set('mx', 'gx'), set('my', 'gy'), set('to_end', 'not to_end'), set('wait', 'pause')],
+                [set('mx', 'gx / gd * speed * dt'), set('my', 'gy / gd * speed * dt')],
+              ),
+              vel('mx / dt', 'my / dt'),
+              { do: 'carry', x: 'mx', y: 'my' },
+            ],
+          ),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/** Hopping as the engine does it (Jumper's settings): a jump every interval while standing on something. */
+function hoppingScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Hopping',
+    description: 'Jumps every few seconds while standing on something, as the engine does it (the Jumper settings).',
+    takesOver: 'hopping',
+    vars: [
+      { name: 'interval', value: 2 },
+      { name: 'force', value: 300 },
+      { name: 'wait', value: 0 },
+    ],
+    handlers: [
+      { when: { on: 'start' }, do: [set('interval', "field(self, 'Jumper.interval')"), set('force', "field(self, 'Jumper.jumpForce')")] },
+      {
+        when: { on: 'tick' },
+        if: 'not self.floats',
+        do: [set('wait', 'wait + dt'), when('self.grounded and wait >= interval', [set('wait', '0'), { do: 'jump', force: 'force', on: null }])],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
+/** The Timer as the engine does it: the "timer" event every interval (or once). */
+function timerScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Timer',
+    description: 'Sets off the "timer" event every interval seconds (or once), as the engine does it (the Timer settings).',
+    takesOver: 'timer',
+    vars: [
+      { name: 'interval', value: 2 },
+      { name: 'again', value: true },
+      { name: 'wait', value: 0 },
+      { name: 'done', value: false },
+    ],
+    handlers: [
+      { when: { on: 'start' }, do: [set('interval', "field(self, 'Timer.interval')"), set('again', "field(self, 'Timer.repeat')")] },
+      {
+        when: { on: 'tick' },
+        if: 'not done',
+        do: [
+          set('wait', 'wait + dt'),
+          when('wait >= interval', [{ do: 'emit', event: 'timer', other: null }, when('again', [set('wait', 'wait - interval')], [set('done', 'true')])]),
+        ],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
   jumping: {
     label: 'jumping',
@@ -341,6 +515,30 @@ export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
     covers: 'walking around at random: a new way now and then and at walls, sometimes standing still',
     component: 'Wander',
     script: wanderScript,
+  },
+  shooting: {
+    label: 'shooting',
+    covers: 'firing shots: every interval at a target in range (or with the fire key), which way (facing, at the target, left/right/up/down), how fast, how far, how much damage, at most 100 shots at once',
+    component: 'Shooter',
+    script: shootingScript,
+  },
+  moving: {
+    label: 'moving',
+    covers: 'a moving platform gliding to its offset and back, waiting at each end, carrying what stands on it',
+    component: 'MovingPlatform',
+    script: movingScript,
+  },
+  hopping: {
+    label: 'hopping',
+    covers: 'jumping on its own every few seconds while on the ground (Jumper)',
+    component: 'Jumper',
+    script: hoppingScript,
+  },
+  timer: {
+    label: 'timer',
+    covers: 'the "timer" event every interval seconds, or once',
+    component: 'Timer',
+    script: timerScript,
   },
 };
 

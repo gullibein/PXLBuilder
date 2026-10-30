@@ -386,6 +386,9 @@ export class ScriptSystem {
         if (t && t !== e) this.rt.chase(e, t, n(s.speed));
         break;
       }
+      case 'carry':
+        this.rt.behaviors.carryRiders(e, n(s.x), n(s.y));
+        break;
       case 'heading': {
         const x = Math.sign(n(s.x));
         const y = Math.sign(n(s.y));
@@ -1034,6 +1037,8 @@ export class ScriptSystem {
         return this.rt.ledgeAhead(self, Math.sign(n(0)));
       case 'ladder_choice':
         return this.rt.ladderChoice(self, Math.sign(n(0)), n(1));
+      case 'shots_in_air':
+        return this.rt.entities.filter((o) => o.alive && o.projectile).length;
       case 'nearest_player':
         return this.rt.nearestPlayer(self);
       case 'collects': {
@@ -1143,6 +1148,10 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.invincible > 0;
     case 'climb_dir':
       return e.climbDir;
+    case 'heading_x':
+      return e.heading.x;
+    case 'heading_y':
+      return e.heading.y;
     case 'spawn_y':
       return e.spawn.y;
     case 'gravity':

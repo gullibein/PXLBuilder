@@ -26,7 +26,13 @@ export class BehaviorSystem {
     for (const e of list) {
       if (!e.alive) continue;
       const b = e.beh;
-      if (b.mover) this.moveOnPath(e, dt);
+      if (b.mover && e.body !== 'kinematic') {
+        // It moves itself; whatever the object says, nothing pushes it around.
+        e.body = 'kinematic';
+        this.rt.markSolidsDirty();
+      }
+      // (Each of these is done by its script instead where one took it over: Moving, Hopping, Shooting, Timer.)
+      if (b.mover && !ownPart(e, 'moving')) this.moveOnPath(e, dt);
       if ((b.patrol || b.wander) && (e.body === 'static' || e.body === 'none')) {
         // Something that never moved on its own now does: it moves without gravity.
         e.body = 'kinematic';
@@ -35,7 +41,7 @@ export class BehaviorSystem {
       // (Done by its script instead, where its "Patrol" / "Wander" script took it over.)
       if (b.patrol && !ownPart(e, 'patrolling') && !e.chasing && e.invincible <= 0) this.patrol(e, dt);
       if (b.wander && !b.patrol && !ownPart(e, 'wandering') && !e.chasing && e.invincible <= 0) this.wander(e, dt);
-      if (b.jumper && e.body === 'dynamic' && !this.rt.floats(e)) {
+      if (b.jumper && !ownPart(e, 'hopping') && e.body === 'dynamic' && !this.rt.floats(e)) {
         b.jumper.t += dt;
         if (e.grounded && b.jumper.t >= b.jumper.interval) {
           b.jumper.t = 0;
@@ -43,13 +49,13 @@ export class BehaviorSystem {
           e.grounded = false;
         }
       }
-      if (b.shooter) {
+      if (b.shooter && !ownPart(e, 'shooting')) {
         const s = b.shooter;
         s.t += dt;
         const wants = s.trigger === 'key' ? input.wasPressed('fire') : true;
         if (wants && s.t >= s.interval) this.fire(e) && (s.t = 0);
       }
-      if (b.timer && !b.timer.done) {
+      if (b.timer && !b.timer.done && !ownPart(e, 'timer')) {
         b.timer.t += dt;
         if (b.timer.t >= b.timer.interval) {
           this.rt.gameplay.emit('timer', e);
@@ -207,11 +213,6 @@ export class BehaviorSystem {
   /** Moving platform: glides to origin + offset and back, waiting `pause` at each end, carrying what stands on it. */
   private moveOnPath(e: RuntimeEntity, dt: number): void {
     const m = e.beh.mover!;
-    if (e.body !== 'kinematic') {
-      // It moves itself; whatever the object says, nothing pushes it around.
-      e.body = 'kinematic';
-      this.rt.markSolidsDirty();
-    }
     e.vx = 0;
     e.vy = 0;
     if (m.wait > 0) {
@@ -242,7 +243,7 @@ export class BehaviorSystem {
   }
 
   /** Things standing on top of a moving platform move with it. */
-  private carryRiders(platform: RuntimeEntity, mx: number, my: number): void {
+  carryRiders(platform: RuntimeEntity, mx: number, my: number): void {
     const pb = this.rt.boxOf(platform);
     if (!pb || platform.collider?.trigger || (mx === 0 && my === 0)) return;
     const top = pb.y - pb.hh;
