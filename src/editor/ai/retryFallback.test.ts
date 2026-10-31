@@ -146,3 +146,10 @@ describe('ready-made scripts', () => {
     expect(() => expandReadyScript({ ready: 'Nope' })).toThrow(/no ready-made script/);
   });
 });
+
+describe('small slips in scripts', () => {
+  it('a number where an expression goes is read as that expression', async () => {
+    const { scriptSchema: parseScript } = await import('../../core/script/language');
+    expect(parseScript.safeParse({ id: 's1', name: 'S', vars: [], handlers: [{ when: { on: 'tick' }, do: [{ do: 'camera_shake', strength: 3, seconds: 0.3 }] }] }).success).toBe(true);
+  });
+});

@@ -444,7 +444,8 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
 
 // ---------------------------------------------------------------- schema
 
-const expr = z.string().min(1);
+// (A number where an expression goes, 0.3 for "0.3", is read as that expression: a common slip, never ambiguous.)
+const expr = z.preprocess((v) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : v), z.string().min(1));
 const nexpr = expr.nullable().default(null);
 
 /**

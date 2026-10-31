@@ -159,7 +159,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     reference: editorReference(),
   };
   // The full code of the objects the request names, sent along (no second round trip).
-  const along = codeToSend(state.project, ctx, request);
+  // (Also the objects the last answer here was about: "make it more visible" follows up on the Player's script.)
+  const along = codeToSend(state.project, ctx, `${request}\n${body.history.at(-1)?.reply.split('\n')[0] ?? ''}`);
   if (along.length) {
     body.code = codeFor(state.project, along);
     trace?.('note', `Sent along: the code of ${body.code.map((c) => c.name).join(', ')}`);
@@ -181,7 +182,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   const newGame = !!options.newGame || (ctx.kind === 'project' && makesAGame(request));
   if (newGame && !options.newGame) trace?.('note', 'Asked for a whole new game: built as a new game (the starter may be switched; Undo brings the old one back)');
   // (With pictures the AI always draws the game in their style.)
-  const sprites = newGame ? (options.images?.length ? 'ai' : (options.sprites ?? 'engine')) : undefined;
+  // (An original game, asked for in words, is drawn anew too: the starter's look is anything but.)
+  const original = /\b(original|unique|unusual|creative|novel|weird|nothing (typical|usual|standard)|not (typical|usual|standard)|surprise me)\b/i.test(request);
+  const sprites = newGame ? (options.images?.length || (original && !options.sprites) ? 'ai' : (options.sprites ?? 'engine')) : undefined;
   if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
