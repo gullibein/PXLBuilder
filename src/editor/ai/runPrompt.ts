@@ -178,16 +178,25 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   try {
     const provider = await currentProvider();
     response = await provider.respond(body, signal, trace);
-    // A new game the AI would rather build on another starter: made over from that one, and the same request asked again (once).
-    if (response.kind === 'switch_starter') {
-      const to = response.starter;
-      if (options.newGame && to && to !== starterNow()) {
-        trace?.('note', `The AI chose the ${to} starter; asking again on it`);
+    // A new game the AI would rather build on another starter: made over from that one, and the same request asked
+    // again. (It may leave out which starter, there being only two; or only say so in words, building nothing.)
+    if (options.newGame) {
+      const other: GameType = starterNow() === 'platformer' ? 'topdown' : 'platformer';
+      const wantsOther = (r: AIResponse) =>
+        r.kind === 'switch_starter' || (!r.operations.length && new RegExp(`${other === 'topdown' ? 'top-?down|from above' : 'platformer|side[- ]view|from the side'}[^.]{0,40}starter|starter[^.]{0,40}${other === 'topdown' ? 'top-?down' : 'platformer'}`, 'i').test(r.message));
+      if (wantsOther(response)) {
+        const to = response.starter && response.starter !== starterNow() ? response.starter : other;
+        trace?.('note', `The AI chose the ${to} starter${response.kind === 'switch_starter' ? '' : ' (in its words)'}; asking again on it`);
         switchStarter(to);
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
         response = await provider.respond(body, signal, trace);
+        // Still nothing built (or another switch): once more, plainly.
+        if (response.kind === 'switch_starter' || (!response.operations.length && response.kind !== 'need_code')) {
+          trace?.('retry', 'Nothing built on the new starter: asked once more, plainly');
+          response = await provider.respond({ ...body, request: `${request}\n\n[The game is now on the ${starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
+        }
       }
       if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };
     }

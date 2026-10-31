@@ -6,6 +6,7 @@
  * shows dots over objects whose prompt is running, and a badge where a
  * finished one is waiting to be looked at (a proposal, a question, an error).
  */
+import type { AIPicture } from '../../core/ai/protocol';
 import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
@@ -49,10 +50,20 @@ function put(key: string, job: PromptJob | null): void {
 }
 
 /** Starts a prompt for a context (the finished ones before it stay in the card's chat, from the log). One at a time per context. */
-export function startJob(ctx: AIContext, asked: string, options: PromptOptions = {}): void {
+/**
+ * Pictures a conversation was given that nothing has been built from yet: they go along again with its next request
+ * ("continue", "try again"), until an answer changes the game (or a new chat starts).
+ */
+const unusedPictures = new Map<string, AIPicture[]>();
+
+export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {}): void {
   const key = contextKey(ctx);
+  const conversation = conversationKey(ctx);
+  if (given.images?.length) unusedPictures.set(conversation, given.images);
+  const resent = !given.images?.length ? unusedPictures.get(conversation) : undefined;
+  const options: PromptOptions = resent ? { ...given, images: resent } : given;
   // (Pictures go with this request only; the chat, and the AI's memory of it, say they were there.)
-  const request = withPictureNote(asked, options.images);
+  const request = resent ? `${asked}\n[the picture${resent.length === 1 ? '' : 's'} from before sent along again: ${resent.map((p) => p.name).join(', ')}]` : withPictureNote(asked, options.images);
   if (useJobs.getState().jobs[key]?.phase === 'working') return;
   const controller = new AbortController();
   controllers.set(key, controller);
@@ -63,6 +74,8 @@ export function startJob(ctx: AIContext, asked: string, options: PromptOptions =
   const done = (outcome: PromptOutcome) => {
     if (controllers.get(key) !== controller) return;
     controllers.delete(key);
+    // (Something was built from them: they have been used.)
+    if (outcome.status === 'applied' && outcome.changes.length) unusedPictures.delete(conversation);
     if (outcome.status === 'applied') trace.add('note', `Applied: ${outcome.changes.length} change line(s)${outcome.note ? `; ${outcome.note}` : ''}`);
     // What it built is shown (also when its card was closed meanwhile): a level is framed, something off screen too.
     if (outcome.status === 'applied' && ctx.sceneId === useEditor.getState().activeSceneId) revealCreated(outcome.result.createdEntityIds);
@@ -126,6 +139,7 @@ export function cardOpened(key: string): () => void {
 /** "New chat": the conversation about this context starts again (a prompt still running carries on). */
 export function startNewChat(key: string, conversation = key): void {
   newChat(conversation);
+  unusedPictures.delete(conversation);
   if (useJobs.getState().jobs[key]?.phase === 'done') put(key, null);
 }
 

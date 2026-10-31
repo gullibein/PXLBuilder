@@ -196,6 +196,20 @@ function stubModel(body) {
     if (shooterAsks === 1) return { kind: 'apply' };
     return { kind: 'answer', message: `Asked ${shooterAsks} times; this time with ${(body.images ?? []).length} picture(s).`, changes: [], operations: [], needCode: null, starter: null };
   }
+  if (req.includes('starter in words test') || req.includes('starter unnamed test')) {
+    // The AI wants the top-down starter but leaves out which (starter null), or only says so in words.
+    const pics = (body.images ?? []).length;
+    if (body.context.newGame?.current === 'platformer')
+      return req.includes('in words')
+        ? { kind: 'answer', message: "This is a space shooter seen from above, so I'll build it on the top-down starter.", changes: [], operations: [], needCode: null, starter: null }
+        : { kind: 'switch_starter', message: 'Seen from above.', changes: [], operations: [], needCode: null, starter: null };
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    return { kind: 'apply', message: `Built on the ${body.context.newGame?.current} starter, with ${pics} picture(s).`, changes: ['A ship'], operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null }] };
+  }
+  if (req.includes('picture carry test')) {
+    // Nothing built the first time; the next request in the same card still has the picture.
+    return { kind: 'answer', message: req.includes('continue') ? `Now with ${(body.images ?? []).length} picture(s).` : 'Which way does the ship fly?', changes: [], operations: [], needCode: null, starter: null };
+  }
   if (req.includes('ai drawn sprites test')) {
     // A new game with AI-drawn sprites: the first answer leaves the player with the engine's picture; sent back,
     // it draws it.
@@ -3372,6 +3386,39 @@ try {
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
     await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 2, 'the starters were described with the first request (one more only because it switched)');
+  }
+  for (const variant of ['starter unnamed test', 'starter in words test']) {
+    // A new game the AI wants on the other starter, without naming it (or only in words): switched, and built.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await page.getByTestId('game-idea').fill(variant);
+    await page.getByTestId('game-idea').press('Enter');
+    await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+    const said = await page.getByTestId('global-prompt').innerText();
+    await check(said.includes('Built on the topdown starter'), `${variant === 'starter unnamed test' ? 'switching starters without naming one' : 'saying it would use the top-down starter, in words only'}: switched, and the game built on it (${said.slice(0, 120).replace(/\n/g, ' ')})`);
+    await page.keyboard.press('Escape');
+  }
+  {
+    // A picture, nothing built yet: the next request in the same card ("continue") sends it again.
+    await page.keyboard.press('Control+k');
+    const gp = page.getByTestId('global-prompt');
+    await gp.getByTestId('prompt-input').evaluate(async (el) => {
+      const c = document.createElement('canvas');
+      c.width = 32;
+      c.height = 32;
+      c.getContext('2d').fillRect(4, 4, 8, 8);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], 'ship.png', { type: 'image/png' }));
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await gp.getByTestId('prompt-input').fill('picture carry test');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"]').waitFor({ timeout: 10000 });
+    await gp.getByTestId('prompt-input').fill('continue the picture carry test');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await check(async () => (await gp.innerText()).includes('Now with 1 picture(s).') && (await gp.innerText()).includes('the picture from before sent along again'), "after an answer that built nothing, the next request sends the picture again (and the chat says so)");
+    await page.keyboard.press('Escape');
   }
   {
     // New game: the engine's sprites (the default), or every object drawn by the AI, which the app checks.
