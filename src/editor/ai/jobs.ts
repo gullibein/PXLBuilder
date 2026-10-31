@@ -25,6 +25,8 @@ export interface PromptJob {
   seen: boolean;
   /** Its entry in the AI History log (once finished); the card's earlier exchanges come from that log. */
   logId?: number;
+  /** What was asked exactly, with its pictures, for Retry (the chat shows only a line saying there were pictures). */
+  again?: { asked: string; options: PromptOptions };
 }
 
 interface JobState {
@@ -54,7 +56,8 @@ export function startJob(ctx: AIContext, asked: string, options: PromptOptions =
   if (useJobs.getState().jobs[key]?.phase === 'working') return;
   const controller = new AbortController();
   controllers.set(key, controller);
-  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true });
+  const again = { asked, options };
+  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true, again });
   // What happens under the hood (AI History → Details).
   const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
@@ -71,14 +74,14 @@ export function startJob(ctx: AIContext, asked: string, options: PromptOptions =
     if (to && toKey && useJobs.getState().jobs[toKey]?.phase !== 'working') {
       trace.add('note', `About ${contextName(to)}, not ${contextName(ctx)}: moved to ${contextName(to)}'s prompt card`);
       const logId = logExchange(to, conversationKey(to), request, outcome, trace.steps);
-      put(toKey, { key: toKey, ctx: to, request, phase: 'done', outcome, seen: true, logId });
+      put(toKey, { key: toKey, ctx: to, request, phase: 'done', outcome, seen: true, logId, again });
       const message = `This changed the ${contextName(to)}, not the ${contextName(ctx)}, so it was moved to the ${contextName(to)}'s prompt card.`;
-      put(key, { key, ctx, request, phase: 'done', outcome: { status: 'message', tone: 'info', message, movedTo: to }, seen: true });
+      put(key, { key, ctx, request, phase: 'done', outcome: { status: 'message', tone: 'info', message, movedTo: to }, seen: true, again });
       return;
     }
     const logId = logExchange(ctx, conversationKey(ctx), request, outcome, trace.steps);
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
-    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId });
+    put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId, again });
   };
   runPrompt(ctx, asked, controller.signal, trace.add, options).then(
     (outcome) => !controller.signal.aborted && done(outcome),

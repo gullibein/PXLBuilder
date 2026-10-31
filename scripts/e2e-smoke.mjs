@@ -51,6 +51,7 @@ const startPlatformer = async (p) => {
 
 /** Stand-in for the language model: same protocol, deterministic answers. */
 const aiRequests = [];
+let shooterAsks = 0;
 // The rule scripts the AI gives objects (as the built-in Enemy and spikes have them).
 const HURTS_SCRIPT = JSON.stringify({ name: 'Hurts on touch', description: 'Touching it hurts the player.', vars: [{ name: 'amount', value: 1 }], handlers: [{ when: { on: 'contact' }, if: "has_tag(other, 'player')", do: [{ do: 'damage', target: 'other', amount: 'amount' }] }] });
 const STOMP_SCRIPT = JSON.stringify({ name: 'Stomp', description: 'Jumping on it defeats it.', vars: [{ name: 'bounce', value: 320 }], handlers: [{ when: { on: 'landed_on' }, if: "has_tag(other, 'player')", do: [{ do: 'bounce', speed: 'bounce', on: 'other' }, { do: 'emit', event: 'stomped', other: 'other' }, { do: 'kill', target: 'self' }] }] });
@@ -161,6 +162,12 @@ function stubModel(body) {
     if (!body.code?.some((c) => c.id === coin.id)) return { kind: 'need_code', message: "I need to read the Coin's code.", changes: [], operations: [], needCode: [coin.id] };
     const got = body.code.find((c) => c.id === coin.id);
     return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
+  }
+  if (req.includes('retro space shooter test')) {
+    // The first answer can't be read (an error with Retry); Retry asks again, with the picture again.
+    shooterAsks = (shooterAsks ?? 0) + 1;
+    if (shooterAsks === 1) return { kind: 'apply' };
+    return { kind: 'answer', message: `Asked ${shooterAsks} times; this time with ${(body.images ?? []).length} picture(s).`, changes: [], operations: [], needCode: null, starter: null };
   }
   if (req.includes('a game like this picture')) {
     // A new game shown with pictures: what came along is said back, and something is built.
@@ -3378,6 +3385,47 @@ try {
     await page.waitForTimeout(500);
     const next = aiRequests.at(-1);
     await check(!next.images && next.history.some((h) => h.request.includes('[2 pictures attached')), 'the next request carries no pictures, only the memory that there were some');
+    {
+      // Retry after an answer that couldn't be read: the same request again, with its picture.
+      const gp = page.getByTestId('global-prompt');
+      await gp.getByTestId('prompt-input').evaluate(async (el) => {
+        const c = document.createElement('canvas');
+        c.width = 48;
+        c.height = 48;
+        c.getContext('2d').fillRect(8, 8, 16, 16);
+        const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'shooter.png', { type: 'image/png' }));
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await check(async () => (await gp.getByTestId('picture-thumb').count()) === 1, 'a picture pasted into an AI prompt card is attached there too');
+      await gp.getByTestId('prompt-input').fill('Here is a retro space shooter test');
+      await gp.getByTestId('prompt-input').press('Enter');
+      await gp.getByTestId('result-retry').waitFor({ timeout: 10000 });
+      await gp.getByTestId('result-retry').click();
+      await check(async () => (await gp.innerText()).includes('Asked 2 times; this time with 1 picture(s).'), 'Retry sends the request again with its picture (not just the words)');
+    }
+    {
+      // AI History: dragging across an entry marks its text (only the panel's own top bar moves it).
+      await page.keyboard.press('Escape');
+      await page.getByTestId('tray-toggle').click();
+      const tray = page.getByTestId('tray');
+      // (After it has finished opening: it rises in; and nothing is still arriving in it.)
+      await page.waitForTimeout(1200);
+      const before = await tray.boundingBox();
+      // From an entry's top line (when and where: a header inside the panel, which used to move it) down into its text.
+      const head = tray.locator('.exchange-head').last();
+      await head.scrollIntoViewIfNeeded();
+      const eb = await head.boundingBox();
+      await page.mouse.move(eb.x + 3, eb.y + eb.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(eb.x + 120, eb.y + eb.height + 14, { steps: 6 });
+      await page.mouse.up();
+      const after = await tray.boundingBox();
+      const marked = await page.evaluate(() => window.getSelection().toString().length);
+      await check(Math.abs(after.x - before.x) < 1 && Math.abs(after.y - before.y) < 1 && marked > 0, `dragging across text in AI History marks the text and doesn't move the panel (moved ${Math.round(after.x - before.x)},${Math.round(after.y - before.y)}; ${marked} characters marked)`);
+      await page.getByTestId('tray-close').click();
+    }
     await page.keyboard.press('Escape');
   }
   await page.unroute('**/api/ai');

@@ -122,7 +122,7 @@ export function SoundEditor() {
           />
         ) : (
           <>
-            <header className="bg-head">
+            <header className="bg-head" data-move-handle>
               <span className="sound-title">
                 Sound {picker} {ai}
               </span>
@@ -461,7 +461,8 @@ function Editor({ ai, pens: [pen, setPen], picker, name, sound, onChange, onRena
   const count = audibleNotes({ type: 'steps', speed: sound.speed, notes });
   return (
     <div className={`se-body${off ? ' off' : ''}`} tabIndex={-1} data-testid="sound-editor-body" data-off={off ? 'true' : undefined}>
-      <header className="bg-head">
+      {/* (The sound editor's title bar, though it sits inside its body: dragging it moves the editor.) */}
+      <header className="bg-head" data-move-handle>
         <span className="sound-title">
           Sound
           {picker}

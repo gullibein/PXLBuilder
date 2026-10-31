@@ -54,6 +54,12 @@ function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOut
     stop() {
       stopJob(key);
     },
+    /** The same request again, as it was asked: its words and its pictures (and, for a new game, as one). */
+    retry() {
+      if (state.phase !== 'done') return;
+      const again = useJobs.getState().jobs[key]?.again;
+      startJob(ctx, again?.asked ?? state.request, again?.options ?? {});
+    },
     /** "New chat": start the conversation about this again. */
     newChat() {
       startNewChat(key, conversationKey(ctx));
@@ -234,7 +240,7 @@ export function PromptBox(props: PromptBoxProps) {
                 renderApplied={props.renderApplied}
                 selectedIds={'entityIds' in props.ctx ? props.ctx.entityIds : []}
                 onExpand={() => setExpanded(true)}
-                onRetry={() => runner.state.phase === 'done' && runner.submit(runner.state.request)}
+                onRetry={() => runner.retry()}
               />
             )}
           </div>

@@ -85,7 +85,12 @@ export function startPanelMover(root: HTMLElement = document.body): () => void {
     if (!(target instanceof Element)) return null;
     if (target.closest(INTERACTIVE)) return null;
     const handle = target.closest(HANDLES);
-    return handle?.closest<HTMLElement>(PANELS) ?? null;
+    const panel = handle?.closest<HTMLElement>(PANELS) ?? null;
+    // Only the panel's own title bar (a header right inside it) or a grip: a header further in (an entry in AI
+    // History, a section in a dialog) is content, where dragging marks text.
+    if (!handle || !panel) return null;
+    const own = handle.parentElement === panel || handle.matches('.prompt-header, [data-move-handle]');
+    return own ? panel : null;
   };
 
   const down = (e: PointerEvent) => {
