@@ -10,7 +10,7 @@ import { applyObjectChoice, applyResponse, type PromptOutcome } from '../ai/runP
 import { useEditor } from '../store';
 import { playSound } from '../audio/synth';
 
-type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
+type RunState = { phase: 'idle' } | { phase: 'working'; request: string; stage?: string } | { phase: 'done'; request: string; outcome: PromptOutcome };
 
 /**
  * The prompt run for one context. The run itself lives in the job list
@@ -19,7 +19,7 @@ type RunState = { phase: 'idle' } | { phase: 'working'; request: string } | { ph
 function usePromptRunner(ctx: AIContext, onApplied?: (outcome: Extract<PromptOutcome, { status: 'applied' }>) => void) {
   const key = contextKey(ctx);
   const job = useJobs((s) => s.jobs[key]);
-  const state: RunState = !job ? { phase: 'idle' } : job.phase === 'working' ? { phase: 'working', request: job.request } : { phase: 'done', request: job.request, outcome: job.outcome! };
+  const state: RunState = !job ? { phase: 'idle' } : job.phase === 'working' ? { phase: 'working', request: job.request, stage: job.stage } : { phase: 'done', request: job.request, outcome: job.outcome! };
   // The conversation so far (from the AI History log; kept when the card closes and across reloads),
   // without the exchange shown below it with its buttons.
   const entries = useAILog((s) => s.entries);
@@ -223,7 +223,9 @@ export function PromptBox(props: PromptBoxProps) {
               <>
                 <div className="prompt-progress" aria-label="Working" />
                 <div className="prompt-busy">
-                  <span className="muted small">Working on it… you can keep editing.</span>
+                  <span className="muted small" data-testid="prompt-stage">
+                    {runner.state.phase === 'working' && runner.state.stage && runner.state.stage !== 'Working on it' ? `${runner.state.stage}…` : 'Working on it… you can keep editing.'}
+                  </span>
                   <button className="text-btn" data-testid="prompt-stop" onClick={runner.stop}>
                     Stop
                   </button>

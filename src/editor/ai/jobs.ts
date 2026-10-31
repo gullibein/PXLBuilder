@@ -28,6 +28,10 @@ export interface PromptJob {
   logId?: number;
   /** What was asked exactly, with its pictures, for Retry (the chat shows only a line saying there were pictures). */
   again?: { asked: string; options: PromptOptions };
+  /** What it is doing now, in a few words. */
+  stage?: string;
+  /** When it started (ms, Date.now). */
+  started?: number;
 }
 
 interface JobState {
@@ -68,7 +72,11 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
   const controller = new AbortController();
   controllers.set(key, controller);
   const again = { asked, options };
-  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true, again });
+  put(key, { key, ctx, request, phase: 'working', outcome: null, seen: true, again, started: Date.now() });
+  const onStage = (stage: string) => {
+    const job = useJobs.getState().jobs[key];
+    if (job?.phase === 'working' && controllers.get(key) === controller) put(key, { ...job, stage });
+  };
   // What happens under the hood (AI History → Details).
   const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
@@ -96,7 +104,7 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId, again });
   };
-  runPrompt(ctx, asked, controller.signal, trace.add, options).then(
+  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage }).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });

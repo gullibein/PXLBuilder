@@ -19,6 +19,7 @@ import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectA
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
+import { NewGameProgress } from './chrome/NewGameProgress';
 import { SpriteEditor } from './chrome/SpriteEditor';
 import { CameraPanel } from './chrome/CameraPanel';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
@@ -110,6 +111,7 @@ export function App() {
         <AIConnection />
         <StylePicker />
         <GameChooser />
+        <NewGameProgress />
         {/* (Under the sprite editor: one of its pictures opens there, on top.) */}
         <AutotileEditor />
         <SpriteEditor />

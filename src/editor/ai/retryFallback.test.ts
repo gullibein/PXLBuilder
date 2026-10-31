@@ -103,3 +103,46 @@ describe('a whole new game asked for on Whole game', () => {
     expect(seen.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('a big answer with one broken part', () => {
+  it('only that part goes back, and its correction is put in its place; the rest is kept', async () => {
+    let project = createProject(createBuiltinRegistry(), 'Test');
+    project = produce(project, (d) => {
+      m.addEntity(d, d.scenes[0].id, instantiateDefinition(d.definitions.find((x) => x.name === 'Player')!, { x: 0, y: 0 }));
+    });
+    useEditor.setState({ project });
+    const enemy = project.definitions.find((d) => d.name === 'Enemy')!;
+    const color = (c: string) => ({ op: 'set_component_field', target: 'definition', id: enemy.id, component: 'Sprite', field: 'color', valueJson: JSON.stringify(c) });
+    const script = (value: string) => ({ op: 'set_script', target: 'definition', id: enemy.id, scriptJson: JSON.stringify({ name: 'Points', vars: [{ name: 'points', value: 100 }], handlers: [{ when: { on: 'start' }, do: [{ do: 'set', var: 'points', value }] }] }) });
+    const ops = [color('#111111'), color('#222222'), script('score + points'), color('#333333'), color('#444444'), color('#555555')];
+    const asked: string[] = [];
+    setAIProvider({
+      respond: async (body: { request: string }) => {
+        asked.push(body.request);
+        if (asked.length === 1) return { kind: 'preview', message: 'Built.', changes: ['Points'], operations: ops, needCode: null, starter: null } as unknown as AIResponse;
+        return { kind: 'preview', message: '', changes: [], operations: [script('points + 1')], needCode: null, starter: null } as unknown as AIResponse;
+      },
+    } as unknown as AIProvider);
+    const outcome = await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'give the enemy points');
+    expect(asked.length).toBe(2);
+    expect(asked[1]).toMatch(/Send ONLY the corrected replacements/);
+    expect(asked[1]).toMatch(/operation 3 \(set_script\)/);
+    expect(outcome.status).toBe('applied');
+    const after = useEditor.getState().project.definitions.find((d) => d.id === enemy.id)!;
+    expect(after.scripts!.some((s) => s.name === 'Points')).toBe(true);
+    expect(JSON.stringify(after.components)).toContain('#555555');
+  });
+});
+
+describe('ready-made scripts', () => {
+  it('{"ready":"Swooper"} is written out in full, with only the given settings changed', async () => {
+    const { expandReadyScript } = await import('../../core/script/ready');
+    const s = expandReadyScript({ ready: 'Swooper', settings: { entry: 'right', group: 'fighter' } }) as { name: string; vars: { name: string; value: unknown }[]; handlers: unknown[] };
+    expect(s.name).toBe('Swooper');
+    expect(s.vars.find((v) => v.name === 'entry')!.value).toBe('right');
+    expect(s.vars.find((v) => v.name === 'speed')!.value).toBe(240);
+    expect(s.handlers.length).toBeGreaterThan(3);
+    expect(() => expandReadyScript({ ready: 'Swooper', settings: { hx: 3 } })).toThrow(/no setting "hx"/);
+    expect(() => expandReadyScript({ ready: 'Nope' })).toThrow(/no ready-made script/);
+  });
+});

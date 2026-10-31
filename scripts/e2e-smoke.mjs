@@ -1678,6 +1678,13 @@ try {
     await check(async () => (await hearts.count()) >= 1 && (await hearts.first().innerText()).includes('Player'), 'AI History shows the whole request, and what it was about');
     await check(async () => (await hist.getByTestId('history-exchange').count()) >= 3 && (await hist.innerText()).includes('Applied'), 'every exchange is listed with how it ended, also answers that changed nothing');
     await check(async () => (await hist.getByTestId('history-edit').count()) === 0, 'your own edits are not mixed in…');
+    await hearts.first().getByTestId('history-copy-one').click();
+    await check(async () => (await hearts.first().getByTestId('history-copy-one').innerText()).includes('Copied'), 'each exchange in AI History has Copy (with its details)');
+    {
+      const copiedText = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+      await check(copiedText.includes('Give the player five hearts.') && copiedText.includes('Details:') && copiedText.includes('Raw answer'), '(the text copied is the request, the answer and every step under the hood)');
+    }
+    await check(async () => (await hist.getByTestId('history-copy').count()) === 1, 'and AI History can be copied whole');
     await hearts.first().getByTestId('history-details').click();
     await check(async () => {
       const tr = await hearts.first().getByTestId('history-trace').innerText();
@@ -3363,7 +3370,12 @@ try {
   await page.getByTestId('undo').click();
   await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, 'Undo brings back the game from before');
   // (The AI is answered by the stand-in again for this.)
-  await page.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+  await page.route('**/api/ai', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    // ("Take your time": slowly, so the building window can be seen.)
+    if (/take your time/i.test(body.request)) await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+  });
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await check(async () => (await page.getByTestId('game-idea-go').isDisabled()) === true, 'New game has a field to tell the AI what game you want (Make it waits for words)');
@@ -3374,9 +3386,14 @@ try {
     await picker.click();
     await check(async () => (await page.getByTestId('ai-picker-menu').count()) === 0 && (await page.getByTestId('game-chooser').isVisible()), '(and closes again, the dialog still open)');
   }
-  await page.getByTestId('game-idea').fill('A cave game where you dig for diamonds');
+  await page.getByTestId('game-idea').fill('A cave game where you dig for diamonds, take your time');
   await page.getByTestId('game-idea').press('Enter');
-  await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'telling it goes straight to the editor, the Whole game card working on it');
+  await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'telling it closes the New game window');
+  await check(
+    async () => (await page.getByTestId('new-game-progress').isVisible()) && (await page.getByTestId('global-prompt').count()) === 0 && /planning the game|building|starting/i.test(await page.getByTestId('new-game-stage').innerText()),
+    'the game is built in a window of its own, saying what the AI is doing (no prompt card while there is nothing to edit)',
+  );
+  await page.screenshot({ path: `${OUT}/00b-building.png` });
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
   await check(async () => (await canvas.getAttribute('data-entities')) === '2', '(what it built is on the level)');

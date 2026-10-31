@@ -116,6 +116,7 @@ function HistoryList() {
         )}
         {entries.length > 0 && (
           <span className="ai-log-actions">
+            <CopyButton testId="history-copy" title="Copy these exchanges as text, with their details (what happened under the hood), to paste where it helps" text={() => historyText(entries.slice(-30))} />
             <button className="text-btn" data-testid="history-download" title="Save the recent exchanges with what happened under the hood (to share when something goes wrong; no API keys are in it)" onClick={() => void downloadTrace(entries)}>
               Download
             </button>
@@ -181,9 +182,12 @@ function Exchange({ entry, undone }: { entry: AILogEntry; undone: boolean }) {
       </div>
       {entry.trace && (
         <div className="exchange-trace">
-          <button className="link-btn" data-testid="history-details" aria-expanded={details} onClick={() => setDetails(!details)}>
-            {details ? 'Hide details' : 'Details (under the hood)'}
-          </button>
+          <span className="exchange-trace-bar">
+            <button className="link-btn" data-testid="history-details" aria-expanded={details} onClick={() => setDetails(!details)}>
+              {details ? 'Hide details' : 'Details (under the hood)'}
+            </button>
+            <CopyButton testId="history-copy-one" title="Copy this exchange as text, with its details" text={() => historyText([entry])} />
+          </span>
           {details && (
             <ol className="trace-steps" data-testid="history-trace">
               {entry.trace.map((s, i) => (
@@ -229,16 +233,61 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * A Copy button: the text goes to the clipboard; where the browser won't allow that, it is shown to select and copy
+ * by hand.
+ */
+function CopyButton({ text, testId, title }: { text: () => string; testId: string; title: string }) {
+  const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
+  const [shown, setShown] = useState('');
+  const copy = async () => {
+    const t = text();
+    const ok = await copyText(t);
+    setCopied(ok ? 'yes' : 'no');
+    setShown(ok ? '' : t);
+    if (ok) setTimeout(() => setCopied((c) => (c === 'yes' ? null : c)), 2000);
+  };
+  return (
+    <>
+      <button className="text-btn" data-testid={testId} title={title} onClick={() => void copy()}>
+        {copied === 'yes' ? 'Copied ✓' : 'Copy'}
+      </button>
+      {copied === 'no' && (
+        <div className="console-copy-box">
+          <p className="muted small">
+            The browser didn't allow copying here: select the text below (Ctrl+A in it) and copy it yourself.{' '}
+            <button className="link-btn" onClick={() => setCopied(null)}>
+              Close
+            </button>
+          </p>
+          <textarea readOnly value={shown} data-testid={`${testId}-text`} onFocus={(e) => e.currentTarget.select()} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Exchanges as plain text, the way they look in AI History with their details open (the app's version first). */
+export function historyText(entries: AILogEntry[]): string {
+  const one = (e: AILogEntry) => {
+    const status = e.status === 'error' ? '⚠ Failed' : e.status === 'message' ? 'Answer' : e.undone ? '↶ Undone' : '✓ Applied';
+    const lines = [`${time(e.time)} ${e.where}`, e.request, status];
+    if (e.message) lines.push(e.message);
+    if (e.note) lines.push(e.note);
+    for (const c of e.changes) lines.push(`* ${c}`);
+    if (e.trace?.length) {
+      lines.push('', 'Details:');
+      e.trace.forEach((s, i) => lines.push(`${i + 1}. +${(s.ms / 1000).toFixed(1)} s · ${TRACE_LABEL[s.kind] ?? s.kind}`, s.text, ''));
+    }
+    return lines.join('\n').trim();
+  };
+  return [`PXLBuilder ${__PXL_VERSION__}`, ...entries.map(one)].join('\n\n---\n\n');
+}
+
 function ConsoleList() {
   const log = useEditor((s) => s.log);
   const clearLog = useEditor((s) => s.clearLog);
   const endRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
-  const copy = async () => {
-    const ok = await copyText(consoleText(useEditor.getState().log));
-    setCopied(ok ? 'yes' : 'no');
-    if (ok) setTimeout(() => setCopied((c) => (c === 'yes' ? null : c)), 2000);
-  };
   // Keep the newest message visible by scrolling only the tray itself. (scrollIntoView would also
   // scroll every ancestor, including a page embedding the editor, shoving the whole app out of view.)
   useEffect(() => {
@@ -247,6 +296,14 @@ function ConsoleList() {
   }, [log.length]);
   return (
     <div className="console" data-testid="console">
+      {log.length > 0 && (
+        <div className="console-actions">
+          <CopyButton testId="console-copy" title="Copy the whole console as text (with the app's version), to paste where it helps" text={() => consoleText(useEditor.getState().log)} />
+          <button className="text-btn" onClick={clearLog}>
+            Clear
+          </button>
+        </div>
+      )}
       {log.length === 0 && <p className="muted">No messages.</p>}
       {log.map((entry) => (
         <div key={entry.id} className={`log-line ${entry.level}`}>
@@ -254,22 +311,6 @@ function ConsoleList() {
           <span>{entry.message}</span>
         </div>
       ))}
-      {log.length > 0 && (
-        <div className="console-actions">
-          <button className="text-btn" data-testid="console-copy" title="Copy the whole console as text (with the app's version), to paste where it helps" onClick={copy}>
-            {copied === 'yes' ? 'Copied ✓' : 'Copy'}
-          </button>
-          <button className="text-btn" onClick={clearLog}>
-            Clear
-          </button>
-        </div>
-      )}
-      {copied === 'no' && (
-        <div className="console-copy-box">
-          <p className="muted small">The browser didn't allow copying here: select the text below (Ctrl+A in it) and copy it yourself.</p>
-          <textarea readOnly value={consoleText(log)} data-testid="console-copy-text" onFocus={(e) => e.currentTarget.select()} />
-        </div>
-      )}
       <div ref={endRef} />
     </div>
   );

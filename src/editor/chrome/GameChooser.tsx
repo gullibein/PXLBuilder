@@ -40,8 +40,9 @@ export function GameChooser() {
     startNewGame('platformer', mode === 'first', res);
     close(null);
     setIdea('');
+    // (Built in a window of its own, NewGameProgress; the Whole game card shows the result.)
     const { activeSceneId, setGlobalPrompt } = useEditor.getState();
-    setGlobalPrompt(true, 'project');
+    setGlobalPrompt(false);
     startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true, sprites, ...(images.length ? { images } : {}) });
   };
   return (

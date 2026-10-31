@@ -7,6 +7,7 @@
  * mutation functions the inspector uses. A list of operations is applied
  * all-or-nothing inside one transaction.
  */
+import { expandReadyScript } from '../script/ready';
 import { removePanel, setPanel } from '../model/panels';
 import { onlyOnTouch, touchHarm } from '../model/ruleScripts';
 import { gridFor } from '../model/spriteResolution';
@@ -294,7 +295,7 @@ export const operationSchema = z.union([
     op: z.literal('set_script'),
     target,
     id: z.string().describe('Object definition id (definition: every copy runs it) or entity id (instance: only this one); also a create_definition / place_instance ref from earlier in this list'),
-    scriptJson: z.string().describe('The whole behavior script as JSON (see "Behavior scripts"). Same "id" as an existing script of that owner replaces it; a new id (or none) adds one'),
+    scriptJson: z.string().describe('The whole behavior script as JSON (see "Behavior scripts"), or a ready-made one by name: {"ready":"Swooper","settings":{...only the settings that differ}}. Same "id" as an existing script of that owner replaces it; a new id (or none) adds one'),
   }),
   z.object({
     op: z.literal('use_script_for'),
@@ -1041,7 +1042,7 @@ export function applyOperations(
       case 'remove_script':
       case 'set_script_enabled': {
         const owner = { target: op.target, id: op.target === 'definition' ? (refs.get(op.id) ?? op.id) : (entityRefs.get(op.id) ?? op.id) };
-        if (op.op === 'set_script') scripts.setScript(project, owner, logicJson(op.scriptJson, 'Script'));
+        if (op.op === 'set_script') scripts.setScript(project, owner, expandReadyScript(logicJson(op.scriptJson, 'Script')));
         else if (op.op === 'remove_script') scripts.removeScript(project, owner, op.scriptId);
         else scripts.setScriptEnabled(project, owner, op.scriptId, op.enabled);
         break;
@@ -1077,6 +1078,15 @@ export function applyOperations(
  * The operations that apply, without the ones that don't (and what was wrong
  * with each): for a big change where a few parts fail, the rest still goes in.
  */
+/** The operations that would not apply (by their place in the list), each with why. */
+export function failedOperations(project: Project, ops: Operation[], registry: ComponentRegistry): { index: number; message: string }[] {
+  const bad: { index: number; message: string }[] = [];
+  produce(project, (d) => {
+    applyOperations(d, ops, registry, (index, message) => bad.push({ index, message }));
+  });
+  return bad;
+}
+
 export function pruneOperations(project: Project, ops: Operation[], registry: ComponentRegistry): { kept: Operation[]; skipped: string[] } {
   const bad = new Map<number, string>();
   produce(project, (d) => {

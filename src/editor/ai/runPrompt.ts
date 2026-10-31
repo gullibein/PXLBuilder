@@ -20,7 +20,7 @@ import { GeminiProvider } from './geminiProvider';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
-import { applyOperations, checkOperations, isEditorOperation, pruneOperations, type ApplyResult, type Operation } from '../../core/commands/operations';
+import { applyOperations, checkOperations, failedOperations, isEditorOperation, pruneOperations, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorReference, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
@@ -131,6 +131,8 @@ export interface PromptOptions {
   images?: AIPicture[];
   /** A new game: drawn with the engine's sprites, or every object drawn by the AI (always, with pictures). */
   sprites?: 'engine' | 'ai';
+  /** What it is doing now, in a few words (the New game window shows it while the game is built). */
+  onStage?: (stage: string) => void;
 }
 
 /** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
@@ -185,6 +187,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
+    const stage = options.onStage ?? (() => {});
+    stage(newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
     response = await provider.respond(body, signal, trace);
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
@@ -198,12 +202,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         if (!fresh.length && !newTopics.length) break;
         if (newTopics.length) {
           trace?.('note', `The AI asked for the guidance on: ${newTopics.join(', ')}; asking again with it`);
+          stage(`Read the guide on ${newTopics.join(' and ')}; ${newGame ? 'building and drawing the game' : 'working on it'}`);
           body.topics = [...(body.topics ?? []), ...newTopics];
         }
         if (fresh.length) {
           const names = fresh.map((c) => c.name).join(', ');
           trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
           state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
+          stage(`Read the code of ${names}; working on it`);
           body.code = [...(body.code ?? []), ...fresh];
         }
         response = await provider.respond(body, signal, trace);
@@ -220,6 +226,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         const to = response.starter && response.starter !== starterNow() ? response.starter : other;
         trace?.('note', `The AI chose the ${to} starter${response.kind === 'switch_starter' ? '' : ' (in its words)'}; asking again on it`);
         switchStarter(to);
+        stage(`Moved to the ${to === 'topdown' ? 'top-down' : 'platformer'} starter; building and drawing the game`);
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
@@ -228,6 +235,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         // Still nothing built (or another switch): once more, plainly.
         if (response.kind === 'switch_starter' || (!response.operations.length && response.kind !== 'need_code')) {
           trace?.('retry', 'Nothing built on the new starter: asked once more, plainly');
+          stage('Nothing was built yet: asking once more');
           response = await provider.respond({ ...body, request: `${request}\n\n[The game is now on the ${starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
         }
       }
@@ -272,28 +280,66 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');
+      stage("Fixing what didn't check out");
       state.logMessage('info', `AI answer didn't check out (${problem}); asking it to fix that.`);
       const first = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
       const firstAnswer = response;
-      try {
-        response = await provider.respond(
-          {
-            ...body,
-            history: [...body.history, { request, reply: first }],
-            request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
-          },
-          signal,
-          trace,
-        );
-      } catch (e) {
-        // The corrected answer was lost (unreadable, cut off, the AI unreachable): when the first one applies as it
-        // is (only a softer problem: a level problem, an unasked change, an undrawn object), it is kept, saying so,
-        // rather than losing all of it.
-        if ((e as Error).name === 'AbortError' || broken) throw e;
-        trace?.('note', `The corrected answer couldn't be used (${(e as Error).message}); keeping the first one, which applies`);
-        state.logMessage('warn', `The AI's corrected answer couldn't be used; kept its first answer (${problem}).`);
-        // (A level problem and an unasked change are each said below; an undrawn object here.)
-        response = { ...firstAnswer, kind: 'preview', changes: undrawn ? [...firstAnswer.changes, `⚠ ${undrawn}`] : firstAnswer.changes };
+      // A big answer with a few parts that wouldn't apply (a typo in one script): only those go back, and only their
+      // corrections come back, put in their places; the rest is kept. (A whole game written again takes minutes.)
+      const failed = broken ? failedOperations(useEditor.getState().project, response.operations, componentRegistry) : [];
+      const patch = failed.length > 0 && failed.length <= 6 && response.operations.length >= 6;
+      if (patch) {
+        const ops = response.operations;
+        const listed = failed.map((f, n) => `${n + 1}. operation ${f.index + 1} (${ops[f.index].op}): ${f.message}\n${JSON.stringify(ops[f.index]).slice(0, 12000)}`).join('\n');
+        trace?.('note', `Only the ${failed.length} part(s) that failed go back; the other ${ops.length - failed.length} are kept`);
+        stage(`Fixing ${failed.length === 1 ? 'one part' : `${failed.length} parts`} that didn't check out`);
+        try {
+          const fix = await provider.respond(
+            {
+              ...body,
+              history: [...body.history, { request, reply: first }],
+              request: `${request}\n\n[Your previous answer is kept, except ${failed.length} operation(s) that could not be applied:\n${listed}\nSend ONLY the corrected replacements for these, in the same order (kind "preview", operations: just those; message "" and changes []). Do not send anything else again: the rest of your answer stays as it is.]`,
+            },
+            signal,
+            trace,
+          );
+          const fixed = fix.operations.filter((o) => !isEditorOperation(o));
+          const at = new Set(failed.map((f) => f.index));
+          let merged: Operation[];
+          if (fixed.length === failed.length) {
+            const by = new Map(failed.map((f, n) => [f.index, fixed[n]]));
+            merged = ops.map((o, i) => by.get(i) ?? o);
+          } else {
+            const firstAt = failed[0].index;
+            merged = [...ops.slice(0, firstAt).filter((_, i) => !at.has(i)), ...fixed, ...ops.slice(firstAt).filter((_, i) => !at.has(i + firstAt))];
+          }
+          response = { ...firstAnswer, kind: 'preview', operations: merged };
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') throw e;
+          // (The corrections were lost: what applies is kept, below.)
+          trace?.('note', `The corrections couldn't be used (${(e as Error).message})`);
+        }
+      } else {
+        try {
+          response = await provider.respond(
+            {
+              ...body,
+              history: [...body.history, { request, reply: first }],
+              request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
+            },
+            signal,
+            trace,
+          );
+        } catch (e) {
+          // The corrected answer was lost (unreadable, cut off, the AI unreachable): when the first one applies as it
+          // is (only a softer problem: a level problem, an unasked change, an undrawn object), it is kept, saying so,
+          // rather than losing all of it.
+          if ((e as Error).name === 'AbortError' || broken) throw e;
+          trace?.('note', `The corrected answer couldn't be used (${(e as Error).message}); keeping the first one, which applies`);
+          state.logMessage('warn', `The AI's corrected answer couldn't be used; kept its first answer (${problem}).`);
+          // (A level problem and an unasked change are each said below; an undrawn object here.)
+          response = { ...firstAnswer, kind: 'preview', changes: undrawn ? [...firstAnswer.changes, `⚠ ${undrawn}`] : firstAnswer.changes };
+        }
       }
       // Still not right: keep what applies, leave out the rest, and say so.
       const again = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
@@ -306,7 +352,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
       }
       // Still changing what wasn't asked for: said plainly with the changes (undo takes it back).
-      const stillUnasked = gameOps(response) ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
+      const stillUnasked = gameOps(response) && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
       if (stillUnasked) {
         trace?.('check', `Still changes what wasn't asked for: ${stillUnasked}`);
         response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ This also changed things you didn't ask for (${/removes/.test(stillUnasked) ? 'it removed a behavior or rule' : 'it made a new object'}); undo (Ctrl+Z) if you don't want that`] };
