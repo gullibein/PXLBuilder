@@ -199,7 +199,7 @@ export interface AIPayload {
     name: string;
     gravity: Vec2;
     backgroundColor: string;
-    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number; parallaxY?: number };
+    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number; parallaxY?: number; scroll?: { x: number; y: number }; stars?: { density: number; speed: { x: number; y: number }; layers: number; color: string } };
     isStartLevel: boolean;
     /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
@@ -491,6 +491,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         fit: scene.world.background.fit,
         parallax: scene.world.background.parallax,
         ...(typeof scene.world.background.parallaxY === 'number' ? { parallaxY: scene.world.background.parallaxY } : {}),
+        ...(scene.world.background.scroll ? { scroll: scene.world.background.scroll } : {}),
+        ...(scene.world.background.stars ? { stars: scene.world.background.stars } : {}),
       },
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },

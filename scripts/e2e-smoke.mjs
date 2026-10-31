@@ -163,6 +163,33 @@ function stubModel(body) {
     const got = body.code.find((c) => c.id === coin.id);
     return { kind: 'answer', message: `I read the Coin's code: ${got.scripts.length} script(s), ${coin.codeInTargets ? 'sent up front' : 'sent when I asked'}.`, changes: [], operations: [] };
   }
+  if (req.includes('space shooter build test')) {
+    // A shooter as the guidance builds it: moving stars, a ship that stays on screen and fires while the key is
+    // held, saucers that fire down at their own rhythms.
+    const sceneId = body.context.level.id;
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    const saucer = { component: 'Shooter', propsJson: JSON.stringify({ direction: 'down', interval: 1, variation: 0.8, targetTag: '' }) };
+    return {
+      kind: 'apply',
+      message: 'A space shooter: hold X to shoot.',
+      changes: ['Stars', 'Ship', 'Saucers'],
+      operations: [
+        { op: 'set_background', sceneId, color: '#05060f', fit: null, parallax: null, parallaxY: null, removeImage: false, scroll: null, stars: { density: 15, speedX: 0, speedY: 120, layers: 3, color: '#ffffff' } },
+        { op: 'add_component', target: 'definition', id: player, component: 'StayOnScreen', propsJson: '{}' },
+        { op: 'add_component', target: 'definition', id: player, component: 'Shooter', propsJson: JSON.stringify({ trigger: 'key', direction: 'up', interval: 0.2, speed: 450 }) },
+        {
+          op: 'create_definition',
+          ref: 'saucer',
+          name: 'Saucer',
+          description: 'An alien saucer.',
+          category: 'Enemies',
+          tags: ['enemy'],
+          components: [{ component: 'Sprite', propsJson: '{"width":24,"height":14,"color":"#9a7bd8"}' }, { component: 'Collider', propsJson: '{"size":{"x":24,"y":14},"isTrigger":true}' }, { component: 'Health', propsJson: '{"maxHealth":1,"currentHealth":1}' }, saucer],
+        },
+        ...[0, 1, 2, 3].map((i) => ({ op: 'place_instance', sceneId, definitionRef: 'saucer', x: -96 + i * 64, y: -160, name: null, ref: null })),
+      ],
+    };
+  }
   if (req.includes('retro space shooter test')) {
     // The first answer can't be read (an error with Retry); Retry asks again, with the picture again.
     shooterAsks = (shooterAsks ?? 0) + 1;
@@ -3404,6 +3431,37 @@ try {
       await gp.getByTestId('result-retry').waitFor({ timeout: 10000 });
       await gp.getByTestId('result-retry').click();
       await check(async () => (await gp.innerText()).includes('Asked 2 times; this time with 1 picture(s).'), 'Retry sends the request again with its picture (not just the words)');
+    }
+    {
+      // A space shooter: moving stars (also in the Background panel), the ship fires while X is held and stays on
+      // screen, the saucers fire at their own times.
+      const gp = page.getByTestId('global-prompt');
+      await gp.getByTestId('prompt-input').fill('space shooter build test');
+      await gp.getByTestId('prompt-input').press('Enter');
+      await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+      await page.keyboard.press('Escape');
+      await page.getByTestId('tool-background').click();
+      await check(async () => (await page.getByTestId('bg-stars-on').isChecked()) && (await page.getByTestId('bg-stars-layers').inputValue()) === '3', 'the moving stars show in the Background panel (on, 3 layers deep), to change by hand');
+      await page.getByTestId('bg-stars-on').uncheck();
+      await check(async () => (await page.getByTestId('undo').getAttribute('title')).includes('Remove the stars'), '(switched off there, one undo step)');
+      await page.getByTestId('undo').click();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('play').click();
+      const play = page.getByTestId('play-canvas');
+      await page.waitForTimeout(400);
+      await page.keyboard.down('KeyX');
+      await page.waitForTimeout(1100);
+      await page.keyboard.up('KeyX');
+      const events = (await play.getAttribute('data-events')) ?? '';
+      const mine = events.split('|').filter((e) => e.startsWith('shot:Player')).length;
+      await check(mine >= 4, `holding X keeps the ship firing (${mine} shots in about a second)`);
+      await check(events.includes('shot:Saucer'), 'the saucers fire too');
+      // The ship has gravity here (a platformer) and nothing under it: the bottom of the screen holds it.
+      const [, py] = ((await play.getAttribute('data-player')) ?? '0,0').split(',').map(Number);
+      const [, cy, zoom] = ((await play.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+      await check(py < cy + 600 / zoom, `the ship stays on screen (Stay On Screen): y ${py}`);
+      await page.keyboard.press('Control+Enter');
+      await page.getByTestId('undo').click();
     }
     {
       // AI History: dragging across an entry marks its text (only the panel's own top bar moves it).

@@ -59,6 +59,13 @@ export class CameraController {
     this.view = { width, height };
   }
 
+  /** What the camera shows now, in the level (without any shake). */
+  visible(): { minX: number; minY: number; maxX: number; maxY: number } {
+    const hw = this.view.width / 2 / this.camera.zoom;
+    const hh = this.view.height / 2 / this.camera.zoom;
+    return { minX: this.camera.x - hw, minY: this.camera.y - hh, maxX: this.camera.x + hw, maxY: this.camera.y + hh };
+  }
+
   /** What it follows now (null: stays still). */
   get following(): RuntimeEntity | null {
     return this.target;

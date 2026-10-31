@@ -217,7 +217,7 @@ function rederiveBehaviors(e: RuntimeEntity): void {
   e.beh = {
     patrol: now.patrol && (old.patrol ? { ...now.patrol, originX: old.patrol.originX, originY: old.patrol.originY, dir: old.patrol.dir } : now.patrol),
     jumper: now.jumper && (old.jumper ? { ...now.jumper, t: old.jumper.t } : now.jumper),
-    shooter: now.shooter && (old.shooter ? { ...now.shooter, t: old.shooter.t } : now.shooter),
+    shooter: now.shooter && (old.shooter ? { ...now.shooter, t: old.shooter.t, need: old.shooter.need } : now.shooter),
     mover: now.mover && (old.mover ? { ...now.mover, originX: old.mover.originX, originY: old.mover.originY, toEnd: old.mover.toEnd, wait: old.mover.wait } : now.mover),
     timer: now.timer && (old.timer ? { ...now.timer, t: old.timer.t, done: old.timer.done } : now.timer),
     doubleJump: now.doubleJump && (old.doubleJump ? { ...now.doubleJump, left: Math.min(old.doubleJump.left, now.doubleJump.extra) } : now.doubleJump),

@@ -87,6 +87,8 @@ export interface RuntimeEntity {
    * where it was, fading out: seconds left (0: not shown). It touches, blocks and hurts nothing meanwhile.
    */
   vanishing: number;
+  /** Its shooter's own random rhythm (a stream of its own, so scripts and the engine draw the same waits). */
+  shotSeed: number;
   /** Keys held when it respawned: ignored until they are let go (a key held through a death doesn't walk it off). */
   heldBlock: Set<Action> | null;
   /** Opened (doors…): it no longer blocks and is drawn faded. */
@@ -264,7 +266,8 @@ export interface Behaviors {
     turnT: number;
   } | null;
   jumper: { interval: number; jumpForce: number; t: number } | null;
-  shooter: { trigger: 'auto' | 'key'; interval: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number } | null;
+  /** need: the wait before the next shot (drawn from the shooter's own random rhythm; -1 until it first ticks). */
+  shooter: { trigger: 'auto' | 'key'; interval: number; variation: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number; need: number } | null;
   mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
   timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
   doubleJump: { extra: number; left: number } | null;
@@ -306,6 +309,7 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
       ? {
           trigger: s.trigger === 'key' ? 'key' : 'auto',
           interval: num(s.interval, 2),
+          variation: Math.min(1, Math.max(0, num(s.variation, 0.5))),
           direction: typeof s.direction === 'string' ? s.direction : 'facing',
           targetTag: typeof s.targetTag === 'string' ? s.targetTag : 'player',
           speed: num(s.speed, 240),
@@ -314,6 +318,7 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
           projectile: typeof s.projectile === 'string' ? s.projectile : '',
           // Fired by a key: ready at once. Automatic: the first shot comes after one interval.
           t: s.trigger === 'key' ? num(s.interval, 2) : 0,
+          need: -1,
         }
       : null,
     mover: mv ? { offset: (mv.offset as Vec2) ?? { x: 96, y: 0 }, speed: num(mv.speed, 64), pause: num(mv.pause, 0.5), originX: at.x, originY: at.y, toEnd: true, wait: 0 } : null,
@@ -402,6 +407,8 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     respawns: 0,
     dying: 0,
     vanishing: 0,
+    // (From what it is and where it starts: the same every time the level is played.)
+    shotSeed: [...`${r.name}@${Math.round(r.transform.position.x)},${Math.round(r.transform.position.y)}`].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 2166136261) % 4294967296,
     heldBlock: null,
     open: c.Openable?.startsOpen === true,
     switch: c.Switch ? { activation: c.Switch.activation === 'touch' ? 'touch' : 'interact', once: c.Switch.once === true, on: c.Switch.startsOn === true, used: false } : null,
@@ -695,6 +702,7 @@ export class Runtime {
       // Without gravity nothing falls out of the level (a top-down character can walk below it).
       if (e.y > this.fallLimit && !this.floats(e)) this.respawn(e, 'fell');
     }
+    this.keepOnScreen();
     this.behaviors.after(dt);
     this.gameplay.update(dt, input);
     // Characters that died wait out their Health.respawnDelay (their death animation), then come back: counted
@@ -1301,6 +1309,48 @@ export class Runtime {
   /** Standing on solid ground with the ladder going up: pressing down shouldn't start a climb into the floor. */
   private isOnFloorBelowLadder(e: RuntimeEntity): boolean {
     return e.grounded && !this.ladderTops.some((t) => standingOn(boxOf(e)!, [t]));
+  }
+
+  /**
+   * The wait before a shooter's next automatic shot: `interval`, varied at random by up to `variation` of it either
+   * way, from the shooter's own stream (the engine's shooting and a Shooting script draw the same waits).
+   */
+  shotWait(e: RuntimeEntity, interval: number, variation: number): number {
+    const v = Math.min(1, Math.max(0, variation));
+    if (v <= 0) return interval;
+    e.shotSeed = (e.shotSeed * 1664525 + 1013904223) % 4294967296;
+    return Math.max(0.05, interval * (1 + v * ((2 * e.shotSeed) / 4294967296 - 1)));
+  }
+
+  /** A player's fire key: X, or Space too for one that can't jump (seen from above, or without gravity). */
+  fireHeld(e: RuntimeEntity, input: InputView): boolean {
+    return input.isDown('fire') || ((e.controller?.movement === 'topdown' || this.floats(e)) && input.isDown('jump'));
+  }
+
+  /** Things with Stay On Screen never leave what the camera shows: its edges stop them as walls do. */
+  private keepOnScreen(): void {
+    let view: ReturnType<CameraController['visible']> | null = null;
+    for (const e of this.entities) {
+      const keep = e.alive ? e.base.components.StayOnScreen : undefined;
+      if (!keep) continue;
+      view ??= this.cam.visible();
+      const m = Math.max(0, Number(keep.margin) || 0);
+      const box = boxOf(e) ?? { x: e.x, y: e.y, hw: 0, hh: 0 };
+      const minX = view.minX + m + box.hw;
+      const maxX = view.maxX - m - box.hw;
+      const minY = view.minY + m + box.hh;
+      const maxY = view.maxY - m - box.hh;
+      const nx = minX > maxX ? (view.minX + view.maxX) / 2 : Math.min(maxX, Math.max(minX, box.x));
+      const ny = minY > maxY ? (view.minY + view.maxY) / 2 : Math.min(maxY, Math.max(minY, box.y));
+      if (nx !== box.x) {
+        e.x += nx - box.x;
+        e.vx = 0;
+      }
+      if (ny !== box.y) {
+        e.y += ny - box.y;
+        e.vy = 0;
+      }
+    }
   }
 
   /** Puts an entity back at its start with full health (after falling out of the level or dying). */

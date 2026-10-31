@@ -91,6 +91,11 @@ export const operationSchema = z.union([
     parallax: z.number().nullable().describe('How much the background moves with the level as the camera moves: 0 = stays fixed on screen, 1 = moves exactly with the level; 0.2-0.6 gives depth. Sets both directions (left/right and up/down) unless parallaxY is given'),
     parallaxY: z.number().nullable().describe('Only for the camera moving up and down, when that should differ from left and right (e.g. parallax 0, parallaxY 1: stays on screen sideways, moves with the level up and down); null = as parallax'),
     removeImage: z.boolean().describe('true to remove the background image and show only the color'),
+    scroll: z.object({ x: z.number(), y: z.number() }).nullable().describe('cover/tile picture: moves by itself during play, px a second ({"x":0,"y":0} stops it); null = keep'),
+    stars: z
+      .object({ density: z.number(), speedX: z.number(), speedY: z.number(), layers: z.number(), color: z.string() })
+      .nullable()
+      .describe('Stars the engine draws over the color, moving by themselves (space, flying): density = stars per 100×100 level px (10-20 typical, up to 60; 0 removes them), speedX/speedY = px a second of the nearest layer (a vertical shooter: speedY 60-200, flying up past them), layers 1-3 (depth: farther layers slower and dimmer), color "#rrggbb"; null = keep'),
   }),
   z.object({
     op: z.literal('create_definition'),
@@ -690,6 +695,8 @@ export function applyOperations(
           ...(op.fit !== null ? { fit: op.fit } : {}),
           ...(op.parallax !== null ? { parallax: op.parallax, parallaxY: op.parallaxY } : op.parallaxY !== null ? { parallaxY: op.parallaxY } : {}),
           ...(op.removeImage ? { imageAssetId: null } : {}),
+          ...(op.scroll ? { scroll: op.scroll } : {}),
+          ...(op.stars ? { stars: { density: op.stars.density, speed: { x: op.stars.speedX, y: op.stars.speedY }, layers: op.stars.layers, color: op.stars.color } } : {}),
         });
         break;
       }

@@ -4,6 +4,7 @@
  * sent with every request; the AI can also ask for one (need_code "topic:<name>"). The instructions keep a one-line
  * pointer to each.
  */
+import { SWOOPER_JSON } from '../script/swooper';
 import type { AIContext } from './context';
 
 export interface Topic {
@@ -16,6 +17,19 @@ export interface Topic {
 }
 
 export const TOPICS: Record<string, Topic> = {
+  shooters: {
+    title: 'Shoot-em-ups: space shooters like the arcade classics',
+    scopes: [],
+    words: /shoot[- ]?['e]?m[- ]?up|shmup|space ?shooter|retro shooter|arcade shooter|galaga|galaxian|invaders|bullet hell|vertical shooter|horizontal shooter|scrolling shooter|spaceship|space ship|alien|starfighter/i,
+    text: `- SHOOT-EM-UPS (space shooters: a ship shooting up at waves of enemies). Build it like the classics, never like a walled room:
+  * Top-down starter (no gravity). NO walls around the level: the ship gets StayOnScreen (the screen's edges stop it); remove its CameraTarget and fix the camera on the playfield (set_camera: bounds "none", fixedAt the playfield's middle, a zoom that shows it all); enemy shots and anything that flies off screen just go.
+  * Motion without walls: set_background stars (density about 15, speedY 100-140, layers 3, white or pale blue: flying up through space), the background color very dark (navy or black, as the picture's).
+  * The ship: Shooter trigger "key", direction "up", interval 0.15-0.3, speed 400-500, range 600; it fires while X or Space is held (say so in message: "hold Space or X to shoot"). Usually it moves only left/right at the bottom (a script velocity y 0 each tick and a fixed y), or freely when the picture shows that. Health 3 with hearts in the HUD, or lives.
+  * Enemies (draw them as the picture's ships, saucers, bugs): no gravity, Health 1-2, tagged "enemy", hurt the ship on touch, worth points (a score in the HUD); Shooter trigger "auto", direction "down" (or "atTarget" with targetTag "player" for aimed shots), interval 1.5-4, variation 0.5-0.8 (their own rhythms: never all at once), speed 160-240, targetTag "" for "down". Placed in a formation grid near the top (rows and columns, like the picture), each with the SWOOPER script (set_script with the JSON below; one per enemy object: every copy runs it): they fly in from the screen's edges one after another along a curve to their places, sway together, and now and then swoop down in a half circle toward the ship, fly off the bottom and come back from the top. Its settings: entry "left"/"right"/"top"/"none" (different rows from different sides, e.g. one enemy object per row), entry_gap (seconds between followers), dive_every (average seconds between one enemy's dives; 4-10), dive "swoop" (half circle), "snake" (S-curve down) or "straight", radius, speed, sway. Bigger enemies (a boss) can have more health, shoot "atTarget", and dive less.
+  * Waves: winning is none_left of the enemies (complete_level), or more waves: a rule or script that, when none are left, spawns the next formation (spawn at the formation places; they fly in again).
+  * The player's shots and the enemies' shots: draw them as small projectile objects (a laser bolt, a plasma ball) and set Shooter.projectile; explosions as a defeated look (SpriteStates.defeated) and a sound.
+  SWOOPER: ${SWOOPER_JSON}`,
+  },
   pictures: {
     title: 'Pictures the user attached',
     scopes: [],
@@ -26,6 +40,7 @@ export const TOPICS: Record<string, Topic> = {
   2. BUILD IT (one answer for a new game; a big one is fine): for each element a library object of the right kind (the starter's Player, Enemy, Platform or Wall, Ladder, Coin, Key, Door, Hazard, Goal…, each drawn anew; new objects for the rest, with the behaviors the picture suggests: patrolling or wandering enemies, a sword hit or shooting, pickups counted in the HUD, doors with keys), every one drawn in the picture's style with draw_sprite (its pixel scale and palette; animations for what moves), ground and walls that join up autotiled when the picture's do; the background color; a first level laid out like the picture's (the same kinds of structures, about as busy, made playable: a reachable route, build_path in a platformer); and the HUD it shows (hearts, bars, counters, score) as screen drawings.
   3. MAKE IT THE USER'S OWN: the same style and the same kinds of things, drawn by you: never copy a known game's characters, logos, title or exact level, and don't reproduce words in the picture that name a game or a company.
   4. MESSAGE: in two or three sentences, what you saw (the view, the pixel scale, the palette, the main elements) and what you built from it; say what you left out and why (something the engine can't do yet).
+  A shooter picture (a ship at the bottom, rows of enemies, a dark starry or tech background): a shoot-em-up, built as the shooters guidance says (ask need_code "topic:shooters" when it isn't here): a picture is a moment of a moving game; its background flies past, it isn't walls.
   In an existing game (not a new one) use the pictures for what the user asks with them ("draw the enemy like this", "a level like this", "this palette").`,
   },
   panels: {
@@ -66,7 +81,7 @@ export const TOPICS: Record<string, Topic> = {
     title: "Backgrounds: set_background, parallax, images",
     scopes: ['background'],
     words: /background|parallax|backdrop|sky\b|scroll/i,
-    text: `- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level as the camera moves (0 fixed on screen, 1 with the level), both ways; parallaxY sets up and down on its own when it should differ ("stays on screen when the camera goes left/right but not up/down" -> parallax 0, parallaxY 1). Fill (cover) always fills the screen's height, so only its left/right movement shows. You cannot draw background pictures; the user uploads them.`,
+    text: `- Backgrounds (set_background): a color, plus optionally an image the user uploaded. parallax is how much the image moves with the level as the camera moves (0 fixed on screen, 1 with the level), both ways; parallaxY sets up and down on its own when it should differ ("stays on screen when the camera goes left/right but not up/down" -> parallax 0, parallaxY 1). Fill (cover) always fills the screen's height, so only its left/right movement shows. You cannot draw background pictures; the user uploads them. Movement by itself during play: scroll {x, y} px a second moves a cover/tile picture on its own (clouds drifting, ground rushing past); stars {density, speedX, speedY, layers, color} draws moving stars over the color, no picture needed: space, flying (a vertical shooter: density 12-20, speedY 80-160, layers 3, "#ffffff"; a horizontal one: speedX -120); density 0 takes them away.`,
   },
   grid_games: {
     title: "Grid and turn-based games (Rogue, Sokoban, one square per key press)",

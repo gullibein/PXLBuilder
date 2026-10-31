@@ -874,6 +874,13 @@ export class ScriptSystem {
         return this.rt.screen.w;
       case 'screen_h':
         return this.rt.screen.h;
+      case 'view_x':
+      case 'view_y':
+      case 'view_w':
+      case 'view_h': {
+        const v = this.rt.cam.visible();
+        return name === 'view_x' ? (v.minX + v.maxX) / 2 : name === 'view_y' ? (v.minY + v.maxY) / 2 : name === 'view_w' ? v.maxX - v.minX : v.maxY - v.minY;
+      }
       case 'player':
         return this.nearest(ctx.self, 'player');
       case 'time':
@@ -1036,6 +1043,10 @@ export class ScriptSystem {
       }
       case 'key':
         return this.input?.isDown(show(v[0]) as never) ?? false;
+      case 'fire_held':
+        return !!this.input && this.rt.fireHeld(self, this.input);
+      case 'shot_wait':
+        return this.rt.shotWait(self, n(0), n(1));
       case 'pressed':
         return this.input?.wasPressed(show(v[0]) as never) ?? false;
       case 'released':

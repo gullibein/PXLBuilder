@@ -21,6 +21,8 @@ describe('guidance only some requests need', () => {
     expect(topicsFor({ kind: 'sound', sceneId: 's', assetId: null }, 'deeper')).toContain('sounds');
     expect(topicsFor(level, 'Add some background music to this level')).toEqual(expect.arrayContaining(['music', 'backgrounds']));
     expect(topicsFor(level, 'Make a Tetris game')).toContain('falling_blocks');
+    expect(topicsFor(level, 'here is a retro space shooter. please make this game')).toContain('shooters');
+    expect(topicsFor(level, 'make a platformer with coins')).not.toContain('shooters');
     expect(topicsFor(level, 'make it a turn-based game, one square per key press')).toContain('grid_games');
     expect(topicsFor(level, 'Make the player run faster')).toEqual([]);
     expect(topicsFor(level, 'a bit higher', [{ request: 'the coin plays a ding sound' }])).toContain('sounds');

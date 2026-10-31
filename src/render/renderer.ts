@@ -81,12 +81,32 @@ export interface BackgroundView {
   startCamera?: Vec2 | null;
   /** editing: what the camera shows at the start, in the level. */
   screen?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+  /** Seconds of play: how far a scrolling picture and the stars have moved (0, or left out, in the editor). */
+  time?: number;
 }
 
 export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dpr: number, world: WorldSettings, camera: Camera, images: ImageLookup = noImages, opts: BackgroundView = {}): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
+  const time = opts.time ?? 0;
+  if (world.background.stars) {
+    // (In the editor, inside what the camera shows at the start.)
+    const sc = opts.editing ? opts.screen : null;
+    if (!opts.editing) drawStars(ctx, world.background.stars, view, camera.zoom, time);
+    else if (sc) {
+      const x0 = (sc.minX - camera.x) * camera.zoom + view.width / 2;
+      const y0 = (sc.minY - camera.y) * camera.zoom + view.height / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, (sc.maxX - sc.minX) * camera.zoom, (sc.maxY - sc.minY) * camera.zoom);
+      ctx.clip();
+      ctx.translate(x0, y0);
+      drawStars(ctx, world.background.stars, { width: (sc.maxX - sc.minX) * camera.zoom, height: (sc.maxY - sc.minY) * camera.zoom }, camera.zoom, 0);
+      ctx.restore();
+    }
+  }
+  const scrolled = world.background.scroll ? { x: world.background.scroll.x * time, y: world.background.scroll.y * time } : { x: 0, y: 0 };
   const { imageAssetId, fit, parallax } = world.background;
   // Up and down can follow the level differently from left and right.
   const parallaxY = world.background.parallaxY ?? parallax;
@@ -128,11 +148,48 @@ export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dp
     ctx.restore();
     return;
   }
-  fillWith(ctx, img, fit, parallax, parallaxY, view, camera);
+  fillWith(ctx, img, fit, parallax, parallaxY, view, camera, scrolled);
+}
+
+/**
+ * Stars moving by themselves: 1-3 layers, the farther ones smaller, dimmer and slower (depth). Each layer is the same
+ * random pattern of stars repeating every 256 screen pixels (always the same: a game looks the same every time),
+ * moved by `speed` × time; every star on whole picture pixels, as everything else.
+ */
+function drawStars(ctx: CanvasRenderingContext2D, stars: NonNullable<WorldSettings['background']['stars']>, view: ViewSize, zoom: number, time: number): void {
+  // The pattern repeats every 256 level pixels.
+  const tile = 256 * zoom;
+  const mod = (a: number, n: number) => ((a % n) + n) % n;
+  // (mulberry32: well spread, no rows or stripes.)
+  let seed = 7919;
+  const rand = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const px = Math.max(1, Math.round(zoom));
+  ctx.fillStyle = stars.color;
+  for (let layer = 0; layer < stars.layers; layer++) {
+    // Nearest last: the biggest, brightest and fastest.
+    const depth = (layer + 1) / stars.layers;
+    // density: stars per 100×100 level pixels, all layers together (more of the far, small ones).
+    const count = Math.round(((stars.density * 256 * 256) / 10000 / stars.layers) * (1.5 - depth * 0.5));
+    const ox = stars.speed.x * depth * time * zoom;
+    const oy = stars.speed.y * depth * time * zoom;
+    const size = px * (depth > 0.99 && stars.layers > 1 ? 2 : 1);
+    ctx.globalAlpha = 0.35 + 0.65 * depth;
+    for (let i = 0; i < count; i++) {
+      const sx = mod(rand() * tile + ox, tile);
+      const sy = mod(rand() * tile + oy, tile);
+      for (let x = sx; x < view.width; x += tile) for (let y = sy; y < view.height; y += tile) ctx.fillRect(Math.round(x / px) * px, Math.round(y / px) * px, size, size);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 /** A picture filling the view's height and repeating sideways (cover), or repeating at its own size (tile). */
-function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'cover' | 'tile', parallax: number, parallaxY: number, view: ViewSize, camera: Camera): void {
+function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'cover' | 'tile', parallax: number, parallaxY: number, view: ViewSize, camera: Camera, scrolled = { x: 0, y: 0 }): void {
   const { w: iw, h: ih } = imageSize(img);
   if (!iw || !ih) return;
   const scale = fit === 'cover' ? view.height / ih : camera.zoom;
@@ -140,11 +197,14 @@ function fillWith(ctx: CanvasRenderingContext2D, img: CanvasImageSource, fit: 'c
   const th = ih * scale;
   const mod = (a: number, n: number) => ((a % n) + n) % n;
   // Screen position of the world origin, scaled by how much the background follows the level.
-  const ox = mod(view.width / 2 - camera.x * camera.zoom * parallax, tw);
-  const oy = fit === 'cover' ? 0 : mod(view.height / 2 - camera.y * camera.zoom * parallaxY, th);
+  // (A scrolling picture moves by itself too, by `scrolled` level pixels; a filling one that scrolls up or down
+  // repeats up and down as well.)
+  const ox = mod(view.width / 2 - camera.x * camera.zoom * parallax + scrolled.x * camera.zoom, tw);
+  const oy = fit === 'cover' ? mod(scrolled.y * camera.zoom, th) : mod(view.height / 2 - camera.y * camera.zoom * parallaxY + scrolled.y * camera.zoom, th);
+  const repeatY = fit !== 'cover' || scrolled.y !== 0;
   ctx.imageSmoothingEnabled = scale < 1;
   for (let x = ox - tw; x < view.width; x += tw) {
-    if (fit === 'cover') ctx.drawImage(img, x, 0, tw, th);
+    if (!repeatY) ctx.drawImage(img, x, 0, tw, th);
     else for (let y = oy - th; y < view.height; y += th) ctx.drawImage(img, x, y, tw, th);
   }
 }

@@ -190,17 +190,17 @@ describe('AI context', () => {
   it('set_background: parallax sets both directions; parallaxY only up and down', () => {
     const { project, sceneId } = level();
     const bg = (p: Project) => p.scenes[0].world.background;
-    const split = apply(project, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: 0, parallaxY: 1, removeImage: false }]);
+    const split = apply(project, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: 0, parallaxY: 1, removeImage: false, scroll: null, stars: null }]);
     expect(bg(split)).toMatchObject({ parallax: 0, parallaxY: 1 });
     expect(buildAIPayload(split, { kind: 'background', sceneId }, registry).level.background).toMatchObject({ parallax: 0, parallaxY: 1 });
     // Only up and down changed: left and right stay.
-    const y = apply(split, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: null, parallaxY: 0.4, removeImage: false }]);
+    const y = apply(split, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: null, parallaxY: 0.4, removeImage: false, scroll: null, stars: null }]);
     expect(bg(y)).toMatchObject({ parallax: 0, parallaxY: 0.4 });
     // parallax alone: both ways again (stored once).
-    const both = apply(y, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: 0.5, parallaxY: null, removeImage: false }]);
+    const both = apply(y, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: 0.5, parallaxY: null, removeImage: false, scroll: null, stars: null }]);
     expect(bg(both).parallax).toBe(0.5);
     expect('parallaxY' in bg(both)).toBe(false);
-    expect(() => apply(project, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: null, parallaxY: 2, removeImage: false }])).toThrow(/between 0 and 1/);
+    expect(() => apply(project, [{ op: 'set_background', sceneId, color: null, fit: null, parallax: null, parallaxY: 2, removeImage: false, scroll: null, stars: null }])).toThrow(/between 0 and 1/);
   });
 
   it('object context (right-click in the Objects tab) sends that library object in full, with its drawing', () => {

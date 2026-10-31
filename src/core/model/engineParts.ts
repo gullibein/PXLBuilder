@@ -348,7 +348,9 @@ function shootingScript(owner?: PartOwner): BehaviorScript {
       { name: 'speed', value: num(c.speed, 240) },
       { name: 'damage', value: num(c.damage, 1) },
       { name: 'range', value: num(c.range, 480) },
+      { name: 'variation', value: num(c.variation, 0.5) },
       { name: 'wait', value: 0 },
+      { name: 'need', value: 0 },
       { name: 'aim', value: false },
     ],
     handlers: [
@@ -362,15 +364,18 @@ function shootingScript(owner?: PartOwner): BehaviorScript {
           set('speed', "field(self, 'Shooter.speed')"),
           set('damage', "field(self, 'Shooter.damage')"),
           set('range', "field(self, 'Shooter.range')"),
-          // Fired by a key: ready at once; automatic: the first shot after one interval.
+          set('variation', "field(self, 'Shooter.variation')"),
+          // Fired by a key: ready at once; automatic: the first shot after about one interval (its own rhythm).
           set('wait', "trigger == 'key' ? interval : 0"),
+          set('need', "trigger == 'key' ? interval : shot_wait(interval, variation)"),
         ],
       },
       {
         when: { on: 'tick' },
         do: [
           set('wait', 'wait + dt'),
-          when(`(trigger == 'key' ? pressed('fire') : true) and wait >= interval and shots_in_air() < 100`, [
+          // A key shooter fires every interval while the key is held.
+          when(`(trigger == 'key' ? fire_held() : true) and wait >= need and shots_in_air() < 100`, [
             // An "auto" shooter with a target tag fires only when one is within range.
             set('aim', `${found} and (range <= 0 or dist(${target}) <= range)`),
             when(`trigger != 'auto' or target_tag == '' or aim`, [
@@ -397,6 +402,7 @@ function shootingScript(owner?: PartOwner): BehaviorScript {
                 ),
               ]),
               set('wait', '0'),
+              set('need', "trigger == 'key' ? interval : shot_wait(interval, variation)"),
             ]),
           ]),
         ],

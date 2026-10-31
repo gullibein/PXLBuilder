@@ -48,7 +48,7 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
   const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
   const view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
-  drawBackground(ctx, size, dpr, f.scene.world, view, images, { startCamera: f.startCamera ?? null });
+  drawBackground(ctx, size, dpr, f.scene.world, view, images, { startCamera: f.startCamera ?? null, time: runtime.completed ?? runtime.time });
   applyCamera(ctx, view, size, dpr);
   // (Animations hold still too once the level is won.)
   drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time);

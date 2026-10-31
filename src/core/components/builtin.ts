@@ -226,7 +226,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'Shooter',
     label: 'Shooter',
     description:
-      'Fires shots. trigger "auto": every `interval` seconds; "key": when the player presses X (only on a player-controlled object), at most once per interval. A shot flies straight, hurts what it hits that has Health (never its own side: things with the shooter\'s tags; shots carry those tags and "projectile") and vanishes on hitting a wall or after `range` pixels.',
+      'Fires shots. trigger "auto": about every `interval` seconds (each shooter at its own random rhythm, by `variation`, so a row of them doesn\'t fire all at once); "key": while the player holds X (or Space, for a character that can\'t jump: seen from above or without gravity), at most once per interval (only on a player-controlled object). A shot flies straight, hurts what it hits that has Health (never its own side: things with the shooter\'s tags; shots carry those tags and "projectile") and vanishes on hitting a wall or after `range` pixels.',
     category: 'Behavior',
     fields: {
       trigger: { kind: 'enum', options: ['auto', 'key'], default: 'auto' },
@@ -237,6 +237,16 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       damage: { kind: 'number', default: 1, min: 0, step: 1 },
       range: { kind: 'number', default: 480, min: 16, step: 32, description: 'How far a shot flies before it vanishes (px)' },
       projectile: { kind: 'string', default: '', description: 'Library object id to fire (its look and tags); empty = a small built-in shot' },
+      variation: { kind: 'number', default: 0.5, min: 0, max: 1, step: 0.05, description: 'auto: how much each wait between shots varies at random (0 = exactly every interval, all shooters together; 0.5 = between half and one and a half intervals); the first shot too, so shooters placed together fire at different times' },
+    },
+  },
+  {
+    type: 'StayOnScreen',
+    label: 'Stay On Screen',
+    description: 'It can never leave what the camera shows: the edges of the screen stop it like walls (a ship in a space shooter, with no walls drawn around the level). Only things that move.',
+    category: 'Movement',
+    fields: {
+      margin: { kind: 'number', default: 0, min: 0, step: 4, description: 'Keeps this many pixels away from the edges' },
     },
   },
   {

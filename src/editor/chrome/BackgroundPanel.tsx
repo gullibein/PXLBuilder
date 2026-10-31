@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { StarField } from '../../core/types';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
@@ -196,14 +197,77 @@ export function BackgroundPanel() {
               onChange={(parallaxY, coalesce) => edit('Set background movement', (p) => setBackground(p, sid, { parallaxY }), coalesce ? { coalesceKey: `${sid}.parallaxY` } : undefined)}
             />
           )}
+          {bg.fit !== 'placed' && (
+            <>
+              <span className="bg-label" title="The picture moves by itself during play, this many pixels a second (clouds drifting, the ground rushing past)">
+                Scrolls by itself (px/s)
+              </span>
+              <div className="bg-scroll">
+                {(['x', 'y'] as const).map((axis) => (
+                  <label key={axis} className="small">
+                    {axis === 'x' ? 'Sideways' : 'Down'}
+                    <input
+                      type="number"
+                      step={10}
+                      value={bg.scroll?.[axis] ?? 0}
+                      data-testid={`bg-scroll-${axis}`}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (!Number.isFinite(v)) return;
+                        edit('Set background scrolling', (p) => setBackground(p, sid, { scroll: { x: bg.scroll?.x ?? 0, y: bg.scroll?.y ?? 0, [axis]: Math.max(-2000, Math.min(2000, v)) } }), { coalesceKey: `${sid}.scroll` });
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
+
+      <Stars sceneId={sid} stars={bg.stars ?? null} edit={edit} />
 
       <div className="bg-prompt">
         <div className="bg-ai" aria-hidden="true" />
         <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
       </div>
     </section>
+  );
+}
+
+/** Stars the engine draws, moving by themselves (space, flying): on/off, how many, how fast, how deep. */
+function Stars({ sceneId, stars, edit }: { sceneId: string; stars: StarField | null; edit: ReturnType<typeof useEditor.getState>['edit'] }) {
+  const set = (label: string, patch: Partial<StarField> | null, coalesce?: string) =>
+    edit(label, (p) => setBackground(p, sceneId, { stars: patch === null ? null : { ...(stars ?? { density: 15, speed: { x: 0, y: 120 }, layers: 3, color: '#ffffff' }), ...patch } }), coalesce ? { coalesceKey: `${sceneId}.stars.${coalesce}` } : undefined);
+  return (
+    <div className="bg-stars" data-testid="bg-stars">
+      <label className="bg-label">
+        <input type="checkbox" checked={!!stars} data-testid="bg-stars-on" onChange={(e) => set(e.target.checked ? 'Add moving stars' : 'Remove the stars', e.target.checked ? {} : null)} /> Moving stars
+      </label>
+      {stars && (
+        <div className="bg-stars-row small">
+          <label title="Stars per 100×100 level pixels">
+            How many
+            <input type="range" min={1} max={40} step={1} value={stars.density} data-testid="bg-stars-density" onChange={(e) => set('Stars: how many', { density: Number(e.target.value) }, 'density')} />
+          </label>
+          <label title="Pixels a second, down (the nearest stars; farther ones slower). Negative: up.">
+            Speed
+            <input type="number" step={10} value={stars.speed.y} data-testid="bg-stars-speed" onChange={(e) => Number.isFinite(Number(e.target.value)) && set('Stars: speed', { speed: { x: stars.speed.x, y: Math.max(-2000, Math.min(2000, Number(e.target.value))) } }, 'speed')} />
+          </label>
+          <label title="Layers at different depths">
+            Depth
+            <select value={stars.layers} data-testid="bg-stars-layers" onChange={(e) => set('Stars: depth', { layers: Number(e.target.value) })}>
+              {[1, 2, 3].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <input type="color" value={stars.color} aria-label="Star color" data-testid="bg-stars-color" onChange={(e) => set('Stars: color', { color: e.target.value }, 'color')} />
+        </div>
+      )}
+    </div>
   );
 }
 

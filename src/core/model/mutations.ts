@@ -139,8 +139,19 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
   if (patch.parallaxY !== undefined && patch.parallaxY !== null && !(Number.isFinite(patch.parallaxY) && patch.parallaxY >= 0 && patch.parallaxY <= 1)) {
     throw new ModelError('Background movement (up and down) must be between 0 and 1');
   }
+  if (patch.scroll && !([patch.scroll.x, patch.scroll.y].every((v) => Number.isFinite(v) && Math.abs(v) <= 2000))) throw new ModelError('Background scrolling must be at most 2000 px a second each way');
+  if (patch.stars) {
+    const s = patch.stars;
+    if (!(Number.isFinite(s.density) && s.density >= 0 && s.density <= 60)) throw new ModelError('Stars: density must be between 0 and 60 (stars per 100×100 level pixels)');
+    if (![s.speed.x, s.speed.y].every((v) => Number.isFinite(v) && Math.abs(v) <= 2000)) throw new ModelError('Stars: speed must be at most 2000 px a second each way');
+    if (!(Number.isInteger(s.layers) && s.layers >= 1 && s.layers <= 3)) throw new ModelError('Stars: layers must be 1, 2 or 3');
+    if (!/^#[0-9a-f]{6}$/i.test(s.color)) throw new ModelError('Stars: color must be "#rrggbb"');
+  }
   const bg = scene.world.background;
   Object.assign(bg, patch);
+  // (None: not stored.)
+  if (!bg.scroll || (bg.scroll.x === 0 && bg.scroll.y === 0)) delete bg.scroll;
+  if (!bg.stars || bg.stars.density === 0) delete bg.stars;
   // Up and down the same as left and right: stored once.
   if (bg.parallaxY === null || bg.parallaxY === undefined || bg.parallaxY === bg.parallax) delete bg.parallaxY;
 }

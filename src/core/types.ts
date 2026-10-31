@@ -85,6 +85,20 @@ export interface BackgroundSettings {
   parallax: number;
   /** The same for the camera moving up and down, when it differs; missing or null = as `parallax`. */
   parallaxY?: number | null;
+  /** cover/tile: the picture moves by itself during play, this many px a second (a sky drifting, ground rushing past). */
+  scroll?: { x: number; y: number } | null;
+  /** Stars drawn by the engine over the color (under the picture), moving by themselves: flying through space. */
+  stars?: StarField | null;
+}
+
+export interface StarField {
+  /** How many: stars per 100×100 level pixels (0 = none). */
+  density: number;
+  /** Which way and how fast the nearest stars move, px a second (farther layers slower). */
+  speed: { x: number; y: number };
+  /** 1-3 layers at different depths (more: deeper). */
+  layers: number;
+  color: string;
 }
 
 export interface WorldSettings {

@@ -158,3 +158,57 @@ describe('a placed background picture', () => {
     expect(r.draws[0]).toEqual([100 * 2 + 320, 50 * 2 + 180, 640, 360]);
   });
 });
+
+describe('backgrounds that move by themselves', () => {
+  /** A canvas stand-in that records what is drawn. */
+  const recorder = () => {
+    const rects: string[] = [];
+    const images: string[] = [];
+    const ctx = {
+      setTransform() {},
+      save() {},
+      restore() {},
+      fillRect: (x: number, y: number, w: number) => rects.push(`${x},${y},${w}`),
+      drawImage: (_i: unknown, x: number, y: number) => images.push(`${Math.round(x)},${Math.round(y)}`),
+      set fillStyle(_v: string) {},
+      set globalAlpha(_v: number) {},
+      set imageSmoothingEnabled(_v: boolean) {},
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, rects, images };
+  };
+  const view = { width: 480, height: 270 };
+  const world = (bg: Record<string, unknown>) => ({ gravity: { x: 0, y: 0 }, backgroundColor: '#000000', background: { imageAssetId: null, fit: 'cover', parallax: 0.3, ...bg } }) as never;
+
+  it('stars: about as many as asked for, the near ones moving fastest; the same pattern every time', () => {
+    const stars = { density: 15, speed: { x: 0, y: 120 }, layers: 3, color: '#ffffff' };
+    const at0 = recorder();
+    drawBackground(at0.ctx, view, 1, world({ stars }), { x: 0, y: 0, zoom: 1 }, () => null, { time: 0 });
+    const again = recorder();
+    drawBackground(again.ctx, view, 1, world({ stars }), { x: 0, y: 0, zoom: 1 }, () => null, { time: 0 });
+    expect(again.rects).toEqual(at0.rects);
+    // (The first rect is the background color.) 15 per 100×100: about 190 on a 480×270 view.
+    expect(at0.rects.length - 1).toBeGreaterThan(120);
+    expect(at0.rects.length - 1).toBeLessThan(300);
+    const later = recorder();
+    drawBackground(later.ctx, view, 1, world({ stars }), { x: 0, y: 0, zoom: 1 }, () => null, { time: 1 });
+    expect(later.rects).not.toEqual(at0.rects);
+    // None in the editor's still frame without a screen box; nothing without stars.
+    const none = recorder();
+    drawBackground(none.ctx, view, 1, world({}), { x: 0, y: 0, zoom: 1 }, () => null, { time: 1 });
+    expect(none.rects.length).toBe(1);
+  });
+
+  it('a picture that scrolls by itself moves with play time (and repeats up and down when it scrolls that way)', () => {
+    const img = { width: 64, height: 64 } as unknown as CanvasImageSource;
+    const draw = (time: number) => {
+      const r = recorder();
+      drawBackground(r.ctx, view, 1, world({ imageAssetId: 'a', fit: 'tile', scroll: { x: 0, y: 40 } }), { x: 0, y: 0, zoom: 1 }, () => ({ source: img }) as never, { time });
+      return r.images;
+    };
+    const ys = (list: string[]) => [...new Set(list.map((s) => Number(s.split(',')[1])))].sort((a, b) => a - b);
+    // 40 px a second: half a second later every row is 20 px further down (the rows repeat every 64).
+    const shift = (((ys(draw(0.5))[0] - ys(draw(0))[0]) % 64) + 64) % 64;
+    expect(shift).toBe(20);
+    expect(ys(draw(0)).length).toBeGreaterThan(4);
+  });
+});

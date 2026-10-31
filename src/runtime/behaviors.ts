@@ -52,8 +52,14 @@ export class BehaviorSystem {
       if (b.shooter && !ownPart(e, 'shooting')) {
         const s = b.shooter;
         s.t += dt;
-        const wants = s.trigger === 'key' ? input.wasPressed('fire') : true;
-        if (wants && s.t >= s.interval) this.fire(e) && (s.t = 0);
+        // (A key shooter: every interval while the key is held. Automatic: each its own random rhythm.)
+        const next = () => (s.trigger === 'key' ? s.interval : this.rt.shotWait(e, s.interval, s.variation));
+        if (s.need < 0) s.need = next();
+        const wants = s.trigger === 'key' ? this.rt.fireHeld(e, input) : true;
+        if (wants && s.t >= s.need && this.fire(e)) {
+          s.t = 0;
+          s.need = next();
+        }
       }
       if (b.timer && !b.timer.done && !ownPart(e, 'timer')) {
         b.timer.t += dt;
