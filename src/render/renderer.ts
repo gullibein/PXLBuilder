@@ -386,66 +386,103 @@ function cornerFillPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: 
   });
 }
 
-/** A soft light around a thing (Glow): a radial fade from its color, added to what is behind. */
-function drawGlow(ctx: CanvasRenderingContext2D, at: Vec2, glow: Record<string, unknown>, across: number, alpha: number, clock: number): void {
+/** A position on the art-pixel grid (`px` level pixels a cell). */
+const snap = (v: number, px: number) => Math.round(v / px) * px;
+
+/**
+ * A light around a thing (Glow), as pixel art: three solid rings on the game's art-pixel grid, each adding a fixed
+ * step of the glow color (outer faint, inner bright), never a smooth blur. Each ring is drawn row by row (one
+ * rectangle per row), so a glow costs a few dozen rectangles whatever its size.
+ */
+function drawGlow(ctx: CanvasRenderingContext2D, at: Vec2, glow: Record<string, unknown>, across: number, alpha: number, clock: number, px: number): void {
   const color = typeof glow.color === 'string' ? glow.color : '#ffd166';
-  const reach = Math.max(1, typeof glow.size === 'number' ? glow.size : 10);
-  const pulse = typeof glow.pulse === 'number' && glow.pulse > 0 ? 0.75 + 0.25 * Math.sin(clock * glow.pulse * Math.PI * 2) : 1;
-  const strength = Math.min(1, Math.max(0, typeof glow.strength === 'number' ? glow.strength : 0.7)) * pulse;
-  const r = across / 2 + reach * pulse;
-  if (strength <= 0 || !Number.isFinite(r)) return;
-  const g = ctx.createRadialGradient(at.x, at.y, Math.min(across / 4, r / 2), at.x, at.y, r);
-  g.addColorStop(0, withAlpha(color, strength));
-  g.addColorStop(1, withAlpha(color, 0));
+  const reach = Math.max(px, typeof glow.size === 'number' ? glow.size : 10);
+  // A pulse grows and shrinks it by whole art pixels.
+  const pulse = typeof glow.pulse === 'number' && glow.pulse > 0 ? Math.sin(clock * glow.pulse * Math.PI * 2) : 0;
+  const strength = Math.min(1, Math.max(0, typeof glow.strength === 'number' ? glow.strength : 0.7)) * (1 + 0.15 * pulse);
+  const outer = snap(across / 2 + reach * (1 + 0.2 * pulse), px);
+  if (strength <= 0 || !Number.isFinite(outer) || outer <= 0) return;
+  const cx = snap(at.x, px);
+  const cy = snap(at.y, px);
   const op = ctx.globalCompositeOperation;
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = g;
-  ctx.fillRect(at.x - r, at.y - r, r * 2, r * 2);
+  ctx.fillStyle = color;
+  // Outer, middle, inner: added on top of each other, so the brightness steps up toward the middle.
+  const rings = [
+    { r: outer, a: 0.22 },
+    { r: snap(across / 2 + reach * 0.62, px), a: 0.22 },
+    { r: snap(across / 2 + reach * 0.3, px), a: 0.28 },
+  ];
+  for (const ring of rings) {
+    if (ring.r <= 0) continue;
+    ctx.globalAlpha = Math.min(1, alpha * strength * ring.a * 1.4);
+    for (let y = -ring.r; y < ring.r; y += px) {
+      const mid = y + px / 2;
+      const half = Math.sqrt(Math.max(0, ring.r * ring.r - mid * mid));
+      const w = snap(half, px);
+      if (w > 0) ctx.fillRect(cx - w, cy + y, w * 2, px);
+    }
+  }
   ctx.globalCompositeOperation = op;
 }
 
-/** A fading tail along where a thing was (Trail): oldest point thinnest and faintest. */
-function drawTrail(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[], trail: Record<string, unknown>, across: number, alpha: number, clock: number): void {
+/**
+ * A tail along where a thing was (Trail), as pixel art: solid squares on the art-pixel grid, shrinking and stepping
+ * darker toward the end, the last part broken up (every other square) instead of fading out.
+ */
+function drawTrail(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[], trail: Record<string, unknown>, across: number, alpha: number, clock: number, px: number): void {
   const color = typeof trail.color === 'string' ? trail.color : '#ffd166';
-  const width = typeof trail.width === 'number' && trail.width > 0 ? trail.width : Math.max(2, across);
+  const width = snap(typeof trail.width === 'number' && trail.width > 0 ? trail.width : Math.max(px, across), px) || px;
   const n = points.length;
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  if (trail.style === 'dots' || trail.style === 'sparks') {
-    for (let i = 0; i < n - 1; i++) {
-      const k = (i + 1) / n;
-      if (trail.style === 'dots' && i % 2) continue;
-      // (Sparks flicker and scatter: the same each frame for a given point and moment, never random noise.)
-      const h = Math.sin((points[i].x * 12.9898 + points[i].y * 78.233 + Math.floor(clock * 20)) * 43758.5453);
-      const jitter = trail.style === 'sparks' ? (h - Math.floor(h) - 0.5) * width : 0;
-      if (trail.style === 'sparks' && h - Math.floor(h) < 0.15) continue;
-      ctx.globalAlpha = alpha * k;
-      const r = Math.max(0.5, (width / 2) * (trail.style === 'sparks' ? 0.35 + 0.5 * k : k));
-      ctx.beginPath();
-      ctx.arc(points[i].x + jitter, points[i].y - jitter, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    return;
-  }
+  if (n < 2) return;
+  // The path, one sample an art pixel apart (oldest first).
+  const path: { x: number; y: number; k: number }[] = [];
+  let total = 0;
+  for (let i = 1; i < n; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  let gone = 0;
   for (let i = 1; i < n; i++) {
-    const k = i / n;
-    ctx.globalAlpha = alpha * k * 0.85;
-    ctx.lineWidth = Math.max(0.5, width * k);
-    ctx.beginPath();
-    ctx.moveTo(points[i - 1].x, points[i - 1].y);
-    ctx.lineTo(points[i].x, points[i].y);
-    ctx.stroke();
+    const a = points[i - 1];
+    const b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(len / px));
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      path.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, k: total > 0 ? (gone + len * t) / total : 1 });
+    }
+    gone += len;
   }
-}
-
-/** A CSS color (#rgb, #rrggbb) with this opacity. */
-function withAlpha(color: string, a: number): string {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
-  if (!m) return color;
-  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
-  return `rgba(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}, ${a})`;
+  const shades = [shade(color, -0.55), shade(color, -0.3), color];
+  ctx.globalAlpha = alpha;
+  const seen = new Set<string>();
+  path.forEach((p, i) => {
+    const band = p.k < 0.34 ? 0 : p.k < 0.67 ? 1 : 2;
+    let size: number;
+    if (trail.style === 'sparks') {
+      // Single art pixels (two near the head) scattered beside the way, flickering: the same for a given spot and
+      // moment, never random noise.
+      const h = Math.sin((Math.round(p.x / px) * 12.9898 + Math.round(p.y / px) * 78.233 + Math.floor(clock * 15)) * 43758.5453);
+      const r = h - Math.floor(h);
+      if (r < 0.4) return;
+      size = band === 2 && r > 0.85 ? px * 2 : px;
+      const h2 = Math.sin((r * 91.17 + i * 7.31) * 43758.5453);
+      const r2 = h2 - Math.floor(h2);
+      p = { ...p, x: p.x + snap((r2 - 0.5) * (width + px * 2), px), y: p.y + snap(((r * 7) % 1 - 0.5) * (width + px * 2), px) };
+    } else if (trail.style === 'dots') {
+      if (i % 4 || i > path.length - 3) return;
+      size = Math.max(px, snap(width * 0.7 * p.k, px));
+    } else {
+      // (The faint end broken up.)
+      if (band === 0 && i % 2) return;
+      size = Math.max(px, snap(width * (0.35 + 0.65 * p.k), px));
+    }
+    const x = snap(p.x - size / 2, px);
+    const y = snap(p.y - size / 2, px);
+    const key = `${x},${y},${size}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ctx.fillStyle = shades[band];
+    ctx.fillRect(x, y, size, size);
+  });
 }
 
 /**
@@ -461,7 +498,10 @@ export function drawEntities(
   invisibleAlpha = 0,
   /** Seconds, for animated sprites (play time in the game; a running clock in the editor). */
   clock = 0,
+  /** Level pixels per art pixel (32 / the game's sprite size): glows and tails keep to that grid. */
+  artPixel = 1,
 ): void {
+  const px = Math.max(0.25, artPixel);
   // Tiles, and anything with rounded corners (an object the AI made for dirt need not be marked a tile), by cell.
   const rounds = (e: ResolvedEntity) => typeof e.components.Sprite?.roundCorners === 'number' && (e.components.Sprite.roundCorners as number) > 0;
   const autotiled = (e: ResolvedEntity) => e.components.Sprite?.autotile === true && typeof e.components.Sprite.autotileSheet === 'string';
@@ -505,11 +545,11 @@ export function drawEntities(
     if (!invisible) {
       if (entity.trail && entity.components.Trail) {
         ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
-        drawTrail(ctx, entity.trail, entity.components.Trail, Math.min(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock);
+        drawTrail(ctx, entity.trail, entity.components.Trail, Math.min(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock, px);
       }
       if (entity.components.Glow) {
         ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
-        drawGlow(ctx, position, entity.components.Glow, Math.max(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock);
+        drawGlow(ctx, position, entity.components.Glow, Math.max(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock, px);
       }
     }
     ctx.globalAlpha = entity.alpha !== undefined || invisible ? baseAlpha * (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1) : baseAlpha;

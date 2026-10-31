@@ -173,3 +173,16 @@ describe('shots with their own look', () => {
     expect(pellet?.base.components.Sprite.width).toBe(5);
   });
 });
+
+describe('the built-in shot in a chunky game', () => {
+  it('is a whole number of art pixels', () => {
+    const rt = shooterGame((d) => {
+      d.settings.spriteResolution = 8;
+      d.definitions.find((x) => x.name === 'Player')!.components.Shooter.shotSize = 6;
+    });
+    run(rt, { 0: ['fire'] }, 10);
+    const shot = rt.entities.find((e) => e.alive && e.projectile)!;
+    // 8x8 sprites: an art pixel is 4 level pixels, so 6 becomes 8.
+    expect(shot.base.components.Sprite.width).toBe(8);
+  });
+});

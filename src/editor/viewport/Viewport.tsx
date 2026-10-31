@@ -288,7 +288,7 @@ export function Viewport() {
           return typeof id === 'string' && !!images(id)?.animation;
         };
         if (wire) drawWireframe(lctx, entities, state.camera.zoom);
-        else drawEntities(lctx, shown.filter((e) => !isAnimated(e)), tracked, 0.3, 0);
+        else drawEntities(lctx, shown.filter((e) => !isAnimated(e)), tracked, 0.3, 0, 32 / (state.project.settings.spriteResolution ?? 32));
         layer.animated = wire ? [] : shown.filter(isAnimated);
         // A picture not loaded yet was drawn as its color: the layer is drawn again once it is.
         layer.key = missing ? '' : key;
@@ -303,7 +303,7 @@ export function Viewport() {
         ctx.drawImage(layer.canvas, dx - margin, dy - margin);
       }
       applyCamera(ctx, state.camera, view, dpr);
-      if (layer.animated.length) drawEntities(ctx, layer.animated, images, 0.3, time / 1000);
+      if (layer.animated.length) drawEntities(ctx, layer.animated, images, 0.3, time / 1000, 32 / (state.project.settings.spriteResolution ?? 32));
       if ((canvas.dataset.wireframe ?? '') !== (wire ? '1' : '')) canvas.dataset.wireframe = wire ? '1' : '';
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';

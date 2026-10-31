@@ -1202,7 +1202,9 @@ export class Runtime {
     // (By id, or by name: "Laser Bolt".)
     const want = cfg.projectile.trim().toLowerCase();
     const def = want ? (this.project.definitions.find((d) => d.id === cfg.projectile) ?? this.project.definitions.find((d) => d.name.toLowerCase() === want)) : undefined;
-    const size = cfg.shotSize ?? 8;
+    // (In whole art pixels: a 1-pixel shot is exactly one of the game's picture pixels.)
+    const art = 32 / (this.project.settings.spriteResolution ?? 32);
+    const size = Math.max(art, Math.round((cfg.shotSize ?? 8) / art) * art);
     const fromBox = boxOf(from);
     const reach = (fromBox ? Math.max(fromBox.hw, fromBox.hh) : 8) + 6;
     const at = { x: from.x + dx * reach, y: from.y + dy * reach };

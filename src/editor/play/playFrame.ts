@@ -51,7 +51,7 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   drawBackground(ctx, size, dpr, f.scene.world, view, images, { startCamera: f.startCamera ?? null, time: runtime.completed ?? runtime.time });
   applyCamera(ctx, view, size, dpr);
   // (Animations hold still too once the level is won.)
-  drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time);
+  drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time, worldPerArt);
   // Everything over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.
   const perArt = zoomNow * dpr * worldPerArt;
   const grid: PixelGrid = { cell: perArt >= 1 ? Math.round(perArt) : 1, lowRes: (f.project.settings.playPixels ?? 0) > 0 };
