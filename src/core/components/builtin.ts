@@ -45,6 +45,30 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'Glow',
+    label: 'Glow',
+    description: 'A soft light around it, drawn over what is behind it (a laser bolt, a plasma ball, a power-up, a lamp, a magic gem). In play and in the editor.',
+    category: 'Rendering',
+    fields: {
+      color: { kind: 'color', default: '#ffd166', description: 'The color of the light' },
+      size: { kind: 'number', default: 10, min: 1, step: 1, description: 'How far the light reaches beyond its edges (px)' },
+      strength: { kind: 'number', default: 0.7, min: 0, max: 1, step: 0.05, description: 'How bright the light is (0-1)' },
+      pulse: { kind: 'number', default: 0, min: 0, step: 0.5, description: 'Throbs this many times a second (0 = steady)' },
+    },
+  },
+  {
+    type: 'Trail',
+    label: 'Trail',
+    description: 'A fading tail behind it as it moves (a shot, a comet, a fast enemy, a dash): where it was in the last moments, narrowing and fading out. In play.',
+    category: 'Rendering',
+    fields: {
+      color: { kind: 'color', default: '#ffd166', description: 'The color of the tail' },
+      length: { kind: 'number', default: 0.15, min: 0.02, max: 2, step: 0.01, description: 'How long the tail lasts (seconds of its way): longer for a faster look' },
+      width: { kind: 'number', default: 0, min: 0, step: 1, description: 'How wide it starts (px; 0 = as wide as its smaller side)' },
+      style: { kind: 'enum', options: ['fade', 'sparks', 'dots'], default: 'fade', description: 'fade: a smooth tapering streak; sparks: flickering bits scattered behind it; dots: a row of shrinking dots' },
+    },
+  },
+  {
     type: 'SpriteStates',
     label: 'Sprites by situation',
     description:
@@ -236,7 +260,10 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       speed: { kind: 'number', default: 240, min: 1, step: 10, description: 'Shot speed (px/s)' },
       damage: { kind: 'number', default: 1, min: 0, step: 1 },
       range: { kind: 'number', default: 480, min: 16, step: 32, description: 'How far a shot flies before it vanishes (px)' },
-      projectile: { kind: 'string', default: '', description: 'Library object id to fire (its look and tags); empty = a small built-in shot' },
+      projectile: { kind: 'string', default: '', description: 'Library object to fire (its id, or a create_definition ref in the same answer): its drawing, size, Glow, Trail and tags; draw it pointing RIGHT, it is turned the way it flies. Empty = a small built-in shot (shotColor, shotSize)' },
+      shotColor: { kind: 'color', default: '#ffd166', description: 'The built-in shot (no projectile): its color' },
+      shotSize: { kind: 'number', default: 8, min: 2, step: 1, description: 'The built-in shot (no projectile): its size (px)' },
+      turnShots: { kind: 'boolean', default: true, description: 'Shots are turned the way they fly (off: drawn as they are, e.g. a round or spinning one)' },
       variation: { kind: 'number', default: 0.5, min: 0, max: 1, step: 0.05, description: 'auto: how much each wait between shots varies at random (0 = exactly every interval, all shooters together; 0.5 = between half and one and a half intervals); the first shot too, so shooters placed together fire at different times' },
     },
   },

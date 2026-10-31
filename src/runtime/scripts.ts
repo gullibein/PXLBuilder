@@ -762,6 +762,9 @@ export class ScriptSystem {
       case 'camera_shake':
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
         break;
+      case 'flip_level':
+        this.rt.flipLevel(s.way, s.at ? n(s.at) : null, n(s.seconds), n(s.wave));
+        break;
       case 'camera_flash':
         this.rt.cam.startFlash(s.color, n(s.seconds));
         break;
@@ -874,6 +877,10 @@ export class ScriptSystem {
         return this.rt.screen.w;
       case 'screen_h':
         return this.rt.screen.h;
+      case 'flipping':
+        return this.rt.flip !== null;
+      case 'flipped':
+        return this.rt.flips.upside_down % 2 === 1 || this.rt.flips.left_right % 2 === 1;
       case 'view_x':
       case 'view_y':
       case 'view_w':

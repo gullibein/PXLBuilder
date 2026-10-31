@@ -136,3 +136,40 @@ describe('a space shooter', () => {
     expect(rt.entities.some((e) => e.name === 'Wall')).toBe(false);
   });
 });
+
+describe('shots with their own look', () => {
+  it('a drawn shot object is fired turned the way it flies, with a fading tail; the built-in one takes a color and size', () => {
+    const rt = shooterGame((d) => {
+      const bolt = createDefinition(
+        'Laser Bolt',
+        {
+          Sprite: registry.createDefault('Sprite', { width: 16, height: 6, color: '#5ef2ff' }),
+          Collider: registry.createDefault('Collider', { size: { x: 16, y: 6 }, isTrigger: true }),
+          Glow: registry.createDefault('Glow', { color: '#5ef2ff', size: 10 }),
+          Trail: registry.createDefault('Trail', { color: '#2a9df4', length: 0.2 }),
+        },
+        [],
+      );
+      m.addDefinition(d, bolt, registry);
+      const ship = d.definitions.find((x) => x.name === 'Player')!;
+      // (By name works too.)
+      ship.components.Shooter.projectile = 'Laser Bolt';
+      const saucer = d.definitions.find((x) => x.name === 'Saucer')!;
+      saucer.components.Shooter = registry.createDefault('Shooter', { direction: 'down', interval: 0.5, variation: 0, speed: 200, targetTag: '', shotColor: '#ff3355', shotSize: 5 });
+    });
+    run(rt, { 0: ['fire'] }, 120);
+    const shots = rt.entities.filter((e) => e.alive && e.projectile);
+    const bolt = shots.find((e) => e.base.name === 'Laser Bolt')!;
+    expect(bolt).toBeTruthy();
+    // Fired up: turned -90° (drawn pointing right).
+    expect(Math.round(bolt.angle)).toBe(-90);
+    const drawn = rt.renderList().find((r) => r.name === 'Laser Bolt')!;
+    expect(drawn.transform.rotation).toBe(-90);
+    expect(drawn.trail!.length).toBeGreaterThan(5);
+    // The tail is behind it: below the bolt, which flies up.
+    expect(drawn.trail![0].y).toBeGreaterThan(drawn.trail!.at(-1)!.y);
+    const pellet = shots.find((e) => e.base.name === 'Shot');
+    expect(pellet?.base.components.Sprite.color).toBe('#ff3355');
+    expect(pellet?.base.components.Sprite.width).toBe(5);
+  });
+});

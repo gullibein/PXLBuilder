@@ -126,6 +126,11 @@ export interface RuntimeEntity {
   turn: { to: number; speed: number } | null;
   /** Keeps turning at this many degrees/s (spin; 0 = not spinning). */
   spin: number;
+  /** Drawn mirrored by a level flip (-1) or not (1), per axis; flipT: during a flip, how far its own turn is (0-1). */
+  mirror: { x: 1 | -1; y: 1 | -1 };
+  flipT: number | null;
+  /** Trail: where it was lately (play time t), and how long the tail lasts. */
+  trail: { length: number; points: { x: number; y: number; t: number }[] } | null;
   /** Play time it was last hurt / last fired a shot (for the hurt and shoot looks). */
   hurtAt: number;
   shotAt: number;
@@ -267,7 +272,7 @@ export interface Behaviors {
   } | null;
   jumper: { interval: number; jumpForce: number; t: number } | null;
   /** need: the wait before the next shot (drawn from the shooter's own random rhythm; -1 until it first ticks). */
-  shooter: { trigger: 'auto' | 'key'; interval: number; variation: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; t: number; need: number } | null;
+  shooter: { trigger: 'auto' | 'key'; interval: number; variation: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; shotColor: string; shotSize: number; turnShots: boolean; t: number; need: number } | null;
   mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
   timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
   doubleJump: { extra: number; left: number } | null;
@@ -316,6 +321,9 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
           damage: num(s.damage, 1),
           range: num(s.range, 480),
           projectile: typeof s.projectile === 'string' ? s.projectile : '',
+          shotColor: typeof s.shotColor === 'string' ? s.shotColor : '#ffd166',
+          shotSize: Math.max(2, num(s.shotSize, 8)),
+          turnShots: s.turnShots !== false,
           // Fired by a key: ready at once. Automatic: the first shot comes after one interval.
           t: s.trigger === 'key' ? num(s.interval, 2) : 0,
           need: -1,
@@ -433,6 +441,9 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     angle: 0,
     turn: null,
     spin: 0,
+    mirror: { x: 1, y: 1 },
+    flipT: null,
+    trail: c.Trail ? { length: Math.min(2, Math.max(0.02, num(c.Trail.length, 0.15))), points: [] } : null,
     beh: readBehaviors(c, r.transform.position),
     hanging: null,
     controlsDone: false,
@@ -482,6 +493,13 @@ export class Runtime {
   readonly builtinHidden = new Set<'hearts' | 'items'>(['hearts', 'items']);
   /** Paused by a script (a pause menu): the world stands still; only "key" handlers run. */
   paused = false;
+  /**
+   * A level flip in progress (flip_level): everything glides to its mirrored place, the outer ones (farthest from
+   * the line) fastest, each turning over on the way; the world stands still meanwhile (nothing collides).
+   */
+  flip: { way: 'upside_down' | 'left_right'; t: number; items: { e: RuntimeEntity; fx: number; fy: number; tx: number; ty: number; dur: number; turns: boolean }[] } | null = null;
+  /** How many level flips are in effect now, per way (an odd number: the level is mirrored). */
+  flips = { upside_down: 0, left_right: 0 };
   /** Sound effects and music on (scripts switch them for the whole game: the play view keeps them across levels). */
   soundOn = true;
   musicOn = true;
@@ -589,7 +607,19 @@ export class Runtime {
     this.time += dt;
     // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
     if (this.completed !== null) return;
+    // A level flip plays out: nothing else happens meanwhile.
+    if (this.flip) {
+      this.stepFlip(dt);
+      return;
+    }
 
+    // Trails: where each one with a tail was, for the last moments.
+    for (const e of this.entities) {
+      if (!e.trail) continue;
+      const pts = e.trail.points;
+      if (e.alive) pts.push({ x: e.x, y: e.y, t: this.time });
+      while (pts.length && this.time - pts[0].t > e.trail.length) pts.shift();
+    }
     // Turning (scripts' rotate over time, and spin).
     for (const e of this.entities) {
       const before = e.angle;
@@ -740,6 +770,99 @@ export class Runtime {
   }
 
   markSolidsDirty(): void {
+    this.solidsDirty = true;
+  }
+
+  /**
+   * Mirrors the whole level around a line (flip_level): upside down around a level row (y = at), or left to right
+   * around a column (x = at); `at` null: the middle of everything in the level. Everything glides to its mirrored
+   * place over `seconds`, the farthest from the line fastest and first (wave 0: all together; 1: the nearest take
+   * the whole time and the farthest none of it); things turn over on the way and stay mirrored (a second flip turns
+   * them back). Characters (things that fall or are steered) are carried along upright and fall from there.
+   */
+  flipLevel(way: 'upside_down' | 'left_right', at: number | null, seconds: number, wave: number): boolean {
+    if (this.flip) return false;
+    const up = way === 'upside_down';
+    const things = this.entities.filter((e) => e.alive);
+    if (!things.length) return false;
+    let line = at;
+    if (line === null || !Number.isFinite(line)) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const e of things) {
+        if (e.projectile) continue;
+        const b = boxOf(e);
+        const c = up ? e.y : e.x;
+        const h = b ? (up ? b.hh : b.hw) : 0;
+        lo = Math.min(lo, c - h);
+        hi = Math.max(hi, c + h);
+      }
+      line = Number.isFinite(lo) ? (lo + hi) / 2 : 0;
+    }
+    const w = Math.min(1, Math.max(0, wave));
+    const time = Math.max(0, seconds);
+    let far = 1;
+    for (const e of things) far = Math.max(far, Math.abs((up ? e.y : e.x) - line));
+    const items = things.map((e) => {
+      const d = Math.abs((up ? e.y : e.x) - line!);
+      const tx = up ? e.x : 2 * line! - e.x;
+      const ty = up ? 2 * line! - e.y : e.y;
+      // (Characters stay upright: they are carried, and fall or walk on from where they land.)
+      const turns = !(e.controller || (e.body === 'dynamic' && e.gravityScale !== 0));
+      return { e, fx: e.x, fy: e.y, tx, ty, dur: time * (1 - w * (d / far)), turns };
+    });
+    this.flips[way]++;
+    if (time <= 0) {
+      this.flip = { way, t: 0, items };
+      this.endFlip();
+      return true;
+    }
+    for (const it of items) it.e.flipT = 0;
+    this.flip = { way, t: 0, items };
+    return true;
+  }
+
+  private stepFlip(dt: number): void {
+    const f = this.flip!;
+    f.t += dt;
+    let done = true;
+    for (const it of f.items) {
+      const p = it.dur <= 0 ? 1 : Math.min(1, f.t / it.dur);
+      if (p < 1) done = false;
+      // (Eased in and out: a flip, not a slide.)
+      const k = p * p * (3 - 2 * p);
+      it.e.x = it.fx + (it.tx - it.fx) * k;
+      it.e.y = it.fy + (it.ty - it.fy) * k;
+      it.e.flipT = it.turns ? k : null;
+    }
+    if (done) this.endFlip();
+  }
+
+  private endFlip(): void {
+    const f = this.flip!;
+    const up = f.way === 'upside_down';
+    for (const it of f.items) {
+      const e = it.e;
+      e.x = it.tx;
+      e.y = it.ty;
+      e.flipT = null;
+      if (it.turns) e.mirror = up ? { ...e.mirror, y: (e.mirror.y * -1) as 1 | -1 } : { ...e.mirror, x: (e.mirror.x * -1) as 1 | -1 };
+      // Where it starts again (falling out, respawning) and where it moves between are mirrored too.
+      // (The line is halfway between where it was and where it is now.)
+      e.spawn = up ? { x: e.spawn.x, y: it.fy + it.ty - e.spawn.y } : { x: it.fx + it.tx - e.spawn.x, y: e.spawn.y };
+      const mv = e.beh.mover;
+      if (mv) {
+        if (up) mv.originY = it.fy + it.ty - mv.originY;
+        else mv.originX = it.fx + it.tx - mv.originX;
+        mv.offset = up ? { x: mv.offset.x, y: -mv.offset.y } : { x: -mv.offset.x, y: mv.offset.y };
+      }
+      e.vx = up ? e.vx : 0;
+      e.vy = 0;
+      e.grounded = false;
+      e.prevY = e.y;
+      e.moveTarget = null;
+    }
+    this.flip = null;
     this.solidsDirty = true;
   }
 
@@ -1075,16 +1198,19 @@ export class Runtime {
   }
 
   /** Fires a shot from `from` in direction (dx, dy) (normalized), as a runtime-only entity. */
-  shoot(from: RuntimeEntity, dx: number, dy: number, cfg: { projectile: string; speed: number; damage: number; range: number }): RuntimeEntity {
-    const def = cfg.projectile ? this.project.definitions.find((d) => d.id === cfg.projectile) : undefined;
+  shoot(from: RuntimeEntity, dx: number, dy: number, cfg: { projectile: string; speed: number; damage: number; range: number; shotColor?: string; shotSize?: number; turnShots?: boolean }): RuntimeEntity {
+    // (By id, or by name: "Laser Bolt".)
+    const want = cfg.projectile.trim().toLowerCase();
+    const def = want ? (this.project.definitions.find((d) => d.id === cfg.projectile) ?? this.project.definitions.find((d) => d.name.toLowerCase() === want)) : undefined;
+    const size = cfg.shotSize ?? 8;
     const fromBox = boxOf(from);
     const reach = (fromBox ? Math.max(fromBox.hw, fromBox.hh) : 8) + 6;
     const at = { x: from.x + dx * reach, y: from.y + dy * reach };
     const instance = def
       ? instantiateDefinition(def, at)
       : createStandaloneEntity('Shot', at, {
-          Sprite: this.registry.createDefault('Sprite', { width: 8, height: 8, color: '#ffd166' }),
-          Collider: this.registry.createDefault('Collider', { shape: 'circle', size: { x: 8, y: 8 }, isTrigger: true }),
+          Sprite: this.registry.createDefault('Sprite', { width: size, height: size, color: cfg.shotColor ?? '#ffd166' }),
+          Collider: this.registry.createDefault('Collider', { shape: 'circle', size: { x: size, y: size }, isTrigger: true }),
         });
     from.shotAt = this.time;
     const e = buildEntity(this.project, instance, this.registry);
@@ -1093,7 +1219,12 @@ export class Runtime {
     if (e.collider) e.collider.trigger = true;
     e.vx = dx * cfg.speed;
     e.vy = dy * cfg.speed;
-    e.facing = dx < 0 ? -1 : 1;
+    // Drawn pointing right, it is turned the way it flies (not mirrored: a turned shot would be upside down).
+    if (cfg.turnShots !== false && def) {
+      e.facing = 1;
+      e.angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      this.refreshCollider(e);
+    } else e.facing = dx < 0 ? -1 : 1;
     e.damage = e.damage ?? cfg.damage;
     // A shot carries its shooter's tags (an enemy's shot hurts like the enemy does), plus "projectile".
     e.tags = [...new Set([...e.tags, ...from.tags, 'projectile'])];
@@ -1413,15 +1544,21 @@ export class Runtime {
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
       const turned = e.angle !== 0;
+      // A level flip: mirrored afterwards; during it, turning over (its height, or width, through nothing to the other side).
+      const over = e.flipT === null ? 1 : Math.cos(Math.PI * e.flipT);
+      const upside = this.flip?.way === 'upside_down';
+      const sx = (mirrored ? -1 : 1) * e.mirror.x * (e.flipT !== null && !upside ? over : 1);
+      const sy = e.mirror.y * (e.flipT !== null && upside ? over : 1);
       let r: RenderEntity =
-        moved || mirrored || turned
-          ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, rotation: t.rotation + e.angle, scale: mirrored ? { x: -t.scale.x, y: t.scale.y } : t.scale } }
+        moved || mirrored || turned || sx !== 1 || sy !== 1
+          ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, rotation: t.rotation + e.angle, scale: sx !== 1 || sy !== 1 ? { x: t.scale.x * sx, y: t.scale.y * sy } : t.scale } }
           : e.base;
       const look = this.lookOf(e);
       if (look.assetId && r.components.Sprite) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, assetId: look.assetId, frame: 1 } } };
       const fade = e.alive ? 1 : Math.min(1, e.vanishing / (DEFEATED_LOOK / 2));
       const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1) * fade;
       if (alpha !== 1) r = { ...r, alpha };
+      if (e.trail && e.trail.points.length > 1) r = { ...r, trail: e.trail.points.map((p) => ({ x: p.x, y: p.y })) };
       out.push(r);
     }
     return out;

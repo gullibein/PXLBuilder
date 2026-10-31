@@ -120,6 +120,7 @@ export type Stmt =
   | { do: 'set_music'; enabled: string }
   | { do: 'complete_level'; by?: string | null }
   | { do: 'camera_shake'; strength: string; seconds: string }
+  | { do: 'flip_level'; way: 'upside_down' | 'left_right'; at: string | null; seconds: string; wave: string }
   | { do: 'camera_flash'; color: string; seconds: string }
   | { do: 'camera_zoom'; zoom: string; seconds: string }
   | { do: 'camera_focus'; target: string; seconds: string }
@@ -173,6 +174,8 @@ export const BUILTIN_NAMES: Record<string, string> = {
   view_w: 'how wide the camera\'s view is, in level px (its left edge is view_x - view_w / 2)',
   view_h: 'how tall the camera\'s view is, in level px (its top edge is view_y - view_h / 2)',
   pi: '3.14159…',
+  flipping: 'true while a level flip (flip_level) plays',
+  flipped: 'true while the level is mirrored by flip_level (an odd number of flips, either way)',
   paused: 'true while the game is paused (pause / resume)',
   sound_on: 'true while sound effects are on (set_sound)',
   music_on: 'true while music is on (set_music)',
@@ -413,6 +416,10 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   set_music: { example: '{"do":"set_music","enabled":"not music_on"}', doc: 'music on (true) or off (false) for the whole game (it goes on silently, so it comes back where it is); "music_on" tells which' },
   complete_level: { example: '{"do":"complete_level","by":"other"}', doc: 'the level is won: play goes on to the next level; "by": who won it ("level_completed" happens with it as the subject; null: this entity)' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
+  flip_level: {
+    example: '{"do":"flip_level","way":"upside_down","at":null,"seconds":"0.7","wave":"0.5"}',
+    doc: 'mirror the WHOLE level, in one step: "upside_down" around a row (y = at) or "left_right" around a column (x = at); at null: the middle of the level. Everything glides to its mirrored place over seconds, turning over on the way (tiles, spikes, items, their pictures: mirrored afterwards; a second flip turns them back); wave 0-1: the farthest from the line move fastest and first, the nearest slowest (0: all together). Characters (things that fall or are steered, the player) are carried along upright and fall or walk on from where they land. The world stands still while it plays (nothing collides or hurts; "flipping" is true); nothing happens if a flip is already playing. Never move the level\'s pieces one by one for this',
+  },
   camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
   camera_zoom: { example: '{"do":"camera_zoom","zoom":"1.5","seconds":"0.5"}', doc: 'zoom to a value (0.25–4) over seconds (0 = at once)' },
   camera_focus: { example: '{"do":"camera_focus","target":"nearest(\\"door\\")","seconds":"2"}', doc: 'the camera looks at an entity for a while, then goes back' },
@@ -559,6 +566,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_music'), enabled: expr }),
     z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
+    z.object({ do: z.literal('flip_level'), way: z.enum(['upside_down', 'left_right']).default('upside_down'), at: nexpr, seconds: expr.default('0.7'), wave: expr.default('0.5') }),
     z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
     z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
     z.object({ do: z.literal('camera_focus'), target: expr, seconds: expr.default('2') }),
@@ -748,6 +756,8 @@ export function exprSlots(s: Stmt): string[] {
       return [];
     case 'camera_shake':
       return [s.strength, s.seconds];
+    case 'flip_level':
+      return [...(s.at ? [s.at] : []), s.seconds, s.wave];
     case 'camera_flash':
       return [s.seconds];
     case 'camera_zoom':

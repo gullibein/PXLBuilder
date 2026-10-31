@@ -295,7 +295,8 @@ function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: numb
 }
 
 /** An entity to draw; `alpha` fades it (open doors, blinking after a hit). */
-export type RenderEntity = ResolvedEntity & { alpha?: number };
+/** trail: where it was lately, oldest first (a Trail in play). */
+export type RenderEntity = ResolvedEntity & { alpha?: number; trail?: { x: number; y: number }[] };
 
 const layerOf = (e: ResolvedEntity) => {
   const l = e.components.Sprite?.layer;
@@ -385,6 +386,68 @@ function cornerFillPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: 
   });
 }
 
+/** A soft light around a thing (Glow): a radial fade from its color, added to what is behind. */
+function drawGlow(ctx: CanvasRenderingContext2D, at: Vec2, glow: Record<string, unknown>, across: number, alpha: number, clock: number): void {
+  const color = typeof glow.color === 'string' ? glow.color : '#ffd166';
+  const reach = Math.max(1, typeof glow.size === 'number' ? glow.size : 10);
+  const pulse = typeof glow.pulse === 'number' && glow.pulse > 0 ? 0.75 + 0.25 * Math.sin(clock * glow.pulse * Math.PI * 2) : 1;
+  const strength = Math.min(1, Math.max(0, typeof glow.strength === 'number' ? glow.strength : 0.7)) * pulse;
+  const r = across / 2 + reach * pulse;
+  if (strength <= 0 || !Number.isFinite(r)) return;
+  const g = ctx.createRadialGradient(at.x, at.y, Math.min(across / 4, r / 2), at.x, at.y, r);
+  g.addColorStop(0, withAlpha(color, strength));
+  g.addColorStop(1, withAlpha(color, 0));
+  const op = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  ctx.fillRect(at.x - r, at.y - r, r * 2, r * 2);
+  ctx.globalCompositeOperation = op;
+}
+
+/** A fading tail along where a thing was (Trail): oldest point thinnest and faintest. */
+function drawTrail(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[], trail: Record<string, unknown>, across: number, alpha: number, clock: number): void {
+  const color = typeof trail.color === 'string' ? trail.color : '#ffd166';
+  const width = typeof trail.width === 'number' && trail.width > 0 ? trail.width : Math.max(2, across);
+  const n = points.length;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  if (trail.style === 'dots' || trail.style === 'sparks') {
+    for (let i = 0; i < n - 1; i++) {
+      const k = (i + 1) / n;
+      if (trail.style === 'dots' && i % 2) continue;
+      // (Sparks flicker and scatter: the same each frame for a given point and moment, never random noise.)
+      const h = Math.sin((points[i].x * 12.9898 + points[i].y * 78.233 + Math.floor(clock * 20)) * 43758.5453);
+      const jitter = trail.style === 'sparks' ? (h - Math.floor(h) - 0.5) * width : 0;
+      if (trail.style === 'sparks' && h - Math.floor(h) < 0.15) continue;
+      ctx.globalAlpha = alpha * k;
+      const r = Math.max(0.5, (width / 2) * (trail.style === 'sparks' ? 0.35 + 0.5 * k : k));
+      ctx.beginPath();
+      ctx.arc(points[i].x + jitter, points[i].y - jitter, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+  for (let i = 1; i < n; i++) {
+    const k = i / n;
+    ctx.globalAlpha = alpha * k * 0.85;
+    ctx.lineWidth = Math.max(0.5, width * k);
+    ctx.beginPath();
+    ctx.moveTo(points[i - 1].x, points[i - 1].y);
+    ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
+  }
+}
+
+/** A CSS color (#rgb, #rrggbb) with this opacity. */
+function withAlpha(color: string, a: number): string {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+  return `rgba(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}, ${a})`;
+}
+
 /**
  * Draws entities in order (later entities on top). Expects world-space transform on ctx.
  * Tile objects of the same kind join into one surface: a lighter top edge only
@@ -438,6 +501,17 @@ export function drawEntities(
     const ext = reach(entity, size);
     if (!within(entity, ext.hx, ext.hy)) continue;
     const color = typeof sprite.color === 'string' ? sprite.color : '#cccccc';
+    // Its tail and its light, under it.
+    if (!invisible) {
+      if (entity.trail && entity.components.Trail) {
+        ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
+        drawTrail(ctx, entity.trail, entity.components.Trail, Math.min(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock);
+      }
+      if (entity.components.Glow) {
+        ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
+        drawGlow(ctx, position, entity.components.Glow, Math.max(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock);
+      }
+    }
     ctx.globalAlpha = entity.alpha !== undefined || invisible ? baseAlpha * (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1) : baseAlpha;
     // (Placed from the level's own transform: `base`, not whatever the thing before left.)
     placeOnScreen(ctx, base, position, rotation, scale, size);

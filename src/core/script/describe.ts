@@ -188,6 +188,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`complete the level${s.by ? ` (won by ${x(s.by)})` : ''}`);
     case 'camera_shake':
       return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
+    case 'flip_level':
+      return one(`flip the whole level ${s.way === 'left_right' ? 'left to right' : 'upside down'}${s.at ? ` around ${x(s.at)}` : ''} over ${x(s.seconds)} s`);
     case 'camera_flash':
       return one(`flash the screen ${s.color} for ${x(s.seconds)} s`);
     case 'camera_zoom':

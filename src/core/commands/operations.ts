@@ -630,6 +630,15 @@ export function applyOperations(
   /** Levels made earlier in this list, by their ref. */
   const levelRefs = new Map<string, Id>();
   const result: ApplyResult = { createdDefinitionIds: [], createdEntityIds: [], createdRelationshipIds: [], createdRuleIds: [], removedEntityIds: [], createdAssetIds: [], createdSceneIds: [] };
+  // A Shooter's projectile: a library object by id, name, or a create_definition ref from earlier in the answer.
+  const projectileOf = (value: unknown): unknown => {
+    if (typeof value !== 'string' || !value.trim()) return value;
+    const id = refs.get(value) ?? value;
+    const def = project.definitions.find((d) => d.id === id) ?? project.definitions.find((d) => d.name.toLowerCase() === value.trim().toLowerCase());
+    if (!def) throw new m.ModelError(`Shooter.projectile "${value}": there is no such library object (create it first in the answer, with create_definition, and use its ref)`);
+    return def.id;
+  };
+  const withProjectile = (component: string, props: Record<string, unknown>) => (component === 'Shooter' && 'projectile' in props ? { ...props, projectile: projectileOf(props.projectile) } : props);
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
   // What is where in a level, while placing and drawing (anything else that changes the level drops it).
   let cover: CoverIndex | null = null;
@@ -647,13 +656,14 @@ export function applyOperations(
     if (op.op !== 'place_instance' && op.op !== 'draw_tiles' && !KEEPS_PLACES.has(op.op)) cover = null;
     switch (op.op) {
       case 'set_component_field': {
-        const value = parseJson(op.valueJson, `${op.component}.${op.field} value`);
+        const raw = parseJson(op.valueJson, `${op.component}.${op.field} value`);
+        const value = op.component === 'Shooter' && op.field === 'projectile' ? projectileOf(raw) : raw;
         if (op.target === 'definition') m.setDefinitionComponentField(project, op.id, op.component, op.field, value, registry);
         else m.setEntityComponentField(project, sceneOfEntity(project, op.id), op.id, op.component, op.field, value, registry);
         break;
       }
       case 'add_component': {
-        const props = parseProps(op.propsJson, `${op.component} props`);
+        const props = withProjectile(op.component, parseProps(op.propsJson, `${op.component} props`));
         if (op.target === 'definition') m.addDefinitionComponent(project, op.id, op.component, registry, props);
         else m.addEntityComponent(project, sceneOfEntity(project, op.id), op.id, op.component, registry, props);
         break;
@@ -705,7 +715,7 @@ export function applyOperations(
         const components: Record<string, Record<string, unknown>> = {};
         for (const c of op.components) {
           if (!registry.has(c.component)) throw new m.ModelError(`Unknown component type "${c.component}"`);
-          components[c.component] = registry.createDefault(c.component, parseProps(c.propsJson, `${c.component} props`));
+          components[c.component] = registry.createDefault(c.component, withProjectile(c.component, parseProps(c.propsJson, `${c.component} props`)));
         }
         // Nothing is invisible by accident: without a Sprite it gets a placeholder box the size of its collider
         // (a drawing in the same answer replaces it). An invisible object is a Sprite with visible false.
