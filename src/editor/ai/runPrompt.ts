@@ -246,7 +246,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const broken = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
     // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
-    const unasked = gameOps(response) && !broken && !stuck ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
+    // (Not while a game is being built from scratch, a new game or pictures on an empty level: reshaping the starter's
+    // objects is then the point.)
+    const building = !!options.newGame || (!!options.images?.length && !(state.project.scenes.find((s) => s.id === ctx.sceneId)?.entities.length ?? 0));
+    const unasked = gameOps(response) && !broken && !stuck && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
     // A new game asked with AI-drawn sprites (or pictures) that leaves objects with the engine's pictures or as boxes.
     const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
     // (Everything wrong with it at once: one more answer fixes it all.)
@@ -256,15 +259,27 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       trace?.('retry', 'Sent back once with that problem');
       state.logMessage('info', `AI answer didn't check out (${problem}); asking it to fix that.`);
       const first = [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n');
-      response = await provider.respond(
-        {
-          ...body,
-          history: [...body.history, { request, reply: first }],
-          request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
-        },
-        signal,
-        trace,
-      );
+      const firstAnswer = response;
+      try {
+        response = await provider.respond(
+          {
+            ...body,
+            history: [...body.history, { request, reply: first }],
+            request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
+          },
+          signal,
+          trace,
+        );
+      } catch (e) {
+        // The corrected answer was lost (unreadable, cut off, the AI unreachable): when the first one applies as it
+        // is (only a softer problem: a level problem, an unasked change, an undrawn object), it is kept, saying so,
+        // rather than losing all of it.
+        if ((e as Error).name === 'AbortError' || broken) throw e;
+        trace?.('note', `The corrected answer couldn't be used (${(e as Error).message}); keeping the first one, which applies`);
+        state.logMessage('warn', `The AI's corrected answer couldn't be used; kept its first answer (${problem}).`);
+        // (A level problem and an unasked change are each said below; an undrawn object here.)
+        response = { ...firstAnswer, kind: 'preview', changes: undrawn ? [...firstAnswer.changes, `⚠ ${undrawn}`] : firstAnswer.changes };
+      }
       // Still not right: keep what applies, leave out the rest, and say so.
       const again = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
       if (again) {

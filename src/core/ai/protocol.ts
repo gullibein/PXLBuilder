@@ -82,7 +82,14 @@ const OPERATION_SHAPES = new Map<string, Record<string, z.ZodType>>(
  */
 export function fillMissingNulls(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
-  if (!('needCode' in raw)) raw = { ...raw, needCode: null };
+  // Small slips that change nothing about the answer (a list written as one text, a missing empty list): read as
+  // meant, rather than throwing away a whole (maybe long) answer.
+  const r = raw as Record<string, unknown>;
+  if (typeof r.changes === 'string') raw = { ...r, changes: r.changes.split(/\n+/).map((l) => l.replace(/^\s*[-•*]\s*/, '').trim()).filter(Boolean) };
+  else if (r.changes === undefined || r.changes === null) raw = { ...r, changes: [] };
+  if ((raw as Record<string, unknown>).operations === undefined || (raw as Record<string, unknown>).operations === null) raw = { ...(raw as object), operations: [] };
+  if (typeof (raw as Record<string, unknown>).needCode === 'string') raw = { ...(raw as object), needCode: [(raw as Record<string, unknown>).needCode] };
+  if (!('needCode' in (raw as object))) raw = { ...(raw as object), needCode: null };
   if (!('starter' in (raw as object))) raw = { ...(raw as object), starter: null };
   const ops = (raw as { operations?: unknown }).operations;
   if (!Array.isArray(ops)) return raw;
