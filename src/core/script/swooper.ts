@@ -18,9 +18,10 @@ export const SWOOPER_SCRIPT = {
   description:
     'Flies in from the edge of the screen along a curve, one after another, to its place in the formation; sways there; now and then swoops down in a half circle toward the player (or snakes or dives down), flies off the bottom and comes back to its place from the top.',
   vars: [
-    { name: 'speed', value: 200, setting: true },
+    { name: 'speed', value: 240, setting: true },
     { name: 'entry', value: 'left', setting: true },
-    { name: 'entry_gap', value: 0.08, setting: true },
+    { name: 'spacing', value: 1.2, setting: true },
+    { name: 'group', value: 'enemy', setting: true },
     { name: 'dive_every', value: 6, setting: true },
     { name: 'dive', value: 'swoop', setting: true },
     { name: 'radius', value: 70, setting: true },
@@ -34,6 +35,11 @@ export const SWOOPER_SCRIPT = {
     { name: 'u', value: 0 },
     { name: 'len', value: 1 },
     { name: 'delay', value: 0 },
+    { name: 'row', value: 0 },
+    { name: 'gx', value: 0 },
+    { name: 'gy', value: 0 },
+    { name: 'leg', value: 1 },
+    { name: 'in_row', value: 1 },
     { name: 'side', value: 0 },
     { name: 'ang', value: 0 },
     { name: 'dir', value: 1 },
@@ -51,17 +57,27 @@ export const SWOOPER_SCRIPT = {
           "entry == 'none'",
           [go('home')],
           [
-            // From a top corner of the screen (or straight above, "top"), curving down past the middle and up into its place.
+            // From a top corner of the screen (or straight above its place, "top"): the whole row along one curve,
+            // down and across to a meeting point below the formation, and from there each straight up into its place.
             set('side', "entry == 'right' ? 1 : (entry == 'left' ? -1 : 0)"),
             set('sx', 'side == 0 ? hx : view_x + side * (view_w / 2 + 48)'),
             set('sy', 'view_y - view_h / 2 - 48'),
-            set('cx', 'side == 0 ? hx : view_x - side * view_w / 6'),
-            set('cy', 'hy + view_h / 3'),
-            set('len', `max(1, ${d2('sx', 'sy', 'cx', 'cy')} + ${d2('cx', 'cy', 'hx', 'hy')})`),
-            // The ones nearest the way in go first, the rest follow along the same curve.
-            set('delay', 'entry_gap * abs(hx - sx) / 32 + entry_gap * abs(hy - sy) / 64'),
+            // (A quarter arc: down along the screen's edge, then across. It never turns back on itself.)
+            set('cx', 'sx'),
+            // (The same for every row from that side: one stream, a row after the row before.)
+            set('gx', 'side == 0 ? hx : view_x'),
+            set('gy', 'view_y + view_h / 8'),
+            set('cy', 'gy'),
+            set('leg', '1'),
+            set('len', `max(1, ${d2('sx', 'sy', 'cx', 'cy')} + ${d2('cx', 'cy', 'gx', 'gy')} + ${d2('gx', 'gy', 'hx', 'hy')})`),
+            // Rows come in one after another (which row: how many of the formation, tagged "group", are above it, by
+            // how many share its row; counted before anyone has moved). In a row, the ones nearest the way in go
+            // first, the rest follow along the same curve, each waiting until the one ahead is "spacing" times their
+            // distance apart in the formation further on: never bunched.
+            set('in_row', 'max(1, count_in(group, -1000000, hy - 4, 1000000, hy + 4))'),
+            set('row', 'round(count_in(group, -1000000, -1000000, 1000000, hy - 4) / in_row)'),
+            set('delay', 'spacing * (abs(hx - sx) + row * view_w * 0.5) / max(1, speed)'),
             set('u', '0'),
-            at('sx', 'sy'),
             go('enter'),
           ],
         ),
@@ -71,11 +87,21 @@ export const SWOOPER_SCRIPT = {
       when: { on: 'tick' },
       state: 'enter',
       do: [
-        when('state_time >= delay', [
-          set('u', 'min(1, u + speed * dt / len)'),
-          // A curve through (cx, cy): (1-u)² start + 2(1-u)u middle + u² home.
-          at('(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * hx', '(1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * hy'),
-          when('u >= 1', [go('home')]),
+        // (Waiting its turn just off the screen; for a moment at the very start where it was put, until every one
+        // of the formation has found its row.)
+        when('time > 0.05 and state_time < delay', [at('sx', 'sy')]),
+        when('state_time >= delay and leg == 1', [
+          // The shared curve, at an even speed along it (its slope here: 2((1-u)(C-S) + u(G-C))), so followers keep
+          // their distance: (1-u)² start + 2(1-u)u (cx, cy) + u² meeting point.
+          set('k', `max(1, 2 * ${d2('(1 - u) * (cx - sx) + u * (gx - cx)', '(1 - u) * (cy - sy) + u * (gy - cy)', '0', '0')})`),
+          set('u', 'min(1, u + speed * dt / k)'),
+          at('(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * gx', '(1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * gy'),
+          when('u >= 1', [set('leg', '2')]),
+        ]),
+        when('leg == 2', [
+          // Straight up into its place.
+          set('k', d2('self.x', 'self.y', 'hx', 'hy')),
+          when('k <= speed * dt', [at('hx', 'hy'), go('home')], [at('self.x + (hx - self.x) / k * speed * dt', 'self.y + (hy - self.y) / k * speed * dt')]),
         ]),
       ],
     },

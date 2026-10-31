@@ -71,19 +71,39 @@ describe('a space shooter', () => {
     const rt = shooterGame();
     const saucers = () => rt.entities.filter((e) => e.name === 'Saucer');
     const states = (s: string) => saucers().filter((e) => e.scripts[0].state === s).length;
-    run(rt, {}, 1);
+    run(rt, {}, 10);
     expect(states('enter')).toBe(12);
     // They start off screen, above it.
     expect(saucers().every((e) => e.y < rt.cam.visible().minY)).toBe(true);
     let allHome = -1;
     const seen = new Set<string>();
+    const arrived = new Set<string>();
     run(rt, {}, 120 * 30, (i) => {
-      if (allHome < 0 && states('home') === 12) allHome = i;
-      for (const e of saucers()) seen.add(e.scripts[0].state);
+      for (const e of saucers()) {
+        seen.add(e.scripts[0].state);
+        if (e.scripts[0].state === 'home') arrived.add(e.id);
+      }
+      if (allHome < 0 && arrived.size === 12) allHome = i;
     });
     expect(allHome).toBeGreaterThan(0);
-    expect(allHome / 120).toBeLessThan(8);
+    expect(allHome / 120).toBeLessThan(11);
     expect([...seen].sort()).toEqual(['back', 'dive', 'enter', 'fall', 'home']);
+  });
+
+  it('flying in, they keep apart: no two on screen ever overlap', () => {
+    const rt = shooterGame();
+    let closest = Infinity;
+    run(rt, {}, 120 * 14, () => {
+      const v = rt.cam.visible();
+      const flying = rt.entities.filter((e) => e.name === 'Saucer' && e.y > v.minY && e.scripts[0].state === 'enter');
+      for (let i = 0; i < flying.length; i++)
+        for (let j = i + 1; j < flying.length; j++) {
+          const gap = Math.max(Math.abs(flying[i].x - flying[j].x) - 24, Math.abs(flying[i].y - flying[j].y) - 16);
+          closest = Math.min(closest, gap);
+        }
+    });
+    // (Positive: a gap between their boxes all the time.)
+    expect(closest).toBeGreaterThan(0);
   });
 
   it('enemies fire at their own random times, not all at once', () => {
