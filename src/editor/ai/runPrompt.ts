@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { undrawnObjects } from '../../core/model/drawnLook';
 import { TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
@@ -123,6 +124,8 @@ export interface PromptOptions {
   newGame?: boolean;
   /** Pictures the user attached (an example of the game they want, a sprite sheet…): sent with this request only. */
   images?: AIPicture[];
+  /** A new game: drawn with the engine's sprites, or every object drawn by the AI (always, with pictures). */
+  sprites?: 'engine' | 'ai';
 }
 
 /** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
@@ -167,7 +170,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     trace?.('note', `Guidance sent along: ${topics.join(', ')}`);
   }
   const starterNow = (): GameType => useEditor.getState().project.settings.gameType ?? 'platformer';
-  if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS };
+  // (With pictures the AI always draws the game in their style.)
+  const sprites = options.newGame ? (options.images?.length ? 'ai' : (options.sprites ?? 'engine')) : undefined;
+  if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
@@ -181,7 +186,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         switchStarter(to);
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
-        body.context.newGame = { current: starterNow(), starters: STARTERS };
+        body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
         response = await provider.respond(body, signal, trace);
       }
       if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };
@@ -233,7 +238,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
     // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
     const unasked = gameOps(response) && !broken && !stuck ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
-    const problem = broken ?? stuck?.text ?? unasked;
+    // A new game asked with AI-drawn sprites (or pictures) that leaves objects with the engine's pictures or as boxes.
+    const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
+    // (Everything wrong with it at once: one more answer fixes it all.)
+    const problem = broken ?? ([stuck?.text, unasked, undrawn].filter(Boolean).join('; also, ') || null);
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');
@@ -564,6 +572,20 @@ function playability(sceneId: Id, operations: Operation[]): { text: string; map:
     if (problems.length && scene) return { text: `In the new level "${scene.name}": ${problems.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry) };
   }
   return null;
+}
+
+/** The objects a new game with AI-drawn sprites would leave undrawn, as a problem to send back (or null). */
+function notDrawn(sceneId: Id, operations: Operation[], pictures: boolean): string | null {
+  const project = useEditor.getState().project;
+  let after: Project;
+  try {
+    after = produce(project, (d) => void applyOperations(d, operations, componentRegistry));
+  } catch {
+    return null;
+  }
+  const names = undrawnObjects(project, after, sceneId);
+  if (!names.length) return null;
+  return `the game is to be drawn by you (context.newGame.sprites "ai"${pictures ? ', in the style of the pictures' : ''}), but these objects in the level would keep the engine's pictures or stay plain boxes: ${names.join(', ')}. Draw each of them with draw_sprite (ground and walls that join up with draw_autotile)${pictures ? ', as their counterparts in the pictures look' : ''}, along with everything else in your answer`;
 }
 
 function mapText(map: LevelMap | null): string {

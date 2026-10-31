@@ -23,6 +23,9 @@ export function GameChooser() {
   const [res, setRes] = useState<SpriteResolution>(DEFAULT_SPRITE_RESOLUTION);
   const [idea, setIdea] = useState('');
   const pics = usePictures();
+  // How the AI draws the game it builds: the engine's sprites, or every object drawn anew (always with pictures).
+  const [drawn, setDrawn] = useState<'engine' | 'ai'>('engine');
+  const sprites = pics.pictures.length ? 'ai' : drawn;
   if (!mode) return null;
   const pick = (type: GameType) => {
     startNewGame(type, mode === 'first', res);
@@ -39,7 +42,7 @@ export function GameChooser() {
     setIdea('');
     const { activeSceneId, setGlobalPrompt } = useEditor.getState();
     setGlobalPrompt(true, 'project');
-    startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true, ...(images.length ? { images } : {}) });
+    startJob({ kind: 'project', sceneId: activeSceneId }, request, { newGame: true, sprites, ...(images.length ? { images } : {}) });
   };
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close(null)}>
@@ -83,6 +86,33 @@ export function GameChooser() {
           </button>
         </form>
         <PictureStrip pics={pics} />
+        <div className="game-sprites small" role="radiogroup" aria-label="Sprites">
+          <span>Sprites:</span>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={sprites === 'engine'}
+            className={`chip-btn${sprites === 'engine' ? ' on' : ''}`}
+            data-testid="new-sprites-engine"
+            disabled={pics.pictures.length > 0}
+            title={pics.pictures.length ? 'With a picture, the AI always draws the game in its style' : "The engine's ready-made player, enemies, tiles…: the AI draws only what they don't cover"}
+            onClick={() => setDrawn('engine')}
+          >
+            Use the engine's sprites
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={sprites === 'ai'}
+            className={`chip-btn${sprites === 'ai' ? ' on' : ''}`}
+            data-testid="new-sprites-ai"
+            title="The AI draws every object of the game anew, in one style (a little more AI use: the drawings are part of its answer)"
+            onClick={() => setDrawn('ai')}
+          >
+            AI-drawn sprites
+          </button>
+          {pics.pictures.length > 0 && <span className="muted">(with a picture, drawn by the AI in its style)</span>}
+        </div>
         <p className="muted small game-or">The AI picks the best starting point and builds it. Or start from one yourself:</p>
         <div className="game-grid">
           <button className="style-card game-card" data-testid="game-platformer" onClick={() => pick('platformer')}>

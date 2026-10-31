@@ -1021,3 +1021,4 @@ body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-selec
 .bg-scroll input[type='number'], .bg-stars-row input[type='number'] { width: 64px; }
 .bg-stars { display: grid; gap: 6px; }
 .bg-stars > label { display: flex; align-items: center; gap: 6px; }
+.game-sprites { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 2px; }

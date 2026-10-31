@@ -196,6 +196,22 @@ function stubModel(body) {
     if (shooterAsks === 1) return { kind: 'apply' };
     return { kind: 'answer', message: `Asked ${shooterAsks} times; this time with ${(body.images ?? []).length} picture(s).`, changes: [], operations: [], needCode: null, starter: null };
   }
+  if (req.includes('ai drawn sprites test')) {
+    // A new game with AI-drawn sprites: the first answer leaves the player with the engine's picture; sent back,
+    // it draws it.
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const sceneId = body.context.level.id;
+    const place = { op: 'place_instance', sceneId, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null };
+    const floor = { op: 'place_instance', sceneId, definitionRef: lib('Platform'), x: 16, y: 48, name: null, ref: null };
+    if (!req.includes('engine\'s pictures')) return { kind: 'apply', message: `Sprites: ${body.context.newGame?.sprites}.`, changes: ['A player'], operations: [place] };
+    const rows = Array.from({ length: 8 }, () => 'aaaaaaaa');
+    return {
+      kind: 'apply',
+      message: `Sprites: ${body.context.newGame?.sprites}; drew them.`,
+      changes: ['A player, drawn'],
+      operations: [place, floor, { op: 'draw_sprite', target: 'definition', id: lib('Player'), name: 'Hero', palette: [{ key: 'a', color: '#ff00aa' }], rows, frames: null, fps: null, situation: null }, { op: 'draw_sprite', target: 'definition', id: lib('Platform'), name: 'Ground', palette: [{ key: 'a', color: '#00aa55' }], rows, frames: null, fps: null, situation: null }],
+    };
+  }
   if (req.includes('a game like this picture')) {
     // A new game shown with pictures: what came along is said back, and something is built.
     const pics = body.images ?? [];
@@ -3356,6 +3372,20 @@ try {
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
     await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 2, 'the starters were described with the first request (one more only because it switched)');
+  }
+  {
+    // New game: the engine's sprites (the default), or every object drawn by the AI, which the app checks.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await check(async () => (await page.getByTestId('new-sprites-engine').getAttribute('aria-checked')) === 'true', "New game offers the engine's sprites (chosen) or AI-drawn ones");
+    await page.getByTestId('new-sprites-ai').click();
+    await page.getByTestId('game-idea').fill('ai drawn sprites test');
+    await page.getByTestId('game-idea').press('Enter');
+    await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+    const said = await page.getByTestId('global-prompt').innerText();
+    await check(said.includes('Sprites: ai; drew them.'), `AI-drawn sprites: the AI is told so, and an answer that left the player with the engine's picture was sent back to be drawn: ${said.slice(0, 160)}`);
+    await page.keyboard.press('Escape');
+    await page.getByTestId('undo').click();
   }
   {
     // A new game shown with pictures: pasted into the field, or picked with the picture button; thumbnails with ×.
