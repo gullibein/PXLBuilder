@@ -6,7 +6,7 @@ import { createBuiltinRegistry } from '../../core/components/builtin';
 import { createProject, instantiateDefinition } from '../../core/model/factory';
 import * as m from '../../core/model/mutations';
 import { useEditor } from '../store';
-import { runPrompt, setAIProvider } from './runPrompt';
+import { makesAGame, runPrompt, setAIProvider } from './runPrompt';
 
 afterEach(() => setAIProvider(null));
 
@@ -69,5 +69,37 @@ describe('when the corrected answer is lost', () => {
     } as AIProvider);
     const outcome = await runPrompt({ kind: 'level', sceneId: scene.id, point: null }, 'do something');
     expect(outcome.status).toBe('error');
+  });
+});
+
+describe('a whole new game asked for on Whole game', () => {
+  it('"make a game like this" is a new game; changes to this game are not', () => {
+    expect(makesAGame('make a game like this')).toBe(true);
+    expect(makesAGame('Build me a space shooter game')).toBe(true);
+    expect(makesAGame('make the game harder')).toBe(false);
+    expect(makesAGame('make my game faster')).toBe(false);
+    expect(makesAGame('add more enemies')).toBe(false);
+  });
+
+  it('the AI asks for guidance, then for the other starter: the game is made over on it and built', async () => {
+    useEditor.setState({ project: createProject(createBuiltinRegistry(), 'Test', 'platformer') });
+    const scene = useEditor.getState().project.scenes[0];
+    const replies: AIResponse[] = [
+      { kind: 'need_code', message: 'Getting the shooter guidance.', changes: [], operations: [], needCode: ['topic:shooters'], starter: null } as AIResponse,
+      { kind: 'switch_starter', message: "That's a space shooter seen from above.", changes: [], operations: [], needCode: null, starter: 'topdown' } as AIResponse,
+      { kind: 'answer', message: 'Built it.', changes: [], operations: [], needCode: null, starter: null } as AIResponse,
+    ];
+    const seen: { topics?: string[]; newGame?: unknown }[] = [];
+    setAIProvider({
+      respond: async (body: { topics?: string[]; context: { newGame?: unknown } }) => {
+        seen.push({ topics: body.topics, newGame: body.context.newGame });
+        return replies[Math.min(seen.length - 1, replies.length - 1)];
+      },
+    } as unknown as AIProvider);
+    await runPrompt({ kind: 'project', sceneId: scene.id }, 'make a game like this');
+    expect(seen[0].newGame).toBeTruthy();
+    expect(seen[1].topics).toContain('shooters');
+    expect(useEditor.getState().project.settings.gameType).toBe('topdown');
+    expect(seen.length).toBeGreaterThanOrEqual(3);
   });
 });

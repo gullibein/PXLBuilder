@@ -113,6 +113,11 @@ export function labelFor(request: string): string {
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
 }
 
+/** A request for a whole new game ("make a game like this", "build me a space shooter game"), not a change to this one. */
+export function makesAGame(request: string): boolean {
+  return /\b(make|build|create|remake|recreate)\b[^.?!]{0,40}\bgame\b/i.test(request) && !/\b(this|my|the|our) game\b/i.test(request);
+}
+
 /** The starters a new game can be made from, for the AI to choose (context.newGame). */
 const STARTERS: { id: GameType; is: string }[] = [
   { id: 'platformer', is: 'seen from the side, with gravity: player that runs, jumps and climbs, ground, platforms, ladders, enemies, spikes, crates, a goal (Mario-like games)' },
@@ -170,17 +175,44 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     trace?.('note', `Guidance sent along: ${topics.join(', ')}`);
   }
   const starterNow = (): GameType => useEditor.getState().project.settings.gameType ?? 'platformer';
+  // A new game: from the New game window, or asked for on the whole game ("make a game like this").
+  const newGame = !!options.newGame || (ctx.kind === 'project' && makesAGame(request));
+  if (newGame && !options.newGame) trace?.('note', 'Asked for a whole new game: built as a new game (the starter may be switched; Undo brings the old one back)');
   // (With pictures the AI always draws the game in their style.)
-  const sprites = options.newGame ? (options.images?.length ? 'ai' : (options.sprites ?? 'engine')) : undefined;
-  if (options.newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
+  const sprites = newGame ? (options.images?.length ? 'ai' : (options.sprites ?? 'engine')) : undefined;
+  if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
     response = await provider.respond(body, signal, trace);
+    // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
+    // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
+    const fetchCode = async () => {
+      for (let round = 0; round < 2 && response.kind === 'need_code'; round++) {
+        const asked = response.needCode ?? [];
+        // Guidance it asked for ("topic:music"), and code.
+        const newTopics = asked.flatMap((id) => (id.startsWith('topic:') ? [id.slice(6)] : [])).filter((t) => TOPICS[t] && !(body.topics ?? []).includes(t));
+        const sent = new Set((body.code ?? []).map((c) => c.id));
+        const fresh = codeFor(useEditor.getState().project, asked.filter((id) => !id.startsWith('topic:'))).filter((c) => !sent.has(c.id));
+        if (!fresh.length && !newTopics.length) break;
+        if (newTopics.length) {
+          trace?.('note', `The AI asked for the guidance on: ${newTopics.join(', ')}; asking again with it`);
+          body.topics = [...(body.topics ?? []), ...newTopics];
+        }
+        if (fresh.length) {
+          const names = fresh.map((c) => c.name).join(', ');
+          trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
+          state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
+          body.code = [...(body.code ?? []), ...fresh];
+        }
+        response = await provider.respond(body, signal, trace);
+      }
+    };
+    await fetchCode();
     // A new game the AI would rather build on another starter: made over from that one, and the same request asked
     // again. (It may leave out which starter, there being only two; or only say so in words, building nothing.)
-    if (options.newGame) {
+    if (newGame) {
       const other: GameType = starterNow() === 'platformer' ? 'topdown' : 'platformer';
       const wantsOther = (r: AIResponse) =>
         r.kind === 'switch_starter' || (!r.operations.length && new RegExp(`${other === 'topdown' ? 'top-?down|from above' : 'platformer|side[- ]view|from the side'}[^.]{0,40}starter|starter[^.]{0,40}${other === 'topdown' ? 'top-?down' : 'platformer'}`, 'i').test(r.message));
@@ -192,6 +224,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
         response = await provider.respond(body, signal, trace);
+        await fetchCode();
         // Still nothing built (or another switch): once more, plainly.
         if (response.kind === 'switch_starter' || (!response.operations.length && response.kind !== 'need_code')) {
           trace?.('retry', 'Nothing built on the new starter: asked once more, plainly');
@@ -199,27 +232,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         }
       }
       if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };
-    }
-    // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
-    // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
-    for (let round = 0; round < 2 && response.kind === 'need_code'; round++) {
-      const asked = response.needCode ?? [];
-      // Guidance it asked for ("topic:music"), and code.
-      const newTopics = asked.flatMap((id) => (id.startsWith('topic:') ? [id.slice(6)] : [])).filter((t) => TOPICS[t] && !(body.topics ?? []).includes(t));
-      const sent = new Set((body.code ?? []).map((c) => c.id));
-      const fresh = codeFor(useEditor.getState().project, asked.filter((id) => !id.startsWith('topic:'))).filter((c) => !sent.has(c.id));
-      if (!fresh.length && !newTopics.length) break;
-      if (newTopics.length) {
-        trace?.('note', `The AI asked for the guidance on: ${newTopics.join(', ')}; asking again with it`);
-        body.topics = [...(body.topics ?? []), ...newTopics];
-      }
-      if (fresh.length) {
-        const names = fresh.map((c) => c.name).join(', ');
-        trace?.('note', `The AI asked for the code of: ${names}; asking again with it`);
-        state.logMessage('info', `AI asked to read the code of ${names}; sending it.`);
-        body.code = [...(body.code ?? []), ...fresh];
-      }
-      response = await provider.respond(body, signal, trace);
+    } else if (response.kind === 'switch_starter') {
+      // (Only a new game is made over from another starter: this one stays as it is.)
+      response = { ...response, kind: 'answer', operations: [], message: `${response.message} To build it on that starter, start it as a new game (⋯ → New game), or ask on Whole game for "a new game like this".` };
     }
     if (response.kind === 'need_code') {
       // It asked for code that isn't there (or kept asking): say so rather than leave the request hanging.
@@ -248,7 +263,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
     // (Not while a game is being built from scratch, a new game or pictures on an empty level: reshaping the starter's
     // objects is then the point.)
-    const building = !!options.newGame || (!!options.images?.length && !(state.project.scenes.find((s) => s.id === ctx.sceneId)?.entities.length ?? 0));
+    const building = newGame || (!!options.images?.length && !(state.project.scenes.find((s) => s.id === ctx.sceneId)?.entities.length ?? 0));
     const unasked = gameOps(response) && !broken && !stuck && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
     // A new game asked with AI-drawn sprites (or pictures) that leaves objects with the engine's pictures or as boxes.
     const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
