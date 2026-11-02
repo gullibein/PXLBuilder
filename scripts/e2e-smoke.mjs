@@ -3464,7 +3464,7 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === '0' && /^4 rooms/.test(await dp.getByTestId('dungeon-report').innerText()), '(Undo: random again)');
     await dp.getByTestId('dungeon-close').click();
-    for (let n = 0; n < 8; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   {
@@ -3473,6 +3473,31 @@ try {
     await page.getByTestId('menu-new').click();
     await page.getByTestId('game-isometric').click();
     await check(async () => Number(await canvas.getAttribute('data-entities')) > 200, 'New project → Isometric: an island of blocks is placed');
+    await page.waitForTimeout(300);
+    // Kept as it is: opened again (the saved game, in another tab), it is still seen isometric.
+    const isoChecked = async (pg) => {
+      await pg.getByTestId('main-menu').click();
+      const row = pg.getByTestId('menu-iso-view');
+      const on = (await row.innerText()).includes('✓');
+      await pg.keyboard.press('Escape');
+      if (await row.count()) await pg.getByTestId('main-menu').click();
+      return on;
+    };
+    await page.waitForTimeout(700);
+    {
+      const again = await page.context().newPage();
+      await again.goto(URL);
+      await again.getByTestId('viewport-canvas').waitFor();
+      await check(async () => await isoChecked(again), 'the game opened again is still isometric (its view is saved)');
+      await again.close();
+    }
+    await check(async () => await isoChecked(page), 'the ⋯ menu shows the level\'s view: Isometric view ✓');
+    await page.getByTestId('main-menu').click();
+    await page.getByTestId('menu-iso-view').click();
+    await check(async () => !(await isoChecked(page)), 'and turns it off (the level seen flat)');
+    await page.getByTestId('main-menu').click();
+    await page.getByTestId('menu-iso-view').click();
+    await check(async () => await isoChecked(page), '…and on again');
     await page.waitForTimeout(300);
     const [cx, cy, zoom] = (await canvas.getAttribute('data-camera')).split(',').map(Number);
     const box = await canvas.boundingBox();
@@ -3544,7 +3569,7 @@ try {
     await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
     await page.waitForTimeout(300);
     await page.getByTestId('play').click();
-    for (let n = 0; n < 8; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 10; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   // (The AI is answered by the stand-in again for this.)

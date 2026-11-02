@@ -55,15 +55,15 @@ const FLAG = art({ o: '#1a1420', w: '#d8d2c8', r: '#e8344a', R: '#ff7a8a', g: '#
 ]);
 
 /** Blocks that are floors (walked on), walls (in the way, one block high), water (in the way, at floor height). */
-const FLOORS = ['Grass', 'Dark Grass', 'Dirt', 'Dark Dirt', 'Snow', 'Magma', 'Grassy Dirt', 'Grassy Dirt 2', 'Grassy Dirt 3', 'Grassy Dirt 4'];
+const FLOORS = ['Grass', 'Dark Grass', 'Dirt', 'Dark Dirt', 'Snow', 'Road Turn SE-SW', 'Road Turn SE-NE', 'Road Turn NW-NE', 'Road Turn NW-SW', 'Grass Shore 1', 'Grass Shore 2'];
 const WALLS = ['Cobblestone', 'Wood', 'Dark Stone', 'Light Stone', 'Ice'];
-const WATER = ['Water', 'Water Shore 1', 'Water Shore 2', 'Water Shore 3', 'Water Shore 4'];
+const WATER = ['Water', 'Water Corner West', 'Water Corner North', 'Water Corner South', 'Water Corner East', 'Water Shore 1', 'Water Shore 2'];
 
 export function createIsometricProject(registry: ComponentRegistry, name = 'Untitled Game'): Project {
   const project = createProject(registry, name, 'topdown');
   const c = (type: string, props: Record<string, unknown> = {}) => registry.createDefault(type, props);
-  const block = (n: string, look: 'iso_floor' | 'iso_block', extra: Record<string, Record<string, unknown>>, tags: string[], description: string): ObjectDefinition => {
-    const asset = createPixelArtAsset(n, ISO_TILES[n]);
+  const block = (n: string, look: 'iso_floor' | 'iso_block', extra: Record<string, Record<string, unknown>>, tags: string[], description: string, picture = n): ObjectDefinition => {
+    const asset = createPixelArtAsset(picture, ISO_TILES[picture]);
     project.assets.push(asset);
     const d = createDefinition(n, { Sprite: c('Sprite', { width: 32, height: 32, assetId: asset.id, isoLook: look }), ...extra }, tags, description);
     d.metadata.category = 'Isometric';
@@ -78,7 +78,7 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   ];
   // Lava: a floor that hurts, as the Hazard does.
   const hazard = project.definitions.find((d) => d.name === 'Hazard');
-  const lava = block('Lava', 'iso_floor', { Collider: c('Collider', { size: { x: 28, y: 28 }, isTrigger: true, matchSprite: false }) }, ['hazard', 'lava'], 'Lava at floor height: it hurts whatever walks on it.');
+  const lava = block('Lava', 'iso_floor', { Collider: c('Collider', { size: { x: 28, y: 28 }, isTrigger: true, matchSprite: false }) }, ['hazard', 'lava'], 'Lava at floor height (the magma block): it hurts whatever walks on it.', 'Magma');
   if (hazard?.scripts) lava.scripts = structuredClone(hazard.scripts);
   defs.push(lava);
   for (const d of defs) m.addDefinition(project, d, registry);
@@ -109,17 +109,21 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   const W = 16;
   const H = 12;
   const lavaPool = (i: number, j: number) => i >= 12 && i <= 13 && j >= 8 && j <= 9;
+  // A small lake, its four corners the water blocks with land round that corner (north at the top of the screen).
+  const corners: Record<string, string> = { '9,9': 'Water Corner North', '10,9': 'Water Corner East', '9,10': 'Water Corner West', '10,10': 'Water Corner South' };
+  const lake = (i: number, j: number): string | undefined => corners[`${i},${j}`];
   const magma = (i: number, j: number) => !lavaPool(i, j) && i >= 11 && i <= 14 && j >= 7 && j <= 10;
   for (let j = -1; j <= H; j++)
     for (let i = -1; i <= W; i++) {
       if (i < 0 || j < 0 || i >= W || j >= H) at('Water', i, j);
       else if (lavaPool(i, j)) at('Lava', i, j);
-      else if (magma(i, j)) at('Magma', i, j);
+      else if (magma(i, j)) at('Dark Dirt', i, j);
+      else if (lake(i, j)) at(lake(i, j)!, i, j);
       else if (j === 6 && i >= 1 && i <= 14) at('Dirt', i, j);
       else at((i * 7 + j * 3) % 11 === 0 ? 'Dark Grass' : 'Grass', i, j);
     }
   // A hill: a terrace one block up, and a smaller one on top of it (the player steps up one block at a time).
-  for (let j = 0; j <= 2; j++) for (let i = 1; i <= 4; i++) at(j === 2 ? 'Grassy Dirt' : 'Grass', i, j, 16);
+  for (let j = 0; j <= 2; j++) for (let i = 1; i <= 4; i++) at('Grass', i, j, 16);
   at('Grass', 1, 0, 32);
   at('Grass', 2, 0, 32);
   // Ruins and crates (walls stand on the floor blocks).

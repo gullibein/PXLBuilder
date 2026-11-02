@@ -3,7 +3,7 @@ import { applySpriteResolution } from '../quickCommands';
 import { useEffect, useRef, useState } from 'react';
 import { createLevelFor } from '../../core/model/factory';
 import { componentRegistry } from '../../core/components/builtin';
-import { addScene, renameProject, resetAllStarterDefinitions } from '../../core/model/mutations';
+import { addScene, renameProject, resetAllStarterDefinitions, setWorldSettings } from '../../core/model/mutations';
 import { frameView } from '../actions';
 import { canExportGame, exportPlayer } from '../gameExport';
 import { openFileWithPicker, openProjectFile, PROJECT_FILE_EXTENSION, quickSave } from '../persistence';
@@ -159,6 +159,7 @@ function MainMenu() {
   const lowRes = useEditor((s) => s.layout.playPixels > 0);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const overlayCount = useEditor((s) => s.layout.overlays.length);
+  const iso = useEditor((s) => getActiveScene(s).world.view === 'iso');
   const s = useEditor.getState();
   const items: { label: string; hint?: string; checked?: boolean; run: () => void; testId?: string; sep?: boolean }[] = [
     { label: 'Details panel', hint: 'I', checked: inspectorOpen, run: () => s.setInspectorOpen(!inspectorOpen), testId: 'menu-details' },
@@ -167,6 +168,15 @@ function MainMenu() {
     { label: 'Grid', checked: showGrid, run: () => s.setShowGrid(!showGrid) },
     { label: 'Snap to grid', checked: snap, run: () => s.setSnapToGrid(!snap) },
     { label: 'Wireframe view', hint: 'W', checked: wireOn, run: () => s.setLayout({ wireframe: !wireOn }), testId: 'menu-wireframe' },
+    {
+      label: 'Isometric view (this level)',
+      checked: iso,
+      run: () => {
+        const sid = useEditor.getState().activeSceneId;
+        s.edit(iso ? 'Flat view' : 'Isometric view', (p) => setWorldSettings(p, sid, { view: iso ? 'flat' : 'iso' }));
+      },
+      testId: 'menu-iso-view',
+    },
     { label: 'Camera outlines', checked: frameOn, run: () => s.setLayout({ showCameraOutlines: !frameOn }), testId: 'menu-camera-frame' },
     { label: 'Low-resolution play (faster)', checked: lowRes, run: () => s.setLayout({ playPixels: lowRes ? 0 : 400 }), testId: 'menu-low-res' },
     { label: 'AI connection…', run: () => s.setAIConnectionOpen(true), testId: 'menu-ai-connection', sep: true },

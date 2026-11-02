@@ -229,13 +229,13 @@ function RpgPreview() {
 
 /** A little island of the isometric blocks, drawn as the game draws them (each block on its diamond, back to front). */
 function IsometricPreview() {
-  const src = useMemo(() => Object.fromEntries(['Water', 'Grass', 'Dirt', 'Cobblestone', 'Wood', 'Lava'].map((n) => [n, createPixelArtAsset(n, ISO_TILES[n]).data])), []);
+  const src = useMemo(() => Object.fromEntries(['Water', 'Grass', 'Dirt', 'Cobblestone', 'Wood', 'Magma'].map((n) => [n, createPixelArtAsset(n, ISO_TILES[n]).data])), []);
   const player = useMemo(() => createTopDownStarterAssets().player.data, []);
   const items: { src: string; i: number; j: number; up?: boolean }[] = [];
   for (let j = -1; j <= 4; j++)
     for (let i = -1; i <= 4; i++) {
       const edge = i < 0 || j < 0 || i > 3 || j > 3;
-      items.push({ src: src[edge ? 'Water' : j === 2 ? 'Dirt' : i === 3 && j === 3 ? 'Lava' : 'Grass'], i, j });
+      items.push({ src: src[edge ? 'Water' : j === 2 ? 'Dirt' : i === 3 && j === 3 ? 'Magma' : 'Grass'], i, j });
     }
   items.push({ src: src.Cobblestone, i: 2, j: 0, up: true }, { src: src.Cobblestone, i: 3, j: 0, up: true }, { src: src.Wood, i: 0, j: 3, up: true });
   items.sort((a, b) => Number(!!a.up) - Number(!!b.up) || a.i + a.j - (b.i + b.j));

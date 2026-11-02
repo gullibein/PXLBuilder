@@ -29,6 +29,36 @@ export const entitySchema = z.object({
   scripts: z.array(scriptSchema).optional(),
 });
 
+/** A random level's recipe (Scene.generator). */
+const spawnSchema = z.object({ object: id, weight: z.number(), fromFloor: z.number() });
+const generatorSchema = z.object({
+  style: z.enum(['rooms', 'caves', 'maze']).optional(),
+  seed: z.number().nullable(),
+  preview: z.number(),
+  previewFloor: z.number(),
+  width: z.number(),
+  height: z.number(),
+  rooms: z.number(),
+  roomMin: z.number(),
+  roomMax: z.number(),
+  corridor: z.number(),
+  loops: z.number(),
+  wall: id.nullable(),
+  floor: id.nullable(),
+  stairs: id.nullable(),
+  monsters: z.array(spawnSchema),
+  monsterCount: z.number(),
+  monstersPerFloor: z.number(),
+  loot: z.array(spawnSchema),
+  lootCount: z.number(),
+  lootPerFloor: z.number(),
+  door: id.nullable().optional(),
+  key: id.nullable().optional(),
+  lockFromFloor: z.number().optional(),
+  templates: z.array(id).optional(),
+  templateChance: z.number().optional(),
+});
+
 export const sceneSchema = z.object({
   id,
   name: z.string(),
@@ -44,12 +74,14 @@ export const sceneSchema = z.object({
       scroll: vec2.nullable().optional(),
       stars: z.object({ density: z.number().min(0).max(60), speed: vec2, layers: z.number().int().min(1).max(3), color: z.string() }).nullable().optional(),
     }),
+    view: z.enum(['flat', 'iso']).optional(),
   }),
   entities: z.array(entitySchema),
   relationships: z.array(relationshipSchema),
   rules: z.array(ruleSchema),
   music: id.nullable().optional(),
   camera: cameraSchema,
+  generator: generatorSchema.optional(),
 });
 
 export const definitionSchema = z.object({
@@ -100,6 +132,7 @@ export const projectSchema = z.object({
     gameType: z.enum(['platformer', 'topdown']).optional(),
     spriteResolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).optional(),
     playPixels: z.number().int().min(0).max(2160).optional(),
+    controls: z.record(z.string(), z.array(z.string())).optional(),
   }),
   startSceneId: id,
   scenes: z.array(sceneSchema).min(1),
