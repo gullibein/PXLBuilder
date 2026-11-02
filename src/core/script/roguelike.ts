@@ -20,16 +20,20 @@ const touched = (steps: Step[]) => ({ when: { on: 'contact' }, state: null, if: 
 /** Squares apart along the grid. */
 const apart = (a: string) => `(abs(grid_cell(${a}.x) - grid_cell(self.x)) + abs(grid_cell(${a}.y) - grid_cell(self.y))) / 32`;
 const AT = 'thing_at(tx, ty, foes)';
+const DOOR = 'thing_at(tx, ty, door_tag)';
 
 export const ROGUELIKE_HERO_SCRIPT = {
   name: 'Roguelike hero',
-  description: 'Steps square by square; stepping into a monster attacks it; each step or blow is a turn of the world (the monsters act); E waits a turn. Health and the floor carry on down the stairs; dying starts a new run.',
+  description: 'Steps square by square; stepping into a monster attacks it, into a shut door opens it with a key; each step or blow is a turn of the world (the monsters act); E waits a turn. Health and the floor carry on down the stairs; dying starts a new run.',
   vars: [
     { name: 'foes', value: 'monster', setting: true },
     { name: 'power', value: 2, setting: true },
     { name: 'step_speed', value: 240, setting: true },
     { name: 'step_time', value: 0.12, setting: true },
     { name: 'damage_color', value: '#ff5050', setting: true },
+    { name: 'door_tag', value: 'door', setting: true },
+    { name: 'key_item', value: 'key', setting: true },
+    { name: 'locked_text', value: 'Locked', setting: true },
     { name: 'step_x', value: 0 },
     { name: 'step_y', value: 0 },
     { name: 'tx', value: 0 },
@@ -55,7 +59,20 @@ export const ROGUELIKE_HERO_SCRIPT = {
             set('wait', 'step_time * 2'),
             { do: 'signal', name: 'world_turn' },
           ],
-          [when('not solid_at(tx, ty)', [{ do: 'walk_to', x: 'tx', y: 'ty', steps: '1', speed: 'step_speed', on: null }, set('wait', 'step_time'), { do: 'signal', name: 'world_turn' }])],
+          [
+            when(
+              'not solid_at(tx, ty)',
+              [{ do: 'walk_to', x: 'tx', y: 'ty', steps: '1', speed: 'step_speed', on: null }, set('wait', 'step_time'), { do: 'signal', name: 'world_turn' }],
+              // A shut door: its key opens it (used up), a turn of the world; without one it stays shut.
+              [
+                when(
+                  `${DOOR} != null and items(self, key_item) > 0`,
+                  [{ do: 'take_item', target: 'self', item: '{key_item}', count: '1' }, { do: 'set_open', target: DOOR, open: 'true', by: 'self' }, set('wait', 'step_time'), { do: 'signal', name: 'world_turn' }],
+                  [when(`${DOOR} != null`, [{ do: 'popup', text: '{locked_text}', color: '#ffffff', on: DOOR }, set('wait', 'step_time * 3')])],
+                ),
+              ],
+            ),
+          ],
         ),
       ]),
     ]),

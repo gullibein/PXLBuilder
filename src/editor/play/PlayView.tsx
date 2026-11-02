@@ -1,4 +1,5 @@
 import { resolutionZoom } from '../../core/model/camera';
+import { nextLevel } from '../../core/model/dungeon';
 import { usesMenuKey } from '../../core/script/language';
 import { useEffect, useMemo, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
@@ -273,7 +274,7 @@ export function PlayView(props: PlayViewProps) {
       // A won level: a moment to see it, then the next level (or the end of the game).
       let banner: string | null = null;
       if (runtime.completed !== null && !runtime.builtinHidden.has('level_end')) {
-        const nextScene = project.scenes[project.scenes.findIndex((s) => s.id === scene.id) + 1];
+        const nextScene = nextLevel(project, scene.id);
         banner = nextScene ? 'Level complete!' : 'You finished the game!';
         if (nextScene && runtime.time - runtime.completed > 1.5) {
           enterLevel(nextScene, false);

@@ -4,7 +4,7 @@
  * health, scripts or a behavior), and how everything was at the end. It only
  * reads the runtime; the game plays the same with or without it.
  */
-import type { PlayEntityState, PlayEvent, PlayReport, PlaySample } from '../core/debug/playReport';
+import type { PlayDungeon, PlayEntityState, PlayEvent, PlayReport, PlaySample } from '../core/debug/playReport';
 import type { Id } from '../core/types';
 import type { Runtime, RuntimeEntity } from './runtime';
 
@@ -23,6 +23,8 @@ export class PlayRecorder {
   private readonly traces = new Map<Id, { name: string; samples: PlaySample[] }>();
   private readonly messages: string[] = [];
   private nextSample = 0;
+  private readonly dungeons: PlayDungeon[] = [];
+  private lastDungeon: unknown = null;
 
   constructor(private readonly rt: Runtime) {
     // What the runtime logged before we started listening (the level start).
@@ -40,6 +42,12 @@ export class PlayRecorder {
 
   /** Call after each runtime update. */
   sample(): void {
+    // Each dungeon a random level was built as (a restart, the stairs: built anew).
+    if (this.rt.dungeon && this.rt.dungeon !== this.lastDungeon) {
+      this.lastDungeon = this.rt.dungeon;
+      this.dungeons.push({ seed: this.rt.dungeonSeed ?? 0, floor: Number(this.rt.game.get('floor') ?? 1) || 1, time: r1(this.rt.time) });
+      if (this.dungeons.length > 50) this.dungeons.shift();
+    }
     for (const m of this.rt.messages) if (this.messages.at(-1) !== m && !this.messages.slice(-5).includes(m)) this.messages.push(m);
     if (this.rt.time < this.nextSample) return;
     this.nextSample = this.rt.time + SAMPLE_EVERY;
@@ -83,6 +91,7 @@ export class PlayRecorder {
       final: this.rt.entities.filter((e) => !e.projectile).map((e) => stateOf(this.rt, e)),
       scriptErrors: this.rt.scripts.errors.map((e) => ({ ...e })),
       messages: this.messages.slice(),
+      ...(this.dungeons.length ? { dungeons: this.dungeons.slice() } : {}),
     };
   }
 

@@ -9,6 +9,7 @@
  * runtime/scripts.ts); a check that could be wrong is left out rather than
  * reported as a guess.
  */
+import { templateLevels } from '../model/dungeon';
 import { touchHarm } from '../model/ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import { itemNameOf } from '../graph/graph';
@@ -46,6 +47,8 @@ function readsKeys(script: BehaviorScript): boolean {
 export function diagnoseLevel(project: Project, sceneId: Id, registry: ComponentRegistry): Problem[] {
   const scene = project.scenes.find((s) => s.id === sceneId);
   if (!scene) return [];
+  // A room template (a random level stamps it into its rooms) is not played on its own: nothing to check as a level.
+  if (templateLevels(project).has(sceneId)) return [{ key: 'room-template', severity: 'note', text: 'This level is a room template: random levels stamp it into rooms that fit it, so it is not played on its own (no player needed).', entityIds: [] }];
   const placed: Placed[] = scene.entities.map((e) => ({ id: e.id, name: e.name, definitionId: e.definitionId, r: resolveEntity(project, e, registry) }));
   const has = (p: Placed, c: string) => !!p.r.components[c];
   const out: Problem[] = [];

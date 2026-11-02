@@ -124,13 +124,50 @@ const STAIRS = art({ o: '#0c0a10', a: '#5a566a', b: '#7a7690', c: '#3a3648', d: 
   'oooooooooooooooo',
 ]);
 
+const KEY = art({ o: '#2a1c04', y: '#ffd166', Y: '#fff2a8', d: '#c8902a' }, [
+  '................',
+  '................',
+  '................',
+  '...oooo.........',
+  '..oyYYyo........',
+  '.oyYooYyo.......',
+  '.oyo..oyo.......',
+  '.oyYooYyoooooooo',
+  '..oyyyyyyyyyyyyo',
+  '...oooodyyooyydo',
+  '........oddo.odo',
+  '.........oo...o.',
+  '................',
+  '................',
+  '................',
+  '................',
+]);
+const DOOR = art({ o: '#140c06', b: '#7a4a24', B: '#a0683a', d: '#4a2a12', y: '#ffd166', g: '#5a566a' }, [
+  'gggggggggggggggg',
+  'goooooooooooooog',
+  'gobBbdbBbdbBbbog',
+  'gobBbdbBbdbBbbog',
+  'gobBbdbBbdbBbbog',
+  'gobBbdbBbdbBbbog',
+  'goooooooooooooog',
+  'gobBbdbBbdbyybog',
+  'gobBbdbBbdbyobog',
+  'gobBbdbBbdbyybog',
+  'goooooooooooooog',
+  'gobBbdbBbdbBbbog',
+  'gobBbdbBbdbBbbog',
+  'gobBbdbBbdbBbbog',
+  'goooooooooooooog',
+  'gggggggggggggggg',
+]);
+
 function withScript(project: Project, def: ObjectDefinition, ready: string, settings: Record<string, unknown> = {}): void {
   const checked = checkScript({ ...expandReadyScript({ ready, settings }), id: `scr_${ready.replace(/\W+/g, '_').toLowerCase()}` }, project);
   if ('error' in checked) throw new Error(`Roguelike starter: ${checked.error}`);
   def.scripts = [...(def.scripts ?? []), checked.script];
 }
 
-export const ROGUELIKE_ARTS = { rat: RAT, skeleton: SKELETON, ogre: OGRE, gold: GOLD, potion: POTION, stairs: STAIRS };
+export const ROGUELIKE_ARTS = { rat: RAT, skeleton: SKELETON, ogre: OGRE, gold: GOLD, potion: POTION, stairs: STAIRS, key: KEY, door: DOOR };
 
 export function createRoguelikeProject(registry: ComponentRegistry, name = 'Untitled Game'): Project {
   const project = createProject(registry, name, 'topdown');
@@ -159,7 +196,12 @@ export function createRoguelikeProject(registry: ComponentRegistry, name = 'Unti
   const stairs = thing('Stairs', ['stairs'], STAIRS, {}, 'The way down: the next floor, deeper.', 'Environment');
   stairs.metadata.placement = 'tile';
   withScript(project, stairs, 'Stairs down');
-  for (const d of [rat, skeleton, ogre, gold, potion, stairs]) m.addDefinition(project, d, registry);
+  // A key (picked up: carried) and the locked door on the way down that it opens.
+  const key = thing('Key', ['key', 'loot'], KEY, { Collectible: c('Collectible', { collectionBehavior: 'addToInventory', itemId: 'key' }) }, 'The key to the locked door on the way down.', 'Items');
+  const door = createDefinition('Locked Door', { Sprite: c('Sprite', { width: 32, height: 32, assetId: picture('Locked Door', DOOR) }), Collider: c('Collider', { size: { x: 32, y: 32 } }), PhysicsBody: c('PhysicsBody', { bodyType: 'static' }), Openable: c('Openable') }, ['door'], 'A locked door: the hero opens it with a key.');
+  door.metadata.category = 'Environment';
+  door.metadata.placement = 'tile';
+  for (const d of [rat, skeleton, ogre, gold, potion, stairs, key, door]) m.addDefinition(project, d, registry);
 
   // The hero: steps square by square (its controller doesn't walk it), sees through the fog, shows the run.
   const hero = project.definitions.find((d) => d.name === 'Player')!;
@@ -179,7 +221,7 @@ export function createRoguelikeProject(registry: ComponentRegistry, name = 'Unti
           when: { on: 'tick' },
           state: null,
           if: null,
-          do: [{ do: 'draw', id: 'run', shape: 'text', anchor: 'top_left', x: '12', y: '10', w: null, h: null, text: "Floor {game_value('floor', 1)}   HP {self.health}/{self.max_health}   Gold {game_value('gold', 0)}", size: '14', color: '#ffffff', object: null, alpha: null }],
+          do: [{ do: 'draw', id: 'run', shape: 'text', anchor: 'top_left', x: '12', y: '10', w: null, h: null, text: "Floor {game_value('floor', 1)}   HP {self.health}/{self.max_health}   Gold {game_value('gold', 0)}   Keys {items(self, 'key')}", size: '14', color: '#ffffff', object: null, alpha: null }],
         },
       ],
     },
@@ -199,6 +241,9 @@ export function createRoguelikeProject(registry: ComponentRegistry, name = 'Unti
     wall: id('Wall'),
     floor: id('Floor'),
     stairs: id('Stairs'),
+    door: id('Locked Door'),
+    key: id('Key'),
+    lockFromFloor: 1,
     monsters: [
       { object: id('Rat'), weight: 3, fromFloor: 1 },
       { object: id('Skeleton'), weight: 2, fromFloor: 2 },

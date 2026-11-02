@@ -1,8 +1,8 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
-import { generateDungeon } from '../core/model/dungeon';
-import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
+import { generateDungeon, nextLevel } from '../core/model/dungeon';
+import { createDefinition, createProject, createScene, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { createRoguelikeProject } from '../core/model/roguelikeStarter';
 import { checkScript } from '../core/script/language';
@@ -189,5 +189,126 @@ describe('the turn kit from scripts', () => {
     const s = walker({});
     const [x, y] = s.at() as number[];
     expect(Math.abs(x - 16) + Math.abs(y - 16)).toBe(32);
+  });
+});
+
+describe('locked doors and keys in random levels', () => {
+  it('the door shuts off the stairs; the key can be reached without it; the door needs the key', () => {
+    const project = createRoguelikeProject(registry);
+    const scene = project.scenes[0];
+    const g = scene.generator!;
+    expect(scene.relationships.some((r) => r.type === 'requires' && (r.source as { id: string }).id === g.door && (r.target as { id: string }).id === g.key)).toBe(true);
+    let locked = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+      const d = generateDungeon(project, scene, registry, seed);
+      if (!d.locked) continue;
+      locked++;
+      const at = (x: number) => Math.floor(x / 32);
+      const blocked = new Set(d.entities.filter((e) => e.definitionId === g.wall || e.definitionId === g.door).map((e) => `${at(e.transform.position.x)},${at(e.transform.position.y)}`));
+      const start = `${at(d.start!.x)},${at(d.start!.y)}`;
+      const seen = new Set([start]);
+      const todo = [start];
+      while (todo.length) {
+        const [i, j] = todo.pop()!.split(',').map(Number);
+        for (const [di, dj] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const k = `${i + di},${j + dj}`;
+          if (i + di < 0 || j + dj < 0 || i + di >= g.width || j + dj >= g.height || blocked.has(k) || seen.has(k)) continue;
+          seen.add(k);
+          todo.push(k);
+        }
+      }
+      expect(seen.has(`${at(d.locked.key.x)},${at(d.locked.key.y)}`)).toBe(true);
+      expect(seen.has(`${at(d.stairs!.x)},${at(d.stairs!.y)}`)).toBe(false);
+    }
+    expect(locked).toBeGreaterThan(8);
+  });
+
+  it('the roguelike hero opens a shut door it steps into with the key (used up); without one it stays shut', () => {
+    for (const withKey of [false, true]) {
+      const project = produce(createRoguelikeProject(registry), (d) => {
+        m.setGenerator(d, d.scenes[0].id, { seed: 2 });
+      });
+      const rt = new Runtime(project, project.scenes[0].id, registry);
+      step(rt, 0.05);
+      const door = rt.entities.find((e) => e.tags.includes('door'))!;
+      const hero = rt.entities.find((e) => e.controller)!;
+      // Beside the door, on an open square.
+      const free = (x: number, y: number) => !rt.entities.some((e) => e.alive && e !== hero && e.collider && !e.collider.trigger && Math.abs(e.x - x) < 16 && Math.abs(e.y - y) < 16);
+      const [dx, dy, key] = ([[32, 0, 'left'], [-32, 0, 'right'], [0, 32, 'up'], [0, -32, 'down']] as const).find(([dx, dy]) => free(door.x + dx, door.y + dy))!;
+      hero.x = door.x + dx;
+      hero.y = door.y + dy;
+      for (const e of rt.entities) if (e.tags.includes('monster')) e.alive = false;
+      if (withKey) rt.gameplay.addItem(hero, 'key', 1);
+      input.press(key);
+      step(rt, 1 / 60);
+      input.release(key);
+      step(rt, 0.3);
+      expect(rt.scripts.errors).toEqual([]);
+      expect(door.open).toBe(withKey);
+      expect(hero.inventory?.get('key') ?? 0).toBe(0);
+    }
+  });
+
+  it('the Debug tab gets the seed each dungeon was built from', async () => {
+    const { PlayRecorder } = await import('./recorder');
+    const project = produce(createRoguelikeProject(registry), (d) => {
+      m.setGenerator(d, d.scenes[0].id, { seed: 77 });
+    });
+    const rt = new Runtime(project, project.scenes[0].id, registry);
+    const rec = new PlayRecorder(rt);
+    step(rt, 0.1);
+    rt.restart();
+    step(rt, 0.1);
+    rec.sample();
+    expect(rec.report().dungeons!.map((d) => d.seed)).toEqual([77, 77]);
+  });
+});
+
+describe('room templates', () => {
+  it('rooms that fit get the template (its things where they were in it); the dungeon stays joined; the template level is not played', () => {
+    const project = produce(createRoguelikeProject(registry), (d) => {
+      const vault = createScene('Vault');
+      m.addScene(d, vault);
+      const put = (name: string, x: number, y: number) => m.addEntity(d, vault.id, instantiateDefinition(d.definitions.find((x) => x.name === name)!, { x: x * 32 + 16, y: y * 32 + 16 }));
+      // Four pillars round a heap of gold, 3 × 3.
+      put('Wall', 0, 0);
+      put('Wall', 2, 0);
+      put('Wall', 0, 2);
+      put('Wall', 2, 2);
+      put('Gold', 1, 1);
+      m.setGenerator(d, d.scenes[0].id, { templates: ['Vault'], templateChance: 1, lootCount: 0, door: null });
+    });
+    const scene = project.scenes[0];
+    const gold = project.definitions.find((x) => x.name === 'Gold')!.id;
+    const wall = scene.generator!.wall;
+    for (const seed of [1, 5, 9, 13]) {
+      const d = generateDungeon(project, scene, registry, seed);
+      expect(d.problems).toEqual([]);
+      const golds = d.entities.filter((e) => e.definitionId === gold);
+      expect(golds.length).toBeGreaterThan(2);
+      const at = (x: number) => Math.floor(x / 32);
+      const walls = new Set(d.entities.filter((e) => e.definitionId === wall).map((e) => `${at(e.transform.position.x)},${at(e.transform.position.y)}`));
+      // Each heap has its four pillars round it.
+      for (const g of golds) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) expect(walls.has(`${at(g.transform.position.x) + dx},${at(g.transform.position.y) + dy}`)).toBe(true);
+      const start = `${at(d.start!.x)},${at(d.start!.y)}`;
+      const seen = new Set([start]);
+      const todo = [start];
+      while (todo.length) {
+        const [i, j] = todo.pop()!.split(',').map(Number);
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const k = `${i + di},${j + dj}`;
+          if (i + di < 0 || j + dj < 0 || i + di >= 40 || j + dj >= 30 || walls.has(k) || seen.has(k)) continue;
+          seen.add(k);
+          todo.push(k);
+        }
+      }
+      for (const e of d.entities.filter((x) => x.definitionId !== wall && x.definitionId !== scene.generator!.floor)) expect(seen.has(`${at(e.transform.position.x)},${at(e.transform.position.y)}`)).toBe(true);
+    }
+    expect(nextLevel(project, scene.id)).toBeUndefined();
   });
 });

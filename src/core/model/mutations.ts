@@ -195,7 +195,10 @@ export function setGenerator(project: Project, sceneId: Id, patch: Record<string
     delete scene.generator;
     return;
   }
-  scene.generator = patchGenerator(project, scene.generator ?? defaultGenerator(project), patch);
+  const g = (scene.generator = patchGenerator(project, scene.generator ?? defaultGenerator(project), patch));
+  // A locked door and its key: the door needs the key (a "requires" connection for the door's object), used up.
+  if (g.door && g.key && !scene.relationships.some((r) => r.type === 'requires' && r.source.kind === 'object' && r.source.id === g.door && r.target.kind === 'object' && r.target.id === g.key))
+    scene.relationships.push({ id: generateId('rel'), type: 'requires', source: { kind: 'object', id: g.door }, target: { kind: 'object', id: g.key }, params: { consume: true }, conditions: [] });
 }
 
 /** A recipe with some of its settings changed (checked; library objects by id or name). */
@@ -248,9 +251,28 @@ export function patchGenerator(project: Project, base: DungeonGenerator, patch: 
       case 'loops':
         next.loops = num(v, k, 0, 1);
         break;
+      case 'templates': {
+        if (!Array.isArray(v)) throw new ModelError('Generator templates: a list of levels (ids or names)');
+        next.templates = v.map((x) => {
+          const want = String(x).trim().toLowerCase();
+          const s = project.scenes.find((sc) => sc.id === x || sc.name.trim().toLowerCase() === want);
+          if (!s) throw new ModelError(`Generator templates: there is no level "${String(x)}"`);
+          if (s.generator) throw new ModelError(`Generator templates: "${s.name}" is a random level itself`);
+          return s.id;
+        });
+        break;
+      }
+      case 'templateChance':
+        next.templateChance = num(v, k, 0, 1);
+        break;
+      case 'lockFromFloor':
+        next.lockFromFloor = Math.round(num(v, k, 1, 999));
+        break;
       case 'wall':
       case 'floor':
       case 'stairs':
+      case 'door':
+      case 'key':
         next[k] = objectId(v, k);
         break;
       case 'monsters':

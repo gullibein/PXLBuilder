@@ -67,6 +67,14 @@ export interface PlayReport {
   scriptErrors: { entity: string; script: string; message: string }[];
   /** On-screen messages shown during play, in order (each once). */
   messages: string[];
+  /** A random level: each dungeon it was built as (the seed, the floor, when), in order. */
+  dungeons?: PlayDungeon[];
+}
+
+export interface PlayDungeon {
+  seed: number;
+  floor: number;
+  time: number;
 }
 
 /** The summary the AI gets: small enough to send with every request. */
@@ -85,6 +93,8 @@ export interface PlaySummary {
   final: PlayEntityState[];
   scriptErrors: PlayReport['scriptErrors'];
   messages: string[];
+  /** A random level: the dungeons it was built as (the last ones). */
+  dungeons?: PlayDungeon[];
 }
 
 const MAX_SUMMARY_EVENTS = 160;
@@ -146,5 +156,6 @@ export function summarizePlay(report: PlayReport, focus: readonly Id[], playerId
     final,
     scriptErrors: report.scriptErrors,
     messages: report.messages.slice(-20),
+    ...(report.dungeons?.length ? { dungeons: report.dungeons.slice(-10) } : {}),
   };
 }

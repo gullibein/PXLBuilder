@@ -5,6 +5,7 @@ import type { PlayEvent, PlayReport } from '../../core/debug/playReport';
 import { eventRegistry } from '../../core/logic/vocabulary';
 import type { Id } from '../../core/types';
 import { contextKey } from '../../core/ai/context';
+import { setGenerator } from '../../core/model/mutations';
 import { startJob, useJobs } from '../ai/jobs';
 import { getActiveScene, useEditor } from '../store';
 
@@ -74,9 +75,42 @@ export function DebugPanel() {
             </span>
           )}
         </h4>
+        {report?.dungeons?.length && scene.generator ? <Dungeons report={report} sceneId={scene.id} /> : null}
         {report ? <PlayLog report={report} onShow={show} /> : <p className="muted">Play the level (▶) and stop: what happened shows up here, and the AI can explain it.</p>}
       </section>
     </div>
+  );
+}
+
+/**
+ * The dungeons a random level was built as in the last play (each restart and floor: built anew): Show puts one
+ * on the level as its example (faint) to look at, Play it again makes every play use it until switched back.
+ */
+function Dungeons({ report, sceneId }: { report: PlayReport; sceneId: Id }) {
+  const { edit, setDungeonOpen } = useEditor.getState();
+  const list = report.dungeons!.slice(-6);
+  const put = (label: string, patch: Record<string, unknown>) => {
+    edit(label, (p) => setGenerator(p, sceneId, patch));
+    setDungeonOpen(true);
+  };
+  return (
+    <ul className="problems" data-testid="debug-dungeons">
+      {list.map((d, i) => (
+        <li key={i} className="problem note">
+          <span className="grow small">
+            {d.time.toFixed(1)}s · dungeon seed <b data-testid="debug-seed">{d.seed}</b>, floor {d.floor}
+          </span>
+          <span className="problem-actions">
+            <button className="text-btn" data-testid="debug-seed-show" title="Show it on the level (the example, faint)" onClick={() => put('Random level: example from play', { preview: d.seed, previewFloor: d.floor })}>
+              Show
+            </button>
+            <button className="text-btn" data-testid="debug-seed-replay" title="Every play builds this one until “A new dungeon every play” is ticked again" onClick={() => put('Random level: play this dungeon', { preview: d.seed, previewFloor: d.floor, seed: d.seed })}>
+              Play it again
+            </button>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

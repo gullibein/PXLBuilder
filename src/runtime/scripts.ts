@@ -16,6 +16,7 @@ import { CELL } from './turns';
 import { parseExpr, type Expr } from '../core/script/expr';
 import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
+import { nextLevel } from '../core/model/dungeon';
 import { patchGenerator } from '../core/model/mutations';
 import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
@@ -571,7 +572,9 @@ export class ScriptSystem {
       case 'take_item': {
         const t = ent(s.target);
         const count = Math.max(0, Math.round(n(s.count)));
-        if (t && count > 0) (s.do === 'give_item' ? gp.addItem(t, s.item, count) : gp.takeItem(t, s.item, count));
+        // ({name} in the item: a variable's value, "{key_item}".)
+        const item = s.item.includes('{') ? s.item.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))) : s.item;
+        if (t && count > 0) (s.do === 'give_item' ? gp.addItem(t, item, count) : gp.takeItem(t, item, count));
         break;
       }
       case 'set_open': {
@@ -1052,8 +1055,7 @@ export class ScriptSystem {
       case 'walking_path':
         return this.rt.kit.walking(ctx.self);
       case 'next_level': {
-        const at = this.rt.project.scenes.findIndex((s) => s.id === this.rt.baseScene.id);
-        return this.rt.project.scenes[at + 1]?.name ?? '';
+        return nextLevel(this.rt.project, this.rt.baseScene.id)?.name ?? '';
       }
       case 'level_name':
         return this.rt.baseScene.name;

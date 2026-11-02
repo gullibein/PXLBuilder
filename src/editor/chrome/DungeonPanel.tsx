@@ -61,7 +61,7 @@ export function DungeonPanel() {
   const num = (label: string, key: keyof DungeonGenerator, step = 1) => (
     <label className="dg-num">
       <span>{label}</span>
-      <NumberInput value={g![key] as number} step={step} testId={`dungeon-${key}`} onCommit={(v) => set(`Random level: ${label.toLowerCase()}`, { [key]: v }, key)} />
+      <NumberInput value={(g![key] as number | undefined) ?? (key === 'templateChance' ? 0.5 : 1)} step={step} testId={`dungeon-${key}`} onCommit={(v) => set(`Random level: ${label.toLowerCase()}`, { [key]: v }, key)} />
     </label>
   );
 
@@ -112,7 +112,7 @@ export function DungeonPanel() {
           {many && <Thumbnails project={project} scene={scene} onPick={(seed) => set('Random level: example', { preview: seed })} />}
           {example && (
             <p className={`small${example.problems.length ? ' dg-problem' : ' muted'}`} data-testid="dungeon-report">
-              {example.problems.length ? `⚠ ${example.problems.join('; ')}` : `${example.rooms ? `${example.rooms} rooms, ` : ''}${example.entities.length} things placed.`}
+              {example.problems.length ? `⚠ ${example.problems.join('; ')}` : `${example.rooms ? `${example.rooms} rooms, ` : ''}${example.entities.length} things placed${example.locked ? ', a locked door and its key' : ''}.`}
             </p>
           )}
           <label className="dg-num">
@@ -136,6 +136,37 @@ export function DungeonPanel() {
             <label>Wall {pickObject(g.wall, (id) => set('Random level: wall', { wall: id }), 'dungeon-wall')}</label>
             <label>Floor {pickObject(g.floor, (id) => set('Random level: floor', { floor: id }), 'dungeon-floor')}</label>
             <label>Way down {pickObject(g.stairs, (id) => set('Random level: way down', { stairs: id }), 'dungeon-stairs')}</label>
+          </div>
+          <h4 className="dg-h" title="A locked door on the only way to the stairs, and its key on the near side: the door is made to need the key">
+            Locked door
+          </h4>
+          <div className="dg-parts">
+            <label>Door {pickObject(g.door ?? null, (id) => set('Random level: locked door', { door: id }), 'dungeon-door')}</label>
+            <label>Key {pickObject(g.key ?? null, (id) => set('Random level: key', { key: id }), 'dungeon-key')}</label>
+            {g.door && g.key && num('From floor', 'lockFromFloor')}
+          </div>
+          <h4 className="dg-h" title="Rooms built by hand, each in a level of its own: a room that fits one gets it now and then (never the first room). Those levels are not played on their own.">
+            Room templates
+          </h4>
+          <div className="dg-spawns" data-testid="dungeon-templates">
+            {project.scenes.filter((s) => s.id !== scene.id && !s.generator).length === 0 && <p className="muted small">Build a room in a new level (a vault, a shrine, pillars), then tick it here.</p>}
+            {project.scenes
+              .filter((s) => s.id !== scene.id && !s.generator)
+              .map((s) => {
+                const on = (g.templates ?? []).includes(s.id);
+                return (
+                  <label key={s.id} className="dialog-check small">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      data-testid="dungeon-template"
+                      onChange={() => set('Random level: room templates', { templates: on ? (g.templates ?? []).filter((x) => x !== s.id) : [...(g.templates ?? []), s.id] })}
+                    />
+                    {s.name}
+                  </label>
+                );
+              })}
+            {(g.templates ?? []).length > 0 && <div className="dg-grid">{num('How often (0-1)', 'templateChance', 0.1)}</div>}
           </div>
           <h4 className="dg-h">Monsters</h4>
           <div className="dg-grid">
@@ -191,7 +222,7 @@ function Thumb({ project, scene, seed, onPick }: { project: Project; scene: Scen
     const ctx = c.getContext('2d')!;
     ctx.fillStyle = '#2b2f3a';
     ctx.fillRect(0, 0, c.width, c.height);
-    const color = (id: string) => (id === g.wall ? '#8a90a6' : id === g.stairs ? '#ffd166' : g.monsters.some((s) => s.object === id) ? '#ff5a5a' : g.loot.some((s) => s.object === id) ? '#f5c542' : id === g.floor ? '#4a5060' : '#cfd6ff');
+    const color = (id: string) => (id === g.wall ? '#8a90a6' : id === g.door ? '#c07a3a' : id === g.key ? '#7fe0ff' : id === g.stairs ? '#ffd166' : g.monsters.some((s) => s.object === id) ? '#ff5a5a' : g.loot.some((s) => s.object === id) ? '#f5c542' : id === g.floor ? '#4a5060' : '#cfd6ff');
     for (const e of d.entities) {
       ctx.fillStyle = color(e.definitionId ?? '');
       ctx.fillRect(Math.floor(e.transform.position.x / 32) * px, Math.floor(e.transform.position.y / 32) * px, px, px);

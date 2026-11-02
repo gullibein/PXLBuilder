@@ -240,6 +240,13 @@ export interface DungeonGenerator {
   loot: DungeonSpawn[];
   lootCount: number;
   lootPerFloor: number;
+  /** A locked door on the only way to the stairs and its key on the near side (both library objects; null: none), from this floor down. */
+  door?: Id | null;
+  key?: Id | null;
+  lockFromFloor?: number;
+  /** Room templates: levels (ids) made by hand as rooms, stamped into rooms that fit them (not the first), each room with templateChance (0-1). */
+  templates?: Id[];
+  templateChance?: number;
 }
 
 /** music: a song from the music machine; instrument: a sound shaped in it (played by songs). */

@@ -71,6 +71,8 @@ export interface Dungeon {
   rooms: number;
   /** The rooms (rooms style): middles and sizes in level pixels, the first is the start's. */
   roomList: { x: number; y: number; w: number; h: number }[];
+  /** The locked door on the way to the stairs and its key (door and key chosen), where they are. */
+  locked: { door: { x: number; y: number }; key: { x: number; y: number } } | null;
   /** What didn't work out ("only 3 of 8 rooms fit"). */
   problems: string[];
 }
@@ -200,6 +202,49 @@ export function generateDungeon(project: Project, scene: Scene, registry: Compon
     const loops = Math.max(0, Math.min(1, g.loops));
     for (let n = 0; n < rooms.length; n++) if (rooms.length > 2 && rnd() < loops) corridor(rooms[n], rooms[int(0, rooms.length - 1)]);
   }
+  // Room templates (rooms made by hand in levels of their own: a vault, a shrine, a pillared hall): stamped into
+  // rooms that fit them (not the first), now and then. What is solid in them stands in for floor; a template that
+  // would cut the dungeon in two is left out of that room.
+  const stampedSolid = new Set<number>();
+  const stampedAt = new Set<number>();
+  const stamps: { thing: EntityInstance; x: number; y: number }[] = [];
+  if (rooms.length > 1 && g.templates?.length) {
+    const layouts = g.templates.map((id) => project.scenes.find((s) => s.id === id)).flatMap((s) => (s ? [templateLayout(project, s, registry)] : [])).filter((t) => t.things.length);
+    const openCount = () => open.reduce((n, v) => n + v, 0);
+    const joined = () => {
+      const first = open.indexOf(1);
+      if (first < 0) return true;
+      const seen = new Uint8Array(W * H);
+      seen[first] = 1;
+      const queue = [first];
+      for (let q = 0; q < queue.length; q++)
+        for (const n of [queue[q] + 1, queue[q] - 1, queue[q] + W, queue[q] - W])
+          if (open[n] && !seen[n]) {
+            seen[n] = 1;
+            queue.push(n);
+          }
+      return queue.length === openCount();
+    };
+    const chance = Math.max(0, Math.min(1, g.templateChance ?? 0.5));
+    for (const r of rooms.slice(1)) {
+      const fit = layouts.filter((t) => t.w <= r.w && t.h <= r.h);
+      if (!fit.length || rnd() >= chance) continue;
+      const t = fit[Math.floor(rnd() * fit.length)];
+      const ox = r.x + Math.floor((r.w - t.w) / 2);
+      const oy = r.y + Math.floor((r.h - t.h) / 2);
+      const solid = t.solid.map(([i, j]) => at(ox + i, oy + j));
+      for (const c of solid) open[c] = 0;
+      if (!joined()) {
+        for (const c of solid) open[c] = 1;
+        continue;
+      }
+      for (const c of solid) stampedSolid.add(c);
+      for (const s of t.things) {
+        stamps.push({ thing: s.thing, x: ox * LEVEL_CELL + s.dx, y: oy * LEVEL_CELL + s.dy });
+        stampedAt.add(at(ox + Math.floor(s.dx / LEVEL_CELL), oy + Math.floor(s.dy / LEVEL_CELL)));
+      }
+    }
+  }
   // (Hand-placed things stand on floor: their squares are open too.)
   // (What was dug, before squares are opened for hand-placed things: the start is looked for in it.)
   const dug = open.slice();
@@ -217,11 +262,11 @@ export function generateDungeon(project: Project, scene: Scene, registry: Compon
   if (g.wall && !project.definitions.some((d) => d.id === g.wall)) problems.push('the wall object is no longer in the game');
   if (!g.wall) problems.push('no wall object chosen: the dungeon has no walls');
 
-  // Floor tiles under everything (when chosen), then walls round every open square.
-  if (g.floor) for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (open[at(i, j)]) place(g.floor, i, j);
+  // Floor tiles under everything (when chosen), then walls round every open square, then the templates' things.
+  if (g.floor) for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (open[at(i, j)] || stampedSolid.has(at(i, j))) place(g.floor, i, j);
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
-      if (open[at(i, j)]) continue;
+      if (open[at(i, j)] || stampedSolid.has(at(i, j))) continue;
       let edge = false;
       for (let dj = -1; dj <= 1 && !edge; dj++) for (let di = -1; di <= 1 && !edge; di++) edge = i + di >= 0 && j + dj >= 0 && i + di < W && j + dj < H && open[at(i + di, j + dj)] === 1;
       if (edge) place(g.wall, i, j);
@@ -230,8 +275,29 @@ export function generateDungeon(project: Project, scene: Scene, registry: Compon
   // The start (the first room; in caves and mazes the open square nearest the top left) and the way down (the
   // place the most steps away: the farthest room's middle, or the farthest square).
   let start: Dungeon['start'] = null;
+  let locked: Dungeon['locked'] = null;
   let stairs: Dungeon['stairs'] = null;
-  const taken = new Set<number>(handPlaced);
+  for (const s of stamps) {
+    const e: EntityInstance = { ...structuredClone(s.thing), id: `gen_${made++}`, transform: { ...s.thing.transform, position: { x: s.x, y: s.y } } };
+    out.push(e);
+  }
+  const taken = new Set<number>([...handPlaced, ...stampedAt]);
+  // A room's middle, or the free square nearest it when a template has something there.
+  const middle = (r: Room): number => {
+    const m = at(mid(r).i, mid(r).j);
+    if (open[m] && !taken.has(m)) return m;
+    let best = m;
+    let bestD = Infinity;
+    for (let j = r.y; j < r.y + r.h; j++)
+      for (let i = r.x; i < r.x + r.w; i++) {
+        const d = Math.abs(i - mid(r).i) + Math.abs(j - mid(r).j);
+        if (open[at(i, j)] && !taken.has(at(i, j)) && d < bestD) {
+          best = at(i, j);
+          bestD = d;
+        }
+      }
+    return best;
+  };
   let s0 = -1;
   if (rooms.length) s0 = at(mid(rooms[0]).i, mid(rooms[0]).j);
   else for (let k = 0; k < W * H && s0 < 0; k++) if (dug[(k % H) * W + Math.floor(k / H)]) s0 = (k % H) * W + Math.floor(k / H);
@@ -252,16 +318,72 @@ export function generateDungeon(project: Project, scene: Scene, registry: Compon
     }
     let far = -1;
     if (rooms.length > 1) {
-      const room = rooms.slice(1).reduce((a, r) => (steps[at(mid(r).i, mid(r).j)] > steps[at(mid(a).i, mid(a).j)] ? r : a));
-      far = at(mid(room).i, mid(room).j);
+      const room = rooms.slice(1).reduce((a, r) => (steps[middle(r)] > steps[middle(a)] ? r : a));
+      far = middle(room);
     } else if (!rooms.length) for (let k = 0; k < W * H; k++) if (steps[k] > (far >= 0 ? steps[far] : 0)) far = k;
     if (far >= 0) {
+      // Locked: the way down in the farthest room that one door can shut off (with loops not every room can be).
+      if (g.door && g.key && floor >= (g.lockFromFloor ?? 1)) {
+        const tries = rooms.length > 1 ? rooms.slice(1).map(middle).sort((a, b) => steps[b] - steps[a]) : [far];
+        const lockable = tries.find((k) => steps[k] > 0 && doorFor(k) !== null);
+        if (lockable === undefined) problems.push('no single way to the stairs to put the locked door on (fewer loops)');
+        else {
+          far = lockable;
+          const { door, key } = doorFor(far)!;
+          place(g.door, door % W, Math.floor(door / W));
+          place(g.key, key % W, Math.floor(key / W));
+          taken.add(door);
+          taken.add(key);
+          locked = { door: { x: center(door % W), y: center(Math.floor(door / W)) }, key: { x: center(key % W), y: center(Math.floor(key / W)) } };
+        }
+      }
       if (g.stairs) {
         place(g.stairs, far % W, Math.floor(far / W));
         stairs = { x: center(far % W), y: center(Math.floor(far / W)) };
       }
       taken.add(far);
     } else if (g.stairs) problems.push('only one room: the way down would be in the start room, so there is none');
+  }
+
+  /**
+   * Where a locked door goes on the only way to `goal` (the square nearest it that, shut, cuts it off from the start:
+   * a doorway out of a room or a corridor), and its key: somewhere the player can get to without it, as far from the
+   * start as that allows (in a room, when there are rooms). Null when there is no single way (loops).
+   */
+  function doorFor(goal: number): { door: number; key: number } | null {
+    const reach = (shut: number) => {
+      const seen = new Uint8Array(W * H);
+      seen[s0] = 1;
+      const queue = [s0];
+      for (let q = 0; q < queue.length; q++)
+        for (const n of [queue[q] + 1, queue[q] - 1, queue[q] + W, queue[q] - W])
+          if (open[n] && !seen[n] && n !== shut) {
+            seen[n] = 1;
+            queue.push(n);
+          }
+      return seen;
+    };
+    // The way back from the goal to the start, one step nearer each time.
+    const way: number[] = [];
+    for (let k = goal; steps[k] > 0; ) {
+      const back = [k + 1, k - 1, k + W, k - W].find((n) => steps[n] === steps[k] - 1);
+      if (back === undefined) break;
+      if (back !== s0) way.push(back);
+      k = back;
+    }
+    const inRoom = (c: number) => rooms.slice(1).some((r) => c % W >= r.x && c % W < r.x + r.w && Math.floor(c / W) >= r.y && Math.floor(c / W) < r.y + r.h);
+    for (const k of way) {
+      if (taken.has(k)) continue;
+      const side = reach(k);
+      if (side[goal]) continue;
+      let best = -1;
+      for (const room of [true, false]) {
+        for (let c = 0; c < W * H; c++) if (side[c] && c !== s0 && !taken.has(c) && (!room || inRoom(c)) && (best < 0 || steps[c] > steps[best])) best = c;
+        if (best >= 0 || !rooms.length) break;
+      }
+      return best < 0 ? null : { door: k, key: best };
+    }
+    return null;
   }
 
   // Monsters and treasure, by weight among those for this floor, on free squares in the rooms (not the first).
@@ -294,7 +416,37 @@ export function generateDungeon(project: Project, scene: Scene, registry: Compon
   void registry;
   // The rooms, for scripts (room_x…): their middles and sizes in level pixels.
   const roomList = rooms.map((r) => ({ x: (r.x + r.w / 2) * LEVEL_CELL, y: (r.y + r.h / 2) * LEVEL_CELL, w: r.w * LEVEL_CELL, h: r.h * LEVEL_CELL }));
-  return { entities: out, start, stairs, rooms: rooms.length, roomList, problems };
+  return { entities: out, start, stairs, rooms: rooms.length, roomList, locked, problems };
+}
+
+/** A room template (a level of its own): its things relative to its top left square, its size and its solid squares. */
+function templateLayout(project: Project, scene: Scene, registry: ComponentRegistry): { w: number; h: number; things: { thing: EntityInstance; dx: number; dy: number }[]; solid: [number, number][] } {
+  // (Not the player, nor anything steered: a room has no player of its own.)
+  const things = scene.entities.filter((e) => !resolveEntity(project, e, registry).components.CharacterController);
+  if (!things.length) return { w: 0, h: 0, things: [], solid: [] };
+  const cell = (v: number) => Math.floor(v / LEVEL_CELL);
+  const i0 = Math.min(...things.map((e) => cell(e.transform.position.x)));
+  const j0 = Math.min(...things.map((e) => cell(e.transform.position.y)));
+  const i1 = Math.max(...things.map((e) => cell(e.transform.position.x)));
+  const j1 = Math.max(...things.map((e) => cell(e.transform.position.y)));
+  const solid: [number, number][] = [];
+  for (const e of things) {
+    const c = resolveEntity(project, e, registry).components;
+    const body = c.PhysicsBody?.bodyType;
+    if (c.Collider && !c.Collider.isTrigger && (body === undefined || body === 'static')) solid.push([cell(e.transform.position.x) - i0, cell(e.transform.position.y) - j0]);
+  }
+  return { w: i1 - i0 + 1, h: j1 - j0 + 1, things: things.map((e) => ({ thing: e, dx: e.transform.position.x - i0 * LEVEL_CELL, dy: e.transform.position.y - j0 * LEVEL_CELL })), solid };
+}
+
+/** The levels used as room templates by random levels (they are not played as levels of their own). */
+export function templateLevels(project: Project): Set<Id> {
+  return new Set(project.scenes.flatMap((s) => s.generator?.templates ?? []));
+}
+
+/** The level played after this one (in the game's order; room templates are skipped). */
+export function nextLevel(project: Project, sceneId: Id): Scene | undefined {
+  const skip = templateLevels(project);
+  return project.scenes.slice(project.scenes.findIndex((s) => s.id === sceneId) + 1).find((s) => !skip.has(s.id));
 }
 
 /**

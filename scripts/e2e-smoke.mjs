@@ -3429,6 +3429,16 @@ try {
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/00g-roguelike.png` });
     await page.getByTestId('play').click();
+    // The Debug tab: the seed the dungeon was built from; Show puts it on the level as the example.
+    await page.getByTestId('debug-toggle').click();
+    const playedSeed = await page.getByTestId('debug-seed').first().innerText();
+    await check(async () => /^\d+$/.test(playedSeed), 'Debug: the last play shows the seed its dungeon was built from');
+    await page.getByTestId('debug-seed-show').first().click();
+    await check(async () => (await page.getByTestId('dungeon-preview').inputValue()) === playedSeed, 'Show: that dungeon becomes the example in the Random level panel');
+    await check(async () => (await page.getByTestId('dungeon-door').count()) === 1 && (await page.getByTestId('dungeon-templates').count()) === 1, '(the panel has the locked door and room templates)');
+    await page.getByTestId('dungeon-close').click();
+    await page.getByTestId('tray-close').click();
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     // A random level: built anew each play; the editor shows an example, faint.
     await page.getByTestId('project-menu').click();

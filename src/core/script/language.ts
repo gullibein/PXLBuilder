@@ -148,7 +148,7 @@ export type Stmt =
   | { do: 'camera_follow'; target: string | null };
 
 /** What of a random level's recipe a script may change (set_generator). */
-export const GENERATOR_KEYS = ['style', 'seed', 'width', 'height', 'rooms', 'roomMin', 'roomMax', 'corridor', 'loops', 'wall', 'floor', 'stairs', 'monsterCount', 'monstersPerFloor', 'lootCount', 'lootPerFloor'] as const;
+export const GENERATOR_KEYS = ['style', 'seed', 'width', 'height', 'rooms', 'roomMin', 'roomMax', 'corridor', 'loops', 'wall', 'floor', 'stairs', 'monsterCount', 'monstersPerFloor', 'lootCount', 'lootPerFloor', 'door', 'key', 'lockFromFloor', 'templateChance'] as const;
 
 export const DRAW_SHAPES = ['text', 'rect', 'circle', 'sprite'] as const;
 export type DrawShape = (typeof DRAW_SHAPES)[number];
@@ -485,7 +485,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   set_generator: {
     example: '{"do":"set_generator","values":{"style":"\'caves\'","monsterCount":"4 + game_value(\'floor\', 1) * 2","wall":"\'Lava\'"}}',
-    doc: 'changes the random level\'s recipe for its next build (restart_level, the stairs; the level in the editor stays as it is): each value is an expression. style "rooms", "caves" or "maze"; width, height (squares); rooms, roomMin, roomMax, corridor, loops (0-1); wall, floor, stairs (an object\'s name); monsterCount, monstersPerFloor, lootCount, lootPerFloor; seed (a number: always that dungeon, or null: a new one). After a build, the "level_built" signal: put things in rooms (room_count, room_x…), a boss before the stairs',
+    doc: 'changes the random level\'s recipe for its next build (restart_level, the stairs; the level in the editor stays as it is): each value is an expression. style "rooms", "caves" or "maze"; width, height (squares); rooms, roomMin, roomMax, corridor, loops (0-1); wall, floor, stairs, door, key (an object\'s name; door and key: a locked door on the way to the stairs, its key before it), lockFromFloor; templateChance (0-1: how often a room gets one of the room templates); monsterCount, monstersPerFloor, lootCount, lootPerFloor; seed (a number: always that dungeon, or null: a new one). After a build, the "level_built" signal: put things in rooms (room_count, room_x…), a boss before the stairs',
   },
   fog_radius: { example: '{"do":"fog_radius","value":"fog_radius + 2"}', doc: 'how far the fog-of-war viewer sees, in grid squares (a torch, a blinding spell); stays until changed or the level starts again' },
   reveal: { example: '{"do":"reveal","x":null,"y":null,"radius":"0"}', doc: 'marks the squares within radius (grid squares) of x, y as explored (shown dim in the fog: a map, a magic scroll); radius 0: the whole level. x, y null: round this entity. For squares lit for good, add a Light' },
@@ -842,7 +842,7 @@ export function exprSlots(s: Stmt): string[] {
       return [s.target];
     case 'give_item':
     case 'take_item':
-      return [s.target, s.count];
+      return [s.target, s.count, ...messageParts(s.item)];
     case 'set_open':
       return [s.target, s.open, ...(s.by ? [s.by] : [])];
     case 'set_switch':
