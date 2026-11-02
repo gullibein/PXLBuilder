@@ -202,6 +202,8 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
     const a = getWorldBounds(solids[i].r);
     for (let j = i + 1; j < solids.length; j++) {
       const b = getWorldBounds(solids[j].r);
+      // (Isometric: one on top of the other is a stack, on purpose.)
+      if (scene.world.view === 'iso' && Number(solids[i].r.components.Sprite?.isoLift ?? 0) !== Number(solids[j].r.components.Sprite?.isoLift ?? 0)) continue;
       const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
       const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
       if (w <= 0 || h <= 0) continue;

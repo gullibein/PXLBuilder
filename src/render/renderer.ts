@@ -392,10 +392,61 @@ export function isoOrder<T extends ResolvedEntity>(entities: T[]): T[] {
   return entities
     .map((e, i) => {
       const look = isoLookOf(e);
-      return { e, i, g: look === 'flat' || look === 'iso_floor' ? 0 : 1, l: layerOf(e), d: e.transform.position.x + e.transform.position.y };
+      const lift = isoLiftOf(e);
+      // (A floor raised above the ground is a block like any other.)
+      return { e, i, g: (look === 'flat' || look === 'iso_floor') && lift <= 0 ? 0 : 1, l: layerOf(e), d: e.transform.position.x + e.transform.position.y, h: lift };
     })
-    .sort((a, b) => a.g - b.g || a.l - b.l || a.d - b.d || a.i - b.i)
+    .sort((a, b) => a.g - b.g || a.l - b.l || a.d - b.d || a.h - b.h || a.i - b.i)
     .map((x) => x.e);
+}
+
+/** How high it is drawn in an isometric level (Sprite.isoLift: 16 is one block of a 32 px square). */
+export function isoLiftOf(e: ResolvedEntity): number {
+  const l = e.components.Sprite?.isoLift;
+  return typeof l === 'number' && Number.isFinite(l) ? l : 0;
+}
+
+/** A block's height (half its width: 2:1 blocks), in isoLift units. */
+export function isoBlockHeight(e: ResolvedEntity): number {
+  return (getEntitySize(e).x * Math.abs(e.transform.scale.x)) / 2;
+}
+
+/**
+ * The space a block fills in an isometric level, from its bottom to its top (isoLift units, 0 the ground): a floor
+ * block's top is at its lift, a wall block stands on it. Null for what is not a block.
+ */
+export function isoVolume(e: ResolvedEntity): { bottom: number; top: number } | null {
+  const look = isoLookOf(e);
+  const lift = isoLiftOf(e);
+  const h = isoBlockHeight(e);
+  if (look === 'iso_floor') return { bottom: lift - h, top: lift };
+  if (look === 'iso_block' || look === 'block') return { bottom: lift, top: lift + h };
+  return null;
+}
+
+/** The lift that puts a thing's bottom at `bottom` (a block's bottom; a floor block's top goes a block higher; anything else stands there). */
+export function isoLiftFor(e: ResolvedEntity, bottom: number): number {
+  return isoLookOf(e) === 'iso_floor' ? bottom + isoBlockHeight(e) : bottom;
+}
+
+/**
+ * Where it is drawn on the screen (CSS px of the view), and for a block where its top's middle is: what a click on
+ * it means. Null for what lies flat on the ground.
+ */
+export function isoScreenBox(e: ResolvedEntity, camera: Camera, view: ViewSize): { left: number; top: number; right: number; bottom: number; topFace: Vec2 | null; w: number } | null {
+  const look = isoLookOf(e);
+  if (look === 'flat') return null;
+  const size = getEntitySize(e);
+  const at = worldToScreen(camera, view, e.transform.position);
+  const z = camera.zoom;
+  const W = size.x * Math.abs(e.transform.scale.x) * z;
+  const H = size.y * Math.abs(e.transform.scale.y) * z;
+  const lift = isoLiftOf(e) * z;
+  const box = (top: number, bottom: number, face: Vec2 | null) => ({ left: at.x - W / 2, right: at.x + W / 2, top, bottom, topFace: face, w: W });
+  if (look === 'stand') return box(at.y + W / 8 - H - lift, at.y + W / 8 - lift, null);
+  if (look === 'iso_floor') return box(at.y - W / 4 - lift, at.y - W / 4 - lift + H, { x: at.x, y: at.y - lift });
+  if (look === 'iso_block') return box(at.y - W / 4 - (H - W / 2) - lift, at.y - W / 4 - (H - W / 2) - lift + H, { x: at.x, y: at.y - (H - W / 2) - lift });
+  return box(at.y - W / 2 - W / 4 - lift, at.y + W / 4 - lift, { x: at.x, y: at.y - W / 2 - lift });
 }
 
 const tileKey = (definitionId: string | null, x: number, y: number) => `${definitionId}|${Math.round(x)}|${Math.round(y)}`;

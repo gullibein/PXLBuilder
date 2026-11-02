@@ -3481,13 +3481,31 @@ try {
     const wy = 3 * 32 + 16 - cy;
     await page.mouse.click(box.x + box.width / 2 + 0.5 * (wx - wy) * zoom, box.y + box.height / 2 + 0.25 * (wx + wy) * zoom - 8 * zoom);
     await check(async () => (await canvas.getAttribute('data-selection')) === '144,112', 'a click on a block standing on its square selects it (picked where it is drawn)');
-    await page.screenshot({ path: `${OUT}/00h-isometric.png` });
     await page.keyboard.press('Escape');
+    // Building in 3D with the pen: on the top of a block, on top of it; on its side, beside it; right-click takes away.
+    const ents = async () => Number(await canvas.getAttribute('data-entities'));
+    const crate = { x: box.x + box.width / 2 + 0.5 * (wx - wy) * zoom, y: box.y + box.height / 2 + 0.25 * (wx + wy) * zoom };
+    await page.getByTestId('tool-eyedropper').click();
+    await page.mouse.click(crate.x, crate.y - 16 * zoom);
+    await check(async () => (await page.getByTestId('tool-brush-pick').getAttribute('title')).includes('Wood'), 'isometric: the eyedropper picks up the block clicked (Wood)');
+    const n0 = await ents();
+    await page.mouse.click(crate.x, crate.y - 16 * zoom);
+    await check(async () => (await ents()) === n0 + 1, 'a click on its top puts another on top of it');
+    await page.getByTestId('tool-pen').click();
+    await page.mouse.click(crate.x, crate.y - 32 * zoom);
+    await check(async () => (await ents()) === n0 + 2, 'and on that one\'s top, a third (a stack)');
+    await page.mouse.click(crate.x - 8 * zoom, crate.y - 2 * zoom);
+    await check(async () => (await ents()) === n0 + 3, 'a click on a side puts one beside it, at the same height');
+    await page.mouse.click(crate.x, crate.y - 48 * zoom, { button: 'right' });
+    await check(async () => (await ents()) === n0 + 2, 'a right-click takes away the block under the mouse (the top of the stack)');
+    await page.mouse.move(crate.x, crate.y - 48 * zoom);
+    await page.screenshot({ path: `${OUT}/00h-isometric.png` });
+    await page.getByTestId('tool-select').click();
     await page.getByTestId('play').click();
     await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
     await page.waitForTimeout(300);
     await page.getByTestId('play').click();
-    await page.getByTestId('undo').click();
+    for (let n = 0; n < 5; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   // (The AI is answered by the stand-in again for this.)

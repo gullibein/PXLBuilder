@@ -11,7 +11,7 @@ import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, sn
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { generateDungeon } from '../../core/model/dungeon';
 import { componentRegistry } from '../../core/components/builtin';
-import type { Id, Project, Scene, Vec2 } from '../../core/types';
+import type { EntityInstance, Id, ObjectDefinition, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
 import { relationshipRegistry } from '../../core/logic/vocabulary';
 import { relationshipLabel } from '../../core/logic/describe';
@@ -20,7 +20,7 @@ import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommand
 import { openProjectFile } from '../persistence';
 import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
-import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, isoLookOf, isoOrder, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
+import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, isoLiftFor, isoLiftOf, isoLookOf, isoOrder, isoScreenBox, isoVolume, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
@@ -40,7 +40,7 @@ type Drag =
   | { kind: 'move'; startWorld: Vec2; anchor: Vec2; anchorId: Id; ids: Id[]; delta: Vec2 }
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
-  | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell> }
+  | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell>; iso?: IsoStroke }
   /**
    * Dragging a side point of the selection box: out, copies of what is along that side (`ids`), `step` apart;
    * in, the selection gets shorter from that side (`layers`, outermost first). `count`: copies so far, or minus
@@ -325,10 +325,16 @@ export function Viewport() {
       if ((canvas.dataset.cameraFrame ?? '') !== frameAttr) canvas.dataset.cameraFrame = frameAttr;
       const outlineAttr = `${hoverOutlineRef.current ?? ''}|${state.cameraOutline ?? ''}`;
       if (canvas.dataset.cameraOutline !== outlineAttr) canvas.dataset.cameraOutline = outlineAttr;
-      if (state.tool.kind === 'brush' && !state.altHeld) drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
+      if (state.tool.kind === 'brush' && !state.altHeld) {
+        if (isoLevel) drawIsoBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, entities, state.camera, view, state.project.settings.gridSize, images);
+        else drawBrush(ctx, state.tool.definitionId, drag, pointerWorldRef.current, state.project.settings.gridSize, state.camera.zoom, images);
+      }
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
-      if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) drawHover(ctx, hovered, state.camera.zoom);
+      if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) {
+        if (isoLevel && isoScreenBox(hovered, state.camera, view)) drawIsoOutline(ctx, [hovered], state.camera, view, dpr, theme.hover, false);
+        else drawHover(ctx, hovered, state.camera.zoom);
+      }
       // Copies a side drag will make, faint until let go.
       let ghosts: ResolvedEntity[] = [];
       if (drag?.kind === 'extend' && drag.count > 0) {
@@ -340,7 +346,8 @@ export function Viewport() {
         else drawWireframe(ctx, ghosts, state.camera.zoom);
       }
       const reach = drag?.kind === 'extend' ? (shortening ? boxAround(selected.map(getWorldBounds)) : boxAround([drag.box, ...ghosts.map(getWorldBounds)])) : null;
-      drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
+      if (isoLevel && selected.length && selected.every((e) => isoScreenBox(e, state.camera, view))) drawIsoOutline(ctx, selected, state.camera, view, dpr, theme.select, true);
+      else drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
       const bgBox = backgroundBox(state);
       if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
       // A selected picture that fills the screen or repeats: its outline only (it can't be moved or resized).
@@ -664,6 +671,17 @@ export function Viewport() {
       // Brush: left button paints, right button erases.
       const preview = brushPreview(state.tool.definitionId);
       if (!preview) return;
+      if (isoPickView) {
+        // Isometric: in 3D, on top of or beside what is under the mouse (the right button: what is under it goes).
+        const { camera, view } = isoPickView;
+        const screen = localPoint(canvas, ev);
+        const entities = resolveSceneEntities(state.project, state.activeSceneId);
+        const t = isoBrushTarget(screen, entities, preview, camera, view);
+        const cell = cellAt(t.at, cellSize(getEntitySize(preview), state.project.settings.gridSize));
+        const gone = ev.button === 2 ? pick(entities, screenToWorld(camera, view, screen)) : null;
+        dragRef.current = { kind: 'paint', definitionId: state.tool.definitionId, erase: ev.button === 2, start: cell, last: cell, cells: new Map(ev.button === 2 ? [] : [[cellKey(cell), cell]]), iso: { bottom: t.bottom, plane: t.plane, erased: new Set(gone ? [gone.id] : []) } };
+        return;
+      }
       const cell = cellAt(toWorld(ev), cellSize(getEntitySize(preview), state.project.settings.gridSize));
       dragRef.current = { kind: 'paint', definitionId: state.tool.definitionId, erase: ev.button === 2, start: cell, last: cell, cells: new Map([[cellKey(cell), cell]]) };
     } else if (ev.button === 0 && state.tool.kind === 'marquee') {
@@ -855,6 +873,21 @@ export function Viewport() {
     if (drag.kind === 'paint') {
       const preview = brushPreview(drag.definitionId);
       if (!preview) return;
+      if (drag.iso && isoPickView) {
+        // Isometric: along the surface the stroke started on (a layer at one height), or erasing what it goes over.
+        const { camera, view } = isoPickView;
+        const screen = localPoint(canvasRef.current!, ev);
+        if (drag.erase) {
+          const gone = pick(resolveSceneEntities(state.project, state.activeSceneId), screenToWorld(camera, view, screen));
+          if (gone) drag.iso.erased.add(gone.id);
+          return;
+        }
+        let cell = cellAt(onPlane(screen, drag.iso.plane, camera, view), cellSize(getEntitySize(preview), state.project.settings.gridSize));
+        if (ev.shiftKey) cell = constrainToAxis(drag.start, cell);
+        for (const c of cellsOnLine(drag.last, cell)) drag.cells.set(cellKey(c), c);
+        drag.last = cell;
+        return;
+      }
       let cell = cellAt(toWorld(ev), cellSize(getEntitySize(preview), state.project.settings.gridSize));
       if (ev.shiftKey) cell = constrainToAxis(drag.start, cell);
       for (const c of cellsOnLine(drag.last, cell)) drag.cells.set(cellKey(c), c);
@@ -1130,6 +1163,10 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
   if (!def || !preview) return;
   const cell = cellSize(getEntitySize(preview), state.project.settings.gridSize);
   const scene = getActiveScene(state);
+  if (stroke.iso) {
+    commitIsoStroke(stroke, stroke.iso, def, preview, cell);
+    return;
+  }
   const occupied = new Map<string, Id[]>();
   for (const e of scene.entities) {
     if (e.definitionId !== def.id) continue;
@@ -1174,6 +1211,76 @@ function commitStroke(stroke: Extract<Drag, { kind: 'paint' }>): void {
       s.selectEntities([created[created.length - 1].id]);
     }
   });
+}
+
+/**
+ * An isometric stroke: a copy in each cell at the stroke's height (a block where another block already fills that
+ * space takes its place; the same object there already: nothing), or the things it went over removed. No questions:
+ * stacking is what drawing does here.
+ */
+function commitIsoStroke(stroke: Extract<Drag, { kind: 'paint' }>, iso: IsoStroke, def: ObjectDefinition, preview: ResolvedEntity, cell: Vec2): void {
+  const state = useEditor.getState();
+  const scene = getActiveScene(state);
+  if (stroke.erase) {
+    if (iso.erased.size) state.edit(iso.erased.size === 1 ? 'Erase 1 object' : `Erase ${iso.erased.size} objects`, (p) => removeEntities(p, scene.id, [...iso.erased]));
+    return;
+  }
+  const all = resolveSceneEntities(state.project, scene.id);
+  const lift = isoLiftFor(preview, iso.bottom);
+  const newVol = isoVolume({ ...preview, components: { ...preview.components, Sprite: { ...preview.components.Sprite, isoLift: lift } } });
+  const replace: Id[] = [];
+  let n = scene.entities.filter((e) => e.definitionId === def.id).length;
+  const created: EntityInstance[] = [];
+  for (const c of stroke.cells.values()) {
+    const at = cellCenter(c, cell);
+    const here = all.filter((e) => Math.abs(e.transform.position.x - at.x) < 1 && Math.abs(e.transform.position.y - at.y) < 1);
+    // What already fills the same space: the same object (skip), or another block (it is replaced).
+    const same = here.filter((e) => {
+      const v = isoVolume(e);
+      return newVol && v ? Math.abs(v.bottom - newVol.bottom) < 1 : !newVol && !v && Math.abs(isoLiftOf(e) - lift) < 1 && isoLookOf(e) === isoLookOf(preview);
+    });
+    if (same.some((e) => e.definitionId === def.id)) continue;
+    replace.push(...same.map((e) => e.id));
+    const e = instantiateDefinition(def, at, n++ === 0 ? def.name : `${def.name} ${n}`);
+    if (lift !== 0) e.components = { ...e.components, Sprite: { ...(e.components.Sprite ?? {}), isoLift: lift } };
+    created.push(e);
+  }
+  if (!created.length) return;
+  const label = `${created.length === 1 ? `Draw ${def.name}` : `Draw ${created.length} ${def.name}`}${replace.length ? `, replacing ${replace.length}` : ''}`;
+  const ok = state.edit(label, (p) => {
+    if (replace.length) removeEntities(p, scene.id, replace);
+    for (const e of created) addEntity(p, scene.id, e);
+  });
+  if (ok && state.tool.kind === 'brush' && state.tool.once) {
+    useEditor.getState().setTool({ kind: 'select' });
+    useEditor.getState().selectEntities([created[created.length - 1].id]);
+  }
+}
+
+/** Isometric: the brush's ghost where a click would put it (on top of or beside what is under the mouse), or the stroke's cells at its height. */
+function drawIsoBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Drag | null, pointer: Vec2 | null, entities: ResolvedEntity[], camera: Camera, view: ViewSize, grid: number, images: ImageLookup): void {
+  const preview = brushPreview(definitionId);
+  if (!preview) return;
+  const stroke = drag?.kind === 'paint' ? drag : null;
+  if (stroke?.erase) return;
+  const cell = cellSize(getEntitySize(preview), grid);
+  let bottom = stroke?.iso?.bottom ?? 0;
+  let at: Vec2[] = stroke ? [...stroke.cells.values()].map((c) => cellCenter(c, cell)) : [];
+  if (!stroke) {
+    if (!pointer) return;
+    const t = isoBrushTarget(worldToScreen(camera, view, pointer), entities, preview, camera, view);
+    bottom = t.bottom;
+    at = [cellCenter(cellAt(t.at, cell), cell)];
+  }
+  const lift = isoLiftFor(preview, bottom);
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  drawEntities(
+    ctx,
+    at.map((p) => ({ ...preview, transform: { ...preview.transform, position: p }, components: { ...preview.components, Sprite: { ...preview.components.Sprite, isoLift: lift } } })),
+    images,
+  );
+  ctx.restore();
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
@@ -1246,27 +1353,58 @@ function pick(entities: ResolvedEntity[], p: Vec2): ResolvedEntity | null {
  * Isometric picking: what is drawn nearest the front under the point on the screen. Standing things and blocks by
  * the picture's box on the screen; flat things by their square on the ground.
  */
-function pickIso(entities: ResolvedEntity[], p: Vec2, camera: Camera, view: ViewSize): ResolvedEntity | null {
+function pickIso(entities: ResolvedEntity[], p: Vec2, camera: Camera, view: ViewSize, only?: (e: ResolvedEntity) => boolean): ResolvedEntity | null {
   const screen = worldToScreen(camera, view, p);
   const ordered = isoOrder(entities);
   for (let i = ordered.length - 1; i >= 0; i--) {
     const e = ordered[i];
-    const look = isoLookOf(e);
-    if (look === 'flat') {
+    if (only && !only(e)) continue;
+    const box = isoScreenBox(e, camera, view);
+    if (!box) {
       if (containsPoint(e, p)) return e;
       continue;
     }
-    const size = getEntitySize(e);
-    const at = worldToScreen(camera, view, e.transform.position);
-    const z = camera.zoom;
-    const W = size.x * Math.abs(e.transform.scale.x) * z;
-    const H = size.y * Math.abs(e.transform.scale.y) * z;
-    const lift = (typeof e.components.Sprite?.isoLift === 'number' ? e.components.Sprite.isoLift : 0) * z;
-    const top = look === 'stand' ? at.y + W / 8 - H : look === 'iso_floor' ? at.y - W / 4 : look === 'iso_block' ? at.y - W / 4 - (H - W / 2) : at.y - W / 4 - W / 2;
-    const bottom = look === 'block' ? at.y + W / 4 : top + H;
-    if (screen.x >= at.x - W / 2 && screen.x <= at.x + W / 2 && screen.y >= top - lift && screen.y <= bottom - lift) return e;
+    if (screen.x >= box.left && screen.x <= box.right && screen.y >= box.top && screen.y <= box.bottom) return e;
   }
   return null;
+}
+
+/**
+ * Drawing with an object in an isometric level: where it goes in 3D. A height for the whole stroke (`bottom`: where
+ * the new thing's bottom is; `plane`: the height of the surface the stroke runs over), the cells visited, and what
+ * an erasing stroke went over.
+ */
+interface IsoStroke {
+  bottom: number;
+  plane: number;
+  erased: Set<Id>;
+}
+
+/**
+ * Where a click with the brush puts a new thing in an isometric level: on the top of the block under the mouse, or
+ * beside it (on its side: the square in front, at the same height); on empty ground, on the ground.
+ */
+function isoBrushTarget(screen: Vec2, entities: ResolvedEntity[], preview: ResolvedEntity, camera: Camera, view: ViewSize): { at: Vec2; bottom: number; plane: number } {
+  const world = screenToWorld(camera, view, screen);
+  const hit = pickIso(entities, world, camera, view, (e) => isoVolume(e) !== null);
+  const box = hit && isoScreenBox(hit, camera, view);
+  const vol = hit && isoVolume(hit);
+  if (hit && box?.topFace && vol) {
+    const dx = screen.x - box.topFace.x;
+    const dy = screen.y - box.topFace.y;
+    const p = hit.transform.position;
+    const step = getEntitySize(hit).x * Math.abs(hit.transform.scale.x);
+    if (dy <= 0 || Math.abs(dx) / (box.w / 2) + Math.abs(dy) / (box.w / 4) <= 1) return { at: { ...p }, bottom: vol.top, plane: vol.top };
+    // A side: the left one faces down the level's y, the right one along its x.
+    return { at: dx < 0 ? { x: p.x, y: p.y + step } : { x: p.x + step, y: p.y }, bottom: vol.bottom, plane: vol.top };
+  }
+  // The ground: a floor block's top on it, anything else standing on it.
+  return { at: world, bottom: isoLookOf(preview) === 'iso_floor' ? -isoLiftFor(preview, 0) : 0, plane: 0 };
+}
+
+/** The level point under the mouse on a surface `plane` high (isoLift units). */
+function onPlane(screen: Vec2, plane: number, camera: Camera, view: ViewSize): Vec2 {
+  return screenToWorld(camera, view, { x: screen.x, y: screen.y + plane * camera.zoom });
 }
 
 function normalizeRect(a: Vec2, b: Vec2): Rect {
@@ -1379,6 +1517,21 @@ function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: numbe
   if (e.components.Collider?.shape === 'circle') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
   else if (rounded) ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(6, w / 4, h / 4));
   else ctx.rect(-w / 2, -h / 2, w, h);
+}
+
+/** Isometric: outlines round what is drawn (standing things and blocks), on the screen; the level's transform is put back after. */
+function drawIsoOutline(ctx: CanvasRenderingContext2D, list: ResolvedEntity[], camera: Camera, view: ViewSize, dpr: number, color: string, selected: boolean): void {
+  const before = ctx.getTransform();
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = selected ? 2 : 1.5;
+  for (const e of list) {
+    const b = isoScreenBox(e, camera, view);
+    if (b) ctx.strokeRect(b.left - 2, b.top - 2, b.right - b.left + 4, b.bottom - b.top + 4);
+  }
+  ctx.restore();
+  ctx.setTransform(before);
 }
 
 function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: number): void {

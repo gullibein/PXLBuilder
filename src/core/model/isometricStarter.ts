@@ -10,6 +10,49 @@ import { createDefinition, createPixelArtAsset, createProject, instantiateDefini
 import { defaultCamera } from './camera';
 import { ISO_TILES } from './isoTiles';
 import * as m from './mutations';
+import type { PixelArt } from './pixelArt';
+
+const art = (palette: Record<string, string>, rows: string[]): PixelArt => ({ palette: Object.entries(palette).map(([key, color]) => ({ key, color })), rows });
+
+/** A coin standing on its edge, in the blocks' pixel size (16 × 16 for a whole square; the coin in its middle). */
+const COIN = art({ o: '#3a2a08', y: '#ffd166', Y: '#fff2a8', d: '#c8902a' }, [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '......oooo......',
+  '.....oyyyyo.....',
+  '....oyYYyydo....',
+  '....oyYyyydo....',
+  '....oyYyyydo....',
+  '....oyyyyddo....',
+  '.....oyyddo.....',
+  '......oooo......',
+  '................',
+  '................',
+  '................',
+]);
+
+/** The goal: a flag on a pole in a stone base. */
+const FLAG = art({ o: '#1a1420', w: '#d8d2c8', r: '#e8344a', R: '#ff7a8a', g: '#8a8f9e', G: '#b8bcc8' }, [
+  '.....oo.........',
+  '.....owoooooo...',
+  '.....owRrrrrro..',
+  '.....owRrrrrrro.',
+  '.....owrrrrrrro.',
+  '.....owrrrrrro..',
+  '.....owoooooo...',
+  '.....ow.........',
+  '.....ow.........',
+  '.....ow.........',
+  '.....ow.........',
+  '.....ow.........',
+  '...ooowooo......',
+  '..oGGGGGGGo.....',
+  '..ogggggggo.....',
+  '...ooooooo......',
+]);
 
 /** Blocks that are floors (walked on), walls (in the way, one block high), water (in the way, at floor height). */
 const FLOORS = ['Grass', 'Dark Grass', 'Dirt', 'Dark Dirt', 'Snow', 'Magma', 'Grassy Dirt', 'Grassy Dirt 2', 'Grassy Dirt 3', 'Grassy Dirt 4'];
@@ -39,6 +82,17 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   if (hazard?.scripts) lava.scripts = structuredClone(hazard.scripts);
   defs.push(lava);
   for (const d of defs) m.addDefinition(project, d, registry);
+  // The coin and the goal drawn in the blocks' pixel size (the top-down ones are a plain dot and steps seen from above).
+  const coinArt = createPixelArtAsset('Coin', COIN);
+  const flagArt = createPixelArtAsset('Goal Flag', FLAG);
+  project.assets.push(coinArt, flagArt);
+  for (const d of project.definitions) {
+    if (d.name === 'Coin') {
+      d.components.Sprite = { ...d.components.Sprite, width: 32, height: 32, assetId: coinArt.id };
+      d.components.Collider = { ...d.components.Collider, size: { x: 16, y: 16 }, matchSprite: false };
+    }
+    if (d.name === 'Goal') d.components.Sprite = { ...d.components.Sprite, width: 32, height: 32, assetId: flagArt.id };
+  }
 
   const level = project.scenes[0];
   level.name = 'Island';

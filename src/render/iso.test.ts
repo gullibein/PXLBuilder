@@ -5,7 +5,7 @@ import { ISO_TILES } from '../core/model/isoTiles';
 import { resolveEntity } from '../core/model/resolve';
 import { InputState } from '../runtime/input';
 import { Runtime } from '../runtime/runtime';
-import { cameraKeeping, isoLookOf, isoOrder, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
+import { cameraKeeping, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
 
 const registry = createBuiltinRegistry();
 
@@ -45,6 +45,24 @@ describe('the isometric view', () => {
     expect(depth).toEqual([...depth].sort((a, b) => a - b));
     // The user's blocks: whole, 16 × 16.
     for (const a of Object.values(ISO_TILES)) expect(a.rows.length === 16 && a.rows.every((r) => r.length === 16)).toBe(true);
+  });
+
+  it('blocks fill the space between their bottom and top; stacking puts the next one on the top', () => {
+    const project = createIsometricProject(registry);
+    const all = project.scenes[0].entities.map((e) => resolveEntity(project, e, registry));
+    const grass = all.find((e) => e.name.startsWith('Grass'))!;
+    const stone = all.find((e) => e.name.startsWith('Cobblestone'))!;
+    // A floor block's top is the ground; a wall block stands on it.
+    expect(isoVolume(grass)).toEqual({ bottom: -16, top: 0 });
+    expect(isoVolume(stone)).toEqual({ bottom: 0, top: 16 });
+    // On the stone's top: another stone one block up, or grass whose top is two blocks up.
+    expect(isoLiftFor(stone, 16)).toBe(16);
+    expect(isoLiftFor(grass, 16)).toBe(32);
+    const raised = { ...grass, transform: stone.transform, components: { ...grass.components, Sprite: { ...grass.components.Sprite, isoLift: 32 } } };
+    expect(isoVolume(raised)).toEqual({ bottom: 16, top: 32 });
+    // Drawn after (in front of) what it stands on.
+    const order = isoOrder([raised, stone]);
+    expect(order[0]).toBe(stone);
   });
 
   it('played, the arrow keys go the way they point on the screen; water and walls are in the way', () => {
