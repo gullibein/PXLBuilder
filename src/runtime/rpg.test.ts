@@ -88,7 +88,7 @@ describe('RPG: a map, a battle level and back', () => {
     const imps = rt.entities.filter((e) => e.name === 'Imp');
     expect(rt.kit.team()?.tag).toBe('hero');
     expect(rt.kit.isActing(knight)).toBe(true);
-    expect(rt.kit.menu?.title).toBe('Knight   HP 20/20   MP 10/10');
+    expect(rt.kit.menu?.title).toBe('Knight  Lv 1   HP 20/20   MP 10/10');
     expect(rt.kit.menu?.items).toEqual(['Fight', 'Magic', 'Potion x3', 'Run']);
     // Fight → which one? The imps by name.
     tap(rt, 'interact');
@@ -114,11 +114,12 @@ describe('RPG: a map, a battle level and back', () => {
     tap(rt, 'interact');
     tap(rt, 'interact');
     step(rt, 0.2);
-    expect(rt.gameplay.messages.at(-1)?.text).toBe('Victory!');
+    expect(rt.gameplay.messages.at(-1)?.text).toBe('Victory!  +10 XP  +6 gold');
     step(rt, 2);
     expect(rt.returnRequest?.result).toBe('won');
     expect(rt.kit.turns?.over).toBe(true);
-    expect(rt.game.get('Mage_mp')).toBe(7);
+    // (The mage reached level 2 in this battle: more magic, and all of it back.)
+    expect(rt.game.get('Mage_mp')).toBe(12);
     expect(rt.game.get('Knight_hp')).toBe(knight.health!.current);
     // The next battle starts the heroes where they left off.
     const next = new Runtime(project, project.scenes[1].id, registry);
@@ -137,11 +138,11 @@ describe('the RPG starter', () => {
     step(map, 0.1);
     expect(map.scripts.errors).toEqual([]);
     expect(map.entities.filter((e) => e.name === 'Wild Slime').length).toBe(3);
-    expect([...map.drawings.values()].some((d) => d.text.startsWith('Knight 24/24   Mage 16/16   Potions 3'))).toBe(true);
+    expect([...map.drawings.values()].some((d) => d.text.startsWith('Knight Lv1 24/24   Mage Lv1 16/16   Gold 0   Potions 3'))).toBe(true);
     const battle = new Runtime(project, project.scenes[1].id, registry);
     step(battle, 0.1);
     expect(battle.scripts.errors).toEqual([]);
-    expect(battle.kit.menu?.title).toBe('Knight   HP 24/24   MP 6/6');
+    expect(battle.kit.menu?.title).toBe('Knight  Lv 1   HP 24/24   MP 6/6');
     expect(battle.kit.menu?.items).toEqual(['Fight', 'Magic', 'Potion x3', 'Run']);
   });
 });
@@ -160,5 +161,64 @@ describe('the RPG starter, played', () => {
     for (let i = 0; i < 240 && !map.visitRequest; i++) map.update(1 / 120, input);
     input.release('right');
     expect(map.visitRequest?.level).toBe('Battle');
+  });
+});
+
+describe('RPG: experience, levels and gold', () => {
+  it('beaten monsters give experience and gold; enough experience levels a hero up (stronger, more health), kept for the next battle', () => {
+    const project = rpg();
+    const rt = new Runtime(project, project.scenes[1].id, registry);
+    // The knight is one blow from level 2 (needs 10): one imp gives 5.
+    rt.game.set('Knight_xp', 7);
+    step(rt, 0.1);
+    const knight = rt.entities.find((e) => e.name === 'Knight')!;
+    const imps = rt.entities.filter((e) => e.name === 'Imp');
+    // Quick win: both imps down to 1 health, the knight and the mage finish them.
+    for (const imp of imps) imp.health!.current = 1;
+    tap(rt, 'interact');
+    tap(rt, 'interact');
+    tap(rt, 'interact');
+    tap(rt, 'interact');
+    step(rt, 0.2);
+    expect(rt.gameplay.messages.at(-1)?.text).toBe('Victory!  +10 XP  +6 gold');
+    expect(rt.game.get('gold')).toBe(6);
+    // Level 2: 7 + 10 = 17, 10 for the level, 7 left; +4 max health (20 → 24), +1 power (6 → 7).
+    expect(rt.game.get('Knight_level')).toBe(2);
+    expect(rt.game.get('Knight_xp')).toBe(7);
+    expect(rt.game.get('Knight_max_hp')).toBe(24);
+    expect(rt.game.get('Knight_power')).toBe(7);
+    expect(knight.health!.max).toBe(24);
+    expect(rt.kit.popups.some((p) => p.text === 'Level up!')).toBe(true);
+    // The mage got 10 too (level 1 → 2 needs 10).
+    expect(rt.game.get('Mage_level')).toBe(2);
+    // Next battle: the knight is level 2 there.
+    const next = new Runtime(project, project.scenes[1].id, registry);
+    next.game = rt.game;
+    step(next, 0.1);
+    expect(next.kit.menu?.title).toMatch(/^Knight {2}Lv 2 {3}HP \d+\/24/);
+  });
+
+  it("the shop sells potions for gold; without enough gold they can't be chosen", async () => {
+    const { createRpgProject } = await import('../core/model/rpgStarter');
+    const project = createRpgProject(registry);
+    const map = new Runtime(project, project.scenes[0].id, registry);
+    map.game.set('gold', 12);
+    map.game.set('potions', 1);
+    const player = map.entities.find((e) => e.controller)!;
+    const shop = map.entities.find((e) => e.name === 'Merchant')!;
+    player.x = shop.x;
+    player.y = shop.y + 40;
+    input.press('up');
+    for (let i = 0; i < 120 && !map.kit.menu; i++) map.update(1 / 120, input);
+    input.release('up');
+    expect(map.kit.menu?.title).toBe('Merchant: you have 12 gold');
+    expect(map.kit.menu?.items).toEqual(['Potion (5 gold)', 'Leave']);
+    tap(map, 'interact');
+    tap(map, 'interact');
+    expect(map.game.get('gold')).toBe(2);
+    expect(map.game.get('potions')).toBe(3);
+    expect(map.kit.menu?.items).toEqual(['-Potion (5 gold)', 'Leave']);
+    tap(map, 'interact');
+    expect(map.kit.menu).toBeNull();
   });
 });

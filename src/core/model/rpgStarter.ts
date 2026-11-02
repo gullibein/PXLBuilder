@@ -130,6 +130,37 @@ const SLIME: PixelArt = {
   ],
 };
 
+const MERCHANT: PixelArt = {
+  palette: [
+    { key: 'o', color: '#1a1426' },
+    { key: 'h', color: '#b5562c' },
+    { key: 'H', color: '#e07a3c' },
+    { key: 's', color: '#f2c39b' },
+    { key: 'g', color: '#3f8f5a' },
+    { key: 'G', color: '#6fcf8a' },
+    { key: 'y', color: '#ffd166' },
+    { key: 'n', color: '#7a4a2a' },
+  ],
+  rows: [
+    '.....oooooo.....',
+    '....oHHHHHHo....',
+    '...ohhhhhhhho...',
+    '..oooooooooooo..',
+    '....osssssso....',
+    '....osossoso....',
+    '.....ossnso.....',
+    '....oGGyyGGo....',
+    '...oGGGyyGGGo...',
+    '..osgGGGGGGgso..',
+    '..os.oGGGGo.so..',
+    '.....ogggggo.oo.',
+    '.....oggogg.oyyo',
+    '.....onn.nno.oo.',
+    '....onno.onno...',
+    '....ooo...ooo...',
+  ],
+};
+
 /** A ready-made script on an object, checked (the starter's own scripts always check out). */
 function withScript(project: Project, def: ObjectDefinition, ready: string, settings: Record<string, unknown> = {}): void {
   const checked = checkScript({ ...expandReadyScript({ ready, settings }), id: `scr_${ready.replace(/\W+/g, '_').toLowerCase()}` }, project);
@@ -166,12 +197,20 @@ export function createRpgProject(registry: ComponentRegistry, name = 'Untitled G
   );
   withScript(project, knight, 'RPG hero', { power: 6, magic: 5, max_mp: 6, mp_cost: 3 });
   withScript(project, mage, 'RPG hero', { power: 2, magic: 9, max_mp: 15, mp_cost: 3 });
-  withScript(project, slime, 'RPG monster', { power: 3 });
-  withScript(project, bat, 'RPG monster', { power: 2, pause: 0.4 });
+  withScript(project, slime, 'RPG monster', { power: 3, xp: 6, gold: 4 });
+  withScript(project, bat, 'RPG monster', { power: 2, pause: 0.4, xp: 4, gold: 3 });
+  // A shop on the map: potions for gold.
+  const merchant = createDefinition(
+    'Merchant',
+    { Sprite: c('Sprite', { width: 32, height: 32, assetId: art('Merchant', MERCHANT) }), Collider: c('Collider', { size: { x: 28, y: 28 }, isTrigger: true }) },
+    ['shop'],
+    'Sells potions for gold: touching him opens his shop.',
+  );
+  withScript(project, merchant, 'RPG shop', { title: 'Merchant', price: 5 });
   withScript(project, wild, 'RPG encounter', { battle: 'Battle' });
   // (Added once complete: the project keeps its own copy.)
-  for (const def of [knight, mage, slime, bat, wild]) {
-    def.metadata.category = def === wild ? 'Enemies' : 'Battle';
+  for (const def of [knight, mage, slime, bat, wild, merchant]) {
+    def.metadata.category = def === wild ? 'Enemies' : def === merchant ? 'People' : 'Battle';
     m.addDefinition(project, def, registry);
   }
 
@@ -216,7 +255,7 @@ export function createRpgProject(registry: ComponentRegistry, name = 'Untitled G
           state: null,
           if: null,
           do: [
-            { do: 'draw', id: 'party', shape: 'text', anchor: 'top_left', x: '12', y: '10', w: null, h: null, text: "Knight {game_value('Knight_hp', 24)}/24   Mage {game_value('Mage_hp', 16)}/16   Potions {game_value('potions', 3)}", size: '14', color: '#ffffff', object: null, alpha: null },
+            { do: 'draw', id: 'party', shape: 'text', anchor: 'top_left', x: '12', y: '10', w: null, h: null, text: "Knight Lv{game_value('Knight_level', 1)} {game_value('Knight_hp', 24)}/{game_value('Knight_max_hp', 24)}   Mage Lv{game_value('Mage_level', 1)} {game_value('Mage_hp', 16)}/{game_value('Mage_max_hp', 16)}   Gold {game_value('gold', 0)}   Potions {game_value('potions', 3)}", size: '14', color: '#ffffff', object: null, alpha: null },
           ],
         },
       ],
@@ -226,6 +265,7 @@ export function createRpgProject(registry: ComponentRegistry, name = 'Untitled G
   if ('error' in party) throw new Error(party.error);
   player.scripts = [...(player.scripts ?? []), party.script];
   m.addEntity(project, map.id, instantiateDefinition(player, { x: 80, y: 240 }));
+  m.addEntity(project, map.id, instantiateDefinition(def('Merchant'), { x: 80, y: 112 }));
   for (const [x, y] of [
     [336, 176],
     [528, 336],
