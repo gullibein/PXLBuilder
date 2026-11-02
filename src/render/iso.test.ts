@@ -5,7 +5,7 @@ import { ISO_TILES } from '../core/model/isoTiles';
 import { resolveEntity } from '../core/model/resolve';
 import { InputState } from '../runtime/input';
 import { Runtime } from '../runtime/runtime';
-import { cameraKeeping, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
+import { cameraKeeping, insideOutline, isoScreenBox, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
 
 const registry = createBuiltinRegistry();
 
@@ -29,7 +29,7 @@ describe('the isometric view', () => {
     expect(s.y).toBeCloseTo(90);
   });
 
-  it('the starter: blocks on the ground first, then walls and characters back to front', () => {
+  it('the starter: drawn row of squares by row from the back, each row from the bottom up', () => {
     const project = createIsometricProject(registry);
     const scene = project.scenes[0];
     expect(scene.world.view).toBe('iso');
@@ -39,12 +39,16 @@ describe('the isometric view', () => {
     expect(looks.get('Cobblestone')).toBe('iso_block');
     expect(looks.get('Player')).toBe('stand');
     const order = isoOrder(all);
-    // (A floor block raised off the ground is drawn with the blocks.)
-    const onGround = (e: (typeof order)[number]) => ['iso_floor', 'flat'].includes(isoLookOf(e)) && !(Number(e.components.Sprite?.isoLift ?? 0) > 0);
-    const firstUpright = order.findIndex((e) => !onGround(e));
-    expect(order.slice(firstUpright).every((e) => !onGround(e))).toBe(true);
-    const depth = order.slice(firstUpright).map((e) => Math.floor(e.transform.position.x / 32) + Math.floor(e.transform.position.y / 32));
-    expect(depth).toEqual([...depth].sort((a, b) => a - b));
+    const key = (e: (typeof order)[number]) => {
+      const v = isoVolume(e);
+      const r = v ? 0 : 8;
+      return { c: Math.floor((e.transform.position.x + r) / 32) + Math.floor((e.transform.position.y + r) / 32), h: v ? v.bottom : Number(e.components.Sprite?.isoLift ?? 0) };
+    };
+    for (let n = 1; n < order.length; n++) {
+      const a = key(order[n - 1]);
+      const b = key(order[n]);
+      expect(a.c < b.c || (a.c === b.c && a.h <= b.h)).toBe(true);
+    }
     // The user's blocks: whole, 16 × 16.
     for (const a of Object.values(ISO_TILES)) expect(a.rows.length === 16 && a.rows.every((r) => r.length === 16)).toBe(true);
   });
@@ -65,6 +69,31 @@ describe('the isometric view', () => {
     // Drawn after (in front of) what it stands on.
     const order = isoOrder([raised, stone]);
     expect(order[0]).toBe(stone);
+  });
+
+  it('a floor raised half a block is drawn after the ground behind it and before the ground in front (its sunken half hidden)', () => {
+    const project = createIsometricProject(registry);
+    const all = project.scenes[0].entities.map((e) => resolveEntity(project, e, registry));
+    const tile = (i: number, j: number) => all.find((e) => isoLookOf(e) === 'iso_floor' && e.transform.position.x === i * 32 + 16 && e.transform.position.y === j * 32 + 16 && !e.components.Sprite?.isoLift)!;
+    const half = { ...tile(7, 5), id: 'half', components: { ...tile(7, 5).components, Sprite: { ...tile(7, 5).components.Sprite, isoLift: 8 } } };
+    const order = isoOrder([tile(8, 6), tile(8, 5), half, tile(6, 4), tile(7, 4)]).map((e) => e.id);
+    const at = (e: { id: string }) => order.indexOf(e.id);
+    expect(at(half)).toBeGreaterThan(at(tile(6, 4)));
+    expect(at(half)).toBeGreaterThan(at(tile(7, 4)));
+    expect(at(half)).toBeLessThan(at(tile(8, 5)));
+    expect(at(half)).toBeLessThan(at(tile(8, 6)));
+  });
+
+  it('a block is clicked by its own outline (its top and sides), not the box round its picture', () => {
+    const project = createIsometricProject(registry);
+    const block = resolveEntity(project, project.scenes[0].entities.find((e) => project.definitions.find((d) => d.id === e.definitionId)?.name === 'Cobblestone')!, registry);
+    const camera = { x: block.transform.position.x, y: block.transform.position.y, zoom: 1, iso: true };
+    const box = isoScreenBox(block, camera, { width: 200, height: 200 })!;
+    // The top's middle and a side: it; the picture's top corners (empty, beside the top's diamond): not.
+    expect(insideOutline(box.topFace!, box.outline!)).toBe(true);
+    expect(insideOutline({ x: box.topFace!.x - 10, y: box.topFace!.y + 12 }, box.outline!)).toBe(true);
+    expect(insideOutline({ x: box.left + 1, y: box.top + 1 }, box.outline!)).toBe(false);
+    expect(insideOutline({ x: box.right - 1, y: box.bottom - 1 }, box.outline!)).toBe(false);
   });
 
   it('played, the arrow keys go the way they point on the screen; water and walls are in the way', () => {

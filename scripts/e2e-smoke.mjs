@@ -3464,7 +3464,7 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === '0' && /^4 rooms/.test(await dp.getByTestId('dungeon-report').innerText()), '(Undo: random again)');
     await dp.getByTestId('dungeon-close').click();
-    for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 8; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   {
@@ -3518,11 +3518,33 @@ try {
     await page.mouse.up();
     await check(async () => (await ents()) === n1 + 2, 'dragging its side point (on its top\'s diamond) copies it along two squares, at its height (the ground below stays)');
     await page.keyboard.press('Escape');
+    // A hole in the ground, filled again with a click (the blocks round it are clicked by their outlines, not boxes).
+    const hole = at(7, 5, 0);
+    const behind = at(7, 4, 0);
+    const nh = await ents();
+    await page.getByTestId('tool-eyedropper').click();
+    await page.mouse.click(behind.x, behind.y);
+    await page.getByTestId('tool-pen').click();
+    await page.mouse.click(hole.x, hole.y, { button: 'right' });
+    await check(async () => (await ents()) === nh - 1, 'a right-click takes a ground block away (a hole)');
+    await page.mouse.click(hole.x, hole.y);
+    await check(async () => (await ents()) === nh, 'a click in the hole puts a block back in it');
+    // The height to draw at, by hand: Auto (on top or beside), or a height in blocks (half steps; [ and ] too).
+    const hv = page.getByTestId('iso-height-value');
+    await check(async () => (await hv.innerText()) === 'Auto', 'drawing in an isometric level, the tool bar shows the height: Auto');
+    await hv.click();
+    await page.getByTestId('iso-height-up').click();
+    await page.getByTestId('iso-height-up').click();
+    await page.keyboard.press(']');
+    await check(async () => (await hv.innerText()) === '1.5', 'it goes up in half blocks (▲, and ] on the keyboard)');
+    await hv.click();
+    await check(async () => (await hv.innerText()) === 'Auto', 'a click on it goes back to Auto');
+    await page.getByTestId('tool-select').click();
     await page.getByTestId('play').click();
     await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
     await page.waitForTimeout(300);
     await page.getByTestId('play').click();
-    for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 8; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   // (The AI is answered by the stand-in again for this.)

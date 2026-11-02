@@ -242,6 +242,9 @@ function useGlobalShortcuts() {
         state.setTool({ kind: 'select' });
       } else if (key === 'b' && !mod) {
         state.usePen();
+      } else if ((key === '[' || key === ']') && !mod && state.tool.kind === 'brush') {
+        // Isometric drawing: half a block lower or higher (from the ground when it was "on top").
+        state.setIsoHeight((state.isoHeight ?? 0) + (key === ']' ? 0.5 : -0.5));
       } else if (key === 'm' && !mod) {
         state.setTool({ kind: 'marquee' });
       } else if (key === 'e' && !mod) {

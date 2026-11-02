@@ -201,6 +201,9 @@ export interface EditorState {
   setTray(tray: Partial<EditorState['tray']>): void;
   setDock(dock: DockPanel): void;
   setTool(tool: Tool): void;
+  /** Isometric drawing: the height new things go at, in blocks (0: the ground; 0.5 steps), or null: on top of or beside what is under the mouse. */
+  isoHeight: number | null;
+  setIsoHeight(height: number | null): void;
   /** Switches to drawing with the last used object (or the first tile object). */
   usePen(): void;
   setBackgroundOpen(open: boolean): void;
@@ -274,6 +277,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     libraryAsk: null,
     pickedDefinitionId: null,
     tool: { kind: 'select' },
+    isoHeight: null,
     lastBrushId: null,
     backgroundOpen: false,
     spritesFor: null,
@@ -495,6 +499,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setDock(dock) {
       set({ dock });
+    },
+
+    setIsoHeight(isoHeight) {
+      set({ isoHeight: isoHeight === null ? null : Math.max(-4, Math.min(16, Math.round(isoHeight * 2) / 2)) });
     },
 
     setTool(tool) {

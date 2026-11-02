@@ -20,7 +20,7 @@ import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommand
 import { openProjectFile } from '../persistence';
 import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
-import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, isoLiftFor, isoLiftOf, isoLookOf, isoOrder, isoScreenBox, isoVolume, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
+import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, insideOutline, isoLiftFor, isoLiftOf, isoLookOf, isoOrder, isoScreenBox, isoVolume, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
@@ -1234,12 +1234,13 @@ function commitIsoStroke(stroke: Extract<Drag, { kind: 'paint' }>, iso: IsoStrok
   for (const c of stroke.cells.values()) {
     const at = cellCenter(c, cell);
     const here = all.filter((e) => Math.abs(e.transform.position.x - at.x) < 1 && Math.abs(e.transform.position.y - at.y) < 1);
-    // What already fills the same space: the same object (skip), or another block (it is replaced).
+    // What already fills that space (a block overlapping it, even by half): the same object just there (skip), or
+    // anything else (it is replaced).
     const same = here.filter((e) => {
       const v = isoVolume(e);
-      return newVol && v ? Math.abs(v.bottom - newVol.bottom) < 1 : !newVol && !v && Math.abs(isoLiftOf(e) - lift) < 1 && isoLookOf(e) === isoLookOf(preview);
+      return newVol && v ? v.bottom < newVol.top - 0.5 && newVol.bottom < v.top - 0.5 : !newVol && !v && Math.abs(isoLiftOf(e) - lift) < 1 && isoLookOf(e) === isoLookOf(preview);
     });
-    if (same.some((e) => e.definitionId === def.id)) continue;
+    if (same.some((e) => e.definitionId === def.id && Math.abs(isoLiftOf(e) - lift) < 0.5)) continue;
     replace.push(...same.map((e) => e.id));
     const e = instantiateDefinition(def, at, n++ === 0 ? def.name : `${def.name} ${n}`);
     if (lift !== 0) e.components = { ...e.components, Sprite: { ...(e.components.Sprite ?? {}), isoLift: lift } };
@@ -1364,7 +1365,8 @@ function pickIso(entities: ResolvedEntity[], p: Vec2, camera: Camera, view: View
       if (containsPoint(e, p)) return e;
       continue;
     }
-    if (screen.x >= box.left && screen.x <= box.right && screen.y >= box.top && screen.y <= box.bottom) return e;
+    // (A block by its own outline: the gaps and holes round it are not it.)
+    if (box.outline ? insideOutline(screen, box.outline) : screen.x >= box.left && screen.x <= box.right && screen.y >= box.top && screen.y <= box.bottom) return e;
   }
   return null;
 }
@@ -1385,6 +1387,13 @@ interface IsoStroke {
  * beside it (on its side: the square in front, at the same height); on empty ground, on the ground.
  */
 function isoBrushTarget(screen: Vec2, entities: ResolvedEntity[], preview: ResolvedEntity, camera: Camera, view: ViewSize): { at: Vec2; bottom: number; plane: number } {
+  // A height chosen in the tool bar (in blocks): there, whatever is under the mouse (into a hole, under an overhang).
+  const fixed = useEditor.getState().isoHeight;
+  if (fixed !== null) {
+    const lift = fixed * 16;
+    const floor = isoLookOf(preview) === 'iso_floor';
+    return { at: onPlane(screen, lift, camera, view), bottom: floor ? lift - isoLiftFor(preview, 0) : lift, plane: lift };
+  }
   const world = screenToWorld(camera, view, screen);
   const hit = pickIso(entities, world, camera, view, (e) => isoVolume(e) !== null);
   const box = hit && isoScreenBox(hit, camera, view);

@@ -384,24 +384,36 @@ export function isoLookOf(e: ResolvedEntity): IsoLook {
 }
 
 /**
- * Drawing order in an isometric level: what lies on the ground first (flat things, floor blocks), then blocks and
- * standing things from the back (top of the level, left) to the front, so nearer things cover farther ones; the
- * Sprite layer first within each.
+ * Drawing order in an isometric level, as a painter does it: diagonal row of squares by row from the back (top left of
+ * the level) to the front, and within a row from the bottom up (a floor block's bottom is a block below the ground, so
+ * the ground comes before what stands on it, and the ground of the rows in front hides what is sunk below it). A
+ * standing thing counts in the row its front reaches (so the floor it walks onto is drawn before it). Then the Sprite
+ * layer, then exactly where.
  */
 export function isoOrder<T extends ResolvedEntity>(entities: T[]): T[] {
   return entities
     .map((e, i) => {
-      const look = isoLookOf(e);
-      const lift = isoLiftOf(e);
-      // (A floor raised above the ground is a block like any other.)
-      // (Within a square: from the bottom up, so what stands on a block is drawn after it.)
       const vol = isoVolume(e);
       const { x, y } = e.transform.position;
-      return { e, i, g: (look === 'flat' || look === 'iso_floor') && lift <= 0 ? 0 : 1, l: layerOf(e), c: Math.floor(x / 32) + Math.floor(y / 32), d: x + y, h: vol ? vol.bottom : lift };
+      const reach = vol ? 0 : 8;
+      return { e, i, c: Math.floor((x + reach) / 32) + Math.floor((y + reach) / 32), h: vol ? vol.bottom : isoLiftOf(e), l: layerOf(e), d: x + y };
     })
-    // (By the diagonal row of squares from the back, then from the bottom up, then exactly where.)
-    .sort((a, b) => a.g - b.g || a.l - b.l || a.c - b.c || a.h - b.h || a.d - b.d || a.i - b.i)
+    .sort((a, b) => a.c - b.c || a.h - b.h || a.l - b.l || a.d - b.d || a.i - b.i)
     .map((x) => x.e);
+}
+
+/** The point is inside the outline (a convex shape, its corners going round one way). */
+export function insideOutline(p: Vec2, corners: Vec2[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (cross === 0) continue;
+    if (sign === 0) sign = Math.sign(cross);
+    else if (Math.sign(cross) !== sign) return false;
+  }
+  return true;
 }
 
 /** How high it is drawn in an isometric level (Sprite.isoLift: 16 is one block of a 32 px square). */
@@ -437,7 +449,7 @@ export function isoLiftFor(e: ResolvedEntity, bottom: number): number {
  * Where it is drawn on the screen (CSS px of the view), and for a block where its top's middle is: what a click on
  * it means. Null for what lies flat on the ground.
  */
-export function isoScreenBox(e: ResolvedEntity, camera: Camera, view: ViewSize): { left: number; top: number; right: number; bottom: number; topFace: Vec2 | null; w: number } | null {
+export function isoScreenBox(e: ResolvedEntity, camera: Camera, view: ViewSize): { left: number; top: number; right: number; bottom: number; topFace: Vec2 | null; w: number; outline: Vec2[] | null } | null {
   const look = isoLookOf(e);
   if (look === 'flat') return null;
   const size = getEntitySize(e);
@@ -446,7 +458,16 @@ export function isoScreenBox(e: ResolvedEntity, camera: Camera, view: ViewSize):
   const W = size.x * Math.abs(e.transform.scale.x) * z;
   const H = size.y * Math.abs(e.transform.scale.y) * z;
   const lift = isoLiftOf(e) * z;
-  const box = (top: number, bottom: number, face: Vec2 | null) => ({ left: at.x - W / 2, right: at.x + W / 2, top, bottom, topFace: face, w: W });
+  // A block's outline on the screen: its top's diamond and its two sides (the six corners round it).
+  const outline = (t: Vec2, hb: number): Vec2[] => [
+    { x: t.x, y: t.y - W / 4 },
+    { x: t.x + W / 2, y: t.y },
+    { x: t.x + W / 2, y: t.y + hb },
+    { x: t.x, y: t.y + W / 4 + hb },
+    { x: t.x - W / 2, y: t.y + hb },
+    { x: t.x - W / 2, y: t.y },
+  ];
+  const box = (top: number, bottom: number, face: Vec2 | null) => ({ left: at.x - W / 2, right: at.x + W / 2, top, bottom, topFace: face, w: W, outline: face ? outline(face, look === 'block' ? W / 2 : H - W / 2) : null });
   if (look === 'stand') return box(at.y + W / 8 - H - lift, at.y + W / 8 - lift, null);
   if (look === 'iso_floor') return box(at.y - W / 4 - lift, at.y - W / 4 - lift + H, { x: at.x, y: at.y - lift });
   if (look === 'iso_block') return box(at.y - W / 4 - (H - W / 2) - lift, at.y - W / 4 - (H - W / 2) - lift + H, { x: at.x, y: at.y - (H - W / 2) - lift });

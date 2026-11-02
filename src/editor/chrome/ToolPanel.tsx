@@ -1,4 +1,4 @@
-import { useEditor } from '../store';
+import { getActiveScene, useEditor } from '../store';
 import { Thumb } from './Dock';
 
 /** Left tool panel: Select (arrow), Marquee (box select), Eyedropper (pick up an object to draw with), Draw (pen), the level background, the level's logic, and the camera view (its boxes on the level). */
@@ -18,7 +18,9 @@ export function ToolPanel() {
   const addOnTop = useEditor((s) => s.layout.addOnTop);
   const cameraShown = useEditor((s) => s.layout.showCameraOutlines);
   const eyedropper = tool.kind === 'eyedropper' || altHeld;
-  const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout } = useEditor.getState();
+  const isoHeight = useEditor((s) => s.isoHeight);
+  const isoLevel = useEditor((s) => getActiveScene(s).world.view === 'iso');
+  const { setTool, usePen, setBackgroundOpen, setLogicOpen, setDock, setLayout, setIsoHeight } = useEditor.getState();
   return (
     <nav className="tool-panel" aria-label="Tools" data-testid="tool-panel" data-movable="tool-panel">
       <div className="move-grip" data-move-handle title="Drag to move" data-testid="tool-panel-grip" />
@@ -71,6 +73,19 @@ export function ToolPanel() {
           <path d="M3 15l1-4.2L12.2 2.6a1.6 1.6 0 0 1 2.3 0l.9.9a1.6 1.6 0 0 1 0 2.3L7.2 14z M10.8 4l3.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
       </button>
+      {brush && isoLevel && (
+        <div className="iso-height" data-testid="iso-height" title="Height to draw at, in blocks ([ and ] change it). Auto: on top of or beside the block under the mouse">
+          <button className="tool tool-small" aria-label="Higher" data-testid="iso-height-up" onClick={() => setIsoHeight((isoHeight ?? 0) + 0.5)}>
+            ▲
+          </button>
+          <button className={`tool tool-small iso-height-value${isoHeight === null ? ' on' : ''}`} aria-label="Height" data-testid="iso-height-value" onClick={() => setIsoHeight(isoHeight === null ? 0 : null)}>
+            {isoHeight === null ? 'Auto' : String(isoHeight)}
+          </button>
+          <button className="tool tool-small" aria-label="Lower" data-testid="iso-height-down" onClick={() => setIsoHeight((isoHeight ?? 0) - 0.5)}>
+            ▼
+          </button>
+        </div>
+      )}
       {brush && (
         <button className="tool brush-pick" title={`Drawing with ${brush.name}. Click to choose another object.`} aria-label="Choose what to draw" data-testid="tool-brush-pick" onClick={() => setDock('library')}>
           <Thumb def={brush} size={20} />
