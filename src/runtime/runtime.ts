@@ -190,6 +190,8 @@ const LADDER_GRIP = 0.5;
 const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
+/** In a level flip, the share of the flip's time a falling character takes to get across (then it falls). */
+const FLIP_CARRY = 0.6;
 
 function boxOf(e: RuntimeEntity): Box | null {
   return e.collider ? { x: e.x + e.collider.ox, y: e.y + e.collider.oy, hw: e.collider.hw, hh: e.collider.hh } : null;
@@ -524,7 +526,7 @@ export class Runtime {
    * A level flip in progress (flip_level): everything glides to its mirrored place, the outer ones (farthest from
    * the line) fastest, each turning over on the way; the world stands still meanwhile (nothing collides).
    */
-  flip: { way: 'upside_down' | 'left_right'; t: number; items: { e: RuntimeEntity; fx: number; fy: number; tx: number; ty: number; dur: number; turns: boolean }[] } | null = null;
+  flip: { way: 'upside_down' | 'left_right'; t: number; items: { e: RuntimeEntity; fx: number; fy: number; tx: number; ty: number; dur: number; turns: boolean; falls: boolean; arrived?: boolean }[] } | null = null;
   /** How many level flips are in effect now, per way (an odd number: the level is mirrored). */
   flips = { upside_down: 0, left_right: 0 };
   /** Sound effects and music on (scripts switch them for the whole game: the play view keeps them across levels). */
@@ -949,8 +951,14 @@ export class Runtime {
       const ty = up ? 2 * line! - e.y : e.y;
       // (Characters stay upright: they are carried, and fall or walk on from where they land.)
       const turns = !(e.controller || (e.body === 'dynamic' && e.gravityScale !== 0));
-      return { e, fx: e.x, fy: e.y, tx, ty, dur: time * (1 - w * (d / far)), turns };
+      // Characters that fall get there early (no slow drift at the end, nothing carried over) and start falling
+      // while the rest of the level is still turning.
+      const falls = !turns && e.body === 'dynamic' && !this.floats(e);
+      return { e, fx: e.x, fy: e.y, tx, ty, dur: time * (1 - w * (d / far)), turns, falls };
     });
+    // (Across by FLIP_CARRY of the time the rest of the level takes: then it falls while the level finishes.)
+    const levelTime = Math.max(0, ...items.filter((it) => !it.falls).map((it) => it.dur));
+    for (const it of items) if (it.falls) it.dur = Math.min(it.dur, (levelTime || time) * FLIP_CARRY);
     this.flips[way]++;
     if (time <= 0) {
       this.flip = { way, t: 0, items };
@@ -968,6 +976,10 @@ export class Runtime {
     let done = true;
     for (const it of f.items) {
       const p = it.dur <= 0 ? 1 : Math.min(1, f.t / it.dur);
+      if (p >= 1 && it.falls) {
+        this.fallDuringFlip(it, f, dt);
+        continue;
+      }
       if (p < 1) done = false;
       // (Eased in and out: a flip, not a slide.)
       const k = p * p * (3 - 2 * p);
@@ -978,13 +990,50 @@ export class Runtime {
     if (done) this.endFlip();
   }
 
+  /**
+   * A character already across falls (from standing still) while the level finishes turning: stopped by anything
+   * solid where it will be once the flip is over.
+   */
+  private fallDuringFlip(it: NonNullable<Runtime['flip']>['items'][number], f: NonNullable<Runtime['flip']>, dt: number): void {
+    const e = it.e;
+    if (!it.arrived) {
+      // (Just arrived: exactly at its mirrored place, standing still.)
+      it.arrived = true;
+      e.x = it.tx;
+      e.y = it.ty;
+      e.flipT = null;
+      e.vx = 0;
+      e.vy = 0;
+    }
+    const vy = Math.min(MAX_FALL_SPEED, e.vy + this.gravity.y * e.gravityScale * dt);
+    const vx = e.vx + this.gravity.x * e.gravityScale * dt;
+    const me = boxOf(e);
+    if (!me) return;
+    const moved = { ...me, x: me.x + vx * dt, y: me.y + vy * dt };
+    for (const o of f.items) {
+      if (o === it || o.falls || !this.isSolid(o.e)) continue;
+      const b = boxOf(o.e);
+      if (b && overlaps(moved, { ...b, x: b.x + o.tx - o.e.x, y: b.y + o.ty - o.e.y })) {
+        e.vx = 0;
+        e.vy = 0;
+        return;
+      }
+    }
+    e.vx = vx;
+    e.vy = vy;
+    e.x += vx * dt;
+    e.y += vy * dt;
+  }
+
   private endFlip(): void {
     const f = this.flip!;
     const up = f.way === 'upside_down';
     for (const it of f.items) {
       const e = it.e;
-      e.x = it.tx;
-      e.y = it.ty;
+      if (!it.arrived) {
+        e.x = it.tx;
+        e.y = it.ty;
+      }
       e.flipT = null;
       if (it.turns) e.mirror = up ? { ...e.mirror, y: (e.mirror.y * -1) as 1 | -1 } : { ...e.mirror, x: (e.mirror.x * -1) as 1 | -1 };
       // Where it starts again (falling out, respawning) and where it moves between are mirrored too.
@@ -996,8 +1045,11 @@ export class Runtime {
         else mv.originX = it.fx + it.tx - mv.originX;
         mv.offset = up ? { x: mv.offset.x, y: -mv.offset.y } : { x: -mv.offset.x, y: mv.offset.y };
       }
-      e.vx = up ? e.vx : 0;
-      e.vy = 0;
+      // (A character falling already keeps falling; anything else stands still.)
+      if (!it.arrived) {
+        e.vx = up ? e.vx : 0;
+        e.vy = 0;
+      }
       e.grounded = false;
       e.prevY = e.y;
       e.moveTarget = null;

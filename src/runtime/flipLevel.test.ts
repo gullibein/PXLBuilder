@@ -35,6 +35,28 @@ const step = (rt: Runtime, seconds: number, input = new InputState()) => {
 };
 
 describe('flip_level', () => {
+  it('the player gets across before the level is done turning, standing still, and is already falling when it ends (no slow drift upward)', () => {
+    const rt = corridor();
+    step(rt, 0.5);
+    const player = rt.entities.find((e) => e.controller)!;
+    rt.flipLevel('upside_down', null, 0.6, 0.5);
+    let arrivedWhileFlipping = false;
+    let fellWhileFlipping = false;
+    let lastY = player.y;
+    let goingUpAfter = false;
+    for (let i = 0; i < 240; i++) {
+      rt.update(1 / 120, new InputState());
+      if (rt.flip && Math.abs(player.y - -128) < 1) arrivedWhileFlipping = true;
+      if (rt.flip && player.vy > 0) fellWhileFlipping = true;
+      if (fellWhileFlipping && player.y < lastY - 0.01) goingUpAfter = true;
+      lastY = player.y;
+    }
+    expect(arrivedWhileFlipping).toBe(true);
+    expect(fellWhileFlipping).toBe(true);
+    expect(goingUpAfter).toBe(false);
+    expect(player.grounded).toBe(true);
+  });
+
   it('mirrors the whole level upside down: the outer rows first and fastest, things turned over; the player is carried upright and falls onto the new floor', () => {
     const rt = corridor();
     step(rt, 0.5);
@@ -57,9 +79,10 @@ describe('flip_level', () => {
     step(rt, 0.29);
     expect(rt.flip).toBeNull();
     expect(coin.y).toBe(112);
-    // The player rode along to its mirrored place (up near the new ceiling), upright, then falls down onto the new
-    // floor (the old ceiling, turned over).
-    expect(player.y).toBeLessThan(-100);
+    // The player rode along to its mirrored place (up near the new ceiling), upright, and is already falling down
+    // onto the new floor (the old ceiling, turned over).
+    expect(player.y).toBeLessThan(0);
+    expect(player.vy).toBeGreaterThan(0);
     expect(rt.renderList().find((r) => r.name === 'Player')!.transform.scale.y).toBe(1);
     step(rt, 1.5);
     expect(player.grounded).toBe(true);
@@ -84,7 +107,7 @@ describe('flip_level', () => {
     step(rt, 0.6);
     expect(rt.flip).toBeNull();
     expect(rt.flips.upside_down).toBe(1);
-    expect(player.y).toBeLessThan(-100);
+    expect(player.y).toBeLessThan(0);
     const rt2 = corridor();
     const coin = rt2.entities.find((e) => e.base.name === 'Coin')!;
     rt2.flipLevel('left_right', 0, 0, 0);
