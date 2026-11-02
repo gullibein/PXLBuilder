@@ -21,6 +21,7 @@ import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
 import { NewGameProgress } from './chrome/NewGameProgress';
 import { ControlsDialog } from './chrome/ControlsDialog';
+import { DungeonPanel } from './chrome/DungeonPanel';
 import { SpriteEditor } from './chrome/SpriteEditor';
 import { CameraPanel } from './chrome/CameraPanel';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
@@ -124,6 +125,7 @@ export function App() {
         <GameSite />
         <ExportGameDialog />
         <ControlsDialog />
+        <DungeonPanel />
         <SoundEditor />
         <MusicStudio />
         <GlobalPrompt />

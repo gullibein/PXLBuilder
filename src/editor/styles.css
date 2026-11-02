@@ -338,3 +338,22 @@
 .controls-remove:hover { opacity: 1; }
 .chip-btn.listening { border-color: var(--accent); color: var(--accent); }
 .controls-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px 14px; }
+
+.dungeon-panel { width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 120px); overflow-y: auto; }
+.dg-body { display: grid; gap: 8px; padding: 8px 12px 12px; }
+.dg-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dg-row .num { width: 72px; }
+.dg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.dg-num { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
+.dg-num .num { width: 56px; }
+.dg-parts { display: grid; gap: 4px; font-size: 12px; }
+.dg-parts label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dg-h { margin: 4px 0 0; font-size: 12px; }
+.dg-spawns { display: grid; gap: 4px; }
+.dg-spawn { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.dg-spawn .num { width: 46px; }
+.dg-problem { color: var(--warn, #ffb347); }
+.dg-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.dg-thumb { display: grid; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); cursor: pointer; color: var(--text); }
+.dg-thumb canvas { width: 100%; image-rendering: pixelated; }
+.dg-foot { display: flex; justify-content: space-between; }

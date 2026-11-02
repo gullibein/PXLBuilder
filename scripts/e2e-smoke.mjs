@@ -3414,6 +3414,34 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
+  {
+    // A random level: built anew each play; the editor shows an example, faint.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await page.getByTestId('game-topdown').click();
+    await page.getByTestId('tool-dungeon').click();
+    const dp = page.getByTestId('dungeon-panel');
+    await dp.getByTestId('dungeon-make').click();
+    await check(async () => /\d+ rooms, \d+ things placed/.test(await dp.getByTestId('dungeon-report').innerText()), 'Random level: "Make this level random" shows an example dungeon and what it has');
+    await check(async () => (await canvas.getAttribute('data-entities')) === '0', '(the example is only shown: nothing is stored in the level)');
+    await page.screenshot({ path: `${OUT}/00f-random-level.png` });
+    const seed = await dp.getByTestId('dungeon-preview').inputValue();
+    await dp.getByTestId('dungeon-reroll').click();
+    await check(async () => (await dp.getByTestId('dungeon-preview').inputValue()) !== seed, 'Reroll shows another example');
+    await dp.getByTestId('dungeon-many').click();
+    await check(async () => (await dp.getByTestId('dungeon-thumbs').locator('canvas').count()) === 6, 'Show 6: six examples side by side');
+    await dp.getByTestId('dungeon-thumbs').locator('button').nth(2).click();
+    await dp.getByTestId('dungeon-rooms').fill('4');
+    await dp.getByTestId('dungeon-rooms').press('Enter');
+    await check(async () => /^4 rooms/.test(await dp.getByTestId('dungeon-report').innerText()), 'its settings change the example (4 rooms)');
+    await dp.getByTestId('dungeon-keep').click();
+    await check(async () => Number(await canvas.getAttribute('data-entities')) > 40 && (await dp.getByTestId('dungeon-make').count()) === 1, 'Keep this layout: the example becomes ordinary objects; the level is no longer random');
+    await page.getByTestId('undo').click();
+    await check(async () => (await canvas.getAttribute('data-entities')) === '0' && /^4 rooms/.test(await dp.getByTestId('dungeon-report').innerText()), '(Undo: random again)');
+    await dp.getByTestId('dungeon-close').click();
+    for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
+    await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
+  }
   // (The AI is answered by the stand-in again for this.)
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());

@@ -9,6 +9,7 @@ import { instantiateDefinition } from '../../core/model/factory';
 import { addEntity, moveEntities, removeEntities, setBackground } from '../../core/model/mutations';
 import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
+import { generateDungeon } from '../../core/model/dungeon';
 import { componentRegistry } from '../../core/components/builtin';
 import type { Id, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
@@ -249,7 +250,7 @@ export function Viewport() {
       const layer = (layerRef.current ??= { canvas: document.createElement('canvas'), key: '', entities: null, project: null, animated: [], at: { x: 0, y: 0 } });
       const marginCss = Math.min(360, Math.round(Math.min(view.width, view.height) * 0.35));
       const margin = Math.round(marginCss * dpr);
-      const key = `${scene.id}|${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}`;
+      const key = `${scene.id}|${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}|${scene.generator ? JSON.stringify(scene.generator) : ''}`;
       // How far the view moved since the layer was drawn, in canvas pixels (whole ones: pixel art stays sharp).
       const shiftX = Math.round((layer.at.x - state.camera.x) * state.camera.zoom * dpr);
       const shiftY = Math.round((layer.at.y - state.camera.y) * state.camera.zoom * dpr);
@@ -282,7 +283,8 @@ export function Viewport() {
         if (state.layout.showGrid) drawGrid(lctx, state.camera, lview, state.project.settings.gridSize, wire);
         // Things that start hidden (until a rule or switch shows them) are half see-through; invisible things fainter
         // still. Animated sprites play in the editor too: they are drawn every frame, on top of the layer.
-        const shown = entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e));
+        // A random level: the example dungeon (its preview seed) faint under what is placed by hand.
+        const shown = [...dungeonPreview(state.project, scene), ...entities.map((e) => (e.components.StartsHidden ? { ...e, alpha: 0.5 } : e))];
         const isAnimated = (e: ResolvedEntity) => {
           const id = e.components.Sprite?.assetId;
           return typeof id === 'string' && !!images(id)?.animation;
@@ -1864,3 +1866,16 @@ function panelEntries(definitionId: string) {
     ...(has ? [{ label: 'Remove panel', testId: 'menu-panel-remove', run: remove }] : []),
   ];
 }
+
+/** The example dungeon of a random level, drawn faint (only drawn: it is made anew each play, not stored). */
+const previews = new WeakMap<Scene, { project: Project; list: (ResolvedEntity & { alpha: number })[] }>();
+function dungeonPreview(project: Project, scene: Scene): (ResolvedEntity & { alpha: number })[] {
+  if (!scene.generator) return [];
+  const had = previews.get(scene);
+  if (had && had.project.definitions === project.definitions && had.project.assets === project.assets) return had.list;
+  const g = scene.generator;
+  const list = generateDungeon(project, scene, componentRegistry, g.preview, g.previewFloor).entities.map((e) => ({ ...resolveEntity(project, e, componentRegistry), alpha: 0.55 }));
+  previews.set(scene, { project, list });
+  return list;
+}
+

@@ -19,6 +19,12 @@ export interface Topic {
 }
 
 export const TOPICS: Record<string, Topic> = {
+  random: {
+    title: 'Random levels and roguelikes',
+    scopes: [],
+    words: /rogue|dungeon|procedural|random(ly)? (level|map|dungeon|layout|generat)|generat\w* (level|map|dungeon)|different (level|map) each|each (play|run)|permadeath|nethack|spelunky|binding of isaac|diablo|mystery dungeon/i,
+    text: `- RANDOM LEVELS (a new dungeon every play: roguelikes, dungeon crawlers, "a different map each time"): set_generator on the level (top-down, no gravity). The level then keeps only its recipe and what is placed by hand; each play builds rooms joined by corridors, walls round them, the player (placed by hand anywhere) moved to the first room, the way down (stairs: an object that, touched, does set_game "floor" + 1 and restart_level, which builds the next, deeper floor) in the room farthest away, monsters and treasure picked by weight for the floor (game_value("floor", 1)): later kinds with fromFloor, more of them with monstersPerFloor. Never place the dungeon's walls and rooms by hand on a random level, and never write a generator in scripts. The editor shows one example faint (preview seed); context.level.generator.example says what it came out as and any problems (rooms that didn't fit): fix those with the settings (bigger width/height, smaller rooms). keep_dungeon turns the example into ordinary objects ("I like this one, keep it"). A HUD shows the floor (game_value("floor", 1)). Make the parts the game's own: draw the wall (draw_autotile for walls that join up), a floor tile, the stairs, monsters that get tougher deeper down, treasure.`,
+  },
   turns: {
     title: 'Turn-based games: tactics, strategy, RPG battles, menus and talking',
     scopes: [],

@@ -108,6 +108,19 @@ export const operationSchema = z.union([
     components: z.array(z.object({ component: z.string(), propsJson: z.string() })),
   }),
   z.object({
+    op: z.literal('set_generator'),
+    sceneId: z.string(),
+    generatorJson: z
+      .string()
+      .describe(
+        'Makes the level a RANDOM level (a new dungeon each play: rooms, corridors, walls, monsters, treasure) or changes its recipe: JSON with only the settings to change: width, height (squares, 10-120), rooms, roomMin, roomMax (room sides in squares), corridor (1-3 wide), loops (0-1), wall, floor, stairs (library objects by id or name; floor optional), monsters and loot (lists of {"object","weight","fromFloor"}), monsterCount, monstersPerFloor, lootCount, lootPerFloor, seed (null: a new dungeon each play), preview (the example the editor shows), previewFloor. "null" makes it an ordinary level again. What is placed by hand stays; the player starts in the first room',
+      ),
+  }),
+  z.object({
+    op: z.literal('keep_dungeon'),
+    sceneId: z.string(),
+  }),
+  z.object({
     op: z.literal('set_controls'),
     controlsJson: z
       .string()
@@ -736,6 +749,12 @@ export function applyOperations(
         result.createdDefinitionIds.push(def.id);
         break;
       }
+      case 'set_generator':
+        m.setGenerator(project, levelRefs.get(op.sceneId) ?? op.sceneId, parseJson(op.generatorJson, 'Generator') as Record<string, unknown> | null);
+        break;
+      case 'keep_dungeon':
+        m.keepDungeon(project, levelRefs.get(op.sceneId) ?? op.sceneId, registry);
+        break;
       case 'set_controls':
         m.setControls(project, parseJson(op.controlsJson, 'Controls'));
         break;

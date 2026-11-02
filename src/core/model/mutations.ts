@@ -4,6 +4,7 @@
  * validation in one place regardless of who calls it: the inspector today, the
  * command/transaction system and AI operations later.
  */
+import { defaultGenerator, withDungeon } from './dungeon';
 import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
 import type { ComponentRegistry } from '../components/registry';
@@ -181,6 +182,93 @@ export function setCameraFollow(project: Project, sceneId: Id, entityId: Id | nu
     if (e.id === entityId && !has) addEntityComponent(project, sceneId, e.id, 'CameraTarget', registry);
     if (e.id !== entityId && has) removeEntityComponent(project, sceneId, e.id, 'CameraTarget');
   }
+}
+
+/**
+ * Makes a level random, changes its recipe, or (null) makes it an ordinary level again. Library objects by id or
+ * name; numbers kept within sense.
+ */
+export function setGenerator(project: Project, sceneId: Id, patch: Record<string, unknown> | null): void {
+  const scene = getScene(project, sceneId);
+  if (patch === null) {
+    delete scene.generator;
+    return;
+  }
+  const base = scene.generator ?? defaultGenerator(project);
+  const objectId = (v: unknown, what: string): Id | null => {
+    if (v === null || v === '') return null;
+    if (typeof v !== 'string') throw new ModelError(`Generator ${what}: a library object's id or name`);
+    const d = project.definitions.find((x) => x.id === v) ?? project.definitions.find((x) => x.name.toLowerCase() === v.trim().toLowerCase());
+    if (!d) throw new ModelError(`Generator ${what}: there is no library object "${v}"`);
+    return d.id;
+  };
+  const num = (v: unknown, what: string, lo: number, hi: number): number => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new ModelError(`Generator ${what}: a number`);
+    return Math.min(hi, Math.max(lo, v));
+  };
+  const spawns = (v: unknown, what: string) => {
+    if (!Array.isArray(v)) throw new ModelError(`Generator ${what}: a list of {"object", "weight", "fromFloor"}`);
+    return v.map((s: Record<string, unknown>) => ({ object: objectId(s.object, what)!, weight: num(s.weight ?? 1, `${what} weight`, 0, 1000), fromFloor: Math.round(num(s.fromFloor ?? 1, `${what} fromFloor`, 1, 999)) })).filter((s) => s.object);
+  };
+  const next = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    switch (k) {
+      case 'seed':
+        next.seed = v === null ? null : Math.round(num(v, 'seed', 1, 1e9));
+        break;
+      case 'preview':
+        next.preview = Math.round(num(v, 'preview', 1, 1e9));
+        break;
+      case 'previewFloor':
+        next.previewFloor = Math.round(num(v, 'previewFloor', 1, 999));
+        break;
+      case 'width':
+      case 'height':
+        next[k] = Math.round(num(v, k, 10, 120));
+        break;
+      case 'rooms':
+        next.rooms = Math.round(num(v, k, 1, 40));
+        break;
+      case 'roomMin':
+      case 'roomMax':
+        next[k] = Math.round(num(v, k, 2, 30));
+        break;
+      case 'corridor':
+        next.corridor = Math.round(num(v, k, 1, 3));
+        break;
+      case 'loops':
+        next.loops = num(v, k, 0, 1);
+        break;
+      case 'wall':
+      case 'floor':
+      case 'stairs':
+        next[k] = objectId(v, k);
+        break;
+      case 'monsters':
+      case 'loot':
+        next[k] = spawns(v, k);
+        break;
+      case 'monsterCount':
+      case 'monstersPerFloor':
+      case 'lootCount':
+      case 'lootPerFloor':
+        next[k] = num(v, k, 0, 200);
+        break;
+      default:
+        throw new ModelError(`Generator: there is no setting "${k}"`);
+    }
+  }
+  scene.generator = next;
+}
+
+/** Keeps the dungeon the editor shows (its preview seed) as ordinary objects: no longer random. */
+export function keepDungeon(project: Project, sceneId: Id, registry: ComponentRegistry): void {
+  const scene = getScene(project, sceneId);
+  if (!scene.generator) throw new ModelError('This level is not random: nothing to keep');
+  const built = withDungeon(project, scene, registry, scene.generator.preview, scene.generator.previewFloor);
+  // (New ids of their own, as anything placed.)
+  scene.entities = built.entities.map((e) => (e.id.startsWith('gen_') ? { ...e, id: generateId('ent') } : e));
+  delete scene.generator;
 }
 
 /** The game's controls (which keys do what); null or {} puts back the engine's own. */

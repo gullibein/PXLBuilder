@@ -196,6 +196,48 @@ export interface Scene {
   camera: CameraSettings;
   /** The song (a music asset's id) that plays while this level is played. */
   music?: Id | null;
+  /**
+   * A random level (model/dungeon.ts): the recipe it is built from each time it is played (rooms, corridors, what
+   * goes in them); what is placed by hand stays as it is. The editor shows one example (preview seed).
+   */
+  generator?: DungeonGenerator;
+}
+
+/** What a monster or a treasure the generator places is, how often (weight), and from which floor on. */
+export interface DungeonSpawn {
+  object: Id;
+  weight: number;
+  fromFloor: number;
+}
+
+export interface DungeonGenerator {
+  /** The seed each play uses: null = a new dungeon every play (a number: the same one, for testing). */
+  seed: number | null;
+  /** The example the editor shows. */
+  preview: number;
+  /** The floor the editor's example is for (deeper floors: more monsters, other kinds). */
+  previewFloor: number;
+  /** Its size, in grid squares (32 px). */
+  width: number;
+  height: number;
+  rooms: number;
+  roomMin: number;
+  roomMax: number;
+  /** Corridors 1 or 2 squares wide. */
+  corridor: number;
+  /** 0-1: how many extra corridors make loops (0: one way between rooms; 1: many ways round). */
+  loops: number;
+  /** The parts (library object ids): walls (around rooms and corridors), floor tiles (optional), the way down. */
+  wall: Id | null;
+  floor: Id | null;
+  stairs: Id | null;
+  monsters: DungeonSpawn[];
+  /** How many monsters on the first floor, and how many more each floor down. */
+  monsterCount: number;
+  monstersPerFloor: number;
+  loot: DungeonSpawn[];
+  lootCount: number;
+  lootPerFloor: number;
 }
 
 /** music: a song from the music machine; instrument: a sound shaped in it (played by songs). */

@@ -6,6 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { generateDungeon } from '../model/dungeon';
 import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { EnginePart } from '../script/language';
@@ -502,6 +503,16 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
       spriteResolution: project.settings.spriteResolution ?? 32,
       ...(project.settings.controls ? { controls: project.settings.controls } : {}),
+      // A random level: its recipe, with names for the objects (and what the example the editor shows came out as).
+      ...(scene.generator
+        ? (() => {
+            const g = scene.generator;
+            const name = (id: string | null) => (id ? (project.definitions.find((d) => d.id === id)?.name ?? '?') : null);
+            const spawn = (list: typeof g.monsters) => list.map((s) => ({ object: name(s.object), weight: s.weight, fromFloor: s.fromFloor }));
+            const example = generateDungeon(project, scene, registry, g.preview, g.previewFloor);
+            return { generator: { ...g, wall: name(g.wall), floor: name(g.floor), stairs: name(g.stairs), monsters: spawn(g.monsters), loot: spawn(g.loot), example: { rooms: example.rooms, things: example.entities.length, problems: example.problems } } };
+          })()
+        : {}),
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
       playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {

@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { newSeed, withDungeon } from '../core/model/dungeon';
 import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
 import { createStandaloneEntity, instantiateDefinition } from '../core/model/factory';
@@ -490,7 +491,12 @@ export class Runtime {
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
   private ladders: Ladder[] = [];
   private fallLimit = 0;
-  readonly scene: Scene;
+  /** The level as played (a random level: as built this time). */
+  scene: Scene;
+  /** The level as made in the editor (a random one: its recipe and what is placed by hand). */
+  readonly baseScene: Scene;
+  /** A random level: the seed it was built from this time (the Debug tab shows it, to play the same again). */
+  dungeonSeed: number | null = null;
   /** What scripts drew on the screen, by id (kept until erased or the level restarts). */
   readonly drawings = new Map<string, ScreenDrawing>();
   /**
@@ -540,8 +546,12 @@ export class Runtime {
     readonly project: Project,
     sceneId: Id,
     readonly registry: ComponentRegistry,
+    /** The game's own variables so far (another level's): a random level is built for the floor they say. */
+    game?: Map<string, number | string | boolean>,
   ) {
-    this.scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
+    this.baseScene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
+    this.scene = this.baseScene;
+    if (game) this.game = game;
     this.gravity = { ...this.scene.world.gravity };
     this.gameplay = new Gameplay(this, project, this.scene);
     this.kit = this.newKit();
@@ -573,6 +583,13 @@ export class Runtime {
   /** (Re)builds the level from the project: everything back at its start. */
   private load(): void {
     if (this.kit) this.kit = this.newKit();
+    // A random level: built anew (each restart too, "the next floor"), for the floor the game is on.
+    const gen = this.baseScene.generator;
+    if (gen) {
+      this.dungeonSeed = gen.seed ?? newSeed();
+      const floor = Number(this.game.get('floor') ?? 1) || 1;
+      this.scene = withDungeon(this.project, this.baseScene, this.registry, this.dungeonSeed, floor);
+    }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
     // Starts Hidden: out of play until a rule or switch shows it.
     for (const e of this.entities) {

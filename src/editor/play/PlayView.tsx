@@ -216,8 +216,7 @@ export function PlayView(props: PlayViewProps) {
       if (visiting) visits.push({ scene, runtime, startCamera });
       else visits = [];
       scene = next;
-      runtime = new Runtime(project, scene.id, componentRegistry);
-      runtime.game = game;
+      runtime = new Runtime(project, scene.id, componentRegistry, game);
       runtime.soundOn = soundOn;
       runtime.musicOn = musicOn;
       playMusic(scene.music, musicFromStart);

@@ -5,6 +5,8 @@ import { Thumb } from './Dock';
 export function ToolPanel() {
   const tool = useEditor((s) => s.tool);
   const backgroundOpen = useEditor((s) => s.backgroundOpen);
+  const dungeonOpen = useEditor((s) => s.dungeonOpen);
+  const randomLevel = useEditor((s) => !!s.project.scenes.find((x) => x.id === s.activeSceneId)?.generator);
   const logicOpen = useEditor((s) => s.logicOpen);
   const logicCount = useEditor((s) => {
     const scene = s.project.scenes.find((x) => x.id === s.activeSceneId) ?? s.project.scenes[0];
@@ -102,6 +104,22 @@ export function ToolPanel() {
           <path d="m3 13 4-4.2 3 3 1.8-1.8L15 13.4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
           <circle cx="11.8" cy="6.6" r="1.4" fill="currentColor" />
         </svg>
+      </button>
+      <button
+        className={`tool${dungeonOpen ? ' on' : ''}`}
+        title={randomLevel ? 'Random level: this level is built anew each play (its recipe, the example shown faint)' : 'Random level: make this level a dungeon built anew each play'}
+        aria-label="Random level"
+        aria-pressed={dungeonOpen}
+        data-testid="tool-dungeon"
+        onClick={() => useEditor.getState().setDungeonOpen(!dungeonOpen)}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="13" height="13" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <circle cx="6.2" cy="6.2" r="1.2" fill="currentColor" />
+          <circle cx="11.8" cy="11.8" r="1.2" fill="currentColor" />
+          <circle cx="9" cy="9" r="1.2" fill="currentColor" />
+        </svg>
+        {randomLevel && <span className="tool-badge">?</span>}
       </button>
       <button
         className={`tool${logicOpen ? ' on' : ''}`}
