@@ -188,6 +188,28 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`complete the level${s.by ? ` (won by ${x(s.by)})` : ''}`);
     case 'camera_shake':
       return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
+    case 'menu':
+      return one(`show a menu: ${s.items.map((i) => i.replace(/^-/, '')).join(' / ')}${s.title ? ` ("${s.title}")` : ''}`);
+    case 'close_menu':
+      return one('close its menu');
+    case 'cursor':
+      return one(s.show === 'false' ? 'hide the grid cursor' : 'show the grid cursor');
+    case 'highlight':
+      return one(`highlight ${s.kind === 'reach' ? `where it can walk in ${x(s.steps)} steps` : `squares ${x(s.min)}-${x(s.steps)} away`} ("${s.id}")`);
+    case 'clear_highlight':
+      return one(s.id ? `clear the highlight "${s.id}"` : 'clear its highlights');
+    case 'walk_to':
+      return one(`walk toward ${x(s.x)}, ${x(s.y)} (at most ${x(s.steps)} squares)`);
+    case 'start_turns':
+      return one(`start turns: ${s.teams.join(', then ')}${s.pick.length ? ` (the player picks ${s.pick.join(', ')})` : ''}`);
+    case 'give_turn':
+      return one(`give ${x(s.to)} its go`);
+    case 'done':
+      return one('end its go');
+    case 'end_turn':
+      return one("end the team's turn");
+    case 'popup':
+      return one(`show "${s.text}" rising over ${s.on ? x(s.on) : 'it'}`);
     case 'flip_level':
       return one(`flip the whole level ${s.way === 'left_right' ? 'left to right' : 'upside down'}${s.at ? ` around ${x(s.at)}` : ''} over ${x(s.seconds)} s`);
     case 'camera_flash':

@@ -50,13 +50,18 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   const view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
   drawBackground(ctx, size, dpr, f.scene.world, view, images, { startCamera: f.startCamera ?? null, time: runtime.completed ?? runtime.time });
   applyCamera(ctx, view, size, dpr);
-  // (Animations hold still too once the level is won.)
-  drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time, worldPerArt);
-  // Everything over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.
+  // Everything drawn over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.
   const perArt = zoomNow * dpr * worldPerArt;
   const grid: PixelGrid = { cell: perArt >= 1 ? Math.round(perArt) : 1, lowRes: (f.project.settings.playPixels ?? 0) > 0 };
-  // What scripts drew: labels in the level, then the screen layer (HUDs, scores) on top, then the built-in display.
+  // What scripts drew: on the ground under everything (highlighted squares), labels in the level, then the screen
+  // layer (HUDs, scores, menus) on top, then the built-in display.
   const drawings = [...runtime.drawings.values()];
+  if (drawings.some((d) => d.under)) {
+    drawScreenDrawings(ctx, drawings, 'under', size, looks, images, runtime.time, grid);
+    applyCamera(ctx, view, size, dpr);
+  }
+  // (Animations hold still too once the level is won.)
+  drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time, worldPerArt);
   drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time, grid);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);

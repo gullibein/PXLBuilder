@@ -121,6 +121,17 @@ export type Stmt =
   | { do: 'complete_level'; by?: string | null }
   | { do: 'camera_shake'; strength: string; seconds: string }
   | { do: 'flip_level'; way: 'upside_down' | 'left_right'; at: string | null; seconds: string; wave: string }
+  | { do: 'menu'; items: string[]; title: string | null; cancel: boolean; at: Exclude<DrawAnchor, 'world'> }
+  | { do: 'close_menu' }
+  | { do: 'cursor'; show: string; x: string | null; y: string | null }
+  | { do: 'highlight'; id: string; kind: 'reach' | 'range'; from: string | null; steps: string; min: string; color: string }
+  | { do: 'clear_highlight'; id: string | null }
+  | { do: 'walk_to'; x: string; y: string; steps: string; speed: string; on: string | null }
+  | { do: 'start_turns'; teams: string[]; pick: string[] }
+  | { do: 'give_turn'; to: string }
+  | { do: 'done' }
+  | { do: 'end_turn' }
+  | { do: 'popup'; text: string; color: string; on: string | null }
   | { do: 'camera_flash'; color: string; seconds: string }
   | { do: 'camera_zoom'; zoom: string; seconds: string }
   | { do: 'camera_focus'; target: string; seconds: string }
@@ -174,8 +185,19 @@ export const BUILTIN_NAMES: Record<string, string> = {
   view_w: 'how wide the camera\'s view is, in level px (its left edge is view_x - view_w / 2)',
   view_h: 'how tall the camera\'s view is, in level px (its top edge is view_y - view_h / 2)',
   pi: '3.14159…',
-  flipping: 'true while a level flip (flip_level) plays',
-  flipped: 'true while the level is mirrored by flip_level (an odd number of flips, either way)',
+  level_flipping: 'true while a level flip (flip_level) plays',
+  menu_choice: 'the text of the item last chosen in a menu (in a "menu_chosen" handler: what was chosen)',
+  menu_choice_number: 'which item was last chosen in a menu: 1 for the first',
+  menu_open: 'true while a menu is up',
+  cursor_x: 'the middle x of the grid square the cursor is on',
+  cursor_y: 'the middle y of the grid square the cursor is on',
+  cursor_thing: 'the unit (something with Health) on the cursor\'s square, else anything there, else null',
+  turn_team: 'the tag of the team whose turn it is ("" before start_turns)',
+  turn_number: 'which round it is (1 = the first; a round is every team\'s turn once)',
+  my_turn: 'true while it is this unit\'s go (from unit_turn until done)',
+  turn_done: 'true when this unit has had its go this turn',
+  walking_path: 'true while it is walking a path (walk_to)',
+  level_flipped: 'true while the level is mirrored by flip_level (an odd number of flips, either way)',
   paused: 'true while the game is paused (pause / resume)',
   sound_on: 'true while sound effects are on (set_sound)',
   music_on: 'true while music is on (set_music)',
@@ -285,6 +307,9 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
   ladder_here: { args: '', min: 0, max: 0, doc: 'there is a ladder it can climb where it is (at least half of it in the ladder\'s width)' },
   ladder_x: { args: '', min: 0, max: 0, doc: 'the middle x of the ladder it is at (0 when there is none)' },
+  highlighted: { args: 'id, x, y', min: 3, max: 3, doc: 'the grid square at x, y is in the highlight with that id (highlight)' },
+  steps_to: { args: 'x, y', min: 2, max: 2, doc: 'how many grid steps it takes it to walk to that square, around walls and units (-1: it can\'t get there)' },
+  grid_cell: { args: 'v', min: 1, max: 1, doc: 'the middle of the grid square that x (or y) v is in: grid_cell(self.x)' },
   ladder_top: { args: '', min: 0, max: 0, doc: 'the y of the top of the ladder it is at (0 when there is none): compare self.feet with it' },
   floor_below_ladder: { args: '', min: 0, max: 0, doc: 'it stands on the floor (not on a ladder top): Down there does not climb' },
   inside: { args: 'e', min: 1, max: 1, doc: 'the middle of e is inside self\'s body (standing on it, seen from above: not just brushing its edge)' },
@@ -416,9 +441,35 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   set_music: { example: '{"do":"set_music","enabled":"not music_on"}', doc: 'music on (true) or off (false) for the whole game (it goes on silently, so it comes back where it is); "music_on" tells which' },
   complete_level: { example: '{"do":"complete_level","by":"other"}', doc: 'the level is won: play goes on to the next level; "by": who won it ("level_completed" happens with it as the subject; null: this entity)' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
+  menu: {
+    example: '{"do":"menu","items":["Move","Attack","-Magic","Wait"],"title":null,"cancel":true,"at":"bottom_left"}',
+    doc: 'a menu box on the screen (one at a time; this entity owns it): up/down pick, X, Space or E choose, Esc goes back when cancel is true. Then its "menu_chosen" event handlers run (menu_choice: the item\'s text, menu_choice_number: which), or "menu_cancelled". An item starting with "-" is shown greyed and can\'t be chosen (done already). title: a line (or lines, \\n) above the items: also a talk box or question ("Join us?" with Yes / No). {expression} in items and title shows a value. The arrow and action keys only work the menu while it is up',
+  },
+  close_menu: { example: '{"do":"close_menu"}', doc: 'takes its menu away' },
+  cursor: {
+    example: '{"do":"cursor","show":"true","x":"self.x","y":"self.y"}',
+    doc: 'shows (show true) a blinking square cursor on the level\'s grid, on the square at x, y (null: where it was, or this entity), moved square by square with the arrow keys; X, Space or E choose a square (this entity\'s "cursor_chosen" handlers: cursor_x, cursor_y, cursor_thing, and other = the unit there), Esc: "cursor_cancelled". show false takes it away. The keys only move the cursor while it is up',
+  },
+  highlight: {
+    example: '{"do":"highlight","id":"move","kind":"reach","from":null,"steps":"4","min":"1","color":"#4aa3ff"}',
+    doc: 'colors grid squares, on the ground under everything: kind "reach": where it (or from) can walk in steps steps, around walls and other units (not its own square, nor taken ones); kind "range": every square min..steps squares away along the grid (an attack or spell range). Ask with highlighted(id, x, y); the same id replaces it',
+  },
+  clear_highlight: { example: '{"do":"clear_highlight","id":"move"}', doc: 'takes a highlight away (id null: all of this entity\'s)' },
+  walk_to: {
+    example: '{"do":"walk_to","x":"cursor_x","y":"cursor_y","steps":"4","speed":"160","on":null}',
+    doc: 'walks it (or on) square by square along the shortest way around walls and units, at most steps squares: to that square, or, taken or out of reach, as near to it as it gets (an enemy walking at the nearest hero stops beside it). Its "arrived" handlers run when it stops',
+  },
+  start_turns: {
+    example: '{"do":"start_turns","teams":["hero","enemy"],"pick":["hero"]}',
+    doc: 'turns begin: the teams (tags) take turns in this order, round after round. On a team\'s turn every unit\'s "turn_started" handlers run, then each unit of the team gets its go ("unit_turn" handlers; my_turn is true) one after another, top row first; for a team in pick, the player chooses which unit goes with the grid cursor instead (the square of one that hasn\'t gone yet). A go ends with done; when all of the team have gone, the next team\'s turn. Teams with no one left are skipped (win or lose with none_left / scripts). Once, from one object (the level\'s game master, or the player)',
+  },
+  give_turn: { example: '{"do":"give_turn","to":"other"}', doc: 'gives that unit its go now (its "unit_turn" handlers)' },
+  done: { example: '{"do":"done"}', doc: 'this unit\'s go is over (its menu, cursor and highlights go too); the next unit or team goes. Every unit_turn must end in done (one that never does is ended after 20 s)' },
+  end_turn: { example: '{"do":"end_turn"}', doc: 'the rest of this team\'s units skip their go: the next team\'s turn now' },
+  popup: { example: '{"do":"popup","text":"-{amount}","color":"#ff5050","on":"other"}', doc: 'a short text rising and fading over it (or on): damage "-12", "Miss!", "+5 HP", "Level up!". {expression} shows a value' },
   flip_level: {
     example: '{"do":"flip_level","way":"upside_down","at":null,"seconds":"0.7","wave":"0.5"}',
-    doc: 'mirror the WHOLE level, in one step: "upside_down" around a row (y = at) or "left_right" around a column (x = at); at null: the middle of the level. Everything glides to its mirrored place over seconds, turning over on the way (tiles, spikes, items, their pictures: mirrored afterwards; a second flip turns them back); wave 0-1: the farthest from the line move fastest and first, the nearest slowest (0: all together). Characters (things that fall or are steered, the player) are carried along upright and fall or walk on from where they land. The world stands still while it plays (nothing collides or hurts; "flipping" is true); nothing happens if a flip is already playing. Never move the level\'s pieces one by one for this',
+    doc: 'mirror the WHOLE level, in one step: "upside_down" around a row (y = at) or "left_right" around a column (x = at); at null: the middle of the level. Everything glides to its mirrored place over seconds, turning over on the way (tiles, spikes, items, their pictures: mirrored afterwards; a second flip turns them back); wave 0-1: the farthest from the line move fastest and first, the nearest slowest (0: all together). Characters (things that fall or are steered, the player) are carried along upright and fall or walk on from where they land. The world stands still while it plays (nothing collides or hurts; level_flipping is true); nothing happens if a flip is already playing. Never move the level\'s pieces one by one for this',
   },
   camera_flash: { example: '{"do":"camera_flash","color":"#ffffff","seconds":"0.3"}', doc: 'flash the screen in a color ("#rrggbb" text, not an expression)' },
   camera_zoom: { example: '{"do":"camera_zoom","zoom":"1.5","seconds":"0.5"}', doc: 'zoom to a value (0.25–4) over seconds (0 = at once)' },
@@ -566,6 +617,17 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_music'), enabled: expr }),
     z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
+    z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(40)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
+    z.object({ do: z.literal('close_menu') }),
+    z.object({ do: z.literal('cursor'), show: expr.default('true'), x: nexpr, y: nexpr }),
+    z.object({ do: z.literal('highlight'), id: z.string().min(1), kind: z.enum(['reach', 'range']).default('reach'), from: nexpr, steps: expr.default('4'), min: expr.default('1'), color: z.string().default('#4aa3ff') }),
+    z.object({ do: z.literal('clear_highlight'), id: z.string().min(1).nullable().default(null) }),
+    z.object({ do: z.literal('walk_to'), x: expr, y: expr, steps: expr.default('99'), speed: expr.default('160'), on: nexpr }),
+    z.object({ do: z.literal('start_turns'), teams: z.array(z.string().min(1)).min(1).max(8), pick: z.array(z.string().min(1)).default([]) }),
+    z.object({ do: z.literal('give_turn'), to: expr }),
+    z.object({ do: z.literal('done') }),
+    z.object({ do: z.literal('end_turn') }),
+    z.object({ do: z.literal('popup'), text: z.string().min(1).max(60), color: z.string().default('#ffffff'), on: nexpr }),
     z.object({ do: z.literal('flip_level'), way: z.enum(['upside_down', 'left_right']).default('upside_down'), at: nexpr, seconds: expr.default('0.7'), wave: expr.default('0.5') }),
     z.object({ do: z.literal('camera_flash'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be "#rrggbb"').default('#ffffff'), seconds: expr.default('0.3') }),
     z.object({ do: z.literal('camera_zoom'), zoom: expr, seconds: expr.default('0.5') }),
@@ -758,6 +820,25 @@ export function exprSlots(s: Stmt): string[] {
       return [s.strength, s.seconds];
     case 'flip_level':
       return [...(s.at ? [s.at] : []), s.seconds, s.wave];
+    case 'menu':
+      return [...s.items.flatMap(messageParts), ...(s.title ? messageParts(s.title) : [])];
+    case 'start_turns':
+      return [...s.teams, ...s.pick].flatMap(messageParts);
+    case 'close_menu':
+    case 'clear_highlight':
+    case 'done':
+    case 'end_turn':
+      return [];
+    case 'cursor':
+      return [s.show, ...(s.x ? [s.x] : []), ...(s.y ? [s.y] : [])];
+    case 'highlight':
+      return [...(s.from ? [s.from] : []), s.steps, s.min];
+    case 'walk_to':
+      return [s.x, s.y, s.steps, s.speed, ...(s.on ? [s.on] : [])];
+    case 'give_turn':
+      return [s.to];
+    case 'popup':
+      return [...messageParts(s.text), ...(s.on ? [s.on] : [])];
     case 'camera_flash':
       return [s.seconds];
     case 'camera_zoom':

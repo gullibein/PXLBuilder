@@ -271,6 +271,7 @@ Behavior scripts: programming behavior (the main tool for anything custom)
 - Each copy of an object runs its own copy of the object's scripts, with its own variables and state.
 - Editor panels for objects (sliders, knobs, number fields beside an object in the editor): topic "panels" (attached to requests about it; otherwise ask with need_code "topic:panels").
 - Pictures the user attaches (an example of the game they want, a sprite sheet): topic "pictures", always attached with them.
+- Turn-based games (tactics and strategy on a grid, RPG battles), menus, choices and talk boxes: topic "turns" (the engine's turn-based kit and the ready-made "Tactics unit" and "Tactics enemy" scripts; attached to requests about it; otherwise ask with need_code "topic:turns").
 - Shoot-em-ups (space shooters: a ship, formations of enemies that fly in and swoop down, a starfield): topic "shooters" (attached to requests about it; otherwise ask with need_code "topic:shooters").
 - Mark the variables a user may want to tune (speeds, heights, amounts, times, counts) with "setting": true ({"name":"push","value":220,"setting":true}): they show in the object's Details to change by hand. Not counters or state the script keeps.
 - Write small, readable scripts: a clear name, a one-sentence description, named variables for the numbers the user may want to tune (speed, range, cooldown), states for modes (walk / chase / stunned). Guard jumps with self.grounded and cooldowns with variables or "every".

@@ -12,6 +12,7 @@
  * hit, a script that doesn't check out) are reported once per script in
  * `errors` and in the event log as "script_error"; the game keeps going.
  */
+import { CELL } from './turns';
 import { parseExpr, type Expr } from '../core/script/expr';
 import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
@@ -762,6 +763,60 @@ export class ScriptSystem {
       case 'camera_shake':
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
         break;
+      case 'menu': {
+        const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        this.rt.kit.openMenu(e, s.items.map(fill), s.title ? fill(s.title).replace(/\\n/g, '\n') : '', s.cancel, s.at);
+        break;
+      }
+      case 'close_menu':
+        this.rt.kit.closeMenu(e);
+        break;
+      case 'cursor': {
+        if (!truthy(this.eval(s.show, ctx))) {
+          this.rt.kit.hideCursor(e);
+          break;
+        }
+        const was = this.rt.kit.cursorAt();
+        this.rt.kit.showCursor(e, s.x ? n(s.x) : (was?.x ?? e.x), s.y ? n(s.y) : (was?.y ?? e.y));
+        break;
+      }
+      case 'highlight': {
+        const from = s.from ? ent(s.from) : e;
+        if (!from) break;
+        const cells = s.kind === 'reach' ? this.rt.kit.reach(from, n(s.steps)) : this.rt.kit.range(from, n(s.min), n(s.steps));
+        this.rt.kit.highlight(s.id, e, cells, s.color);
+        break;
+      }
+      case 'clear_highlight':
+        this.rt.kit.clearHighlight(e, s.id);
+        break;
+      case 'walk_to': {
+        const t = ent(s.on);
+        if (t) this.rt.kit.walkTo(t, n(s.x), n(s.y), n(s.steps), n(s.speed));
+        break;
+      }
+      case 'start_turns': {
+        // ({team} in a name: a variable's value, so a ready-made script names its own side.)
+        const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        this.rt.kit.startTurns(s.teams.map(fill), s.pick.map(fill));
+        break;
+      }
+      case 'give_turn': {
+        const t = ent(s.to);
+        if (t) this.rt.kit.giveTurn(t);
+        break;
+      }
+      case 'done':
+        this.rt.kit.done(e);
+        break;
+      case 'end_turn':
+        this.rt.kit.endTurn();
+        break;
+      case 'popup': {
+        const t = ent(s.on);
+        if (t) this.rt.kit.popup(t, s.text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), s.color);
+        break;
+      }
       case 'flip_level':
         this.rt.flipLevel(s.way, s.at ? n(s.at) : null, n(s.seconds), n(s.wave));
         break;
@@ -877,9 +932,33 @@ export class ScriptSystem {
         return this.rt.screen.w;
       case 'screen_h':
         return this.rt.screen.h;
-      case 'flipping':
+      case 'level_flipping':
         return this.rt.flip !== null;
-      case 'flipped':
+      case 'menu_choice':
+        return this.rt.kit.choice;
+      case 'menu_choice_number':
+        return this.rt.kit.choiceNumber;
+      case 'menu_open':
+        return this.rt.kit.menu !== null;
+      case 'cursor_x':
+        return this.rt.kit.cursorAt()?.x ?? 0;
+      case 'cursor_y':
+        return this.rt.kit.cursorAt()?.y ?? 0;
+      case 'cursor_thing': {
+        const at = this.rt.kit.cursorAt();
+        return at ? this.rt.kit.thingAt(at.x, at.y) : null;
+      }
+      case 'turn_team':
+        return this.rt.kit.team()?.tag ?? '';
+      case 'turn_number':
+        return this.rt.kit.turns?.number ?? 0;
+      case 'my_turn':
+        return this.rt.kit.isActing(ctx.self);
+      case 'turn_done':
+        return this.rt.kit.hasActed(ctx.self);
+      case 'walking_path':
+        return this.rt.kit.walking(ctx.self);
+      case 'level_flipped':
         return this.rt.flips.upside_down % 2 === 1 || this.rt.flips.left_right % 2 === 1;
       case 'view_x':
       case 'view_y':
@@ -1127,6 +1206,12 @@ export class ScriptSystem {
         return this.rt.ladderHere(self) !== null;
       case 'ladder_x':
         return this.rt.ladderHere(self)?.x ?? 0;
+      case 'highlighted':
+        return this.rt.kit.highlighted(show(v[0]), n(1), n(2));
+      case 'steps_to':
+        return this.rt.kit.stepsTo(self, n(0), n(1));
+      case 'grid_cell':
+        return Math.floor(n(0) / CELL) * CELL + CELL / 2;
       case 'ladder_top':
         return this.rt.ladderHere(self)?.top ?? 0;
       case 'floor_below_ladder':

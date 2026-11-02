@@ -112,8 +112,10 @@ export function pixelFontScale(tall: number, cell: number): number {
  * (CSS px) and the view size. With the game's pixel grid, everything is
  * drawn on it (in Play); without one, as given.
  */
-export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], layer: 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup, clock = 0, grid?: PixelGrid): void {
-  const list = drawings.filter((d) => (d.anchor === 'world') === (layer === 'world')).sort((a, b) => a.order - b.order);
+export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], which: 'under' | 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup, clock = 0, grid?: PixelGrid): void {
+  // ("under": in the level, below everything in it; "world": in the level, over it; "screen": on the screen.)
+  const layer = which === 'screen' ? 'screen' : 'world';
+  const list = drawings.filter((d) => (d.anchor === 'world') === (layer === 'world') && (layer === 'screen' || !!d.under === (which === 'under'))).sort((a, b) => a.order - b.order);
   for (const d of list) {
     const [ax, ay] = d.anchor === 'world' ? [0.5, 0.5] : ANCHOR[d.anchor];
     const px = d.anchor === 'world' ? d.x : ax * view.width + d.x;

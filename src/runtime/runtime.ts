@@ -19,7 +19,8 @@ import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
 import { DEFEATED_LOOK, Gameplay, ownPart, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
-import { ALL_ACTIONS, type Action, type InputState, type InputView } from './input';
+import { ALL_ACTIONS, InputState, type Action, type InputView } from './input';
+import { TurnKit } from './turns';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
@@ -241,6 +242,8 @@ export interface ScreenDrawing {
   alpha: number;
   /** Drawing order: later on top. */
   order: number;
+  /** In the level, under everything in it (highlighted squares on the ground). */
+  under?: boolean;
 }
 
 export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot' | 'defeated';
@@ -465,6 +468,10 @@ export class Runtime {
   readonly cam = new CameraController();
   /** Events, rules and gameplay systems. */
   readonly gameplay: Gameplay;
+  /** Menus, the grid cursor, highlighted squares, walking along paths and turns (turns.ts). */
+  kit: TurnKit;
+  /** No keys: what steers things while a menu or the cursor has the keys. */
+  private readonly noKeys = new InputState();
   /** What things do on their own (patrol, shoot, move…). */
   readonly behaviors: BehaviorSystem;
   /** Behavior scripts. */
@@ -524,13 +531,35 @@ export class Runtime {
     this.scene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.gravity = { ...this.scene.world.gravity };
     this.gameplay = new Gameplay(this, project, this.scene);
+    this.kit = this.newKit();
     this.behaviors = new BehaviorSystem(this);
     this.scripts = new ScriptSystem(this, project);
     this.load();
   }
 
+  private newKit(): TurnKit {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const rt = this;
+    return new TurnKit({
+      get entities() {
+        return rt.entities;
+      },
+      get time() {
+        return rt.time;
+      },
+      drawings: this.drawings,
+      get screen() {
+        return rt.screen;
+      },
+      solidAtPoint: (x, y) => this.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh),
+      emit: (type, subject, other = null) => this.gameplay.emit(type, subject, other),
+      report: (message) => this.gameplay.emit('script_error', null, null, { script: 'turns', message }),
+    });
+  }
+
   /** (Re)builds the level from the project: everything back at its start. */
   private load(): void {
+    if (this.kit) this.kit = this.newKit();
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
     // Starts Hidden: out of play until a rule or switch shows it.
     for (const e of this.entities) {
@@ -661,8 +690,12 @@ export class Runtime {
     // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
     for (const e of this.entities) if (e.body === 'dynamic' && e.alive && !e.moveTarget) this.applyFriction(e, dt);
     this.gameplay.steer();
-    this.behaviors.before(dt, input);
-    this.scripts.before(dt, input);
+    // A menu or the grid cursor has the keys: nothing else is steered by them (also in the step one closes).
+    const captured = this.kit.capturing();
+    this.kit.update(dt, input);
+    const steer = captured || this.kit.capturing() ? this.noKeys : input;
+    this.behaviors.before(dt, steer);
+    this.scripts.before(dt, steer);
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
       if (e.body === 'kinematic' && e.alive) {
@@ -694,7 +727,7 @@ export class Runtime {
           e.knock = null;
         }
       }
-      if (e.controller && !e.dying) this.control(e, this.inputFor(e, input), dt);
+      if (e.controller && !e.dying) this.control(e, this.inputFor(e, steer), dt);
       else if ((e.climbing || e.climbDir !== 0) && !this.floats(e)) this.climbAlong(e, dt);
       if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
         e.vx += this.gravity.x * e.gravityScale * dt;
@@ -734,7 +767,7 @@ export class Runtime {
     }
     this.keepOnScreen();
     this.behaviors.after(dt);
-    this.gameplay.update(dt, input);
+    this.gameplay.update(dt, steer);
     // Characters that died wait out their Health.respawnDelay (their death animation), then come back: counted
     // after this step's events were handled, so a "died" handler always runs before the respawn, never after it.
     for (const e of this.entities) if (e.vanishing > 0) e.vanishing = Math.max(0, e.vanishing - dt);

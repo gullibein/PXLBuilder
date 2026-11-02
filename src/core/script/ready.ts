@@ -6,10 +6,11 @@
  */
 import { ModelError } from '../model/mutations';
 import { SWOOPER_SCRIPT } from './swooper';
+import { TACTICS_ENEMY_SCRIPT, TACTICS_UNIT_SCRIPT } from './tactics';
 
 type Script = { name: string; vars: { name: string; value: unknown; setting?: boolean }[] } & Record<string, unknown>;
 
-export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT as Script };
+export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT as Script, 'Tactics unit': TACTICS_UNIT_SCRIPT as Script, 'Tactics enemy': TACTICS_ENEMY_SCRIPT as Script };
 
 /** The script a set_script stands for: a ready-made one by name (its settings given), or the script as written. */
 export function expandReadyScript(value: Record<string, unknown>): Record<string, unknown> {

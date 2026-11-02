@@ -23,7 +23,7 @@ function corridor(withScript = false): Runtime {
     const player = def('Player');
     if (withScript)
       player.scripts = [
-        scriptSchema.parse({ id: 'scr_flip', name: 'Flip', vars: [], states: [], handlers: [{ when: { on: 'key', key: 'interact' }, if: 'not flipping', do: [{ do: 'flip_level', way: 'upside_down', at: null, seconds: '0.6', wave: '0.5' }] }] }) as never,
+        scriptSchema.parse({ id: 'scr_flip', name: 'Flip', vars: [], states: [], handlers: [{ when: { on: 'key', key: 'interact' }, if: 'not level_flipping', do: [{ do: 'flip_level', way: 'upside_down', at: null, seconds: '0.6', wave: '0.5' }] }] }) as never,
       ];
     m.addEntity(d, sceneId, instantiateDefinition(player, { x: -96, y: 128 }));
   });
@@ -70,8 +70,8 @@ describe('flip_level', () => {
     expect(rt.renderList().find((r) => r.name === 'Coin')!.transform.scale.y).toBe(1);
   });
 
-  it('is a script statement (with "flipping" and "flipped"); left to right mirrors around a column', () => {
-    const script = { id: 's', name: 'F', vars: [], states: [], handlers: [{ when: { on: 'tick' }, if: 'not flipping and not flipped', do: [{ do: 'flip_level', way: 'left_right', at: '0', seconds: 0.4, wave: '0' }] }] };
+  it('is a script statement (with level_flipping and level_flipped); left to right mirrors around a column', () => {
+    const script = { id: 's', name: 'F', vars: [], states: [], handlers: [{ when: { on: 'tick' }, if: 'not level_flipping and not level_flipped', do: [{ do: 'flip_level', way: 'left_right', at: '0', seconds: 0.4, wave: '0' }] }] };
     expect('script' in checkScript(script, createProject(registry, 'T'))).toBe(true);
     const rt = corridor(true);
     step(rt, 0.3);
