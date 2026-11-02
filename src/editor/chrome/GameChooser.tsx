@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
 import { createStarterAssets } from '../../core/model/factory';
 import { createTopDownStarterAssets } from '../../core/model/topDownStarters';
-import type { GameType } from '../../core/types';
+import type { Starter } from '../../core/types';
+import { createPixelArtAsset } from '../../core/model/factory';
+import { RPG_ARTS } from '../../core/model/rpgStarter';
 import { startJob } from '../ai/jobs';
 import { startNewGame } from '../persistence';
 import { useEditor } from '../store';
@@ -27,7 +29,7 @@ export function GameChooser() {
   const [drawn, setDrawn] = useState<'engine' | 'ai'>('engine');
   const sprites = pics.pictures.length ? 'ai' : drawn;
   if (!mode) return null;
-  const pick = (type: GameType) => {
+  const pick = (type: Starter) => {
     startNewGame(type, mode === 'first', res);
     close(null);
   };
@@ -126,6 +128,11 @@ export function GameChooser() {
             <span className="style-name">Top-down</span>
             <span className="style-blurb">Seen from above: walk in every direction through rooms and corridors (like Zelda or Rogue).</span>
           </button>
+          <button className="style-card game-card" data-testid="game-rpg" onClick={() => pick('rpg')}>
+            <RpgPreview />
+            <span className="style-name">RPG</span>
+            <span className="style-blurb">A map to explore, and battles in turns: a party with Fight, Magic, Potion and Run against monsters (like Dragon Quest).</span>
+          </button>
         </div>
         <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size">
           <span>Sprite size</span>
@@ -188,4 +195,22 @@ function TopDownPreview() {
   }
   items.push({ src: a.door.data, x: 8, y: 3 }, { src: a.player.data, x: 3, y: 2 }, { src: a.enemy.data, x: 11, y: 3 }, { src: a.goal.data, x: 13, y: 1 }, { src: a.hazard.data, x: 5, y: 4 });
   return <Tiles background="#16131f" items={items} />;
+}
+
+function RpgPreview() {
+  const a = useMemo(() => ({ ...createTopDownStarterAssets(), knight: createPixelArtAsset('Knight', RPG_ARTS.knight), mage: createPixelArtAsset('Mage', RPG_ARTS.mage), bat: createPixelArtAsset('Bat', RPG_ARTS.bat), slime: createPixelArtAsset('Slime', RPG_ARTS.slime) }), []);
+  // The battle: the party facing the monsters, a menu box below.
+  return (
+    <Tiles
+      background="#1d1530"
+      items={[
+        { src: a.slime.data, x: 2, y: 1 },
+        { src: a.bat.data, x: 2, y: 2.6 },
+        { src: a.knight.data, x: 12, y: 1 },
+        { src: a.mage.data, x: 12, y: 2.6 },
+        { color: '#e8ecff', x: 0.4, y: 4.1, w: 15.2, h: 1.6 },
+        { color: '#1b2266', x: 0.5, y: 4.2, w: 15, h: 1.4 },
+      ]}
+    />
+  );
 }

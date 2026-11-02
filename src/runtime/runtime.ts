@@ -510,6 +510,19 @@ export class Runtime {
   /** Sound effects and music on (scripts switch them for the whole game: the play view keeps them across levels). */
   soundOn = true;
   musicOn = true;
+  /**
+   * The game's own variables, kept across levels (set_game / game_value: the party's health, gold, what has been
+   * done). The play view gives every level's runtime the same one.
+   */
+  game = new Map<string, number | string | boolean>();
+  /** A script asked to visit another level and come back (visit_level): the play view does it. */
+  visitRequest: { level: string; by: RuntimeEntity } | null = null;
+  /** A script in a visited level asked to go back (return_level), saying how it went. */
+  returnRequest: { result: string } | null = null;
+  /** How the last visit to another level went ("won", "fled"…; "" before any). */
+  visitResult = '';
+  /** Who asked for the visit (it hears "level_returned" when the game comes back). */
+  private visitor: Id | null = null;
   /** A script asked to start the whole game again (the play view goes back to the first level). */
   restartGameRequested = false;
   /** The input of the step being run (what is held when something respawns). */
@@ -804,6 +817,22 @@ export class Runtime {
 
   markSolidsDirty(): void {
     this.solidsDirty = true;
+  }
+
+  /** visit_level: the play view takes the game to that level, keeping this one as it is to come back to. */
+  visitLevel(level: string, by: RuntimeEntity): void {
+    if (this.visitRequest) return;
+    this.visitRequest = { level, by };
+    this.visitor = by.id;
+  }
+
+  /** The game is back from a visit (the play view calls it): who went hears "level_returned". */
+  returned(result: string): void {
+    this.visitResult = result;
+    this.visitRequest = null;
+    this.paused = false;
+    const by = this.entities.find((e) => e.id === this.visitor) ?? null;
+    this.gameplay.emit('level_returned', by, null, { result });
   }
 
   /**

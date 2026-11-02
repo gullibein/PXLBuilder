@@ -6,7 +6,8 @@ import { componentRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
 import { gameFromText, projectFromBundle, projectToBundle, type LoadResult } from '../core/serialization/serialize';
 import { updateNotes } from '../core/serialization/migrations';
-import type { GameType, Project } from '../core/types';
+import type { Project, Starter } from '../core/types';
+import { createRpgProject } from '../core/model/rpgStarter';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 import { withoutUnused } from '../core/model/unused';
@@ -120,17 +121,18 @@ async function writeAutosave(project: Project): Promise<void> {
  * game; later it replaces the current one as an undoable step, so there is no
  * need to ask "are you sure?".
  */
-export function startNewGame(gameType: GameType, first = false, spriteResolution: SpriteResolution = DEFAULT_SPRITE_RESOLUTION): void {
+export function startNewGame(gameType: Starter, first = false, spriteResolution: SpriteResolution = DEFAULT_SPRITE_RESOLUTION): void {
   const project = starterProject(gameType, spriteResolution);
-  const kind = gameType === 'topdown' ? 'top-down game' : 'platformer';
+  const kind = gameType === 'rpg' ? 'RPG' : gameType === 'topdown' ? 'top-down game' : 'platformer';
   if (first) useEditor.getState().loadProject(project);
   else useEditor.getState().replaceProject('New project', project);
   useEditor.getState().logMessage('info', `Started a new ${kind}`);
 }
 
 /** A new game from a starter, at a sprite size. */
-function starterProject(gameType: GameType, spriteResolution: SpriteResolution): Project {
-  return produce(createProject(componentRegistry, 'Untitled Game', gameType), (p) => {
+function starterProject(gameType: Starter, spriteResolution: SpriteResolution): Project {
+  const base = gameType === 'rpg' ? createRpgProject(componentRegistry, 'Untitled Game') : createProject(componentRegistry, 'Untitled Game', gameType);
+  return produce(base, (p) => {
     if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
   });
 }
@@ -139,7 +141,7 @@ function starterProject(gameType: GameType, spriteResolution: SpriteResolution):
  * Makes the brand-new game over from another starter (the AI found it a better start for what the user asked):
  * same game, level ids, name and sprite size, so the prompt building it carries on.
  */
-export function switchStarter(gameType: GameType): void {
+export function switchStarter(gameType: Starter): void {
   const now = useEditor.getState().project;
   const fresh = starterProject(gameType, now.settings.spriteResolution ?? DEFAULT_SPRITE_RESOLUTION);
   const sceneId = now.startSceneId;
@@ -149,8 +151,9 @@ export function switchStarter(gameType: GameType): void {
     p.scenes[0].id = sceneId;
     p.startSceneId = sceneId;
   });
-  useEditor.getState().replaceProject(gameType === 'topdown' ? 'Top-down starter' : 'Platformer starter', project);
-  useEditor.getState().logMessage('info', `Switched the new game to the ${gameType === 'topdown' ? 'top-down' : 'platformer'} starter`);
+  const label = gameType === 'rpg' ? 'RPG' : gameType === 'topdown' ? 'top-down' : 'platformer';
+  useEditor.getState().replaceProject(`${label[0].toUpperCase()}${label.slice(1)} starter`, project);
+  useEditor.getState().logMessage('info', `Switched the new game to the ${label} starter`);
 }
 
 /**

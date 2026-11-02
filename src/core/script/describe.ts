@@ -192,6 +192,12 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`show a menu: ${s.items.map((i) => i.replace(/^-/, '')).join(' / ')}${s.title ? ` ("${s.title}")` : ''}`);
     case 'close_menu':
       return one('close its menu');
+    case 'set_game':
+      return one(`game's ${s.var} = ${x(s.value)}`);
+    case 'visit_level':
+      return one(`visit the level "${s.level}" (and come back)`);
+    case 'return_level':
+      return one(`go back to the level it came from (${x(s.result)})`);
     case 'kit_style':
       return one('set how menus, the cursor and turn numbers look');
     case 'cursor':

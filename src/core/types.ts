@@ -277,6 +277,8 @@ export interface ProjectSettings {
 }
 
 export type GameType = 'platformer' | 'topdown';
+/** What a new game can start from: the two kinds, and the RPG starter (a top-down game with a battle level). */
+export type Starter = GameType | 'rpg';
 
 export interface Project {
   formatVersion: number;

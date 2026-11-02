@@ -670,7 +670,8 @@ export class ScriptSystem {
           h: Math.max(0, opt(s.h, 32)),
           text: s.text === null ? '' : fill(s.text),
           size: Math.min(200, Math.max(4, opt(s.size, 18))),
-          color: s.color,
+          // ("{a_setting}": a color from a variable.)
+          color: fill(s.color),
           object: s.object,
           alpha: Math.min(1, Math.max(0, opt(s.alpha, 1))),
           order: old?.order ?? this.rt.drawings.size,
@@ -770,6 +771,19 @@ export class ScriptSystem {
       }
       case 'close_menu':
         this.rt.kit.closeMenu(e);
+        break;
+      case 'set_game': {
+        const name = s.var.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        const v = this.eval(s.value, ctx);
+        if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') this.rt.game.set(name, v);
+        else this.report(e, ctx.inst, `set_game: "${name}" can only be a number, text or true/false`);
+        break;
+      }
+      case 'visit_level':
+        this.rt.visitLevel(s.level.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), e);
+        break;
+      case 'return_level':
+        this.rt.returnRequest = { result: show(this.eval(s.result, ctx)) };
         break;
       case 'kit_style': {
         const st = this.rt.kit.style;
@@ -974,6 +988,8 @@ export class ScriptSystem {
         return this.rt.screen.h;
       case 'level_flipping':
         return this.rt.flip !== null;
+      case 'visit_result':
+        return this.rt.visitResult;
       case 'menu_choice':
         return this.rt.kit.choice;
       case 'menu_choice_number':
@@ -990,6 +1006,8 @@ export class ScriptSystem {
       }
       case 'turn_team':
         return this.rt.kit.team()?.tag ?? '';
+      case 'turns_over':
+        return this.rt.kit.turns?.over ?? false;
       case 'turn_number':
         return this.rt.kit.turns?.number ?? 0;
       case 'my_turn':
@@ -1246,6 +1264,15 @@ export class ScriptSystem {
         return this.rt.ladderHere(self) !== null;
       case 'ladder_x':
         return this.rt.ladderHere(self)?.x ?? 0;
+      case 'game_value': {
+        const got = this.rt.game.get(show(v[0]));
+        return got === undefined ? v[1] : got;
+      }
+      case 'nth': {
+        const tag = show(v[0]);
+        const list = this.rt.entities.filter((o) => o.alive && !o.projectile && o.tags.includes(tag)).sort((a, b) => a.y - b.y || a.x - b.x);
+        return list[Math.round(n(1)) - 1] ?? null;
+      }
       case 'highlighted':
         return this.rt.kit.highlighted(show(v[0]), n(1), n(2));
       case 'steps_to':

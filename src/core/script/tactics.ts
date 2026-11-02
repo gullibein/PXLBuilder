@@ -81,7 +81,7 @@ export const TACTICS_UNIT_SCRIPT = {
     on('arrived', 'moving', [set('moved', '1'), go('menu')]),
     on('cursor_chosen', 'pick_target', [
       when("highlighted('attack', cursor_x, cursor_y) and other != null and has_tag(other, foes)", [
-        { do: 'damage', target: 'other', amount: 'power' },
+        { do: 'set_health', target: 'other', value: 'other.health - power' },
         { do: 'popup', text: '-{power}', color: '{damage_color}', on: 'other' },
         go('idle'),
         { do: 'done' },
@@ -123,7 +123,7 @@ export const TACTICS_ENEMY_SCRIPT = {
       state: 'striking',
       if: 'state_time >= pause',
       do: [
-        when(`nearest(foes) != null and ${apart('nearest(foes)')} <= reach`, [{ do: 'damage', target: 'nearest(foes)', amount: 'power' }, { do: 'popup', text: '-{power}', color: '{damage_color}', on: 'nearest(foes)' }]),
+        when(`nearest(foes) != null and ${apart('nearest(foes)')} <= reach`, [{ do: 'set_health', target: 'nearest(foes)', value: 'nearest(foes).health - power' }, { do: 'popup', text: '-{power}', color: '{damage_color}', on: 'nearest(foes)' }]),
         go('idle'),
         { do: 'done' },
       ],

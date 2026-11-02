@@ -29,6 +29,8 @@ interface Hud {
   canShoot: boolean;
   /** The player walks in every direction (top-down): no jumping. */
   topDown: boolean;
+  /** Played with menus and the grid cursor (the turn-based kit): the keys choose. */
+  choosing: boolean;
   /** "Level complete!" while moving on, or "You finished the game!" after the last level. */
   banner: string | null;
 }
@@ -70,10 +72,12 @@ export function isTouchScreen(): boolean {
  * drawing), or null for a plain ♥ (no Heart object, or one without a picture).
  */
 /** What the keys do, as the game has them ("Arrows move · Space jumps · E uses…", or its own keys). */
-export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean): string {
+export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean, choosing = false): string {
   const own = project.settings.controls;
   const keys = controlsOf(own);
   const first = (a: keyof typeof keys) => keyLabel(keys[a][0]);
+  // Menus and the grid cursor: the arrows choose, the action key picks, the menu key goes back.
+  if (choosing) return `${!own?.up && !own?.down ? 'Arrows' : `${first('up')} ${first('down')}`} choose · ${first('interact')} or ${first('jump')} picks · ${first('menu')} back`;
   // Moving: the engine's arrows, or the game's own four keys.
   const move = !own?.left && !own?.right && !own?.up && !own?.down ? 'Arrows' : topDown ? [first('up'), first('left'), first('down'), first('right')].join('') : `${first('left')} ${first('right')}`;
   const parts = [`${move} move`];
@@ -96,7 +100,7 @@ export function PlayView(props: PlayViewProps) {
   const heart = useMemo(() => heartPicture(props.project), [props.project]);
   // The game's controls, for the on-screen buttons.
   const inputRef = useRef<InputState | null>(null);
-  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null });
+  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, choosing: false, banner: null });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -130,6 +134,10 @@ export function PlayView(props: PlayViewProps) {
     playMusic(scene.music);
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
     let runtime = new Runtime(project, scene.id, componentRegistry);
+    // The game's own variables (set_game), kept across levels; and the levels left for a visit (visit_level), each
+    // kept as it was to come back to.
+    let game = runtime.game;
+    let visits: { scene: typeof scene; runtime: Runtime; startCamera: { x: number; y: number } }[] = [];
     // What happens is recorded for the Debug tab and the AI ("why did the player die?").
     let recorder = new PlayRecorder(runtime);
     let hasSwitches = false;
@@ -142,7 +150,7 @@ export function PlayView(props: PlayViewProps) {
     };
     look();
     // What the HUD shows when play starts (the first frame then shows the game's own: switches, top-down…).
-    let shown: Hud = { health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, banner: null };
+    let shown: Hud = { health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, choosing: false, banner: null };
     /** The game is finished: the last level was won (play stops, the banner stays). */
     let finished = false;
     const input = new InputState();
@@ -202,11 +210,14 @@ export function PlayView(props: PlayViewProps) {
     // Where the camera starts: a placed background is exactly where it was put then.
     let startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
     /** On to another level (the next one, or the first again): sound and music stay as the game set them. */
-    const enterLevel = (next: typeof scene, musicFromStart: boolean) => {
+    const enterLevel = (next: typeof scene, musicFromStart: boolean, visiting = false) => {
       const { soundOn, musicOn } = runtime;
       recorder.stop();
+      if (visiting) visits.push({ scene, runtime, startCamera });
+      else visits = [];
       scene = next;
       runtime = new Runtime(project, scene.id, componentRegistry);
+      runtime.game = game;
       runtime.soundOn = soundOn;
       runtime.musicOn = musicOn;
       playMusic(scene.music, musicFromStart);
@@ -270,10 +281,44 @@ export function PlayView(props: PlayViewProps) {
           banner = null;
         } else if (!nextScene) finished = true;
       }
-      // A script started the whole game again: its first level, its music from the start.
+      // A script started the whole game again: its first level, its music from the start, its variables anew.
       if (runtime.restartGameRequested) {
+        game = new Map();
         enterLevel(project.scenes.find((s) => s.id === project.startSceneId) ?? project.scenes[0], true);
         finished = false;
+      }
+      // A visit to another level (a battle, a house's inside), and back to the one left, as it was.
+      if (runtime.visitRequest) {
+        const want = runtime.visitRequest.level.trim().toLowerCase();
+        const target = project.scenes.find((s) => s.id === runtime.visitRequest!.level || s.name.trim().toLowerCase() === want);
+        if (target) {
+          input.releaseAll();
+          runtime.paused = true;
+          enterLevel(target, false, true);
+        } else {
+          runtime.gameplay.emit('script_error', runtime.visitRequest.by, null, { script: 'visit_level', message: `there is no level "${runtime.visitRequest.level}" (levels: ${project.scenes.map((s) => s.name).join(', ')})` });
+          runtime.visitRequest = null;
+        }
+      }
+      if (runtime.returnRequest) {
+        const result = runtime.returnRequest.result;
+        runtime.returnRequest = null;
+        const back = visits.pop();
+        if (back) {
+          const { soundOn, musicOn } = runtime;
+          input.releaseAll();
+          recorder.stop();
+          scene = back.scene;
+          runtime = back.runtime;
+          runtime.soundOn = soundOn;
+          runtime.musicOn = musicOn;
+          playMusic(scene.music);
+          recorder = new PlayRecorder(runtime);
+          look();
+          measure();
+          startCamera = back.startCamera;
+          runtime.returned(result);
+        }
       }
       canvas.dataset.level = scene.name;
       const ctx = canvas.getContext('2d');
@@ -318,6 +363,7 @@ export function PlayView(props: PlayViewProps) {
         hasSwitches,
         canShoot,
         topDown,
+        choosing: runtime.kit.turns !== null || runtime.kit.capturing(),
         banner,
       };
       if (!sameHud(next, shown)) {
@@ -378,7 +424,7 @@ export function PlayView(props: PlayViewProps) {
         </div>
       )}
       {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} menu={menuKey} />}
-      {props.keyHints !== false && <div className="hud-keys">{keyHints(props.project, hud.topDown, hud.hasSwitches, hud.canShoot, menuKey)} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
+      {props.keyHints !== false && <div className="hud-keys">{keyHints(props.project, hud.topDown, hud.hasSwitches, hud.canShoot, menuKey, hud.choosing)} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
     </div>
   );
 }

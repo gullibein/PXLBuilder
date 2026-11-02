@@ -31,7 +31,7 @@ import { useEditor } from '../store';
 import { parseQuickCommand, QUICK_COMMAND_HELP, type QuickCommand } from '../../core/commands/quickCommands';
 import { runQuickCommand } from '../quickCommands';
 import { removeRelationship } from '../../core/logic/mutations';
-import type { GameType, Id, Project } from '../../core/types';
+import type { GameType, Id, Project, Starter } from '../../core/types';
 import { switchStarter } from '../persistence';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
@@ -119,9 +119,10 @@ export function makesAGame(request: string): boolean {
 }
 
 /** The starters a new game can be made from, for the AI to choose (context.newGame). */
-const STARTERS: { id: GameType; is: string }[] = [
+const STARTERS: { id: Starter; is: string }[] = [
   { id: 'platformer', is: 'seen from the side, with gravity: player that runs, jumps and climbs, ground, platforms, ladders, enemies, spikes, crates, a goal (Mario-like games)' },
   { id: 'topdown', is: 'seen from above, no gravity: player that walks in every direction, floor, walls, doors, wandering enemies, hazards, a goal (Zelda, Rogue, Boulder Dash, mazes, grid and board puzzles)' },
+  { id: 'rpg', is: 'an RPG, seen from above: a map to walk (the Overworld, walls, wandering slimes that start battles) and a Battle level where a party (a knight and a mage) fights monsters in turns with menus (Fight, Magic, Potion, Run); health carries over (Dragon Quest, Final Fantasy, Pokémon-like games)' },
 ];
 
 export interface PromptOptions {
@@ -221,6 +222,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     await fetchCode();
     // A new game the AI would rather build on another starter: made over from that one, and the same request asked
     // again. (It may leave out which starter, there being only two; or only say so in words, building nothing.)
+    let switchedTo: Starter | null = null;
     if (newGame) {
       const other: GameType = starterNow() === 'platformer' ? 'topdown' : 'platformer';
       const wantsOther = (r: AIResponse) =>
@@ -229,17 +231,18 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         const to = response.starter && response.starter !== starterNow() ? response.starter : other;
         trace?.('note', `The AI chose the ${to} starter${response.kind === 'switch_starter' ? '' : ' (in its words)'}; asking again on it`);
         switchStarter(to);
-        stage(`Moved to the ${to === 'topdown' ? 'top-down' : 'platformer'} starter; building and drawing the game`);
+        switchedTo = to;
+        stage(`Moved to the ${to === 'topdown' ? 'top-down' : to === 'rpg' ? 'RPG' : 'platformer'} starter; building and drawing the game`);
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
-        body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
+        body.context.newGame = { current: to, starters: STARTERS, sprites };
         response = await provider.respond(body, signal, trace);
         await fetchCode();
         // Still nothing built (or another switch): once more, plainly.
         if (response.kind === 'switch_starter' || (!response.operations.length && response.kind !== 'need_code')) {
           trace?.('retry', 'Nothing built on the new starter: asked once more, plainly');
           stage('Nothing was built yet: asking once more');
-          response = await provider.respond({ ...body, request: `${request}\n\n[The game is now on the ${starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
+          response = await provider.respond({ ...body, request: `${request}\n\n[The game is now on the ${switchedTo ?? starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
         }
       }
       if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };

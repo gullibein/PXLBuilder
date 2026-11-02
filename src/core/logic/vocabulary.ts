@@ -35,6 +35,7 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'menu_cancelled', description: 'Esc was pressed in the menu this entity opened.', subject: 'who opened the menu', other: null, phrase: "{subject}'s menu is cancelled" },
   { type: 'cursor_chosen', description: "A grid square was chosen with this entity's cursor (cursor_x, cursor_y; other: the unit on it, or null).", subject: 'who showed the cursor', other: 'what is on the square', phrase: '{subject} picks a square' },
   { type: 'cursor_cancelled', description: "Esc was pressed with this entity's cursor up.", subject: 'who showed the cursor', other: null, phrase: "{subject}'s cursor is cancelled" },
+  { type: 'level_returned', description: 'The game came back from a visit to another level (visit_level / return_level); visit_result says how it went.', subject: 'who asked for the visit', other: null, phrase: '{subject} is back from another level' },
   { type: 'arrived', description: 'It finished walking a path (walk_to).', subject: 'who walked', other: null, phrase: '{subject} arrives' },
   { type: 'stomped', description: 'Something is stomped (jumped on from above): announced by its Stomp script.', subject: 'what was stomped', other: 'who jumped on it', phrase: '{other} stomps on {subject}' },
   { type: 'switch_activated', description: 'A switch is used (touched, or E pressed next to it, depending on the switch). It flips between on and off.', subject: 'the switch', other: 'who used it', phrase: '{other} uses {subject}' },

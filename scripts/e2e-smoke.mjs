@@ -3394,6 +3394,26 @@ try {
   await page.keyboard.press('Escape');
   await page.getByTestId('undo').click();
   await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, 'Undo brings back the game from before');
+  {
+    // The RPG starter: a map with slimes, and a battle level played in turns with menus.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await page.getByTestId('game-rpg').click();
+    await check(async () => Number(await canvas.getAttribute('data-entities')) > 40, 'New project → RPG: a map walled round, with the hero and slimes');
+    await page.getByTestId('scene-selector').click();
+    const levels = page.getByTestId('scene-menu');
+    await check(async () => (await levels.innerText()).includes('Overworld') && (await levels.innerText()).includes('Battle'), '(and a Battle level)');
+    await page.screenshot({ path: `${OUT}/00d-rpg-map.png` });
+    await levels.getByRole('menuitem', { name: 'Battle' }).click();
+    await page.getByTestId('play').click();
+    const pc = page.getByTestId('play-canvas');
+    await check(async () => ((await pc.getAttribute('data-drawings')) ?? '').includes('kitmf'), 'played, the battle opens the first hero\'s menu (Fight, Magic, Potion, Run)');
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/00e-rpg-battle.png` });
+    await page.getByTestId('play').click();
+    await page.getByTestId('undo').click();
+    await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
+  }
   // (The AI is answered by the stand-in again for this.)
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -3427,7 +3447,7 @@ try {
   await page.keyboard.press('Escape');
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
-    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 2, 'the starters were described with the first request (one more only because it switched)');
+    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 3, 'the starters were described with the first request (one more only because it switched)');
   }
   for (const variant of ['starter unnamed test', 'starter in words test']) {
     // A new game the AI wants on the other starter, without naming it (or only in words): switched, and built.

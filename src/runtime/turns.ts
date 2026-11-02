@@ -122,7 +122,7 @@ export class TurnKit {
   style: KitStyle = { ...DEFAULT_KIT_STYLE };
   /** "HERO TURN" across the screen for a moment when a team's turn starts. */
   banner: { text: string; t: number } | null = null;
-  turns: { teams: Team[]; index: number; number: number; acting: RuntimeEntity | null; actingSince: number; acted: Set<RuntimeEntity> } | null = null;
+  turns: { teams: Team[]; index: number; number: number; acting: RuntimeEntity | null; actingSince: number; acted: Set<RuntimeEntity>; over: boolean } | null = null;
 
   constructor(private readonly host: KitHost) {}
 
@@ -291,7 +291,7 @@ export class TurnKit {
     if (this.turns) return;
     const teams = tags.filter((t) => t.trim()).map((tag) => ({ tag, pick: pick.includes(tag) }));
     if (!teams.length) return;
-    this.turns = { teams, index: -1, number: 0, acting: null, actingSince: 0, acted: new Set() };
+    this.turns = { teams, index: -1, number: 0, acting: null, actingSince: 0, acted: new Set(), over: false };
     this.nextTeam();
   }
 
@@ -307,7 +307,14 @@ export class TurnKit {
   /** The next team's turn (skipping teams with no one left). */
   nextTeam(): void {
     const t = this.turns;
-    if (!t) return;
+    if (!t || t.over) return;
+    // Only one side has anyone left: the fight is over (no more goes; scripts see turns_over and say who won).
+    if (t.teams.length > 1 && t.teams.filter((team) => this.unitsOf(team.tag).length).length <= 1) {
+      t.over = true;
+      t.acting = null;
+      if (this.cursor?.owner === null) this.cursor = null;
+      return;
+    }
     for (let tries = 0; tries < t.teams.length; tries++) {
       t.index = (t.index + 1) % t.teams.length;
       if (t.index === 0) t.number++;
@@ -418,7 +425,7 @@ export class TurnKit {
     }
     // A team with no unit left in the middle of its turn: on to the next.
     const team = this.team();
-    if (t && team && !t.acting && !this.unitsOf(team.tag).some((e) => !t.acted.has(e))) this.nextTeam();
+    if (t && team && !t.over && !t.acting && !this.unitsOf(team.tag).some((e) => !t.acted.has(e))) this.nextTeam();
     this.popups = this.popups.filter((p) => this.host.time - p.t < this.style.popupSeconds);
     this.draw();
   }

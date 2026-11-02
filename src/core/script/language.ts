@@ -123,6 +123,9 @@ export type Stmt =
   | { do: 'flip_level'; way: 'upside_down' | 'left_right'; at: string | null; seconds: string; wave: string }
   | { do: 'menu'; items: string[]; title: string | null; cancel: boolean; at: Exclude<DrawAnchor, 'world'> }
   | { do: 'kit_style'; menu_color?: string | null; menu_border?: string | null; menu_text?: string | null; menu_title?: string | null; menu_greyed?: string | null; menu_selected?: string | null; menu_size?: string | null; pointer?: string | null; pointer_color?: string | null; cursor_color?: string | null; cursor_style?: string | null; highlight_alpha?: string | null; popup_size?: string | null; popup_rise?: string | null; popup_seconds?: string | null; popup_style?: string | null; banner?: string | null; banner_seconds?: string | null; banner_color?: string | null; banner_size?: string | null }
+  | { do: 'set_game'; var: string; value: string }
+  | { do: 'visit_level'; level: string }
+  | { do: 'return_level'; result: string }
   | { do: 'close_menu' }
   | { do: 'cursor'; show: string; x: string | null; y: string | null }
   | { do: 'highlight'; id: string; kind: 'reach' | 'range'; from: string | null; steps: string; min: string; color: string }
@@ -187,6 +190,7 @@ export const BUILTIN_NAMES: Record<string, string> = {
   view_h: 'how tall the camera\'s view is, in level px (its top edge is view_y - view_h / 2)',
   pi: '3.14159…',
   level_flipping: 'true while a level flip (flip_level) plays',
+  visit_result: 'how the last visit to another level went (return_level\'s result: "won", "fled"…); "" before any',
   menu_choice: 'the text of the item last chosen in a menu (in a "menu_chosen" handler: what was chosen)',
   menu_choice_number: 'which item was last chosen in a menu: 1 for the first',
   menu_open: 'true while a menu is up',
@@ -194,6 +198,7 @@ export const BUILTIN_NAMES: Record<string, string> = {
   cursor_y: 'the middle y of the grid square the cursor is on',
   cursor_thing: 'the unit (something with Health) on the cursor\'s square, else anything there, else null',
   turn_team: 'the tag of the team whose turn it is ("" before start_turns)',
+  turns_over: 'true once only one team (start_turns) has anyone left: no more goes; who is left won',
   turn_number: 'which round it is (1 = the first; a round is every team\'s turn once)',
   my_turn: 'true while it is this unit\'s go (from unit_turn until done)',
   turn_done: 'true when this unit has had its go this turn',
@@ -308,6 +313,8 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   overlaps: { args: 'e', min: 1, max: 1, doc: 'self overlaps e right now' },
   ladder_here: { args: '', min: 0, max: 0, doc: 'there is a ladder it can climb where it is (at least half of it in the ladder\'s width)' },
   ladder_x: { args: '', min: 0, max: 0, doc: 'the middle x of the ladder it is at (0 when there is none)' },
+  game_value: { args: 'name, default', min: 2, max: 2, doc: 'one of the game\'s own variables (set_game), or default when it was never set: game_value("gold", 0)' },
+  nth: { args: 'tag, n', min: 2, max: 2, doc: 'the nth living entity with the tag (1 = the first), top row first, left to right; null when there are fewer: target menus ("{nth(\'monster\', 1).name}")' },
   highlighted: { args: 'id, x, y', min: 3, max: 3, doc: 'the grid square at x, y is in the highlight with that id (highlight)' },
   steps_to: { args: 'x, y', min: 2, max: 2, doc: 'how many grid steps it takes it to walk to that square, around walls and units (-1: it can\'t get there)' },
   grid_cell: { args: 'v', min: 1, max: 1, doc: 'the middle of the grid square that x (or y) v is in: grid_cell(self.x)' },
@@ -447,6 +454,18 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'a menu box on the screen (one at a time; this entity owns it): up/down pick, X, Space or E choose, Esc goes back when cancel is true. Then its "menu_chosen" event handlers run (menu_choice: the item\'s text, menu_choice_number: which), or "menu_cancelled". An item starting with "-" is shown greyed and can\'t be chosen (done already). title: a line (or lines, \\n) above the items: also a talk box or question ("Join us?" with Yes / No). {expression} in items and title shows a value. The arrow and action keys only work the menu while it is up',
   },
   close_menu: { example: '{"do":"close_menu"}', doc: 'takes its menu away' },
+  set_game: {
+    example: '{"do":"set_game","var":"{self.name}_hp","value":"self.health"}',
+    doc: 'sets one of the GAME\'s own variables, kept across levels and visits for the whole game (the party\'s health, gold, potions, which bosses are beaten); read with game_value(name, default). {expression} in the name: one per hero',
+  },
+  visit_level: {
+    example: '{"do":"visit_level","level":"Battle"}',
+    doc: 'takes the game to another level (by name) and keeps this one exactly as it is to come back to: a battle screen, a house\'s inside, a shop. There, return_level comes back; then this entity\'s "level_returned" handlers run and visit_result says how it went',
+  },
+  return_level: {
+    example: '{"do":"return_level","result":"\'won\'"}',
+    doc: 'back to the level the game came from (visit_level), as it was; result (an expression: "\'won\'", "\'fled\'") is its visit_result there. Save what must carry over first (set_game). Played on its own (no visit), nothing happens',
+  },
   kit_style: {
     example: '{"do":"kit_style","menu_color":"#3a2410","menu_border":"#e0b060","menu_text":"#fff2d0","menu_size":"16","pointer":"*","cursor_style":"corners","popup_style":"pop","banner":"Round {round}: {team}"}',
     doc: 'how the turn-based kit looks, for the whole game (only the ones given change; usually once, at the start, from settings so the user can change them in Details): menu_color (the box), menu_border, menu_text, menu_title (title lines), menu_greyed (items that can\'t be chosen), menu_selected (a bar behind the item the pointer is at; "" none), menu_size (text px), pointer (the text before the item at hand: ">", "*", "->", "" none), pointer_color; cursor_color, cursor_style "square" (outline), "corners" (four brackets) or "fill"; highlight_alpha (0-1, how strong the highlighted squares are); popup_size, popup_rise (px), popup_seconds, popup_style "rise", "pop" (jumps up and settles) or "fall"; banner (the text when a team\'s turn starts: {team} and {round} in it; "" for no banner), banner_seconds, banner_color, banner_size. Colors are "#rrggbb" text (or "{a_variable}"), numbers are expressions. The banner\'s {team} and {round} are the kit\'s own',
@@ -622,8 +641,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_music'), enabled: expr }),
     z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
-    z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(40)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
+    z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(120)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
     z.object({ do: z.literal('kit_style'), menu_color: z.string().max(30).nullable().optional(), menu_border: z.string().max(30).nullable().optional(), menu_text: z.string().max(30).nullable().optional(), menu_title: z.string().max(30).nullable().optional(), menu_greyed: z.string().max(30).nullable().optional(), menu_selected: z.string().max(30).nullable().optional(), menu_size: expr.nullable().optional(), pointer: z.string().max(60).nullable().optional(), pointer_color: z.string().max(30).nullable().optional(), cursor_color: z.string().max(30).nullable().optional(), cursor_style: z.string().max(30).nullable().optional(), highlight_alpha: expr.nullable().optional(), popup_size: expr.nullable().optional(), popup_rise: expr.nullable().optional(), popup_seconds: expr.nullable().optional(), popup_style: z.string().max(30).nullable().optional(), banner: z.string().max(60).nullable().optional(), banner_seconds: expr.nullable().optional(), banner_color: z.string().max(30).nullable().optional(), banner_size: expr.nullable().optional() }),
+    z.object({ do: z.literal('set_game'), var: z.string().min(1).max(60), value: expr }),
+    z.object({ do: z.literal('visit_level'), level: z.string().min(1).max(80) }),
+    z.object({ do: z.literal('return_level'), result: expr.default("'done'") }),
     z.object({ do: z.literal('close_menu') }),
     z.object({ do: z.literal('cursor'), show: expr.default('true'), x: nexpr, y: nexpr }),
     z.object({ do: z.literal('highlight'), id: z.string().min(1), kind: z.enum(['reach', 'range']).default('reach'), from: nexpr, steps: expr.default('4'), min: expr.default('1'), color: z.string().default('#4aa3ff') }),
@@ -812,7 +834,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'repeat':
       return [s.times];
     case 'draw':
-      return [...messageParts(s.id), s.x, s.y, ...[s.w, s.h, s.size, s.alpha].filter((v): v is string => v !== null), ...(s.text ? messageParts(s.text) : [])];
+      return [...messageParts(s.id), s.x, s.y, ...[s.w, s.h, s.size, s.alpha].filter((v): v is string => v !== null), ...(s.text ? messageParts(s.text) : []), ...messageParts(s.color)];
     case 'erase':
       return s.id ? messageParts(s.id) : [];
     case 'builtin_display':
@@ -830,6 +852,12 @@ export function exprSlots(s: Stmt): string[] {
       return [...s.items.flatMap(messageParts), ...(s.title ? messageParts(s.title) : [])];
     case 'start_turns':
       return [...s.teams, ...s.pick].flatMap(messageParts);
+    case 'set_game':
+      return [...messageParts(s.var), s.value];
+    case 'visit_level':
+      return messageParts(s.level);
+    case 'return_level':
+      return [s.result];
     case 'kit_style':
       return [s.menu_size, s.highlight_alpha, s.popup_size, s.popup_rise, s.popup_seconds, s.banner_seconds, s.banner_size].filter((v): v is string => typeof v === 'string').concat(
         // ({value} in colors and texts.)
