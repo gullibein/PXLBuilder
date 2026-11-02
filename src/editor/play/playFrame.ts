@@ -4,6 +4,7 @@
  * all on the game's pixel grid. Shared by Play and by the game's picture
  * for PXLGameSite (taken the same way, so it looks exactly like the game).
  */
+import { drawFog } from '../../runtime/fog';
 import type { Project, Scene } from '../../core/types';
 import { drawBuiltinHud, type BuiltinHud } from '../../render/hud';
 import { applyCamera, drawBackground, drawEntities, pixelPerfectZoom, type ImageLookup } from '../../render/renderer';
@@ -63,6 +64,8 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   // (Animations hold still too once the level is won.)
   drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time, worldPerArt);
   drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time, grid);
+  // Fog of war over the level (under the screen's own drawings: the HUD stays readable).
+  if (runtime.fog) drawFog(ctx, runtime.fog);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);
   drawBuiltinHud(ctx, hudOf(runtime, banner), { width: canvas.width, height: canvas.height, grid, levelScale: zoomNow * dpr, cssPx: dpr }, f.heartLook, images, runtime.time);

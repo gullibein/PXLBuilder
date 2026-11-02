@@ -57,6 +57,18 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'FogOfWar',
+    label: 'Fog Of War',
+    description: "On the player: only what it can see is shown (the squares within its sight that no wall hides); what it has seen before stays dim, the rest is dark, and creatures out of its sight aren't shown at all. For dungeons and roguelikes (seen from above).",
+    category: 'Rendering',
+    fields: {
+      radius: { kind: 'number', default: 6, min: 1, max: 40, step: 1, description: 'How far it sees (grid squares)' },
+      remember: { kind: 'boolean', default: true, description: 'Squares seen before stay visible, dim (off: only what it sees now)' },
+      dim: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.05, description: 'How dark the squares seen before are (0-1)' },
+      color: { kind: 'color', default: '#000000', description: 'The color of the dark' },
+    },
+  },
+  {
     type: 'Trail',
     label: 'Trail',
     description: 'A fading tail behind it as it moves (a shot, a comet, a fast enemy, a dash): where it was in the last moments, narrowing and fading out. In play.',

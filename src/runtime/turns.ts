@@ -212,6 +212,12 @@ export class TurnKit {
 
   private occupied(k: string, but: RuntimeEntity): boolean {
     for (const e of this.host.entities) if (e !== but && e.alive && e.health && !e.projectile && key(cellOf(e.x), cellOf(e.y)) === k) return true;
+    // (Where another one is walking to is taken too: two never step onto the same square.)
+    for (const [who, w] of this.walks) {
+      if (who === but || !who.alive) continue;
+      const to = w.path.at(-1) ?? (who.moveTarget ? { x: who.moveTarget.x, y: who.moveTarget.y } : null);
+      if (to && key(cellOf(to.x), cellOf(to.y)) === k) return true;
+    }
     return false;
   }
 

@@ -7,6 +7,7 @@ import { createTopDownStarterAssets } from '../../core/model/topDownStarters';
 import type { Starter } from '../../core/types';
 import { createPixelArtAsset } from '../../core/model/factory';
 import { RPG_ARTS } from '../../core/model/rpgStarter';
+import { ROGUELIKE_ARTS } from '../../core/model/roguelikeStarter';
 import { startJob } from '../ai/jobs';
 import { startNewGame } from '../persistence';
 import { useEditor } from '../store';
@@ -133,6 +134,11 @@ export function GameChooser() {
             <span className="style-name">RPG</span>
             <span className="style-blurb">A map to explore, and battles in turns: a party with Fight, Magic, Potion and Run against monsters (like Dragon Quest).</span>
           </button>
+          <button className="style-card game-card" data-testid="game-roguelike" onClick={() => pick('roguelike')}>
+            <RoguelikePreview />
+            <span className="style-name">Roguelike</span>
+            <span className="style-blurb">A new dungeon every play, deeper and harder floor by floor, step by step with fog of war; one life per run (like Rogue).</span>
+          </button>
         </div>
         <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size">
           <span>Sprite size</span>
@@ -213,4 +219,23 @@ function RpgPreview() {
       ]}
     />
   );
+}
+
+function RoguelikePreview() {
+  const a = useMemo(() => {
+    const t = createTopDownStarterAssets();
+    const p = (n: keyof typeof ROGUELIKE_ARTS) => createPixelArtAsset(n, ROGUELIKE_ARTS[n]).data;
+    return { wall: t.wall.data, floor: t.floor.data, player: t.player.data, rat: p('rat'), skeleton: p('skeleton'), gold: p('gold'), stairs: p('stairs') };
+  }, []);
+  const items: { src?: string; color?: string; x: number; y: number; w?: number; h?: number }[] = [];
+  const room = (x0: number, y0: number, w: number, h: number) => {
+    for (let x = x0; x < x0 + w; x++) for (let y = y0; y < y0 + h; y++) items.push({ src: x === x0 || y === y0 || x === x0 + w - 1 || y === y0 + h - 1 ? a.wall : a.floor, x, y });
+  };
+  room(0, 0, 6, 6);
+  room(9, 1, 7, 5);
+  for (let x = 5; x <= 9; x++) items.push({ src: a.floor, x, y: 3 });
+  items.push({ src: a.player, x: 2, y: 2 }, { src: a.rat, x: 4, y: 4 }, { src: a.gold, x: 7, y: 3 }, { src: a.skeleton, x: 11, y: 2 }, { src: a.stairs, x: 13, y: 4 });
+  // The fog: the far room only half seen.
+  items.push({ color: 'rgba(0,0,0,0.55)', x: 12, y: 1, w: 4, h: 5 });
+  return <Tiles background="#0d0b12" items={items} />;
 }

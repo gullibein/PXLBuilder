@@ -3415,6 +3415,21 @@ try {
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   {
+    // The Roguelike starter: a random level, its recipe and the hero with fog of war.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await page.getByTestId('game-roguelike').click();
+    await check(async () => (await canvas.getAttribute('data-entities')) === '1', 'New project → Roguelike: only the hero is placed; the dungeon is the level\'s recipe');
+    await page.getByTestId('play').click();
+    const rpc = page.getByTestId('play-canvas');
+    await check(async () => ((await rpc.getAttribute('data-drawings')) ?? '').includes('run'), 'played, a dungeon is built and the run shows (floor, health, gold)');
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(300);
+    await page.keyboard.up('ArrowRight');
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/00g-roguelike.png` });
+    await page.getByTestId('play').click();
+    await page.getByTestId('undo').click();
     // A random level: built anew each play; the editor shows an example, faint.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
@@ -3475,7 +3490,7 @@ try {
   await page.keyboard.press('Escape');
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
-    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 3, 'the starters were described with the first request (one more only because it switched)');
+    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 4, 'the starters were described with the first request (one more only because it switched)');
   }
   for (const variant of ['starter unnamed test', 'starter in words test']) {
     // A new game the AI wants on the other starter, without naming it (or only in words): switched, and built.

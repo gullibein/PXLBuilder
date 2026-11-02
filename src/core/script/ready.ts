@@ -7,6 +7,7 @@
 import { ModelError } from '../model/mutations';
 import { SWOOPER_SCRIPT } from './swooper';
 import { TACTICS_ENEMY_SCRIPT, TACTICS_UNIT_SCRIPT } from './tactics';
+import { GOLD_PICKUP_SCRIPT, HEALING_PICKUP_SCRIPT, ROGUELIKE_HERO_SCRIPT, ROGUELIKE_MONSTER_SCRIPT, STAIRS_DOWN_SCRIPT } from './roguelike';
 import { RPG_ENCOUNTER_SCRIPT, RPG_HERO_SCRIPT, RPG_MONSTER_SCRIPT, RPG_SHOP_SCRIPT } from './rpg';
 
 type Script = { name: string; vars: { name: string; value: unknown; setting?: boolean }[] } & Record<string, unknown>;
@@ -16,6 +17,11 @@ export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT a
   'RPG hero': RPG_HERO_SCRIPT as Script,
   'RPG monster': RPG_MONSTER_SCRIPT as Script,
   'RPG shop': RPG_SHOP_SCRIPT as Script,
+  'Roguelike hero': ROGUELIKE_HERO_SCRIPT as Script,
+  'Roguelike monster': ROGUELIKE_MONSTER_SCRIPT as Script,
+  'Stairs down': STAIRS_DOWN_SCRIPT as Script,
+  'Gold pickup': GOLD_PICKUP_SCRIPT as Script,
+  'Healing pickup': HEALING_PICKUP_SCRIPT as Script,
 };
 
 /** The script a set_script stands for: a ready-made one by name (its settings given), or the script as written. */

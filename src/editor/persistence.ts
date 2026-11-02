@@ -8,6 +8,7 @@ import { gameFromText, projectFromBundle, projectToBundle, type LoadResult } fro
 import { updateNotes } from '../core/serialization/migrations';
 import type { Project, Starter } from '../core/types';
 import { createRpgProject } from '../core/model/rpgStarter';
+import { createRoguelikeProject } from '../core/model/roguelikeStarter';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 import { withoutUnused } from '../core/model/unused';
@@ -123,7 +124,7 @@ async function writeAutosave(project: Project): Promise<void> {
  */
 export function startNewGame(gameType: Starter, first = false, spriteResolution: SpriteResolution = DEFAULT_SPRITE_RESOLUTION): void {
   const project = starterProject(gameType, spriteResolution);
-  const kind = gameType === 'rpg' ? 'RPG' : gameType === 'topdown' ? 'top-down game' : 'platformer';
+  const kind = gameType === 'rpg' ? 'RPG' : gameType === 'roguelike' ? 'roguelike' : gameType === 'topdown' ? 'top-down game' : 'platformer';
   if (first) useEditor.getState().loadProject(project);
   else useEditor.getState().replaceProject('New project', project);
   useEditor.getState().logMessage('info', `Started a new ${kind}`);
@@ -131,7 +132,7 @@ export function startNewGame(gameType: Starter, first = false, spriteResolution:
 
 /** A new game from a starter, at a sprite size. */
 function starterProject(gameType: Starter, spriteResolution: SpriteResolution): Project {
-  const base = gameType === 'rpg' ? createRpgProject(componentRegistry, 'Untitled Game') : createProject(componentRegistry, 'Untitled Game', gameType);
+  const base = gameType === 'rpg' ? createRpgProject(componentRegistry, 'Untitled Game') : gameType === 'roguelike' ? createRoguelikeProject(componentRegistry, 'Untitled Game') : createProject(componentRegistry, 'Untitled Game', gameType);
   return produce(base, (p) => {
     if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
   });
@@ -151,7 +152,7 @@ export function switchStarter(gameType: Starter): void {
     p.scenes[0].id = sceneId;
     p.startSceneId = sceneId;
   });
-  const label = gameType === 'rpg' ? 'RPG' : gameType === 'topdown' ? 'top-down' : 'platformer';
+  const label = gameType === 'rpg' ? 'RPG' : gameType === 'roguelike' ? 'roguelike' : gameType === 'topdown' ? 'top-down' : 'platformer';
   useEditor.getState().replaceProject(`${label[0].toUpperCase()}${label.slice(1)} starter`, project);
   useEditor.getState().logMessage('info', `Switched the new game to the ${label} starter`);
 }

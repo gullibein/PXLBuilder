@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { Fog } from './fog';
 import { newSeed, withDungeon } from '../core/model/dungeon';
 import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
@@ -495,6 +496,10 @@ export class Runtime {
   scene: Scene;
   /** The level as made in the editor (a random one: its recipe and what is placed by hand). */
   readonly baseScene: Scene;
+  /** Fog of war (a Fog Of War component on the player): what it sees and has seen. */
+  fog: Fog | null = null;
+  private fogDirty = true;
+  private solidCellCache: Set<string> | null = null;
   /** A random level: the seed it was built from this time (the Debug tab shows it, to play the same again). */
   dungeonSeed: number | null = null;
   /** What scripts drew on the screen, by id (kept until erased or the level restarts). */
@@ -591,6 +596,11 @@ export class Runtime {
       this.scene = withDungeon(this.project, this.baseScene, this.registry, this.dungeonSeed, floor);
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
+    // Fog of war, seen by whoever has it (the player).
+    const viewer = this.entities.find((e) => e.base.components.FogOfWar);
+    this.fog = viewer ? new Fog(viewer, this.entities, viewer.base.components.FogOfWar) : null;
+    this.fogDirty = true;
+    this.solidCellCache = null;
     // Starts Hidden: out of play until a rule or switch shows it.
     for (const e of this.entities) {
       if (!e.base.components.StartsHidden) continue;
@@ -712,6 +722,7 @@ export class Runtime {
       if (e.collider && e.body !== 'dynamic') this.solidsDirty = true;
     }
     if (this.solidsDirty) {
+      this.fogDirty = true;
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
       this.staticSolids = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none')).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
       this.rebuildLadders();
@@ -806,6 +817,18 @@ export class Runtime {
       e.dying -= dt;
       if (e.dying <= 0) this.respawn(e, 'died');
     }
+    // Fog of war: what the player sees now (again only when it changed square, or something solid changed).
+    if (this.fog) this.fog.update(this.solidCells(), this.fogDirty);
+    this.fogDirty = false;
+  }
+
+  /** The squares something solid stands on (walls, closed doors): what blocks the player's sight. */
+  private solidCells(): Set<string> {
+    if (this.solidCellCache && !this.fogDirty) return this.solidCellCache;
+    const out = new Set<string>();
+    for (const e of this.entities) if (e.alive && this.isSolid(e)) out.add(`${Math.floor(e.x / 32)},${Math.floor(e.y / 32)}`);
+    this.solidCellCache = out;
+    return out;
   }
 
   /** Its collision box after its size, scale or rotation changed. */
@@ -834,6 +857,7 @@ export class Runtime {
 
   markSolidsDirty(): void {
     this.solidsDirty = true;
+    this.fogDirty = true;
   }
 
   /** visit_level: the play view takes the game to that level, keeping this one as it is to come back to. */
@@ -1621,6 +1645,8 @@ export class Runtime {
     const out: RenderEntity[] = [];
     for (const e of this.entities) {
       if (!e.alive && !(e.vanishing > 0)) continue;
+      // In the fog: creatures out of the player's sight are not seen.
+      if (this.fog && e.health && e !== this.fog.viewer && !this.fog.sees(e.x, e.y)) continue;
       const t = e.base.transform;
       const mirrored = e.switch?.on === true || e.facing === -1;
       const moved = e.x !== t.position.x || e.y !== t.position.y;
