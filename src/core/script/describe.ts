@@ -192,6 +192,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`show a menu: ${s.items.map((i) => i.replace(/^-/, '')).join(' / ')}${s.title ? ` ("${s.title}")` : ''}`);
     case 'close_menu':
       return one('close its menu');
+    case 'kit_style':
+      return one('set how menus, the cursor and turn numbers look');
     case 'cursor':
       return one(s.show === 'false' ? 'hide the grid cursor' : 'show the grid cursor');
     case 'highlight':

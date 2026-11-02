@@ -12,11 +12,11 @@ import { Runtime } from './runtime';
 const registry = createBuiltinRegistry();
 
 /** A small board seen from above: a knight (the player's) and a goblin four squares to its right, a wall between rows. */
-function board(): { rt: Runtime; project: Project } {
+function board(look: Record<string, unknown> = {}): { rt: Runtime; project: Project } {
   let project = createProject(registry, 'Tactics', 'topdown');
   const sceneId = project.scenes[0].id;
   project = produce(project, (d) => {
-    const unit = (name: string, tag: string, hp: number, ready: string) => {
+    const unit = (name: string, tag: string, hp: number, ready: string, settings: Record<string, unknown> = {}) => {
       const def = createDefinition(
         name,
         {
@@ -26,13 +26,13 @@ function board(): { rt: Runtime; project: Project } {
         },
         [tag],
       );
-      const checked = checkScript({ ...expandReadyScript({ ready }), id: `scr_${tag}` }, d);
+      const checked = checkScript({ ...expandReadyScript({ ready, settings }), id: `scr_${tag}` }, d);
       if ('error' in checked) throw new Error(checked.error);
       def.scripts = [checked.script];
       m.addDefinition(d, def, registry);
       return def;
     };
-    const knight = unit('Knight', 'hero', 6, 'Tactics unit');
+    const knight = unit('Knight', 'hero', 6, 'Tactics unit', look);
     const goblin = unit('Goblin', 'enemy', 4, 'Tactics enemy');
     // (No player character steering about: the board is played with the cursor.)
     d.scenes[0].entities = [];
@@ -96,7 +96,7 @@ describe('the turn-based kit', () => {
     expect(rt.kit.turns?.number).toBe(2);
   });
 
-  it('the menu has the keys: the arrows move its menu_choice, nothing else; Esc while picking a square goes back to the menu', () => {
+  it('the menu has the keys: the arrows move its choice, nothing else; Esc while picking a square goes back to the menu', () => {
     const { rt } = board();
     step(rt, 0.1);
     tap(rt, 'interact');
@@ -123,5 +123,32 @@ describe('the turn-based kit', () => {
     step(rt, 2);
     expect([goblin.x, goblin.y]).toEqual([112, 80]);
     expect(rt.kit.stepsTo(goblin, 80, 80)).toBe(-1);
+  });
+});
+
+describe('the kit looks the way the game says', () => {
+  it("the Tactics unit's settings set the menu, the cursor, the numbers and the banner; the menu says what they say", () => {
+    const { rt } = board({ menu_color: '#3a2410', menu_border: '#e0b060', menu_size: 18, pointer: '*', cursor_style: 'corners', popup_style: 'pop', banner: 'Round {round}: {team}', move_label: 'March', attack_label: 'Strike', wait_label: 'Rest' });
+    step(rt, 0.1);
+    const st = rt.kit.style;
+    expect([st.menuColor, st.menuBorder, st.menuSize, st.pointer, st.cursorStyle, st.popupStyle]).toEqual(['#3a2410', '#e0b060', 18, '*', 'corners', 'pop']);
+    expect(rt.kit.banner?.text).toBe('Round 1: HERO');
+    tap(rt, 'interact');
+    expect(rt.kit.menu?.items).toEqual(['March', 'Strike', 'Rest']);
+    // The menu box is drawn in its colors, the pointer as given; the cursor as four corners.
+    const drawn = [...rt.drawings.values()];
+    expect(drawn.some((d) => d.color === '#3a2410')).toBe(true);
+    expect(drawn.some((d) => d.text === '*')).toBe(true);
+    tap(rt, 'interact');
+    expect(rt.kit.menu).toBeNull();
+    expect(rt.kit.highlights.get('move')).toBeTruthy();
+    expect([...rt.drawings.keys()].filter((k) => /c\da$/.test(k)).length).toBe(4);
+  });
+
+  it('a style that is not one of the choices is said, and the look stays', () => {
+    const { rt } = board({ cursor_style: 'triangle' });
+    step(rt, 0.1);
+    expect(rt.kit.style.cursorStyle).toBe('square');
+    expect(rt.scripts.errors.some((e) => /cursor_style "triangle"/.test(e.message))).toBe(true);
   });
 });

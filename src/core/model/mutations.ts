@@ -4,6 +4,7 @@
  * validation in one place regardless of who calls it: the inspector today, the
  * command/transaction system and AI operations later.
  */
+import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
 import type { ComponentRegistry } from '../components/registry';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDownStarterAssets } from './topDownStarters';
@@ -180,6 +181,14 @@ export function setCameraFollow(project: Project, sceneId: Id, entityId: Id | nu
     if (e.id === entityId && !has) addEntityComponent(project, sceneId, e.id, 'CameraTarget', registry);
     if (e.id !== entityId && has) removeEntityComponent(project, sceneId, e.id, 'CameraTarget');
   }
+}
+
+/** The game's controls (which keys do what); null or {} puts back the engine's own. */
+export function setControls(project: Project, raw: unknown): void {
+  const read = readControls(raw);
+  if ('error' in read) throw new ModelError(read.error);
+  if (!Object.keys(read.controls).length) delete project.settings.controls;
+  else project.settings.controls = read.controls;
 }
 
 /** The game's resolution: picture pixels the screen shows top to bottom when played (null or 0: as big as the screen). */

@@ -327,3 +327,14 @@
 .se-tool-options { display: grid; gap: 6px; }
 .se-tolerance input[type='range'] { flex: 1; min-width: 0; }
 .se-tolerance-value { min-width: 3.2em; text-align: right; }
+.controls-dialog { width: min(520px, calc(100% - 32px)); }
+.controls-dialog > p { margin: 8px 16px 0; }
+.controls-list { display: grid; gap: 6px; padding: 10px 16px; }
+.controls-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.controls-action { flex: 0 0 170px; font-size: 13px; }
+.controls-keys { display: flex; gap: 6px; flex-wrap: wrap; }
+.controls-key { display: inline-flex; align-items: center; gap: 4px; }
+.controls-remove { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 2px; font-size: 13px; opacity: 0.7; }
+.controls-remove:hover { opacity: 1; }
+.chip-btn.listening { border-color: var(--accent); color: var(--accent); }
+.controls-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px 14px; }

@@ -3,6 +3,7 @@
  * so the keyboard, touch buttons and game controllers all drive the same
  * actions (bindings change in one place).
  */
+import { keyMap } from '../core/model/controls';
 export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
 export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'];
 
@@ -13,23 +14,8 @@ export interface InputView {
   wasReleased(action: Action): boolean;
 }
 
-export const KEY_BINDINGS: Record<string, Action> = {
-  ArrowLeft: 'left',
-  KeyA: 'left',
-  ArrowRight: 'right',
-  KeyD: 'right',
-  ArrowUp: 'up',
-  KeyW: 'up',
-  ArrowDown: 'down',
-  KeyS: 'down',
-  Space: 'jump',
-  KeyZ: 'jump',
-  KeyE: 'interact',
-  KeyX: 'fire',
-  // The game's menu (a pause menu, if the game has one): Escape or P.
-  Escape: 'menu',
-  KeyP: 'menu',
-};
+/** The engine's own keys (a game can have its own: core/model/controls.ts). */
+export const KEY_BINDINGS: Record<string, Action> = keyMap(undefined);
 
 /** Where an action comes from: the keyboard and touch buttons, or a game controller. Held if any source holds it. */
 export type InputSource = 'keys' | 'pad';

@@ -108,6 +108,12 @@ export const operationSchema = z.union([
     components: z.array(z.object({ component: z.string(), propsJson: z.string() })),
   }),
   z.object({
+    op: z.literal('set_controls'),
+    controlsJson: z
+      .string()
+      .describe('The game\'s keys, for the actions to change: JSON {"action": ["key", ...]} with actions left, right, up, down, jump, interact (the action / use / talk / choose key), fire, menu (pause, back); keys by name ("W", "Space", "Up", "Enter", "Esc", "Shift", "1") or browser code ("KeyW"); 1-4 a action, no key for two. Actions left out keep the engine\'s keys; "{}" puts all back'),
+  }),
+  z.object({
     op: z.literal('set_sprite_resolution'),
     resolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).describe('Art pixels per 32 px tile for the built-in objects: 8 (8×8 sprites, chunky), 16, 32 (as they ship) or 64 (detailed)'),
   }),
@@ -730,6 +736,9 @@ export function applyOperations(
         result.createdDefinitionIds.push(def.id);
         break;
       }
+      case 'set_controls':
+        m.setControls(project, parseJson(op.controlsJson, 'Controls'));
+        break;
       case 'set_sprite_resolution':
         m.changeSpriteResolution(project, op.resolution, registry);
         break;

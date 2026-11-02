@@ -272,6 +272,8 @@ export interface ProjectSettings {
    * zoom counts in whole picture pixels on top of it. Missing or 0: as big as the screen (the camera's zoom).
    */
   playPixels?: number;
+  /** Which keys do what (model/controls.ts): the actions named here use these keys instead of the engine's. */
+  controls?: Partial<Record<'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu', string[]>>;
 }
 
 export type GameType = 'platformer' | 'topdown';

@@ -771,6 +771,45 @@ export class ScriptSystem {
       case 'close_menu':
         this.rt.kit.closeMenu(e);
         break;
+      case 'kit_style': {
+        const st = this.rt.kit.style;
+        const fillText = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        if (s.menu_color != null) st.menuColor = fillText(s.menu_color) as never;
+        if (s.menu_border != null) st.menuBorder = fillText(s.menu_border) as never;
+        if (s.menu_text != null) st.menuText = fillText(s.menu_text) as never;
+        if (s.menu_title != null) st.menuTitle = fillText(s.menu_title) as never;
+        if (s.menu_greyed != null) st.menuGreyed = fillText(s.menu_greyed) as never;
+        if (s.menu_selected != null) st.menuSelected = fillText(s.menu_selected) as never;
+        if (s.menu_size != null) st.menuSize = num(this.eval(s.menu_size, ctx)) as never;
+        if (s.pointer != null) st.pointer = fillText(s.pointer) as never;
+        if (s.pointer_color != null) st.pointerColor = fillText(s.pointer_color) as never;
+        if (s.cursor_color != null) st.cursorColor = fillText(s.cursor_color) as never;
+        if (s.cursor_style != null) {
+          const v = fillText(s.cursor_style);
+          if (v === 'square' || v === 'corners' || v === 'fill') st.cursorStyle = v;
+          else this.report(e, ctx.inst, `kit_style: cursor_style "${v}" is not one of square, corners, fill`);
+        }
+        if (s.highlight_alpha != null) st.highlightAlpha = num(this.eval(s.highlight_alpha, ctx)) as never;
+        if (s.popup_size != null) st.popupSize = num(this.eval(s.popup_size, ctx)) as never;
+        if (s.popup_rise != null) st.popupRise = num(this.eval(s.popup_rise, ctx)) as never;
+        if (s.popup_seconds != null) st.popupSeconds = num(this.eval(s.popup_seconds, ctx)) as never;
+        if (s.popup_style != null) {
+          const v = fillText(s.popup_style);
+          if (v === 'rise' || v === 'pop' || v === 'fall') st.popupStyle = v;
+          else this.report(e, ctx.inst, `kit_style: popup_style "${v}" is not one of rise, pop, fall`);
+        }
+        // ({team} and {round} are left for the kit to fill in each turn; other {values} now.)
+        if (s.banner != null) st.banner = s.banner.replace(/\{([^{}]+)\}/g, (all, x: string) => (x.trim() === 'team' || x.trim() === 'round' ? all : show(this.eval(x, ctx))));
+        if (s.banner_seconds != null) st.bannerSeconds = num(this.eval(s.banner_seconds, ctx)) as never;
+        if (s.banner_color != null) st.bannerColor = fillText(s.banner_color) as never;
+        if (s.banner_size != null) st.bannerSize = num(this.eval(s.banner_size, ctx)) as never;
+        // (Kept within sense: a text too small to read or a menu wider than the screen helps nobody.)
+        st.menuSize = Math.min(48, Math.max(6, st.menuSize || 14));
+        st.highlightAlpha = Math.min(1, Math.max(0, st.highlightAlpha));
+        st.popupSeconds = Math.min(5, Math.max(0.1, st.popupSeconds || 0.9));
+        st.bannerSeconds = Math.min(10, Math.max(0, st.bannerSeconds));
+        break;
+      }
       case 'cursor': {
         if (!truthy(this.eval(s.show, ctx))) {
           this.rt.kit.hideCursor(e);
@@ -784,7 +823,7 @@ export class ScriptSystem {
         const from = s.from ? ent(s.from) : e;
         if (!from) break;
         const cells = s.kind === 'reach' ? this.rt.kit.reach(from, n(s.steps)) : this.rt.kit.range(from, n(s.min), n(s.steps));
-        this.rt.kit.highlight(s.id, e, cells, s.color);
+        this.rt.kit.highlight(s.id, e, cells, s.color.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))));
         break;
       }
       case 'clear_highlight':
@@ -814,7 +853,8 @@ export class ScriptSystem {
         break;
       case 'popup': {
         const t = ent(s.on);
-        if (t) this.rt.kit.popup(t, s.text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), s.color);
+        const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
+        if (t) this.rt.kit.popup(t, fill(s.text), fill(s.color));
         break;
       }
       case 'flip_level':

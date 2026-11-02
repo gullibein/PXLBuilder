@@ -55,6 +55,55 @@ interface Team {
   pick: boolean;
 }
 
+/** How the kit looks; kit_style changes any of it. */
+export interface KitStyle {
+  menuColor: string;
+  menuBorder: string;
+  menuText: string;
+  menuTitle: string;
+  menuGreyed: string;
+  menuSize: number;
+  /** A bar behind the item the pointer is at ("" for none). */
+  menuSelected: string;
+  pointer: string;
+  pointerColor: string;
+  cursorColor: string;
+  cursorStyle: 'square' | 'corners' | 'fill';
+  highlightAlpha: number;
+  popupSize: number;
+  popupRise: number;
+  popupSeconds: number;
+  popupStyle: 'rise' | 'pop' | 'fall';
+  /** The turn banner ("{team} TURN"; {team}, {round}); "" for none. */
+  banner: string;
+  bannerSeconds: number;
+  bannerColor: string;
+  bannerSize: number;
+}
+
+export const DEFAULT_KIT_STYLE: KitStyle = {
+  menuColor: '#1b2266',
+  menuBorder: '#e8ecff',
+  menuText: '#ffffff',
+  menuTitle: '#ffd166',
+  menuGreyed: '#7a80a8',
+  menuSize: 14,
+  menuSelected: '',
+  pointer: '>',
+  pointerColor: '#ffffff',
+  cursorColor: '#ffffff',
+  cursorStyle: 'square',
+  highlightAlpha: 0.4,
+  popupSize: 12,
+  popupRise: 20,
+  popupSeconds: 0.9,
+  popupStyle: 'rise',
+  banner: '{team} TURN',
+  bannerSeconds: 1.2,
+  bannerColor: '#ffffff',
+  bannerSize: 28,
+};
+
 const KIT = '\u0000kit';
 const WALK_SPEED = 160;
 /** A unit of a team that plays by itself that hasn't said done after this long: its go is over (and it is said). */
@@ -69,6 +118,8 @@ export class TurnKit {
   readonly highlights = new Map<string, { owner: RuntimeEntity; cells: Set<string>; color: string }>();
   readonly walks = new Map<RuntimeEntity, { path: { x: number; y: number }[]; speed: number }>();
   popups: { x: number; y: number; text: string; color: string; t: number }[] = [];
+  /** How it all looks (kit_style): every part can be changed by a script, so by the user and the AI. */
+  style: KitStyle = { ...DEFAULT_KIT_STYLE };
   /** "HERO TURN" across the screen for a moment when a team's turn starts. */
   banner: { text: string; t: number } | null = null;
   turns: { teams: Team[]; index: number; number: number; acting: RuntimeEntity | null; actingSince: number; acted: Set<RuntimeEntity> } | null = null;
@@ -270,7 +321,7 @@ export class TurnKit {
     t.acted = new Set();
     t.acting = null;
     const team = t.teams[t.index];
-    this.banner = { text: `${team.tag.toUpperCase()} TURN`, t: this.host.time };
+    this.banner = this.style.banner ? { text: this.style.banner.replace(/\{team\}/g, team.tag.toUpperCase()).replace(/\{round\}/g, String(t.number)), t: this.host.time } : null;
     for (const e of this.host.entities) if (e.alive && e.scripts.length) this.host.emit('turn_started', e);
     if (team.pick) {
       const first = this.unitsOf(team.tag)[0];
@@ -368,7 +419,7 @@ export class TurnKit {
     // A team with no unit left in the middle of its turn: on to the next.
     const team = this.team();
     if (t && team && !t.acting && !this.unitsOf(team.tag).some((e) => !t.acted.has(e))) this.nextTeam();
-    this.popups = this.popups.filter((p) => this.host.time - p.t < 0.9);
+    this.popups = this.popups.filter((p) => this.host.time - p.t < this.style.popupSeconds);
     this.draw();
   }
 
@@ -441,6 +492,7 @@ export class TurnKit {
   /** The kit's look, as the game's own drawings (redone each step). */
   private draw(): void {
     const d = this.host.drawings;
+    const st = this.style;
     for (const k of [...d.keys()]) if (k.startsWith(KIT)) d.delete(k);
     let order = 100000;
     const put = (id: string, v: Omit<ScreenDrawing, 'owner' | 'order' | 'object' | 'text' | 'size'> & Partial<Pick<ScreenDrawing, 'text' | 'size'>>) =>
@@ -448,47 +500,68 @@ export class TurnKit {
     for (const [id, h] of this.highlights)
       for (const k of h.cells) {
         const [i, j] = k.split(',').map(Number);
-        put(`h${id}:${k}`, { shape: 'rect', anchor: 'world', x: centerOf(i), y: centerOf(j), w: CELL - 2, h: CELL - 2, color: h.color, alpha: 0.4, under: true });
+        put(`h${id}:${k}`, { shape: 'rect', anchor: 'world', x: centerOf(i), y: centerOf(j), w: CELL - 2, h: CELL - 2, color: h.color, alpha: st.highlightAlpha, under: true });
       }
     if (this.cursor) {
       const x = centerOf(this.cursor.i);
       const y = centerOf(this.cursor.j);
       const a = 0.6 + 0.4 * Math.abs(Math.sin(this.host.time * 5));
       const s = CELL / 2;
-      put('c1', { shape: 'rect', anchor: 'world', x, y: y - s + 1, w: CELL, h: 2, color: '#ffffff', alpha: a });
-      put('c2', { shape: 'rect', anchor: 'world', x, y: y + s - 1, w: CELL, h: 2, color: '#ffffff', alpha: a });
-      put('c3', { shape: 'rect', anchor: 'world', x: x - s + 1, y, w: 2, h: CELL, color: '#ffffff', alpha: a });
-      put('c4', { shape: 'rect', anchor: 'world', x: x + s - 1, y, w: 2, h: CELL, color: '#ffffff', alpha: a });
+      const c = st.cursorColor;
+      if (st.cursorStyle === 'fill') put('c0', { shape: 'rect', anchor: 'world', x, y, w: CELL, h: CELL, color: c, alpha: a * 0.45 });
+      else if (st.cursorStyle === 'corners') {
+        // Four corner brackets.
+        for (const [n, cx, cy] of [
+          [0, -1, -1],
+          [1, 1, -1],
+          [2, -1, 1],
+          [3, 1, 1],
+        ] as const) {
+          put(`c${n}a`, { shape: 'rect', anchor: 'world', x: x + cx * (s - 5), y: y + cy * (s - 1), w: 10, h: 2, color: c, alpha: a });
+          put(`c${n}b`, { shape: 'rect', anchor: 'world', x: x + cx * (s - 1), y: y + cy * (s - 5), w: 2, h: 10, color: c, alpha: a });
+        }
+      } else {
+        put('c1', { shape: 'rect', anchor: 'world', x, y: y - s + 1, w: CELL, h: 2, color: c, alpha: a });
+        put('c2', { shape: 'rect', anchor: 'world', x, y: y + s - 1, w: CELL, h: 2, color: c, alpha: a });
+        put('c3', { shape: 'rect', anchor: 'world', x: x - s + 1, y, w: 2, h: CELL, color: c, alpha: a });
+        put('c4', { shape: 'rect', anchor: 'world', x: x + s - 1, y, w: 2, h: CELL, color: c, alpha: a });
+      }
     }
     for (const [n, p] of this.popups.entries()) {
-      const age = (this.host.time - p.t) / 0.9;
-      put(`p${n}`, { shape: 'text', anchor: 'world', x: p.x, y: p.y - age * 20, w: 0, h: 0, text: p.text, size: 12, color: p.color, alpha: Math.min(1, 2 - 2 * age) });
+      const age = (this.host.time - p.t) / Math.max(0.05, st.popupSeconds);
+      // rise: drifts up and fades; pop: jumps up and falls back a little, growing then settling; fall: drops.
+      const dy = st.popupStyle === 'pop' ? -st.popupRise * Math.sin(Math.min(1, age * 1.6) * Math.PI) * (age < 0.6 ? 1 : 0.6) : st.popupStyle === 'fall' ? age * st.popupRise : -age * st.popupRise;
+      const size = st.popupStyle === 'pop' ? st.popupSize * (age < 0.15 ? 1 + age * 3 : 1.15) : st.popupSize;
+      put(`p${n}`, { shape: 'text', anchor: 'world', x: p.x, y: p.y + dy, w: 0, h: 0, text: p.text, size, color: p.color, alpha: Math.min(1, 2 - 2 * age) });
     }
-    if (this.banner && this.host.time - this.banner.t < 1.2) {
-      const age = (this.host.time - this.banner.t) / 1.2;
-      put('bn', { shape: 'text', anchor: 'center', x: 0, y: -60, w: 0, h: 0, text: this.banner.text, size: 28, color: '#ffffff', alpha: age < 0.75 ? 1 : (1 - age) * 4 });
+    if (this.banner && this.host.time - this.banner.t < st.bannerSeconds) {
+      const age = (this.host.time - this.banner.t) / Math.max(0.05, st.bannerSeconds);
+      put('bn', { shape: 'text', anchor: 'center', x: 0, y: -60, w: 0, h: 0, text: this.banner.text, size: st.bannerSize, color: st.bannerColor, alpha: age < 0.75 ? 1 : (1 - age) * 4 });
     }
     if (this.menu) {
       const m = this.menu;
       const { w: W, h: H } = this.host.screen;
       const lines = [...(m.title ? m.title.split('\n') : []), ...m.items];
-      const line = 18;
-      const pad = 10;
-      const w = Math.min(W - 32, Math.max(90, Math.max(...lines.map((l) => l.replace(/^-/, '').length)) * 9 + 2 * pad + 14));
+      const line = Math.round(st.menuSize * 1.3);
+      const pad = Math.round(st.menuSize * 0.7);
+      const charW = st.menuSize * 0.65;
+      const indent = Math.round(st.pointer.length * charW + st.menuSize * 0.4);
+      const w = Math.min(W - 32, Math.max(90, Math.max(...lines.map((l) => l.replace(/^-/, '').length)) * charW + 2 * pad + indent));
       const h = lines.length * line + 2 * pad;
       const [sx, sy] = ({ top_left: [0, 0], top: [0.5, 0], top_right: [1, 0], left: [0, 0.5], center: [0.5, 0.5], right: [1, 0.5], bottom_left: [0, 1], bottom: [0.5, 1], bottom_right: [1, 1] } as const)[m.at];
       // Its top left corner: 16 px in from the screen's edges, on the side it is anchored to.
       const left = sx === 0 ? 16 : sx === 1 ? W - 16 - w : (W - w) / 2;
       const top = sy === 0 ? 16 : sy === 1 ? H - 16 - h : (H - h) / 2;
-      put('mb', { shape: 'rect', anchor: 'top_left', x: left - 2, y: top - 2, w: w + 4, h: h + 4, color: '#e8ecff', alpha: 1 });
-      put('mf', { shape: 'rect', anchor: 'top_left', x: left, y: top, w, h, color: '#1b2266', alpha: 1 });
+      put('mb', { shape: 'rect', anchor: 'top_left', x: left - 2, y: top - 2, w: w + 4, h: h + 4, color: st.menuBorder, alpha: 1 });
+      put('mf', { shape: 'rect', anchor: 'top_left', x: left, y: top, w, h, color: st.menuColor, alpha: 1 });
       const titled = m.title ? m.title.split('\n').length : 0;
       lines.forEach((l, n) => {
         const item = n - titled;
         const off = item >= 0 && l.startsWith('-');
         const y = top + pad + n * line + 2;
-        put(`mt${n}`, { shape: 'text', anchor: 'top_left', x: left + pad + (item >= 0 ? 14 : 0), y, w: 0, h: 0, text: l.replace(/^-/, ''), size: 14, color: item < 0 ? '#ffd166' : off ? '#7a80a8' : '#ffffff', alpha: 1 });
-        if (item === m.index) put('mc', { shape: 'text', anchor: 'top_left', x: left + pad, y, w: 0, h: 0, text: '>', size: 14, color: '#ffffff', alpha: 1 });
+        put(`mt${n}`, { shape: 'text', anchor: 'top_left', x: left + pad + (item >= 0 ? indent : 0), y, w: 0, h: 0, text: l.replace(/^-/, ''), size: st.menuSize, color: item < 0 ? st.menuTitle : off ? st.menuGreyed : st.menuText, alpha: 1 });
+        if (item === m.index && st.menuSelected) put('ms', { shape: 'rect', anchor: 'top_left', x: left + 3, y: y - 3, w: w - 6, h: line, color: st.menuSelected, alpha: 1 });
+        if (item === m.index && st.pointer) put('mc', { shape: 'text', anchor: 'top_left', x: left + pad, y, w: 0, h: 0, text: st.pointer, size: st.menuSize, color: st.pointerColor, alpha: 1 });
       });
     }
   }

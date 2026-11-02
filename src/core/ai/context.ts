@@ -214,6 +214,8 @@ export interface AIPayload {
     view: 'side' | 'topdown';
     /** The game's sprite size: art pixels per 32 px tile of the built-in objects' pictures (32 = as they ship). */
     spriteResolution: number;
+    /** The game's own keys, for the actions it changed (set_controls); missing: the engine's (see Controls). */
+    controls?: Record<string, string[]>;
     /**
      * For building or rebuilding a level: the layout to use this time (chosen at random by the app, so levels
      * differ), where the start and goal go, and the shapes of the game's other levels. Follow it unless the user
@@ -499,6 +501,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       map: levelMap(project, scene.id, registry),
       view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
       spriteResolution: project.settings.spriteResolution ?? 32,
+      ...(project.settings.controls ? { controls: project.settings.controls } : {}),
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
       playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {

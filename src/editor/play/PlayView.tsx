@@ -8,7 +8,8 @@ import { LookCache } from '../../render/screen';
 import { drawPlayFrame } from './playFrame';
 import { audio, keepAudioAwake, playSound, prepareSounds } from '../audio/synth';
 import { instrumentsOf, playSong, songAsset, type SongPlayer } from '../audio/musicPlayer';
-import { browserPads, GamepadReader, InputState, KEY_BINDINGS, type Action } from '../../runtime/input';
+import { browserPads, GamepadReader, InputState, type Action } from '../../runtime/input';
+import { controlsOf, keyLabel, keyMap } from '../../core/model/controls';
 import { PlayRecorder } from '../../runtime/recorder';
 import { Runtime } from '../../runtime/runtime';
 import { imageLookup } from '../images';
@@ -68,6 +69,21 @@ export function isTouchScreen(): boolean {
  * The picture the player's hearts are drawn with: the game's Heart object's look (built in, or the user's own
  * drawing), or null for a plain ♥ (no Heart object, or one without a picture).
  */
+/** What the keys do, as the game has them ("Arrows move · Space jumps · E uses…", or its own keys). */
+export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean): string {
+  const own = project.settings.controls;
+  const keys = controlsOf(own);
+  const first = (a: keyof typeof keys) => keyLabel(keys[a][0]);
+  // Moving: the engine's arrows, or the game's own four keys.
+  const move = !own?.left && !own?.right && !own?.up && !own?.down ? 'Arrows' : topDown ? [first('up'), first('left'), first('down'), first('right')].join('') : `${first('left')} ${first('right')}`;
+  const parts = [`${move} move`];
+  if (!topDown) parts.push(`${first('jump')} jumps`);
+  if (use) parts.push(`${first('interact')} uses`);
+  if (shoot) parts.push(`${first('fire')} shoots`);
+  if (menu) parts.push(`${first('menu')} menu`);
+  return parts.join(' · ');
+}
+
 export function heartPicture(project: Project): string | null {
   const def = project.definitions.find((d) => d.metadata.starter === 'Heart') ?? project.definitions.find((d) => d.name.toLowerCase() === 'heart');
   const assetId = def?.components.Sprite?.assetId;
@@ -203,8 +219,10 @@ export function PlayView(props: PlayViewProps) {
     const ro = new ResizeObserver(measure);
     ro.observe(canvas);
 
+    // The game's own keys (Controls), else the engine's.
+    const keys = keyMap(project.settings.controls);
     const onKeyDown = (e: KeyboardEvent) => {
-      const action = KEY_BINDINGS[e.code];
+      const action = keys[e.code];
       if (action) {
         e.preventDefault();
         input.press(action);
@@ -214,7 +232,7 @@ export function PlayView(props: PlayViewProps) {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      const action = KEY_BINDINGS[e.code];
+      const action = keys[e.code];
       if (action) input.release(action);
     };
     const onBlur = () => input.releaseAll();
@@ -360,7 +378,7 @@ export function PlayView(props: PlayViewProps) {
         </div>
       )}
       {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} menu={menuKey} />}
-      {props.keyHints !== false && <div className="hud-keys">Arrows move{hud.topDown ? '' : ' · Space jumps'}{hud.hasSwitches ? ' · E uses' : ''}{hud.canShoot ? ' · X shoots' : ''}{menuKey ? ' · Esc menu' : ''} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
+      {props.keyHints !== false && <div className="hud-keys">{keyHints(props.project, hud.topDown, hud.hasSwitches, hud.canShoot, menuKey)} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
     </div>
   );
 }

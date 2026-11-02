@@ -20,6 +20,7 @@ import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
 import { NewGameProgress } from './chrome/NewGameProgress';
+import { ControlsDialog } from './chrome/ControlsDialog';
 import { SpriteEditor } from './chrome/SpriteEditor';
 import { CameraPanel } from './chrome/CameraPanel';
 import { BackgroundPanel } from './chrome/BackgroundPanel';
@@ -122,6 +123,7 @@ export function App() {
         <FileFixDialog />
         <GameSite />
         <ExportGameDialog />
+        <ControlsDialog />
         <SoundEditor />
         <MusicStudio />
         <GlobalPrompt />

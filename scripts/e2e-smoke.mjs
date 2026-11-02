@@ -2771,6 +2771,31 @@ try {
     void levelsBefore;
   }
 
+  step = 'controls';
+  {
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-controls').click();
+    const dlg = page.getByTestId('controls-dialog');
+    const jump = dlg.getByTestId('controls-jump');
+    await check(async () => (await jump.innerText()).includes('Space') && (await jump.innerText()).includes('Z'), "Controls shows each action's keys (Jump: Space, Z)");
+    await jump.getByTestId('controls-add').click();
+    await check(async () => (await jump.innerText()).includes('Press a key'), '+ Key waits for a key');
+    await page.keyboard.press('KeyJ');
+    await check(async () => (await jump.getByTestId('controls-key').allInnerTexts()).map((t) => t.replace('×', '').trim()).join(',') === 'Space,Z,J', 'the key pressed is added (J)');
+    await jump.getByTestId('controls-remove').first().click();
+    await jump.getByTestId('controls-remove').first().click();
+    await check(async () => (await jump.getByTestId('controls-key').allInnerTexts()).map((t) => t.replace('×', '').trim()).join(',') === 'J', '× takes keys off (Jump: J only)');
+    await dlg.getByTestId('controls-close').click();
+    await page.getByTestId('play').click();
+    await check(async () => (await page.locator('.hud-keys').innerText()).includes('J jumps'), "Play's key hints follow the game's controls (J jumps)");
+    await page.getByTestId('play').click();
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-controls').click();
+    await dlg.getByTestId('controls-reset').click();
+    await check(async () => (await jump.innerText()).includes('Space'), "Back to the engine's keys");
+    await dlg.getByTestId('controls-close').click();
+  }
+
   step = 'export sprites';
   {
     await page.getByTestId('project-menu').click();

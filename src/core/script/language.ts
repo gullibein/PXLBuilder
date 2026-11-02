@@ -122,6 +122,7 @@ export type Stmt =
   | { do: 'camera_shake'; strength: string; seconds: string }
   | { do: 'flip_level'; way: 'upside_down' | 'left_right'; at: string | null; seconds: string; wave: string }
   | { do: 'menu'; items: string[]; title: string | null; cancel: boolean; at: Exclude<DrawAnchor, 'world'> }
+  | { do: 'kit_style'; menu_color?: string | null; menu_border?: string | null; menu_text?: string | null; menu_title?: string | null; menu_greyed?: string | null; menu_selected?: string | null; menu_size?: string | null; pointer?: string | null; pointer_color?: string | null; cursor_color?: string | null; cursor_style?: string | null; highlight_alpha?: string | null; popup_size?: string | null; popup_rise?: string | null; popup_seconds?: string | null; popup_style?: string | null; banner?: string | null; banner_seconds?: string | null; banner_color?: string | null; banner_size?: string | null }
   | { do: 'close_menu' }
   | { do: 'cursor'; show: string; x: string | null; y: string | null }
   | { do: 'highlight'; id: string; kind: 'reach' | 'range'; from: string | null; steps: string; min: string; color: string }
@@ -446,6 +447,10 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'a menu box on the screen (one at a time; this entity owns it): up/down pick, X, Space or E choose, Esc goes back when cancel is true. Then its "menu_chosen" event handlers run (menu_choice: the item\'s text, menu_choice_number: which), or "menu_cancelled". An item starting with "-" is shown greyed and can\'t be chosen (done already). title: a line (or lines, \\n) above the items: also a talk box or question ("Join us?" with Yes / No). {expression} in items and title shows a value. The arrow and action keys only work the menu while it is up',
   },
   close_menu: { example: '{"do":"close_menu"}', doc: 'takes its menu away' },
+  kit_style: {
+    example: '{"do":"kit_style","menu_color":"#3a2410","menu_border":"#e0b060","menu_text":"#fff2d0","menu_size":"16","pointer":"*","cursor_style":"corners","popup_style":"pop","banner":"Round {round}: {team}"}',
+    doc: 'how the turn-based kit looks, for the whole game (only the ones given change; usually once, at the start, from settings so the user can change them in Details): menu_color (the box), menu_border, menu_text, menu_title (title lines), menu_greyed (items that can\'t be chosen), menu_selected (a bar behind the item the pointer is at; "" none), menu_size (text px), pointer (the text before the item at hand: ">", "*", "->", "" none), pointer_color; cursor_color, cursor_style "square" (outline), "corners" (four brackets) or "fill"; highlight_alpha (0-1, how strong the highlighted squares are); popup_size, popup_rise (px), popup_seconds, popup_style "rise", "pop" (jumps up and settles) or "fall"; banner (the text when a team\'s turn starts: {team} and {round} in it; "" for no banner), banner_seconds, banner_color, banner_size. Colors are "#rrggbb" text (or "{a_variable}"), numbers are expressions. The banner\'s {team} and {round} are the kit\'s own',
+  },
   cursor: {
     example: '{"do":"cursor","show":"true","x":"self.x","y":"self.y"}',
     doc: 'shows (show true) a blinking square cursor on the level\'s grid, on the square at x, y (null: where it was, or this entity), moved square by square with the arrow keys; X, Space or E choose a square (this entity\'s "cursor_chosen" handlers: cursor_x, cursor_y, cursor_thing, and other = the unit there), Esc: "cursor_cancelled". show false takes it away. The keys only move the cursor while it is up',
@@ -618,6 +623,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
     z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(40)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
+    z.object({ do: z.literal('kit_style'), menu_color: z.string().max(30).nullable().optional(), menu_border: z.string().max(30).nullable().optional(), menu_text: z.string().max(30).nullable().optional(), menu_title: z.string().max(30).nullable().optional(), menu_greyed: z.string().max(30).nullable().optional(), menu_selected: z.string().max(30).nullable().optional(), menu_size: expr.nullable().optional(), pointer: z.string().max(60).nullable().optional(), pointer_color: z.string().max(30).nullable().optional(), cursor_color: z.string().max(30).nullable().optional(), cursor_style: z.string().max(30).nullable().optional(), highlight_alpha: expr.nullable().optional(), popup_size: expr.nullable().optional(), popup_rise: expr.nullable().optional(), popup_seconds: expr.nullable().optional(), popup_style: z.string().max(30).nullable().optional(), banner: z.string().max(60).nullable().optional(), banner_seconds: expr.nullable().optional(), banner_color: z.string().max(30).nullable().optional(), banner_size: expr.nullable().optional() }),
     z.object({ do: z.literal('close_menu') }),
     z.object({ do: z.literal('cursor'), show: expr.default('true'), x: nexpr, y: nexpr }),
     z.object({ do: z.literal('highlight'), id: z.string().min(1), kind: z.enum(['reach', 'range']).default('reach'), from: nexpr, steps: expr.default('4'), min: expr.default('1'), color: z.string().default('#4aa3ff') }),
@@ -824,6 +830,12 @@ export function exprSlots(s: Stmt): string[] {
       return [...s.items.flatMap(messageParts), ...(s.title ? messageParts(s.title) : [])];
     case 'start_turns':
       return [...s.teams, ...s.pick].flatMap(messageParts);
+    case 'kit_style':
+      return [s.menu_size, s.highlight_alpha, s.popup_size, s.popup_rise, s.popup_seconds, s.banner_seconds, s.banner_size].filter((v): v is string => typeof v === 'string').concat(
+        // ({value} in colors and texts.)
+        [s.menu_color, s.menu_border, s.menu_text, s.menu_title, s.menu_greyed, s.menu_selected, s.pointer, s.pointer_color, s.cursor_color, s.cursor_style, s.popup_style, s.banner_color].flatMap((v) => (typeof v === 'string' ? messageParts(v) : [])),
+        (s.banner ? messageParts(s.banner) : []).filter((x) => x.trim() !== 'team' && x.trim() !== 'round'),
+      );
     case 'close_menu':
     case 'clear_highlight':
     case 'done':
@@ -832,13 +844,13 @@ export function exprSlots(s: Stmt): string[] {
     case 'cursor':
       return [s.show, ...(s.x ? [s.x] : []), ...(s.y ? [s.y] : [])];
     case 'highlight':
-      return [...(s.from ? [s.from] : []), s.steps, s.min];
+      return [...(s.from ? [s.from] : []), s.steps, s.min, ...messageParts(s.color)];
     case 'walk_to':
       return [s.x, s.y, s.steps, s.speed, ...(s.on ? [s.on] : [])];
     case 'give_turn':
       return [s.to];
     case 'popup':
-      return [...messageParts(s.text), ...(s.on ? [s.on] : [])];
+      return [...messageParts(s.text), ...messageParts(s.color), ...(s.on ? [s.on] : [])];
     case 'camera_flash':
       return [s.seconds];
     case 'camera_zoom':
