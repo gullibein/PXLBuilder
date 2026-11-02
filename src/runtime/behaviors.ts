@@ -72,13 +72,44 @@ export class BehaviorSystem {
     }
   }
 
+  /** What each shot with its own "Shot hitting" already hit (and whether it is in a wall now). */
+  private readonly shotHits = new WeakMap<RuntimeEntity, Set<string>>();
+
   after(dt: number): void {
     let removed = false;
     for (const shot of this.rt.entities) {
       if (!shot.alive || !shot.projectile) continue;
       shot.projectile.left -= Math.hypot(shot.vx, shot.vy) * dt;
       const box = this.rt.boxOf(shot);
-      if (shot.projectile.left <= 0 || (box && this.rt.solids.some((s) => overlaps(box, s)))) {
+      if (shot.projectile.left <= 0) {
+        shot.alive = false;
+        removed = true;
+        continue;
+      }
+      // Its own "Shot hitting" script: it hears "shot_hit" (a wall: other null; else who it hit) and does the rest
+      // (a shot that goes through, bounces, explodes…). Each thing once a shot; a wall each time it is in one.
+      if (ownPart(shot, 'shot_hitting')) {
+        if (!box) continue;
+        let hit = this.shotHits.get(shot);
+        if (!hit) this.shotHits.set(shot, (hit = new Set()));
+        const inWall = this.rt.solids.some((s) => overlaps(box, s));
+        if (inWall && !hit.has('\u0000wall')) this.rt.gameplay.emit('shot_hit', shot, null);
+        if (inWall) hit.add('\u0000wall');
+        else hit.delete('\u0000wall');
+        for (const v of this.rt.entities) {
+          if (v === shot || !v.alive || v.projectile || v.id === shot.projectile.owner || !v.health || v.dying > 0 || v.invincible > 0) continue;
+          if (v.tags.some((t) => shot.projectile!.team.includes(t)) || hit.has(v.id)) continue;
+          const vb = this.rt.boxOf(v);
+          if (vb && overlaps(box, vb)) {
+            hit.add(v.id);
+            this.rt.gameplay.emit('shot_hit', shot, v);
+          }
+        }
+        // (Gone when its script removes it.)
+        removed = true;
+        continue;
+      }
+      if (box && this.rt.solids.some((s) => overlaps(box, s))) {
         shot.alive = false;
         removed = true;
         continue;

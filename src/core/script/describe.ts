@@ -206,6 +206,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`walk${s.on ? `s of ${x(s.on)}` : ''}: diagonal ${x(s.diagonal)}, through units ${x(s.through_units)}, through walls ${x(s.through_walls)}`);
     case 'visit_level':
       return one(`visit the level "${s.level}" (and come back)`);
+    case 'go_to_level':
+      return one(`go on to the level "${s.level}"`);
     case 'return_level':
       return one(`go back to the level it came from (${x(s.result)})`);
     case 'kit_style':

@@ -492,7 +492,11 @@ export class Runtime {
   private ladderTops: Box[] = [];
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
   private ladders: Ladder[] = [];
-  private fallLimit = 0;
+  fallLimit = 0;
+  /** Things below the fall line whose own script heard "fell_off" (once per fall). */
+  private readonly fallen = new Set<RuntimeEntity>();
+  /** go_to_level: the play view goes on to that level (by name). */
+  goRequest: { level: string; by: RuntimeEntity } | null = null;
   /** The level as played (a random level: as built this time). */
   scene: Scene;
   /** The level as made in the editor (a random one: its recipe and what is placed by hand). */
@@ -513,7 +517,7 @@ export class Runtime {
    * Parts of the built-in play display (hearts, items) that are off. A game starts bare: both are off until a script
    * shows them (builtin_display), and scores, hearts, lives and the like are the game's own drawings.
    */
-  readonly builtinHidden = new Set<'hearts' | 'items'>(['hearts', 'items']);
+  readonly builtinHidden = new Set<'hearts' | 'items' | 'level_end'>(['hearts', 'items']);
   /** Paused by a script (a pause menu): the world stands still; only "key" handlers run. */
   paused = false;
   /**
@@ -615,6 +619,8 @@ export class Runtime {
     this.fog = viewer ? new Fog(viewer, this.entities, viewer.base.components.FogOfWar) : null;
     this.fogDirty = true;
     this.solidCellCache = null;
+    this.fallen.clear();
+    this.goRequest = null;
     // Starts Hidden: out of play until a rule or switch shows it.
     for (const e of this.entities) {
       if (!e.base.components.StartsHidden) continue;
@@ -659,7 +665,7 @@ export class Runtime {
   /** The level is won (a Goal reached, or a rule). Only once. */
   completeLevel(by: RuntimeEntity | null): void {
     if (this.completed !== null) {
-      this.gameplay.frozen();
+      if (!this.builtinHidden.has('level_end')) this.gameplay.frozen();
       return;
     }
     this.completed = this.time;
@@ -691,7 +697,8 @@ export class Runtime {
     }
     this.time += dt;
     // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
-    if (this.completed !== null) return;
+    // (With the built-in level end hidden, the game goes on: the scripts show their own and go on themselves.)
+    if (this.completed !== null && !this.builtinHidden.has('level_end')) return;
     // A level flip plays out: nothing else happens meanwhile.
     if (this.flip) {
       this.stepFlip(dt);
@@ -820,7 +827,14 @@ export class Runtime {
         }
       }
       // Without gravity nothing falls out of the level (a top-down character can walk below it).
-      if (e.y > this.fallLimit && !this.floats(e)) this.respawn(e, 'fell');
+      if (e.y > this.fallLimit && !this.floats(e)) {
+        // (Its own "Falling off" script decides: it hears "fell_off" once, until it is back above the line.)
+        if (!ownPart(e, 'falling_off')) this.respawn(e, 'fell');
+        else if (!this.fallen.has(e)) {
+          this.fallen.add(e);
+          this.gameplay.emit('fell_off', e, null);
+        }
+      } else if (this.fallen.size) this.fallen.delete(e);
     }
     this.keepOnScreen();
     this.behaviors.after(dt);

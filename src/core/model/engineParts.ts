@@ -849,7 +849,55 @@ function dyingScript(): BehaviorScript {
   }) as BehaviorScript;
 }
 
+/**
+ * Falling out of the level as the engine does it: anything that falls below the level's bottom (fall_line) is put
+ * back at its start (as respawn does: full health, standing still).
+ */
+function fallingOffScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Falling off',
+    description: 'Fallen out of the bottom of the level: back at its start. As the engine does it.',
+    takesOver: 'falling_off',
+    vars: [],
+    handlers: [{ when: { on: 'event', event: 'fell_off', with: null }, do: [{ do: 'respawn', target: 'self' }] }],
+  }) as BehaviorScript;
+}
+
+/**
+ * A shot hitting as the engine does it (on the shot's object, the Shooter's "projectile"): hitting something with
+ * health that is not on its shooter's side, it takes the shot's damage (as any hit: blinking, knock back) and the
+ * shot is gone; hitting a wall, it is gone. (How far it flies is still its Shooter's range.)
+ */
+function shotHittingScript(): BehaviorScript {
+  return scriptSchema.parse({
+    id: generateId('scr'),
+    name: 'Shot hitting',
+    description: "Hitting something on the other side: it takes the shot's damage and the shot is gone; hitting a wall, the shot is gone. As the engine does it.",
+    takesOver: 'shot_hitting',
+    vars: [],
+    handlers: [
+      {
+        when: { on: 'event', event: 'shot_hit', with: null },
+        do: [when('other != null', [{ do: 'damage', target: 'other', amount: 'self.shot_damage' }]), { do: 'remove', target: null }],
+      },
+    ],
+  }) as BehaviorScript;
+}
+
 export const ENGINE_PART_INFO: Record<EnginePart, EnginePartInfo> = {
+  falling_off: {
+    label: 'falling off',
+    covers: 'falling out of the bottom of the level (below fall_line): put back at its start, as respawn does (full health, standing still); without gravity nothing falls off',
+    component: 'PhysicsBody',
+    script: fallingOffScript,
+  },
+  shot_hitting: {
+    label: 'shot hitting',
+    covers: "what a shot does when it hits (on the shot's own object: the Shooter's projectile): something with health not on its shooter's side takes the shot's damage and the shot is gone; a wall stops it. Not how far it flies (the Shooter's range)",
+    component: 'Collider',
+    script: shotHittingScript,
+  },
   being_hurt: {
     label: 'being hurt',
     covers: 'what a hit does to it: taking the health, blinking unhurtable for a moment (DamageReceiver.invincibilityDuration), the knock back (DamageReceiver.knockback), "damaged", dying at 0',

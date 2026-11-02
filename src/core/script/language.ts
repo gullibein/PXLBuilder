@@ -107,7 +107,8 @@ export type Stmt =
       alpha: string | null;
     }
   | { do: 'erase'; id: string | null }
-  | { do: 'builtin_display'; what: 'hearts' | 'items' | 'all'; show: boolean }
+  | { do: 'builtin_display'; what: 'hearts' | 'items' | 'level_end' | 'all'; show: boolean }
+  | { do: 'go_to_level'; level: string }
   | { do: 'play_sound'; sound: string; volume: string; pitch: string }
   | { do: 'play_music'; music: string }
   | { do: 'stop_music' }
@@ -212,6 +213,9 @@ export const BUILTIN_NAMES: Record<string, string> = {
   turn_done: 'true when this unit has had its go this turn',
   walking_path: 'true while it is walking a path (walk_to)',
   dungeon_seed: 'the seed the random level was built from this time (0: the level is not random); set_generator {"seed": "dungeon_seed"} then restart_level builds the same one again',
+  next_level: 'the name of the level after this one in the game\'s order ("" on the last): go_to_level "{next_level}"',
+  level_name: 'the name of the level being played',
+  fall_line: 'how far down (y) something can fall before the engine counts it as fallen out of the level (the lowest thing placed, and a margin)',
   fog_radius: 'how far the fog-of-war viewer sees now, in grid squares (0 without fog); fog_radius changes it',
   level_flipped: 'true while the level is mirrored by flip_level (an odd number of flips, either way)',
   paused: 'true while the game is paused (pause / resume)',
@@ -247,6 +251,7 @@ export const MEMBERS: Record<string, string> = {
   angle: 'how far scripts have turned it (degrees clockwise; 0 = as placed)',
   health: 'current health (0 without Health)',
   max_health: 'maximum health',
+  shot_damage: 'a shot\'s damage (its Shooter\'s damage; 0 for anything that is not a shot)',
   alive: 'still in play',
   dead: 'it has died: waiting to come back (a player) or leaving play',
   open: 'opened (doors)',
@@ -453,7 +458,8 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   },
   play_music: { example: '{"do":"play_music","music":"Boss theme"}', doc: 'play a song from the music list (by name or id) instead of the music playing now (the level\'s music, or another song); it loops if the song is set to loop' },
   stop_music: { example: '{"do":"stop_music"}', doc: 'stop the music' },
-  builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'show or hide the built-in display (hearts, items, or all of it). A game starts with it hidden (nothing is on the screen until asked for): show true is a quick way to get plain hearts or a list of carried items; anything else (score, lives, a health bar, a level counter…) is drawn by a script' },
+  builtin_display: { example: '{"do":"builtin_display","what":"hearts","show":false}', doc: 'show or hide the built-in display (hearts, items, or all of it: both). A game starts with it hidden (nothing is on the screen until asked for): show true is a quick way to get plain hearts or a list of carried items; anything else (score, lives, a health bar, a level counter…) is drawn by a script. "level_end" (shown unless hidden, not part of "all"): when a level is won, the game stands still, "Level complete!" shows and the next level follows 1.5 s later ("You finished the game!" after the last). Hidden, the game goes on after complete_level and the scripts do the rest: their own screen (draw), then go_to_level next_level, a menu, restart_game…' },
+  go_to_level: { example: '{"do":"go_to_level","level":"{next_level}"}', doc: 'plays another level (by name; {expression} in it) from its start, as if the game went on to it: the game\'s variables (set_game) go along. next_level is the name of the one after this. A secret exit, a level select, a branch' },
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
@@ -655,7 +661,8 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
       alpha: nexpr,
     }),
     z.object({ do: z.literal('erase'), id: z.string().min(1).nullable().default(null) }),
-    z.object({ do: z.literal('builtin_display'), what: z.enum(['hearts', 'items', 'all']), show: z.boolean() }),
+    z.object({ do: z.literal('builtin_display'), what: z.enum(['hearts', 'items', 'level_end', 'all']), show: z.boolean() }),
+    z.object({ do: z.literal('go_to_level'), level: z.string().min(1).max(80) }),
     z.object({ do: z.literal('play_sound'), sound: z.string().min(1), volume: expr.default('1'), pitch: expr.default('1') }),
     z.object({ do: z.literal('play_music'), music: z.string().min(1) }),
     z.object({ do: z.literal('stop_music') }),
@@ -722,7 +729,7 @@ const handler = z.object({
  * Parts of the engine's own code a script can take over for one object (the engine then leaves that part to the
  * script, as long as the script is there and switched on).
  */
-export const ENGINE_PARTS = ['being_hurt', 'dying', 'running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'goal', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
+export const ENGINE_PARTS = ['being_hurt', 'dying', 'falling_off', 'shot_hitting', 'running', 'jumping', 'climbing', 'ledge_grab', 'switching', 'unlocking', 'goal', 'picking_up', 'patrolling', 'wandering', 'shooting', 'moving', 'hopping', 'timer'] as const;
 export type EnginePart = (typeof ENGINE_PARTS)[number];
 
 export const scriptSchema = z.object({
@@ -887,6 +894,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'set_game':
       return [...messageParts(s.var), s.value];
     case 'visit_level':
+    case 'go_to_level':
       return messageParts(s.level);
     case 'return_level':
       return [s.result];

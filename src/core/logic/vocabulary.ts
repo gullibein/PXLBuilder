@@ -28,6 +28,8 @@ export const BUILTIN_EVENTS: EventType[] = [
   { type: 'collected', description: 'An item is picked up.', subject: 'who picked it up', other: 'the item', phrase: '{subject} picks up {other}' },
   { type: 'damaged', description: 'Something loses health.', subject: 'who was hurt', other: 'what hurt it', phrase: '{subject} is hurt by {other}' },
   { type: 'died', description: 'Something runs out of health.', subject: 'who died', other: 'what dealt the last hit', phrase: '{subject} dies' },
+  { type: 'fell_off', description: 'Something fell out of the bottom of the level (below fall_line). Only for things whose "falling off" is a script (the engine otherwise puts them back at their start).', subject: 'who fell', other: null, phrase: '{subject} falls out of the level' },
+  { type: 'shot_hit', description: 'A shot hit something with health that is not on its shooter\'s side (other), or a wall (other is null). Only for shots whose "shot hitting" is a script (the engine otherwise hurts it by the shot\'s damage and the shot is gone).', subject: 'the shot', other: 'what it hit (null: a wall)', phrase: '{subject} hits {other}' },
   { type: 'respawned', description: 'Something is put back at its start (after dying or falling out of the level).', subject: 'who respawned', other: null, phrase: '{subject} respawns' },
   { type: 'turn_started', description: "A team's turn starts (turn-based games: start_turns); every unit hears it. turn_team says whose.", subject: 'each unit', other: null, phrase: "{subject} sees a new team's turn start" },
   { type: 'unit_turn', description: "It is this unit's go (turn-based games): it acts, then says done.", subject: 'the unit', other: null, phrase: "it is {subject}'s go" },

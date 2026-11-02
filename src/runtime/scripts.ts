@@ -708,7 +708,7 @@ export class ScriptSystem {
         this.rt.musicRequest = { assetId: null };
         break;
       case 'builtin_display': {
-        const parts: ('hearts' | 'items')[] = s.what === 'all' ? ['hearts', 'items'] : [s.what];
+        const parts: ('hearts' | 'items' | 'level_end')[] = s.what === 'all' ? ['hearts', 'items'] : [s.what];
         for (const part of parts) {
           if (s.show) this.rt.builtinHidden.delete(part);
           else this.rt.builtinHidden.add(part);
@@ -811,6 +811,9 @@ export class ScriptSystem {
         if (t) this.rt.kit.rules.set(t, { diagonal: truthy(this.eval(s.diagonal, ctx)), units: truthy(this.eval(s.through_units, ctx)), walls: truthy(this.eval(s.through_walls, ctx)) });
         break;
       }
+      case 'go_to_level':
+        if (!this.rt.goRequest) this.rt.goRequest = { level: s.level.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), by: e };
+        break;
       case 'visit_level':
         this.rt.visitLevel(s.level.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), e);
         break;
@@ -1048,6 +1051,14 @@ export class ScriptSystem {
         return this.rt.kit.hasActed(ctx.self);
       case 'walking_path':
         return this.rt.kit.walking(ctx.self);
+      case 'next_level': {
+        const at = this.rt.project.scenes.findIndex((s) => s.id === this.rt.baseScene.id);
+        return this.rt.project.scenes[at + 1]?.name ?? '';
+      }
+      case 'level_name':
+        return this.rt.baseScene.name;
+      case 'fall_line':
+        return this.rt.fallLimit;
       case 'dungeon_seed':
         return this.rt.dungeon ? (this.rt.dungeonSeed ?? 0) : 0;
       case 'fog_radius':
@@ -1435,6 +1446,8 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.health?.current ?? 0;
     case 'max_health':
       return e.health?.max ?? 0;
+    case 'shot_damage':
+      return e.projectile ? (e.damage ?? 0) : 0;
     case 'alive':
       return e.alive;
     case 'dead':

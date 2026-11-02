@@ -272,7 +272,7 @@ export function PlayView(props: PlayViewProps) {
       }
       // A won level: a moment to see it, then the next level (or the end of the game).
       let banner: string | null = null;
-      if (runtime.completed !== null) {
+      if (runtime.completed !== null && !runtime.builtinHidden.has('level_end')) {
         const nextScene = project.scenes[project.scenes.findIndex((s) => s.id === scene.id) + 1];
         banner = nextScene ? 'Level complete!' : 'You finished the game!';
         if (nextScene && runtime.time - runtime.completed > 1.5) {
@@ -285,6 +285,18 @@ export function PlayView(props: PlayViewProps) {
         game = new Map();
         enterLevel(project.scenes.find((s) => s.id === project.startSceneId) ?? project.scenes[0], true);
         finished = false;
+      }
+      // go_to_level: on to that level (by name), as after winning one; the game's variables go along.
+      if (runtime.goRequest) {
+        const go = runtime.goRequest;
+        runtime.goRequest = null;
+        const want = go.level.trim().toLowerCase();
+        const target = project.scenes.find((s) => s.id === go.level || s.name.trim().toLowerCase() === want);
+        if (target) {
+          input.releaseAll();
+          enterLevel(target, false);
+          finished = false;
+        } else runtime.gameplay.emit('script_error', go.by, null, { script: 'go_to_level', message: `there is no level "${go.level}" (levels: ${project.scenes.map((s) => s.name).join(', ')})` });
       }
       // A visit to another level (a battle, a house's inside), and back to the one left, as it was.
       if (runtime.visitRequest) {
