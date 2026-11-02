@@ -101,7 +101,11 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   // (Closer in: the blocks are small pixel art.)
   level.camera = { ...(level.camera ?? defaultCamera(true)), zoom: 2, bounds: 'none' };
   const id = (n: string) => project.definitions.find((d) => d.name === n)!;
-  const at = (n: string, i: number, j: number) => m.addEntity(project, level.id, instantiateDefinition(id(n), { x: i * 32 + 16, y: j * 32 + 16 }));
+  const at = (n: string, i: number, j: number, lift = 0) => {
+    const e = instantiateDefinition(id(n), { x: i * 32 + 16, y: j * 32 + 16 });
+    if (lift) e.components = { ...e.components, Sprite: { ...(e.components.Sprite ?? {}), isoLift: lift } };
+    m.addEntity(project, level.id, e);
+  };
   const W = 16;
   const H = 12;
   const lavaPool = (i: number, j: number) => i >= 12 && i <= 13 && j >= 8 && j <= 9;
@@ -114,6 +118,10 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
       else if (j === 6 && i >= 1 && i <= 14) at('Dirt', i, j);
       else at((i * 7 + j * 3) % 11 === 0 ? 'Dark Grass' : 'Grass', i, j);
     }
+  // A hill: a terrace one block up, and a smaller one on top of it (the player steps up one block at a time).
+  for (let j = 0; j <= 2; j++) for (let i = 1; i <= 4; i++) at(j === 2 ? 'Grassy Dirt' : 'Grass', i, j, 16);
+  at('Grass', 1, 0, 32);
+  at('Grass', 2, 0, 32);
   // Ruins and crates (walls stand on the floor blocks).
   for (const [i, j] of [
     [8, 2],
@@ -137,6 +145,8 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
     [6, 9],
   ])
     at('Coin', i, j);
+  // A coin on the top of the hill.
+  at('Coin', 2, 0, 32);
   at('Enemy', 8, 8);
   at('Goal', 14, 6);
   return project;

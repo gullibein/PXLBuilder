@@ -3501,11 +3501,28 @@ try {
     await page.mouse.move(crate.x, crate.y - 48 * zoom);
     await page.screenshot({ path: `${OUT}/00h-isometric.png` });
     await page.getByTestId('tool-select').click();
+    // Select a block of the raised terrace (its top one block up) and drag its side point: copies along, at its height.
+    const at = (i, j, lift) => ({ x: box.x + box.width / 2 + 0.5 * (i * 32 + 16 - cx - (j * 32 + 16 - cy)) * zoom, y: box.y + box.height / 2 + 0.25 * (i * 32 + 16 - cx + j * 32 + 16 - cy) * zoom - lift * zoom });
+    // (The top of the hill, two blocks up, at square 1, 0: its left side point, out two squares over the ground below.)
+    const top = at(1, 0, 32);
+    await page.mouse.click(top.x, top.y);
+    await check(async () => (await canvas.getAttribute('data-selection')) === '48,16', 'a click on the top of a raised block selects it');
+    const side = (await canvas.getAttribute('data-handles')).split(' ').find((h) => h.startsWith('s-1,0@'));
+    const [hx, hy] = side.split('@')[1].split(',').map(Number);
+    const grab = { x: box.x + box.width / 2 + 0.5 * (hx - cx - (hy - cy)) * zoom, y: box.y + box.height / 2 + 0.25 * (hx - cx + hy - cy) * zoom - 32 * zoom };
+    const n1 = await ents();
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(grab.x - 20 * zoom, grab.y - 10 * zoom, { steps: 5 });
+    await page.mouse.move(grab.x - 34 * zoom, grab.y - 17 * zoom, { steps: 5 });
+    await page.mouse.up();
+    await check(async () => (await ents()) === n1 + 2, 'dragging its side point (on its top\'s diamond) copies it along two squares, at its height (the ground below stays)');
+    await page.keyboard.press('Escape');
     await page.getByTestId('play').click();
     await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
     await page.waitForTimeout(300);
     await page.getByTestId('play').click();
-    for (let n = 0; n < 5; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   // (The AI is answered by the stand-in again for this.)
@@ -3568,6 +3585,8 @@ try {
       dt.items.add(new File([blob], 'ship.png', { type: 'image/png' }));
       el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
     });
+    // (The picture is read in the background: sent once it shows.)
+    await gp.getByTestId('picture-thumb').first().waitFor({ timeout: 5000 });
     await gp.getByTestId('prompt-input').fill('picture carry test');
     await gp.getByTestId('prompt-input').press('Enter');
     await gp.locator('[data-testid="prompt-result"]').waitFor({ timeout: 10000 });

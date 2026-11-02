@@ -49,10 +49,13 @@ export function isUnderlay(components: ResolvedEntity['components']): boolean {
  * The placed objects in this level that new ones at these boxes would cover (sharing at least half a square, not just
  * an edge). Floors (drawn under everything) don't count, and nothing does when what is placed is a floor.
  */
-export function coveredObjects(boxes: Rect[], ignore: ReadonlySet<Id> = new Set(), placingUnderlay = false): ResolvedEntity[] {
+export function coveredObjects(boxes: Rect[], ignore: ReadonlySet<Id> = new Set(), placingUnderlay = false, isoLift: number | null = null): ResolvedEntity[] {
   if (placingUnderlay) return [];
   const { project, activeSceneId } = useEditor.getState();
-  return resolveSceneEntities(project, activeSceneId).filter((e) => !ignore.has(e.id) && !isUnderlay(e.components) && boxes.some((b) => overlapShare(getWorldBounds(e), b) >= 0.5));
+  // (Isometric: only what is at the same height there; a block above or below is another place.)
+  const iso = project.scenes.find((s) => s.id === activeSceneId)?.world.view === 'iso';
+  const sameHeight = (e: ResolvedEntity) => !iso || isoLift === null || Number(e.components.Sprite?.isoLift ?? 0) === isoLift;
+  return resolveSceneEntities(project, activeSceneId).filter((e) => !ignore.has(e.id) && !isUnderlay(e.components) && sameHeight(e) && boxes.some((b) => overlapShare(getWorldBounds(e), b) >= 0.5));
 }
 
 /**
@@ -84,7 +87,8 @@ export function extendSelection(ids: string[], offsets: Vec2[], selection: strin
   const originals = resolveSceneEntities(project, activeSceneId).filter((e) => ids.includes(e.id));
   const boxes = offsets.flatMap((o) => originals.map((e) => getWorldBounds(e)).map((b) => ({ minX: b.minX + o.x, maxX: b.maxX + o.x, minY: b.minY + o.y, maxY: b.maxY + o.y })));
   const what = originals.length === 1 ? (project.definitions.find((d) => d.id === originals[0].definitionId)?.name ?? originals[0].name) : 'the copies';
-  placeOver(coveredObjects(boxes, new Set([...ids, ...selection]), originals.every((e) => isUnderlay(e.components))), what, (overwrite) => {
+  const lifts = new Set(originals.map((e) => Number(e.components.Sprite?.isoLift ?? 0)));
+  placeOver(coveredObjects(boxes, new Set([...ids, ...selection]), originals.every((e) => isUnderlay(e.components)), lifts.size === 1 ? [...lifts][0] : null), what, (overwrite) => {
     const { edit, selectEntities } = useEditor.getState();
     const created: string[] = [];
     const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})${overwrite.length ? `, replacing ${overwrite.length}` : ''}`, (p) => {

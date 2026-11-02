@@ -16,7 +16,7 @@ import { getEntitySize } from '../core/model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
 import type { DrawAnchor, DrawShape } from '../core/script/language';
-import type { Camera, RenderEntity } from '../render/renderer';
+import { isoVolume, type Camera, type RenderEntity } from '../render/renderer';
 import { boundsOf, defaultCamera } from '../core/model/camera';
 import { BehaviorSystem } from './behaviors';
 import { CameraController } from './camera';
@@ -158,6 +158,10 @@ export interface RuntimeEntity {
   stompGrace: number;
   /** Position at the start of the step (to tell landing on top from bumping into the side). */
   prevY: number;
+  /** Isometric: how high it is (isoLift units: 16 a block); things that move follow the ground's height. */
+  z: number;
+  /** Isometric: how fast it is falling down to lower ground. */
+  vz: number;
   /** Ids of the entities it touches right now (moving entities only). */
   touching: Set<Id>;
 }
@@ -190,6 +194,12 @@ const LADDER_GRIP = 0.5;
 const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
+/** Isometric heights: the squares heights are looked up on, how high a mover steps up (a block), how fast. */
+const ISO_CELL = 32;
+const ISO_STEP = 16;
+const ISO_STEP_SPEED = 160;
+const ISO_FALL = 900;
+const ISO_FALL_MAX = 600;
 /** In a level flip, the share of the flip's time a falling character takes to get across (then it falls). */
 const FLIP_CARRY = 0.6;
 
@@ -460,6 +470,8 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     hiddenBySwitch: false,
     moveTarget: null,
     prevY: r.transform.position.y,
+    z: typeof r.components.Sprite?.isoLift === 'number' ? r.components.Sprite.isoLift : 0,
+    vz: 0,
     touching: new Set(),
   };
 }
@@ -654,6 +666,9 @@ export class Runtime {
     );
     // (An isometric level: the camera sees it at an angle.)
     this.cam.camera.iso = this.scene.world.view === 'iso';
+    // Isometric heights: what moves starts on the ground of its square (a raised floor: up there).
+    this.isoGround = null;
+    if (this.cam.camera.iso) for (const e of this.entities) if (e.body === 'dynamic') e.z = Math.max(e.z, this.groundHeight(e.x, e.y));
     this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level);
     this.scripts.reset();
     this.gameplay.reset();
@@ -812,12 +827,16 @@ export class Runtime {
         const prevBottom = box.y + box.hh;
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => ({ ...boxOf(p)!, friction: p.friction })) : [];
         const base = others.length ? [...solids, ...others] : solids;
-        const surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
+        let surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
+        // Isometric: ground more than a block above it is a wall to it.
+        const iso = this.cam.camera.iso === true;
+        if (iso) surfaces = [...surfaces, ...this.cliffsAround(e).map((b) => ({ ...b, friction: DEFAULT_FRICTION }))];
         const goingDown = e.vy > 0;
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
         e.bumped = r.hitX ? (e.vx > 0 ? 1 : e.vx < 0 ? -1 : 0) : 0;
+        if (iso) this.followGround(e, dt);
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
@@ -899,6 +918,55 @@ export class Runtime {
   markSolidsDirty(): void {
     this.solidsDirty = true;
     this.fogDirty = true;
+    this.isoGround = null;
+  }
+
+  /**
+   * Isometric heights: the ground's height on each square, the top of the highest block there that can be walked on
+   * (blocks with nothing solid about them: floor blocks, raised floors). No block: the ground, 0.
+   */
+  private isoGround: Map<string, number> | null = null;
+  groundHeight(x: number, y: number): number {
+    if (!this.isoGround) {
+      const map = new Map<string, number>();
+      for (const e of this.entities) {
+        if (!e.alive || this.isSolid(e)) continue;
+        const vol = isoVolume(e.base);
+        if (!vol) continue;
+        const k = `${Math.floor(e.x / ISO_CELL)},${Math.floor(e.y / ISO_CELL)}`;
+        map.set(k, Math.max(map.get(k) ?? -Infinity, vol.top));
+      }
+      this.isoGround = map;
+    }
+    return this.isoGround.get(`${Math.floor(x / ISO_CELL)},${Math.floor(y / ISO_CELL)}`) ?? 0;
+  }
+
+  /** Isometric: the squares round a mover too high for it to step up to (more than a block above it), as walls. */
+  private cliffsAround(e: RuntimeEntity): Box[] {
+    const out: Box[] = [];
+    const ci = Math.floor(e.x / ISO_CELL);
+    const cj = Math.floor(e.y / ISO_CELL);
+    for (let j = cj - 2; j <= cj + 2; j++)
+      for (let i = ci - 2; i <= ci + 2; i++) {
+        const cx = i * ISO_CELL + ISO_CELL / 2;
+        const cy = j * ISO_CELL + ISO_CELL / 2;
+        if (this.groundHeight(cx, cy) > e.z + ISO_STEP + 0.5) out.push({ x: cx, y: cy, hw: ISO_CELL / 2, hh: ISO_CELL / 2 });
+      }
+    return out;
+  }
+
+  /** Isometric: after moving, up onto higher ground (a block at most), or falling down to lower ground. */
+  private followGround(e: RuntimeEntity, dt: number): void {
+    const h = this.groundHeight(e.x, e.y);
+    if (h >= e.z) {
+      // (Up a step quickly, not at once: it looks like a step.)
+      e.z = Math.min(h, e.z + ISO_STEP_SPEED * dt);
+      e.vz = 0;
+      return;
+    }
+    e.vz = Math.min(ISO_FALL_MAX, e.vz + ISO_FALL * dt);
+    e.z = Math.max(h, e.z - e.vz * dt);
+    if (e.z === h) e.vz = 0;
   }
 
   /** visit_level: the play view takes the game to that level, keeping this one as it is to come back to. */
@@ -1724,6 +1792,9 @@ export class Runtime {
     }
     e.vanishing = 0;
     e.respawns++;
+    e.z = typeof e.base.components.Sprite?.isoLift === 'number' ? e.base.components.Sprite.isoLift : 0;
+    e.vz = 0;
+    if (this.cam.camera.iso) e.z = Math.max(e.z, this.groundHeight(e.x, e.y));
     this.gameplay.emit('respawned', e, null, { reason });
   }
 
@@ -1762,6 +1833,8 @@ export class Runtime {
       const alpha = (e.open ? 0.3 : e.invincible > 0 && Math.floor(e.invincible * 12) % 2 === 0 ? 0.35 : 1) * (e.alpha ?? 1) * fade;
       if (alpha !== 1) r = { ...r, alpha };
       if (e.trail && e.trail.points.length > 1) r = { ...r, trail: e.trail.points.map((p) => ({ x: p.x, y: p.y })) };
+      // Isometric: drawn at the height it is at (movers follow the ground).
+      if (r.components.Sprite && e.z !== (r.components.Sprite.isoLift ?? 0)) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, isoLift: e.z } } };
       out.push(r);
     }
     return out;

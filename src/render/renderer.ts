@@ -394,9 +394,13 @@ export function isoOrder<T extends ResolvedEntity>(entities: T[]): T[] {
       const look = isoLookOf(e);
       const lift = isoLiftOf(e);
       // (A floor raised above the ground is a block like any other.)
-      return { e, i, g: (look === 'flat' || look === 'iso_floor') && lift <= 0 ? 0 : 1, l: layerOf(e), d: e.transform.position.x + e.transform.position.y, h: lift };
+      // (Within a square: from the bottom up, so what stands on a block is drawn after it.)
+      const vol = isoVolume(e);
+      const { x, y } = e.transform.position;
+      return { e, i, g: (look === 'flat' || look === 'iso_floor') && lift <= 0 ? 0 : 1, l: layerOf(e), c: Math.floor(x / 32) + Math.floor(y / 32), d: x + y, h: vol ? vol.bottom : lift };
     })
-    .sort((a, b) => a.g - b.g || a.l - b.l || a.d - b.d || a.h - b.h || a.i - b.i)
+    // (By the diagonal row of squares from the back, then from the bottom up, then exactly where.)
+    .sort((a, b) => a.g - b.g || a.l - b.l || a.c - b.c || a.h - b.h || a.d - b.d || a.i - b.i)
     .map((x) => x.e);
 }
 

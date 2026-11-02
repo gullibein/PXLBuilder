@@ -331,10 +331,7 @@ export function Viewport() {
       }
 
       const hovered = hoverRef.current ? byId.get(hoverRef.current) : undefined;
-      if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) {
-        if (isoLevel && isoScreenBox(hovered, state.camera, view)) drawIsoOutline(ctx, [hovered], state.camera, view, dpr, theme.hover, false);
-        else drawHover(ctx, hovered, state.camera.zoom);
-      }
+      if (hovered && !state.selectedEntityIds.includes(hovered.id) && !drag) atHeight(ctx, isoLevel ? isoTopOf([hovered]) : 0, state.camera.zoom * dpr, () => drawHover(ctx, hovered, state.camera.zoom));
       // Copies a side drag will make, faint until let go.
       let ghosts: ResolvedEntity[] = [];
       if (drag?.kind === 'extend' && drag.count > 0) {
@@ -346,8 +343,9 @@ export function Viewport() {
         else drawWireframe(ctx, ghosts, state.camera.zoom);
       }
       const reach = drag?.kind === 'extend' ? (shortening ? boxAround(selected.map(getWorldBounds)) : boxAround([drag.box, ...ghosts.map(getWorldBounds)])) : null;
-      if (isoLevel && selected.length && selected.every((e) => isoScreenBox(e, state.camera, view))) drawIsoOutline(ctx, selected, state.camera, view, dpr, theme.select, true);
-      else drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach);
+      // Isometric: the selection's diamond and its points round the top of what is selected (a block's top face).
+      isoSelectionPlane = isoLevel && selected.length ? isoTopOf(selected) : 0;
+      atHeight(ctx, isoSelectionPlane, state.camera.zoom * dpr, () => drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach));
       const bgBox = backgroundBox(state);
       if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
       // A selected picture that fills the screen or repeats: its outline only (it can't be moved or resized).
@@ -440,10 +438,12 @@ export function Viewport() {
       }
       const marksAttr = `${marks.working.size},${marks.waiting.size}`;
       if ((canvas.dataset.aiJobs ?? '') !== marksAttr) canvas.dataset.aiJobs = marksAttr;
-      if (selected.length === 1) drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
+      // (Isometric: the name over the selection's top, where its diamond is.)
+      const labelAt = isoSelectionPlane ? (p: Vec2) => ({ x: toScreen(p).x, y: toScreen(p).y - isoSelectionPlane * state.camera.zoom }) : toScreen;
+      if (selected.length === 1) drawLabel(ctx, selected[0].name, labelAt, getWorldBounds(selected[0]));
       if (selected.length === 2) {
-        drawLabel(ctx, selected[0].name, toScreen, getWorldBounds(selected[0]));
-        drawLabel(ctx, selected[1].name, toScreen, getWorldBounds(selected[1]));
+        drawLabel(ctx, selected[0].name, labelAt, getWorldBounds(selected[0]));
+        drawLabel(ctx, selected[1].name, labelAt, getWorldBounds(selected[1]));
       }
 
       const viewWH = { w: view.width, h: view.height };
@@ -713,7 +713,7 @@ export function Viewport() {
       // A point on the selection box: sides repeat the selection in a line, corners resize one object.
       const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
       const frame = chosen.length && !additive ? selectionFrame(chosen) : null;
-      const boxHandle = frame && handleAt(frame.handles, frame.box, world, state.camera.zoom, ev.pointerType === 'touch' ? 18 : 8);
+      const boxHandle = frame && handleAt(frame.handles, frame.box, selectionPoint(ev, world), state.camera.zoom, ev.pointerType === 'touch' ? 18 : 8);
       if (frame && boxHandle) {
         dragRef.current =
           boxHandle.kind === 'side'
@@ -817,7 +817,7 @@ export function Viewport() {
       }
       const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
       const frame = chosen.length ? selectionFrame(chosen) : null;
-      const handle = frame && handleAt(frame.handles, frame.box, world, state.camera.zoom, 8);
+      const handle = frame && handleAt(frame.handles, frame.box, selectionPoint(ev, world), state.camera.zoom, 8);
       if (handle) {
         hoverRef.current = null;
         canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : handleCursor(handle);
@@ -842,7 +842,7 @@ export function Viewport() {
       return;
     }
     if (drag.kind === 'extend') {
-      const p = toWorld(ev);
+      const p = selectionPoint(ev, toWorld(ev));
       const past = pastSide(drag.box, drag.dir, p);
       drag.count = past >= 0 ? extendCount(drag.box, drag.dir, p, drag.step) : -shrinkCount(drag.layers, -past);
       return;
@@ -867,7 +867,7 @@ export function Viewport() {
     }
     if (drag.kind === 'resize') {
       const grid = state.layout.snapToGrid ? state.project.settings.gridSize / 2 : null;
-      drag.rect = resizeRect(drag.box, drag.dir, toWorld(ev), grid, 4);
+      drag.rect = resizeRect(drag.box, drag.dir, selectionPoint(ev, toWorld(ev)), grid, 4);
       return;
     }
     if (drag.kind === 'paint') {
@@ -1402,6 +1402,14 @@ function isoBrushTarget(screen: Vec2, entities: ResolvedEntity[], preview: Resol
   return { at: world, bottom: isoLookOf(preview) === 'iso_floor' ? -isoLiftFor(preview, 0) : 0, plane: 0 };
 }
 
+/** The level point under the mouse on the selection's plane (isometric: the top of what is selected; else `world`). */
+function selectionPoint(ev: { clientX: number; clientY: number }, world: Vec2): Vec2 {
+  if (!isoPickView || !isoSelectionPlane) return world;
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="viewport-canvas"]');
+  if (!canvas) return world;
+  return onPlane(localPoint(canvas, ev), isoSelectionPlane, isoPickView.camera, isoPickView.view);
+}
+
 /** The level point under the mouse on a surface `plane` high (isoLift units). */
 function onPlane(screen: Vec2, plane: number, camera: Camera, view: ViewSize): Vec2 {
   return screenToWorld(camera, view, { x: screen.x, y: screen.y + plane * camera.zoom });
@@ -1519,20 +1527,22 @@ function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: numbe
   else ctx.rect(-w / 2, -h / 2, w, h);
 }
 
-/** Isometric: outlines round what is drawn (standing things and blocks), on the screen; the level's transform is put back after. */
-function drawIsoOutline(ctx: CanvasRenderingContext2D, list: ResolvedEntity[], camera: Camera, view: ViewSize, dpr: number, color: string, selected: boolean): void {
-  const before = ctx.getTransform();
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = selected ? 2 : 1.5;
-  for (const e of list) {
-    const b = isoScreenBox(e, camera, view);
-    if (b) ctx.strokeRect(b.left - 2, b.top - 2, b.right - b.left + 4, b.bottom - b.top + 4);
-  }
-  ctx.restore();
-  ctx.setTransform(before);
+/** Isometric: the height of the top of these (a block's top face; anything else where it stands), in isoLift units. */
+function isoTopOf(list: ResolvedEntity[]): number {
+  return Math.max(...list.map((e) => isoVolume(e)?.top ?? isoLiftOf(e)));
 }
+
+/** Draws on the level's plane `height` up (isometric: that many units higher on the screen; 0: as it is). */
+function atHeight(ctx: CanvasRenderingContext2D, height: number, canvasPerUnit: number, draw: () => void): void {
+  if (!height) return draw();
+  const m = ctx.getTransform();
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f - height * canvasPerUnit);
+  draw();
+  ctx.setTransform(m);
+}
+
+/** The height of the selection's plane in an isometric level (its points are grabbed there). */
+let isoSelectionPlane = 0;
 
 function drawHover(ctx: CanvasRenderingContext2D, e: ResolvedEntity, zoom: number): void {
   ctx.save();

@@ -39,9 +39,11 @@ describe('the isometric view', () => {
     expect(looks.get('Cobblestone')).toBe('iso_block');
     expect(looks.get('Player')).toBe('stand');
     const order = isoOrder(all);
-    const firstUpright = order.findIndex((e) => !['iso_floor', 'flat'].includes(isoLookOf(e)));
-    expect(order.slice(firstUpright).every((e) => !['iso_floor', 'flat'].includes(isoLookOf(e)))).toBe(true);
-    const depth = order.slice(firstUpright).map((e) => e.transform.position.x + e.transform.position.y);
+    // (A floor block raised off the ground is drawn with the blocks.)
+    const onGround = (e: (typeof order)[number]) => ['iso_floor', 'flat'].includes(isoLookOf(e)) && !(Number(e.components.Sprite?.isoLift ?? 0) > 0);
+    const firstUpright = order.findIndex((e) => !onGround(e));
+    expect(order.slice(firstUpright).every((e) => !onGround(e))).toBe(true);
+    const depth = order.slice(firstUpright).map((e) => Math.floor(e.transform.position.x / 32) + Math.floor(e.transform.position.y / 32));
     expect(depth).toEqual([...depth].sort((a, b) => a - b));
     // The user's blocks: whole, 16 × 16.
     for (const a of Object.values(ISO_TILES)) expect(a.rows.length === 16 && a.rows.every((r) => r.length === 16)).toBe(true);
@@ -85,5 +87,53 @@ describe('the isometric view', () => {
     for (let i = 0; i < 600; i++) rt.update(1 / 120, input);
     expect(player.x).toBeGreaterThan(0);
     expect(player.y).toBeGreaterThan(0);
+  });
+
+  describe('walkable heights', () => {
+    const hold = (rt: Runtime, keys: ('up' | 'down' | 'left' | 'right')[], seconds: number) => {
+      const input = new InputState();
+      for (const k of keys) input.press(k);
+      for (let i = 0; i < Math.round(seconds * 120); i++) rt.update(1 / 120, input);
+    };
+    const start = (i: number, j: number) => {
+      const project = createIsometricProject(registry);
+      const rt = new Runtime(project, project.scenes[0].id, registry);
+      const p = rt.entities.find((e) => e.controller)!;
+      p.x = i * 32 + 16;
+      p.y = j * 32 + 16;
+      p.z = rt.groundHeight(p.x, p.y);
+      return { rt, p };
+    };
+
+    it('the player steps up a block at a time onto the hill, to its top, and picks up the coin there', () => {
+      const { rt, p } = start(2, 4);
+      expect(rt.groundHeight(2 * 32 + 16, 1 * 32 + 16)).toBe(16);
+      expect(rt.groundHeight(2 * 32 + 16, 16)).toBe(32);
+      const coins = () => rt.entities.filter((e) => e.alive && e.name.startsWith('Coin')).length;
+      const before = coins();
+      // Up the level's y (up and right on the screen).
+      hold(rt, ['up', 'right'], 2.5);
+      expect(Math.floor(p.y / 32)).toBe(0);
+      expect(p.z).toBe(32);
+      expect(coins()).toBe(before - 1);
+      // Drawn up there, after the block it stands on.
+      const drawn = rt.renderList().find((r) => r.components.CharacterController)!;
+      expect(drawn.components.Sprite!.isoLift).toBe(32);
+    });
+
+    it('two blocks up is a cliff: it stops the player; walking off a terrace, it falls', () => {
+      const low = start(0, 0);
+      // Along the level's x (right and down on the screen), into the two-block-high top of the hill.
+      hold(low.rt, ['right', 'down'], 1);
+      expect(Math.floor(low.p.x / 32)).toBe(0);
+      expect(low.p.z).toBe(0);
+      const high = start(1, 0);
+      expect(high.p.z).toBe(32);
+      hold(high.rt, ['left', 'up'], 0.2);
+      expect(Math.floor(high.p.x / 32)).toBe(0);
+      expect(high.p.z).toBeGreaterThan(0);
+      hold(high.rt, ['left', 'up'], 0.6);
+      expect(high.p.z).toBe(0);
+    });
   });
 });
