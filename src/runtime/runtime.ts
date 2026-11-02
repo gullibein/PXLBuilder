@@ -652,6 +652,8 @@ export class Runtime {
         return { x: e.x, y: e.y, w: s.x, h: s.y };
       }),
     );
+    // (An isometric level: the camera sees it at an angle.)
+    this.cam.camera.iso = this.scene.world.view === 'iso';
     this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level);
     this.scripts.reset();
     this.gameplay.reset();
@@ -1226,9 +1228,14 @@ export class Runtime {
     e.hanging = null;
     if (scripted) return;
     const c = e.controller!;
-    const dx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
-    const dy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
-    if (dx !== 0) e.facing = dx as 1 | -1;
+    const sx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
+    const sy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
+    // Seen at an angle (isometric), the keys go the way they point on the screen: up is up the screen (north-west
+    // and north-east of the level's grid at once), right is right across it.
+    const iso = this.cam.camera.iso === true;
+    const dx = iso ? Math.sign(sx + sy) : sx;
+    const dy = iso ? Math.sign(sy - sx) : sy;
+    if (sx !== 0) e.facing = sx as 1 | -1;
     if (dx !== 0 || dy !== 0) e.heading = { x: dx, y: dy };
     const len = Math.hypot(dx, dy) || 1;
     const tx = (dx / len) * c.speed * e.speedFactor;

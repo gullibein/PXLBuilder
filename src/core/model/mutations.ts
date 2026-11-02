@@ -115,7 +115,9 @@ export function setWorldSettings(project: Project, sceneId: Id, patch: Partial<W
   if (patch.backgroundColor !== undefined && validateField({ kind: 'color', default: '#000000' }, patch.backgroundColor)) {
     throw new ModelError('Background color must be a hex color');
   }
+  if (patch.view !== undefined && patch.view !== 'flat' && patch.view !== 'iso') throw new ModelError('View must be "flat" or "iso"');
   Object.assign(scene.world, cloneValue(patch));
+  if (scene.world.view === 'flat') delete scene.world.view;
 }
 
 /** Replaces an image's picture (a background redrawn at a new size), keeping its id so everything using it follows. */

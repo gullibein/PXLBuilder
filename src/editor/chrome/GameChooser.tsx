@@ -1,4 +1,5 @@
 import { AIPicker } from '../prompt/AIPicker';
+import { ISO_TILES } from '../../core/model/isoTiles';
 import { AddPictureButton, PictureStrip, usePictures } from '../prompt/Pictures';
 import { useMemo, useState } from 'react';
 import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
@@ -139,6 +140,11 @@ export function GameChooser() {
             <span className="style-name">Roguelike</span>
             <span className="style-blurb">A new dungeon every play, deeper and harder floor by floor, step by step with fog of war; one life per run (like Rogue).</span>
           </button>
+          <button className="style-card game-card" data-testid="game-isometric" onClick={() => pick('isometric')}>
+            <IsometricPreview />
+            <span className="style-name">Isometric</span>
+            <span className="style-blurb">Seen from above at an angle: blocks and characters standing on a diamond grid (like an isometric adventure).</span>
+          </button>
         </div>
         <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size">
           <span>Sprite size</span>
@@ -218,6 +224,31 @@ function RpgPreview() {
         { color: '#1b2266', x: 0.5, y: 4.2, w: 15, h: 1.4 },
       ]}
     />
+  );
+}
+
+/** A little island of the isometric blocks, drawn as the game draws them (each block on its diamond, back to front). */
+function IsometricPreview() {
+  const src = useMemo(() => Object.fromEntries(['Water', 'Grass', 'Dirt', 'Cobblestone', 'Wood', 'Lava'].map((n) => [n, createPixelArtAsset(n, ISO_TILES[n]).data])), []);
+  const player = useMemo(() => createTopDownStarterAssets().player.data, []);
+  const items: { src: string; i: number; j: number; up?: boolean }[] = [];
+  for (let j = -1; j <= 4; j++)
+    for (let i = -1; i <= 4; i++) {
+      const edge = i < 0 || j < 0 || i > 3 || j > 3;
+      items.push({ src: src[edge ? 'Water' : j === 2 ? 'Dirt' : i === 3 && j === 3 ? 'Lava' : 'Grass'], i, j });
+    }
+  items.push({ src: src.Cobblestone, i: 2, j: 0, up: true }, { src: src.Cobblestone, i: 3, j: 0, up: true }, { src: src.Wood, i: 0, j: 3, up: true });
+  items.sort((a, b) => Number(!!a.up) - Number(!!b.up) || a.i + a.j - (b.i + b.j));
+  // (Blocks 22 px on the card: a top diamond 22 × 11.)
+  const B = 22;
+  const place = (i: number, j: number) => ({ left: 128 + ((i - j) * B) / 2 - B / 2, top: 12 + ((i + j) * B) / 4 });
+  return (
+    <span className="game-preview" aria-hidden="true" style={{ background: '#16213a' }}>
+      {items.map((t, n) => (
+        <img key={n} src={t.src} alt="" style={{ ...place(t.i, t.j), top: place(t.i, t.j).top - (t.up ? B / 2 : 0), width: B, height: B }} />
+      ))}
+      <img src={player} alt="" style={{ left: place(0, 2).left, top: place(0, 2).top - B * 0.6, width: B, height: B }} />
+    </span>
   );
 }
 

@@ -124,6 +124,7 @@ const STARTERS: { id: Starter; is: string }[] = [
   { id: 'topdown', is: 'seen from above, no gravity: player that walks in every direction, floor, walls, doors, wandering enemies, hazards, a goal (Zelda, Rogue, Boulder Dash, mazes, grid and board puzzles)' },
   { id: 'rpg', is: 'an RPG, seen from above: a map to walk (the Overworld, walls, wandering slimes that start battles) and a Battle level where a party (a knight and a mage) fights monsters in turns with menus (Fight, Magic, Potion, Run); health carries over (Dragon Quest, Final Fantasy, Pokémon-like games)' },
   { id: 'roguelike', is: 'a roguelike, seen from above: one random level (a new dungeon every play: rooms, corridors, monsters and treasure picked for the floor; stairs down to deeper, harder floors), played square by square (the monsters answer each step), fog of war, gold and potions, dying starts a new run (Rogue, NetHack, Mystery Dungeon-like games)' },
+  { id: 'isometric', is: 'seen from above at an angle (isometric: the level drawn as diamonds, blocks and characters standing upright on them), played as a top-down game: an island of grass blocks in water, dirt, stone ruins, wooden crates, lava, coins, a wandering enemy, a goal; the arrow keys go the way they point on the screen (isometric adventures, Diablo-like views, isometric puzzles)' },
 ];
 
 export interface PromptOptions {
@@ -233,7 +234,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         trace?.('note', `The AI chose the ${to} starter${response.kind === 'switch_starter' ? '' : ' (in its words)'}; asking again on it`);
         switchStarter(to);
         switchedTo = to;
-        stage(`Moved to the ${to === 'topdown' ? 'top-down' : to === 'rpg' ? 'RPG' : to === 'roguelike' ? 'roguelike' : 'platformer'} starter; building and drawing the game`);
+        stage(`Moved to the ${to === 'topdown' ? 'top-down' : to === 'rpg' ? 'RPG' : to === 'roguelike' ? 'roguelike' : to === 'isometric' ? 'isometric' : 'platformer'} starter; building and drawing the game`);
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: to, starters: STARTERS, sprites };

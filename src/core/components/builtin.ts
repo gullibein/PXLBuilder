@@ -42,6 +42,14 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       },
       autotileSheet: { kind: 'assetRef', assetKind: 'image', default: null, description: "The autotile's 16 pictures (one per combination of neighbours above, right, below and left), made in the Autotile editor" },
       layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
+      isoLook: {
+        kind: 'enum',
+        options: ['auto', 'stand', 'flat', 'block', 'iso_floor', 'iso_block'],
+        default: 'auto',
+        description:
+          'In an isometric level (seen at an angle): stand: upright on its square (characters, trees, items); flat: lying on the ground (a rug, a puddle, a top-down floor tile); block: a block with its picture on top and shaded sides (a top-down wall tile); iso_floor: the picture is an isometric block whose top is the ground (a floor of blocks); iso_block: an isometric block standing on its square (a wall of blocks). auto: tiles that block the way are blocks, other tiles flat, everything else stands',
+      },
+      isoLift: { kind: 'number', default: 0, min: -256, max: 256, step: 1, description: 'In an isometric level: drawn this many level pixels higher (a raised floor, something floating, a block on a block: 16 for one block up); how it moves and collides is the same' },
     },
   },
   {

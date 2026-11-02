@@ -30,6 +30,32 @@ export interface Camera {
   x: number;
   y: number;
   zoom: number;
+  /** Seen at an angle (an isometric level): the ground is drawn as 2:1 diamonds, things stand upright on it. */
+  iso?: boolean;
+}
+
+/**
+ * The isometric view: the level stays as it is (seen from above, x right, y down) and is drawn turned 45° and
+ * squashed to half its height, so each grid square is a diamond twice as wide as it is tall (a 32 px square: 32 ×
+ * 16). Things that stand (characters, blocks) are drawn upright where their square is.
+ */
+export function isoProject(p: Vec2): Vec2 {
+  return { x: 0.5 * (p.x - p.y), y: 0.25 * (p.x + p.y) };
+}
+export function isoUnproject(s: Vec2): Vec2 {
+  return { x: s.x + 2 * s.y, y: 2 * s.y - s.x };
+}
+
+/** The level distance a move on the screen (in screen px) is, at this camera. */
+export function screenDelta(camera: Camera, d: Vec2): Vec2 {
+  const s = { x: d.x / camera.zoom, y: d.y / camera.zoom };
+  return camera.iso ? isoUnproject(s) : s;
+}
+
+/** The camera that shows level point `world` at screen point `screen`, at `zoom`. */
+export function cameraKeeping(camera: Camera, view: ViewSize, world: Vec2, screen: Vec2, zoom: number): Camera {
+  const d = screenDelta({ ...camera, zoom }, { x: screen.x - view.width / 2, y: screen.y - view.height / 2 });
+  return { ...camera, zoom, x: world.x - d.x, y: world.y - d.y };
 }
 
 export interface ViewSize {
@@ -38,11 +64,25 @@ export interface ViewSize {
 }
 
 export function worldToScreen(camera: Camera, view: ViewSize, p: Vec2): Vec2 {
-  return { x: (p.x - camera.x) * camera.zoom + view.width / 2, y: (p.y - camera.y) * camera.zoom + view.height / 2 };
+  const d = { x: p.x - camera.x, y: p.y - camera.y };
+  const s = camera.iso ? isoProject(d) : d;
+  return { x: s.x * camera.zoom + view.width / 2, y: s.y * camera.zoom + view.height / 2 };
 }
 
 export function screenToWorld(camera: Camera, view: ViewSize, p: Vec2): Vec2 {
-  return { x: (p.x - view.width / 2) / camera.zoom + camera.x, y: (p.y - view.height / 2) / camera.zoom + camera.y };
+  const d = screenDelta(camera, { x: p.x - view.width / 2, y: p.y - view.height / 2 });
+  return { x: d.x + camera.x, y: d.y + camera.y };
+}
+
+/** The part of the level the view shows (its four corners, as a box in level coordinates). */
+export function worldBoundsOfView(camera: Camera, view: ViewSize): { left: number; top: number; right: number; bottom: number } {
+  const pts = [
+    { x: 0, y: 0 },
+    { x: view.width, y: 0 },
+    { x: 0, y: view.height },
+    { x: view.width, y: view.height },
+  ].map((p) => screenToWorld(camera, view, p));
+  return { left: Math.min(...pts.map((p) => p.x)), right: Math.max(...pts.map((p) => p.x)), top: Math.min(...pts.map((p) => p.y)), bottom: Math.max(...pts.map((p) => p.y)) };
 }
 
 /** Sets the canvas transform so subsequent drawing is in world coordinates. */
@@ -62,6 +102,12 @@ export function pixelPerfectZoom(zoom: number, canvasPerCss: number, worldPerArt
 }
 
 export function applyCamera(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize, dpr: number): void {
+  if (camera.iso) {
+    const s = dpr * camera.zoom;
+    const c = isoProject(camera);
+    ctx.setTransform(s * 0.5, s * 0.25, -s * 0.5, s * 0.25, dpr * (view.width / 2) - s * c.x, dpr * (view.height / 2) - s * c.y);
+    return;
+  }
   ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * (view.width / 2 - camera.x * camera.zoom), dpr * (view.height / 2 - camera.y * camera.zoom));
 }
 
@@ -283,10 +329,23 @@ function placeOnScreen(ctx: CanvasRenderingContext2D, m: DOMMatrix, position: { 
   ctx.setTransform((w / size.x) * Math.sign(scale.x || 1) * Math.sign(m.a), 0, 0, (h / size.y) * Math.sign(scale.y || 1) * Math.sign(m.d), (x0 + x1) / 2, (y0 + y1) / 2);
 }
 
-/** The part of the level the canvas shows (in the coordinates of the current transform), or null when it is turned or skewed. */
+/** The part of the level the canvas shows (in the coordinates of the current transform), or null when it can't be told. */
 function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: number; top: number; bottom: number } | null {
   const m = ctx.getTransform();
-  if (m.b !== 0 || m.c !== 0 || m.a === 0 || m.d === 0) return null;
+  if (m.b !== 0 || m.c !== 0) {
+    // Seen at an angle: the box round the canvas's four corners in the level (a margin for what stands tall).
+    if (!m.is2D || m.a * m.d - m.b * m.c === 0) return null;
+    const inv = m.inverse();
+    const pts = [
+      [0, 0],
+      [ctx.canvas.width, 0],
+      [0, ctx.canvas.height],
+      [ctx.canvas.width, ctx.canvas.height],
+    ].map(([x, y]) => inv.transformPoint({ x, y }));
+    const pad = 96;
+    return { left: Math.min(...pts.map((p) => p.x)) - pad, right: Math.max(...pts.map((p) => p.x)) + pad, top: Math.min(...pts.map((p) => p.y)) - pad, bottom: Math.max(...pts.map((p) => p.y)) + pad };
+  }
+  if (m.a === 0 || m.d === 0) return null;
   const x0 = -m.e / m.a;
   const x1 = (ctx.canvas.width - m.e) / m.a;
   const y0 = -m.f / m.d;
@@ -309,6 +368,33 @@ export function byLayer<T extends ResolvedEntity>(entities: T[]): T[] {
   return entities
     .map((e, i) => ({ e, i, l: layerOf(e) }))
     .sort((a, b) => a.l - b.l || a.i - b.i)
+    .map((x) => x.e);
+}
+
+export type IsoLook = 'stand' | 'flat' | 'block' | 'iso_floor' | 'iso_block';
+
+/** How a thing is drawn in an isometric level (Sprite.isoLook; auto: tiles in the way are blocks, other tiles lie flat, the rest stands). */
+export function isoLookOf(e: ResolvedEntity): IsoLook {
+  const l = e.components.Sprite?.isoLook;
+  if (l === 'stand' || l === 'flat' || l === 'block' || l === 'iso_floor' || l === 'iso_block') return l;
+  if (!e.tile) return 'stand';
+  const c = e.components.Collider;
+  const body = e.components.PhysicsBody?.bodyType;
+  return c && c.isTrigger !== true && body !== 'dynamic' && body !== 'kinematic' ? 'block' : 'flat';
+}
+
+/**
+ * Drawing order in an isometric level: what lies on the ground first (flat things, floor blocks), then blocks and
+ * standing things from the back (top of the level, left) to the front, so nearer things cover farther ones; the
+ * Sprite layer first within each.
+ */
+export function isoOrder<T extends ResolvedEntity>(entities: T[]): T[] {
+  return entities
+    .map((e, i) => {
+      const look = isoLookOf(e);
+      return { e, i, g: look === 'flat' || look === 'iso_floor' ? 0 : 1, l: layerOf(e), d: e.transform.position.x + e.transform.position.y };
+    })
+    .sort((a, b) => a.g - b.g || a.l - b.l || a.d - b.d || a.i - b.i)
     .map((x) => x.e);
 }
 
@@ -530,8 +616,11 @@ export function drawEntities(
   const base = ctx.getTransform();
   const baseAlpha = ctx.globalAlpha;
   const baseSmoothing = ctx.imageSmoothingEnabled;
+  // Seen at an angle (an isometric level): the camera's transform is skewed; canvas px per level px on screen.
+  const iso = Math.abs(base.b) > 1e-12 && Math.abs(base.c) > 1e-12;
+  const isoScale = iso ? Math.hypot(base.a, base.b) / Math.hypot(0.5, 0.25) : 1;
 
-  for (const entity of byLayer(near)) {
+  for (const entity of iso ? isoOrder(near) : byLayer(near)) {
     const sprite = entity.components.Sprite;
     const invisible = sprite?.visible === false;
     if (!sprite || (invisible && invisibleAlpha <= 0)) continue;
@@ -576,6 +665,59 @@ export function drawEntities(
         else ctx.drawImage(source, -size.x / 2, y, size.x, size.y);
       } else ctx.fillRect(-size.x / 2, y, size.x, size.y);
     };
+    // Isometric: standing things and blocks are drawn upright where their square is (flat things lie on the ground
+    // through the camera's own transform, as below).
+    if (iso) {
+      const look = isoLookOf(entity);
+      if (look !== 'flat') {
+        const s = isoScale;
+        const lift = (typeof sprite.isoLift === 'number' ? sprite.isoLift : 0) * s;
+        const at = base.transformPoint({ x: position.x, y: position.y });
+        const W = size.x * Math.abs(scale.x) * s;
+        const H = size.y * Math.abs(scale.y) * s;
+        if (look === 'block') {
+          // A block from a picture seen from above: the picture on top (raised half its width), its sides shaded.
+          const hb = W / 2;
+          const up = hb + lift;
+          const hw = (size.x * Math.abs(scale.x)) / 2;
+          const hh = (size.y * Math.abs(scale.y)) / 2;
+          const west = base.transformPoint({ x: position.x - hw, y: position.y + hh });
+          const south = base.transformPoint({ x: position.x + hw, y: position.y + hh });
+          const east = base.transformPoint({ x: position.x + hw, y: position.y - hh });
+          const face = (a: DOMPoint, b: DOMPoint, dark: number) => {
+            const ux = b.x - a.x;
+            const uy = b.y - a.y;
+            ctx.setTransform(ux / size.x, uy / size.x, 0, hb / size.y, a.x + ux / 2, a.y - up + uy / 2 + hb / 2);
+            paint(0);
+            ctx.fillStyle = `rgba(0, 0, 0, ${dark})`;
+            ctx.fillRect(-size.x / 2, -size.y / 2, size.x, size.y);
+            ctx.fillStyle = color;
+          };
+          face(west, south, 0.25);
+          face(south, east, 0.45);
+          ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f - up);
+          ctx.translate(position.x, position.y);
+          ctx.scale(scale.x, scale.y);
+          paint(0);
+          continue;
+        }
+        // An upright picture: standing (its bottom a little below its square's middle), or an isometric block whose
+        // top is the ground (iso_floor) or that stands on the square (iso_block).
+        const top = look === 'stand' ? at.y + W / 8 - H : look === 'iso_floor' ? at.y - W / 4 : at.y - W / 4 - (H - W / 2);
+        const x0 = Math.round(at.x - W / 2);
+        const y0 = Math.round(top - lift);
+        const w = Math.max(1, Math.round(W));
+        const h = Math.max(1, Math.round(H));
+        ctx.setTransform((w / size.x) * Math.sign(scale.x || 1), 0, 0, (h / size.y) * Math.sign(scale.y || 1), x0 + w / 2, y0 + h / 2);
+        if (look === 'stand' && rotation % 360 !== 0) ctx.rotate((rotation * Math.PI) / 180);
+        if (!img && entity.components.Collider?.shape === 'circle') {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, size.x / 2, size.y / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else paint(0);
+        continue;
+      }
+    }
     // Rounded corners of a tile surface: from the tiles of the same kind around it.
     let clipped = false;
     const round = rounds(entity) && rotation % 360 === 0 && !(sheet && img === sheet);

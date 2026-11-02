@@ -3467,6 +3467,29 @@ try {
     for (let n = 0; n < 6; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
+  {
+    // Isometric: a top-down level seen at an angle; a block is picked where it is drawn on the screen.
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-new').click();
+    await page.getByTestId('game-isometric').click();
+    await check(async () => Number(await canvas.getAttribute('data-entities')) > 200, 'New project → Isometric: an island of blocks is placed');
+    await page.waitForTimeout(300);
+    const [cx, cy, zoom] = (await canvas.getAttribute('data-camera')).split(',').map(Number);
+    const box = await canvas.boundingBox();
+    // The wooden crate on square (4, 3): it stands up from its square, its picture's middle a quarter square above.
+    const wx = 4 * 32 + 16 - cx;
+    const wy = 3 * 32 + 16 - cy;
+    await page.mouse.click(box.x + box.width / 2 + 0.5 * (wx - wy) * zoom, box.y + box.height / 2 + 0.25 * (wx + wy) * zoom - 8 * zoom);
+    await check(async () => (await canvas.getAttribute('data-selection')) === '144,112', 'a click on a block standing on its square selects it (picked where it is drawn)');
+    await page.screenshot({ path: `${OUT}/00h-isometric.png` });
+    await page.keyboard.press('Escape');
+    await page.getByTestId('play').click();
+    await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
+    await page.waitForTimeout(300);
+    await page.getByTestId('play').click();
+    await page.getByTestId('undo').click();
+    await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
+  }
   // (The AI is answered by the stand-in again for this.)
   await page.route('**/api/ai', async (route) => {
     const body = JSON.parse(route.request().postData());
@@ -3500,7 +3523,7 @@ try {
   await page.keyboard.press('Escape');
   {
     const asks = aiRequests.filter((b) => b.request.includes('dig for diamonds'));
-    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 4, 'the starters were described with the first request (one more only because it switched)');
+    await check(async () => asks.length === 2 && asks[0].context.newGame.starters.length === 5, 'the starters were described with the first request (one more only because it switched)');
   }
   for (const variant of ['starter unnamed test', 'starter in words test']) {
     // A new game the AI wants on the other starter, without naming it (or only in words): switched, and built.

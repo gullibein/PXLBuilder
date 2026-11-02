@@ -8,7 +8,7 @@
  */
 import { cameraLimits, clampCamera, startCamera, type CameraBounds, type CameraSettings } from '../core/model/camera';
 import type { Vec2 } from '../core/types';
-import type { Camera } from '../render/renderer';
+import { worldBoundsOfView, type Camera } from '../render/renderer';
 import type { RuntimeEntity } from './runtime';
 
 /** Used until Play tells the camera how big the screen is (tests, the first frame). */
@@ -61,6 +61,10 @@ export class CameraController {
 
   /** What the camera shows now, in the level (without any shake). */
   visible(): { minX: number; minY: number; maxX: number; maxY: number } {
+    if (this.camera.iso) {
+      const b = worldBoundsOfView(this.camera, this.view);
+      return { minX: b.left, minY: b.top, maxX: b.right, maxY: b.bottom };
+    }
     const hw = this.view.width / 2 / this.camera.zoom;
     const hh = this.view.height / 2 / this.camera.zoom;
     return { minX: this.camera.x - hw, minY: this.camera.y - hh, maxX: this.camera.x + hw, maxY: this.camera.y + hh };
@@ -98,7 +102,8 @@ export class CameraController {
         goal = { x: this.camera.x, y: this.camera.y };
       } else goal = startCamera(this.settings, null, this.level, this.view);
     }
-    goal = clampCamera(goal, cameraLimits(this.settings, this.level), this.view, this.camera.zoom);
+    // (Seen at an angle, the screen shows a diamond of the level: the flat limits don't apply.)
+    if (!this.camera.iso) goal = clampCamera(goal, cameraLimits(this.settings, this.level), this.view, this.camera.zoom);
     this.camera.x += (goal.x - this.camera.x) * k;
     this.camera.y += (goal.y - this.camera.y) * k;
   }
@@ -114,7 +119,7 @@ export class CameraController {
   frame(): Camera {
     if (this.shake.left <= 0) return this.camera;
     const s = this.shake.strength * (this.shake.left / this.shake.total);
-    return { x: this.camera.x + (this.random() * 2 - 1) * s, y: this.camera.y + (this.random() * 2 - 1) * s, zoom: this.camera.zoom };
+    return { x: this.camera.x + (this.random() * 2 - 1) * s, y: this.camera.y + (this.random() * 2 - 1) * s, zoom: this.camera.zoom, iso: this.camera.iso };
   }
 
   /** The flash to draw over the screen, if one is running. */

@@ -20,7 +20,7 @@ import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommand
 import { openProjectFile } from '../persistence';
 import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
-import { applyCamera, byLayer, drawBackground, drawEntities, screenToWorld, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
+import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, isoLookOf, isoOrder, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
 import { ensureLevelInView, setViewportSize } from '../actions';
 import { publishAnchor } from '../prompt/anchor';
@@ -230,6 +230,13 @@ export function Viewport() {
       const byId = new Map(entities.map((e) => [e.id, e]));
       const selected = state.selectedEntityIds.filter((id) => !shortening?.has(id)).map((id) => byId.get(id)).filter((e): e is ResolvedEntity => !!e);
 
+      // An isometric level is seen at an angle: the editor's camera too.
+      const isoLevel = scene.world.view === 'iso';
+      if (!!state.camera.iso !== isoLevel) {
+        state.setCamera({ iso: isoLevel });
+        return;
+      }
+      isoPickView = isoLevel ? { camera: state.camera, view } : null;
       // Observable view state (used by tests and handy when debugging).
       const camAttr = `${state.camera.x.toFixed(1)},${state.camera.y.toFixed(1)},${state.camera.zoom.toFixed(4)}`;
       if (canvas.dataset.camera !== camAttr) canvas.dataset.camera = camAttr;
@@ -250,10 +257,11 @@ export function Viewport() {
       const layer = (layerRef.current ??= { canvas: document.createElement('canvas'), key: '', entities: null, project: null, animated: [], at: { x: 0, y: 0 } });
       const marginCss = Math.min(360, Math.round(Math.min(view.width, view.height) * 0.35));
       const margin = Math.round(marginCss * dpr);
-      const key = `${scene.id}|${state.camera.zoom}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}|${scene.generator ? JSON.stringify(scene.generator) : ''}`;
+      const key = `${scene.id}|${state.camera.zoom}|${isoLevel ? 'iso' : ''}|${canvas.width}x${canvas.height}|${wire ? 1 : 0}|${state.layout.showGrid ? 1 : 0}|${scene.generator ? JSON.stringify(scene.generator) : ''}`;
       // How far the view moved since the layer was drawn, in canvas pixels (whole ones: pixel art stays sharp).
-      const shiftX = Math.round((layer.at.x - state.camera.x) * state.camera.zoom * dpr);
-      const shiftY = Math.round((layer.at.y - state.camera.y) * state.camera.zoom * dpr);
+      const moved = worldToScreen(state.camera, view, layer.at);
+      const shiftX = Math.round((moved.x - view.width / 2) * dpr);
+      const shiftY = Math.round((moved.y - view.height / 2) * dpr);
       if (layer.key !== key || layer.entities !== entities || layer.project !== state.project || Math.abs(shiftX) > margin || Math.abs(shiftY) > margin) {
         if (layer.canvas.width !== canvas.width + 2 * margin || layer.canvas.height !== canvas.height + 2 * margin) {
           layer.canvas.width = canvas.width + 2 * margin;
@@ -300,9 +308,7 @@ export function Viewport() {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       {
-        const dx = Math.round((layer.at.x - state.camera.x) * state.camera.zoom * dpr);
-        const dy = Math.round((layer.at.y - state.camera.y) * state.camera.zoom * dpr);
-        ctx.drawImage(layer.canvas, dx - margin, dy - margin);
+        ctx.drawImage(layer.canvas, shiftX - margin, shiftY - margin);
       }
       applyCamera(ctx, state.camera, view, dpr);
       if (layer.animated.length) drawEntities(ctx, layer.animated, images, 0.3, time / 1000, 32 / (state.project.settings.spriteResolution ?? 32));
@@ -310,7 +316,7 @@ export function Viewport() {
       drawJumpArcs(ctx, state.layout.overlays, entities, scene, state.camera.zoom);
       let frameAttr = '';
       // The camera outline once anything is placed (with nothing to follow, it shows where a still camera looks).
-      if (state.layout.showCameraOutlines && placed.length) {
+      if (state.layout.showCameraOutlines && placed.length && !isoLevel) {
         // From where things are, not where they're being dragged: the camera frame stays put while the player is held.
         const f = cameraFrame(scene, placed, view, playZoom(state.project, scene, view));
         drawCameraFrame(ctx, f, state.camera.zoom, { hover: hoverOutlineRef.current, selected: state.cameraOutline });
@@ -490,7 +496,8 @@ export function Viewport() {
       const before = screenToWorld(camera, view, screen);
       const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor));
       // Keep the world point under the cursor fixed.
-      setCamera({ zoom, x: before.x - (screen.x - view.width / 2) / zoom, y: before.y - (screen.y - view.height / 2) / zoom });
+      const next = cameraKeeping(camera, view, before, screen, zoom);
+      setCamera({ zoom, x: next.x, y: next.y });
     };
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
@@ -499,7 +506,8 @@ export function Viewport() {
         zoomAt(localPoint(canvas, ev), intent.factor);
       } else {
         const { camera, setCamera } = useEditor.getState();
-        setCamera({ x: camera.x + intent.dx / camera.zoom, y: camera.y + intent.dy / camera.zoom });
+        const d = screenDelta(camera, { x: intent.dx, y: intent.dy });
+        setCamera({ x: camera.x + d.x, y: camera.y + d.y });
       }
     };
     // Safari reports trackpad pinches as gesture events instead of ctrl+wheel.
@@ -712,7 +720,7 @@ export function Viewport() {
       }
       // A camera outline (its label, or its line where no object is under it): select it (it glows) and open its prompt
       // card (with Settings for the camera's settings).
-      const outline = additive || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
+      const outline = additive || !state.layout.showCameraOutlines || isoPickView || !entities.length ? null : outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
       if (outline) {
         state.selectCameraOutline(outline, world);
         state.setPromptOpen(true);
@@ -755,7 +763,8 @@ export function Viewport() {
         const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, g.camera.zoom * (Math.hypot(a.x - b.x, a.y - b.y) / g.dist)));
         const view = viewRef.current;
         const anchor = screenToWorld(g.camera, view, g.mid);
-        useEditor.getState().setCamera({ zoom, x: anchor.x - (mid.x - view.width / 2) / zoom, y: anchor.y - (mid.y - view.height / 2) / zoom });
+        const next = cameraKeeping(g.camera, view, anchor, mid, zoom);
+        useEditor.getState().setCamera({ zoom, x: next.x, y: next.y });
         return;
       }
     }
@@ -802,7 +811,7 @@ export function Viewport() {
       const line = hit || onConnector ? null : connectionAt(state.project, getActiveScene(state), new Map(entities.map((e) => [e.id, e])), world, state.camera.zoom);
       hoverLinkRef.current = line;
       const onLine = !!line;
-      hoverOutlineRef.current = onConnector || onLine || !state.layout.showCameraOutlines || !entities.length ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current, playZoom(state.project, getActiveScene(state), viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
+      hoverOutlineRef.current = onConnector || onLine || !state.layout.showCameraOutlines || isoPickView || !entities.length ? null : outlineAt(cameraFrame(getActiveScene(state), entities, viewRef.current, playZoom(state.project, getActiveScene(state), viewRef.current)), world, state.camera.zoom, hit ? 0 : 6);
       // On the outline's label: that is what a click picks, not the object under it.
       if (hoverOutlineRef.current) hoverRef.current = null;
       canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : onConnector ? 'crosshair' : hit || onLine || hoverOutlineRef.current ? 'pointer' : 'default';
@@ -856,7 +865,8 @@ export function Viewport() {
       const z = drag.startCamera.zoom;
       drag.moved = true;
       canvasRef.current!.style.cursor = 'grabbing';
-      state.setCamera({ x: drag.startCamera.x - (ev.clientX - drag.startScreen.x) / z, y: drag.startCamera.y - (ev.clientY - drag.startScreen.y) / z });
+      const d = screenDelta({ ...drag.startCamera, zoom: z }, { x: ev.clientX - drag.startScreen.x, y: ev.clientY - drag.startScreen.y });
+      state.setCamera({ x: drag.startCamera.x - d.x, y: drag.startCamera.y - d.y });
     } else if (drag.kind === 'move') {
       // Moving objects: the prompt card steps aside until they're let go.
       state.setObjectDrag(true);
@@ -980,7 +990,7 @@ export function Viewport() {
     const hit = pick(entities, world);
     const scene = getActiveScene(state);
     // The camera outline is picked as a single click picks it.
-    const outline = state.layout.showCameraOutlines && entities.length ? outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6) : null;
+    const outline = state.layout.showCameraOutlines && !isoPickView && entities.length ? outlineAt(cameraFrame(scene, entities, viewRef.current, playZoom(state.project, scene, viewRef.current)), world, state.camera.zoom, hit ? 0 : 6) : null;
     if (outline) state.selectCameraOutline(outline, world);
     else if (hit) {
       if (!state.selectedEntityIds.includes(hit.id)) state.selectEntities([hit.id]);
@@ -1221,10 +1231,41 @@ function capture(canvas: HTMLCanvasElement, pointerId: number): void {
 }
 
 /** Topmost entity under a world point. */
+/** The editor's view of an isometric level (picking goes by what is drawn where on the screen); null: a flat one. */
+let isoPickView: { camera: Camera; view: ViewSize } | null = null;
+
 function pick(entities: ResolvedEntity[], p: Vec2): ResolvedEntity | null {
+  if (isoPickView) return pickIso(entities, p, isoPickView.camera, isoPickView.view);
   // What is drawn on top is picked first (a floor on a lower layer never hides what stands on it).
   const ordered = byLayer(entities);
   for (let i = ordered.length - 1; i >= 0; i--) if (containsPoint(ordered[i], p)) return ordered[i];
+  return null;
+}
+
+/**
+ * Isometric picking: what is drawn nearest the front under the point on the screen. Standing things and blocks by
+ * the picture's box on the screen; flat things by their square on the ground.
+ */
+function pickIso(entities: ResolvedEntity[], p: Vec2, camera: Camera, view: ViewSize): ResolvedEntity | null {
+  const screen = worldToScreen(camera, view, p);
+  const ordered = isoOrder(entities);
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const e = ordered[i];
+    const look = isoLookOf(e);
+    if (look === 'flat') {
+      if (containsPoint(e, p)) return e;
+      continue;
+    }
+    const size = getEntitySize(e);
+    const at = worldToScreen(camera, view, e.transform.position);
+    const z = camera.zoom;
+    const W = size.x * Math.abs(e.transform.scale.x) * z;
+    const H = size.y * Math.abs(e.transform.scale.y) * z;
+    const lift = (typeof e.components.Sprite?.isoLift === 'number' ? e.components.Sprite.isoLift : 0) * z;
+    const top = look === 'stand' ? at.y + W / 8 - H : look === 'iso_floor' ? at.y - W / 4 : look === 'iso_block' ? at.y - W / 4 - (H - W / 2) : at.y - W / 4 - W / 2;
+    const bottom = look === 'block' ? at.y + W / 4 : top + H;
+    if (screen.x >= at.x - W / 2 && screen.x <= at.x + W / 2 && screen.y >= top - lift && screen.y <= bottom - lift) return e;
+  }
   return null;
 }
 
@@ -1243,8 +1284,9 @@ function isTextInput(target: EventTarget | null): boolean {
 function drawGrid(ctx: CanvasRenderingContext2D, camera: Camera, view: ViewSize, gridSize: number, wire = false): void {
   let step = gridSize;
   while (step * camera.zoom < 10) step *= 4;
-  const tl = screenToWorld(camera, view, { x: 0, y: 0 });
-  const br = screenToWorld(camera, view, { x: view.width, y: view.height });
+  const shown = worldBoundsOfView(camera, view);
+  const tl = { x: shown.left, y: shown.top };
+  const br = { x: shown.right, y: shown.bottom };
   if (theme.gridMajor) {
     // Drafting paper: a faint line every 8 grid steps.
     const major = step * 8;

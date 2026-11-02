@@ -418,6 +418,12 @@ function SceneInspector({ scene }: { scene: Scene }) {
         </Row>
       </Section>
       <Section title="World" testId="world">
+        <Row label="view" hint="Flat: straight on (from the side, or from above). Isometric: from above at an angle; it plays as seen from above">
+          <select value={scene.world.view ?? 'flat'} data-testid="world-view" onChange={(e) => edit('Set view', (p) => m.setWorldSettings(p, sid, { view: e.target.value as 'flat' | 'iso' }))}>
+            <option value="flat">Flat</option>
+            <option value="iso">Isometric</option>
+          </select>
+        </Row>
         <Row label="gravity" hint="Pixels per second squared">
           <Vec2Input value={scene.world.gravity} testId="world-gravity" onCommit={(gravity) => edit('Set gravity', (p) => m.setWorldSettings(p, sid, { gravity }))} />
         </Row>

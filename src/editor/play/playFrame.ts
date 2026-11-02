@@ -7,7 +7,7 @@
 import { drawFog } from '../../runtime/fog';
 import type { Project, Scene } from '../../core/types';
 import { drawBuiltinHud, type BuiltinHud } from '../../render/hud';
-import { applyCamera, drawBackground, drawEntities, pixelPerfectZoom, type ImageLookup } from '../../render/renderer';
+import { applyCamera, drawBackground, drawEntities, isoProject, isoUnproject, pixelPerfectZoom, type ImageLookup } from '../../render/renderer';
 import type { ResolvedEntity } from '../../core/model/resolve';
 import { drawScreenDrawings, type LookCache, type PixelGrid } from '../../render/screen';
 import type { Runtime } from '../../runtime/runtime';
@@ -48,7 +48,12 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   const zoomNow = pixelPerfectZoom(frameNow.zoom * f.extraZoom, dpr, worldPerArt);
   // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
   const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
-  const view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
+  let view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
+  if (frameNow.iso) {
+    // (Seen at an angle: snapped where it is on the screen.)
+    const c = isoProject(frameNow);
+    view = { ...frameNow, zoom: zoomNow, ...isoUnproject({ x: snapAxis(c.x, size.width / 2), y: snapAxis(c.y, size.height / 2) }) };
+  }
   drawBackground(ctx, size, dpr, f.scene.world, view, images, { startCamera: f.startCamera ?? null, time: runtime.completed ?? runtime.time });
   applyCamera(ctx, view, size, dpr);
   // Everything drawn over the game keeps to its pixel grid: each pixel the size of a picture pixel in the level.

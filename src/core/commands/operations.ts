@@ -83,6 +83,11 @@ export const operationSchema = z.union([
     gravityX: z.number().nullable(),
     gravityY: z.number().nullable(),
     backgroundColor: z.string().nullable(),
+    view: z
+      .enum(['flat', 'iso'])
+      .nullable()
+      .optional()
+      .describe('How the level is seen: "flat" (straight on) or "iso" (isometric: from above at an angle; the level plays as seen from above, gravity 0, and is drawn as diamonds with things standing upright)'),
   }),
   z.object({
     op: z.literal('set_background'),
@@ -716,6 +721,7 @@ export function applyOperations(
         m.setWorldSettings(project, op.sceneId, {
           gravity: { x: op.gravityX ?? scene.world.gravity.x, y: op.gravityY ?? scene.world.gravity.y },
           ...(op.backgroundColor !== null ? { backgroundColor: op.backgroundColor } : {}),
+          ...(op.view ? { view: op.view } : {}),
         });
         break;
       }

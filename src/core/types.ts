@@ -106,6 +106,8 @@ export interface WorldSettings {
   gravity: Vec2;
   backgroundColor: string;
   background: BackgroundSettings;
+  /** How the level is seen: flat (straight on: from the side, or from above), or iso (from above at an angle: isometric). */
+  view?: 'flat' | 'iso';
 }
 
 /**
@@ -329,7 +331,7 @@ export interface ProjectSettings {
 
 export type GameType = 'platformer' | 'topdown';
 /** What a new game can start from: the two kinds, and the RPG starter (a top-down game with a battle level). */
-export type Starter = GameType | 'rpg' | 'roguelike';
+export type Starter = GameType | 'rpg' | 'roguelike' | 'isometric';
 
 export interface Project {
   formatVersion: number;
