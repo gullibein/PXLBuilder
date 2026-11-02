@@ -69,6 +69,16 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
+    type: 'Light',
+    label: 'Light',
+    description: "Lights up the squares round it (a torch on a wall, a brazier, lava, a glowing crystal): in the fog of war the player sees them from farther than its own sight, as long as nothing stands between. Moves with it. For a glow drawn round it, add Glow too.",
+    category: 'Rendering',
+    fields: {
+      radius: { kind: 'number', default: 3, min: 0, max: 30, step: 1, description: 'How far its light reaches (grid squares)' },
+      on: { kind: 'boolean', default: true, description: 'Lit (a script can turn it off and on: set_field Light on)' },
+    },
+  },
+  {
     type: 'Trail',
     label: 'Trail',
     description: 'A fading tail behind it as it moves (a shot, a comet, a fast enemy, a dash): where it was in the last moments, narrowing and fading out. In play.',

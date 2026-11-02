@@ -112,9 +112,17 @@ export function DungeonPanel() {
           {many && <Thumbnails project={project} scene={scene} onPick={(seed) => set('Random level: example', { preview: seed })} />}
           {example && (
             <p className={`small${example.problems.length ? ' dg-problem' : ' muted'}`} data-testid="dungeon-report">
-              {example.problems.length ? `⚠ ${example.problems.join('; ')}` : `${example.rooms} rooms, ${example.entities.length} things placed.`}
+              {example.problems.length ? `⚠ ${example.problems.join('; ')}` : `${example.rooms ? `${example.rooms} rooms, ` : ''}${example.entities.length} things placed.`}
             </p>
           )}
+          <label className="dg-num">
+            <span>Kind</span>
+            <select value={g.style ?? 'rooms'} data-testid="dungeon-style" onChange={(e) => set('Random level: kind', { style: e.target.value })}>
+              <option value="rooms">Rooms and corridors</option>
+              <option value="caves">Caves</option>
+              <option value="maze">Maze</option>
+            </select>
+          </label>
           <div className="dg-grid">
             {num('Width', 'width')}
             {num('Height', 'height')}

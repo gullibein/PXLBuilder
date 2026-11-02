@@ -10,7 +10,8 @@ const CELL = 32;
 const cellOf = (v: number) => Math.floor(v / CELL);
 
 export class Fog {
-  readonly radius: number;
+  /** How far the viewer sees (a script can change it: a torch, blindness). */
+  radius: number;
   readonly remember: boolean;
   readonly color: string;
   readonly dim: number;
@@ -43,23 +44,50 @@ export class Fog {
     this.bounds = Number.isFinite(i0) ? { i0: i0 - 1, j0: j0 - 1, i1: i1 + 1, j1: j1 + 1 } : { i0: 0, j0: 0, i1: 0, j1: 0 };
   }
 
-  /** Works out what is seen now (when the viewer is on another square, or `force`: something solid moved). */
-  update(solidCells: Set<string>, force = false): void {
+  /**
+   * Works out what is seen now (when the viewer is on another square, a light moved, or `force`: something solid
+   * moved). Lit squares (a Light's radius, its light not blocked) are seen from farther than the viewer's own sight,
+   * as long as nothing stands between them and the viewer.
+   */
+  update(solidCells: Set<string>, force = false, lights: { x: number; y: number; r: number }[] = []): void {
     if (!this.viewer.alive) return;
     const ci = cellOf(this.viewer.x);
     const cj = cellOf(this.viewer.y);
-    const from = `${ci},${cj}`;
+    const from = `${ci},${cj}|${this.radius}|${lights.map((l) => `${cellOf(l.x)},${cellOf(l.y)},${l.r}`).join(';')}`;
     if (!force && from === this.seenFrom) return;
     this.seenFrom = from;
-    const seen = new Set<string>([from]);
+    const seen = new Set<string>([`${ci},${cj}`]);
     const r = Math.ceil(this.radius);
     for (let dj = -r; dj <= r; dj++)
       for (let di = -r; di <= r; di++) {
         if (di * di + dj * dj > this.radius * this.radius) continue;
         if (this.lineClear(ci, cj, ci + di, cj + dj, solidCells)) seen.add(`${ci + di},${cj + dj}`);
       }
+    for (const l of lights) {
+      const li = cellOf(l.x);
+      const lj = cellOf(l.y);
+      const lr = Math.ceil(l.r);
+      for (let dj = -lr; dj <= lr; dj++)
+        for (let di = -lr; di <= lr; di++) {
+          const k = `${li + di},${lj + dj}`;
+          if (seen.has(k) || di * di + dj * dj > l.r * l.r) continue;
+          if (this.lineClear(li, lj, li + di, lj + dj, solidCells) && this.lineClear(ci, cj, li + di, lj + dj, solidCells)) seen.add(k);
+        }
+    }
     this.visible = seen;
     for (const k of seen) this.explored.add(k);
+  }
+
+  /** Marks squares as seen before (a map, a revealed room): within r squares of x, y (r 0 or less: everywhere). */
+  reveal(x: number, y: number, r: number): void {
+    const { i0, j0, i1, j1 } = this.bounds;
+    const ci = cellOf(x);
+    const cj = cellOf(y);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (r <= 0 || (i - ci) ** 2 + (j - cj) ** 2 <= r * r) this.explored.add(`${i},${j}`);
+  }
+
+  explores(x: number, y: number): boolean {
+    return this.explored.has(`${cellOf(x)},${cellOf(y)}`);
   }
 
   /** No solid square between the two (the ends themselves may be: a wall is seen, not what is behind it). */

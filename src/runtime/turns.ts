@@ -105,6 +105,13 @@ export const DEFAULT_KIT_STYLE: KitStyle = {
 };
 
 const KIT = '\u0000kit';
+const FOUR = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+const EIGHT = [...FOUR, [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const WALK_SPEED = 160;
 /** A unit of a team that plays by itself that hasn't said done after this long: its go is over (and it is said). */
 const GO_LIMIT = 20;
@@ -222,7 +229,26 @@ export class TurnKit {
   }
 
   private blocked(i: number, j: number, but: RuntimeEntity): boolean {
-    return this.host.solidAtPoint(centerOf(i), centerOf(j)) || this.occupied(key(i, j), but);
+    const rules = this.rules.get(but);
+    return (!rules?.walls && this.host.solidAtPoint(centerOf(i), centerOf(j))) || (!rules?.units && this.occupied(key(i, j), but));
+  }
+
+  /**
+   * How each unit walks (walk_rules; the same for walk_to, highlight "reach", steps_to and next_step): diagonal
+   * steps too; through other units (a ghost, a flier over others); through walls.
+   */
+  readonly rules = new Map<RuntimeEntity, { diagonal: boolean; units: boolean; walls: boolean }>();
+  /** Who goes first on its team's turn (turn_order: higher first; then top row first, left to right). */
+  readonly priority = new Map<RuntimeEntity, number>();
+
+  /** The square to step to first on the shortest way toward x, y (its own square when there is no way). */
+  nextStep(who: RuntimeEntity, x: number, y: number): { x: number; y: number } {
+    const before = this.walks.get(who);
+    this.walkTo(who, x, y, 1);
+    const step = this.walks.get(who)?.path[0];
+    if (before) this.walks.set(who, before);
+    else this.walks.delete(who);
+    return step ?? { x: centerOf(cellOf(who.x)), y: centerOf(cellOf(who.y)) };
   }
 
   /** Walking distances (in squares) from where `from` stands, up to `limit`, and the way back from each. */
@@ -234,14 +260,11 @@ export class TurnKit {
     for (let d = 1; d <= limit && frontier.length; d++) {
       const next: number[][] = [];
       for (const [i, j] of frontier)
-        for (const [di, dj] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
+        for (const [di, dj] of this.rules.get(from)?.diagonal ? EIGHT : FOUR) {
           const k = key(i + di, j + dj);
           if (dist.has(k) || this.blocked(i + di, j + dj, from)) continue;
+          // (Diagonally only past two open squares: never squeezing between two walls' corners.)
+          if (di && dj && (this.blocked(i + di, j, from) || this.blocked(i, j + dj, from))) continue;
           dist.set(k, d);
           back.set(k, key(i, j));
           next.push([i + di, j + dj]);
@@ -267,11 +290,13 @@ export class TurnKit {
     const tj = cellOf(y);
     let best = key(cellOf(who.x), cellOf(who.y));
     let bestScore = Infinity;
+    const diagonal = this.rules.get(who)?.diagonal;
     for (const [k, d] of dist) {
       if (d > 0 && this.occupied(k, who)) continue;
       const [i, j] = k.split(',').map(Number);
-      // Nearest to the target first, then the fewest steps.
-      const score = (Math.abs(i - ti) + Math.abs(j - tj)) * 1000 + d;
+      // Nearest to the target first (in steps as it walks: diagonals count one), then the fewest steps.
+      const off = diagonal ? Math.max(Math.abs(i - ti), Math.abs(j - tj)) : Math.abs(i - ti) + Math.abs(j - tj);
+      const score = off * 1000 + d;
       if (score < bestScore) {
         bestScore = score;
         best = k;
@@ -307,7 +332,7 @@ export class TurnKit {
 
   private unitsOf(tag: string): RuntimeEntity[] {
     // In reading order (top row first, left to right): the same every time.
-    return this.host.entities.filter((e) => e.alive && !e.projectile && e.tags.includes(tag)).sort((a, b) => a.y - b.y || a.x - b.x);
+    return this.host.entities.filter((e) => e.alive && !e.projectile && e.tags.includes(tag)).sort((a, b) => (this.priority.get(b) ?? 0) - (this.priority.get(a) ?? 0) || a.y - b.y || a.x - b.x);
   }
 
   /** The next team's turn (skipping teams with no one left). */

@@ -194,6 +194,16 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one('close its menu');
     case 'set_game':
       return one(`game's ${s.var} = ${x(s.value)}`);
+    case 'set_generator':
+      return one(`next random level: ${Object.entries(s.values).map(([k, v]) => `${k} ${x(v)}`).join(', ')}`);
+    case 'fog_radius':
+      return one(`sight in the fog = ${x(s.value)}`);
+    case 'reveal':
+      return one(s.radius === '0' ? 'reveal the whole level' : `reveal ${x(s.radius)} squares round ${s.x ? `${x(s.x)}, ${x(s.y ?? '0')}` : 'it'}`);
+    case 'turn_order':
+      return one(`turn order${s.on ? ` of ${x(s.on)}` : ''} = ${x(s.value)}`);
+    case 'walk_rules':
+      return one(`walk${s.on ? `s of ${x(s.on)}` : ''}: diagonal ${x(s.diagonal)}, through units ${x(s.through_units)}, through walls ${x(s.through_walls)}`);
     case 'visit_level':
       return one(`visit the level "${s.level}" (and come back)`);
     case 'return_level':

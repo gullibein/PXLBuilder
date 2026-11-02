@@ -113,7 +113,7 @@ export const operationSchema = z.union([
     generatorJson: z
       .string()
       .describe(
-        'Makes the level a RANDOM level (a new dungeon each play: rooms, corridors, walls, monsters, treasure) or changes its recipe: JSON with only the settings to change: width, height (squares, 10-120), rooms, roomMin, roomMax (room sides in squares), corridor (1-3 wide), loops (0-1), wall, floor, stairs (library objects by id or name; floor optional), monsters and loot (lists of {"object","weight","fromFloor"}), monsterCount, monstersPerFloor, lootCount, lootPerFloor, seed (null: a new dungeon each play), preview (the example the editor shows), previewFloor. "null" makes it an ordinary level again. What is placed by hand stays; the player starts in the first room',
+        'Makes the level a RANDOM level (a new dungeon each play: rooms, corridors, walls, monsters, treasure) or changes its recipe: JSON with only the settings to change: style ("rooms": rooms joined by corridors, "caves": winding natural caves, "maze": corridors one square wide), width, height (squares, 10-120), rooms, roomMin, roomMax (room sides in squares), corridor (1-3 wide), loops (0-1), wall, floor, stairs (library objects by id or name; floor optional), monsters and loot (lists of {"object","weight","fromFloor"}), monsterCount, monstersPerFloor, lootCount, lootPerFloor, seed (null: a new dungeon each play), preview (the example the editor shows), previewFloor. "null" makes it an ordinary level again. What is placed by hand stays; the player starts in the first room',
       ),
   }),
   z.object({

@@ -5,6 +5,7 @@
  * command/transaction system and AI operations later.
  */
 import { defaultGenerator, withDungeon } from './dungeon';
+import type { DungeonGenerator } from '../types';
 import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
 import type { ComponentRegistry } from '../components/registry';
@@ -194,7 +195,11 @@ export function setGenerator(project: Project, sceneId: Id, patch: Record<string
     delete scene.generator;
     return;
   }
-  const base = scene.generator ?? defaultGenerator(project);
+  scene.generator = patchGenerator(project, scene.generator ?? defaultGenerator(project), patch);
+}
+
+/** A recipe with some of its settings changed (checked; library objects by id or name). */
+export function patchGenerator(project: Project, base: DungeonGenerator, patch: Record<string, unknown>): DungeonGenerator {
   const objectId = (v: unknown, what: string): Id | null => {
     if (v === null || v === '') return null;
     if (typeof v !== 'string') throw new ModelError(`Generator ${what}: a library object's id or name`);
@@ -213,6 +218,10 @@ export function setGenerator(project: Project, sceneId: Id, patch: Record<string
   const next = { ...base };
   for (const [k, v] of Object.entries(patch)) {
     switch (k) {
+      case 'style':
+        if (v !== 'rooms' && v !== 'caves' && v !== 'maze') throw new ModelError('Generator style: "rooms", "caves" or "maze"');
+        next.style = v;
+        break;
       case 'seed':
         next.seed = v === null ? null : Math.round(num(v, 'seed', 1, 1e9));
         break;
@@ -258,7 +267,7 @@ export function setGenerator(project: Project, sceneId: Id, patch: Record<string
         throw new ModelError(`Generator: there is no setting "${k}"`);
     }
   }
-  scene.generator = next;
+  return next;
 }
 
 /** Keeps the dungeon the editor shows (its preview seed) as ordinary objects: no longer random. */

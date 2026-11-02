@@ -7,7 +7,8 @@
  * separate demo logic. Rendering uses the shared renderer.
  */
 import { Fog } from './fog';
-import { newSeed, withDungeon } from '../core/model/dungeon';
+import { buildLevel, newSeed, type Dungeon } from '../core/model/dungeon';
+import { patchGenerator } from '../core/model/mutations';
 import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
 import { createStandaloneEntity, instantiateDefinition } from '../core/model/factory';
@@ -502,6 +503,10 @@ export class Runtime {
   private solidCellCache: Set<string> | null = null;
   /** A random level: the seed it was built from this time (the Debug tab shows it, to play the same again). */
   dungeonSeed: number | null = null;
+  /** A random level: what was built (its rooms, start and way down: scripts ask with room_x…). */
+  dungeon: Dungeon | null = null;
+  /** Changes a script made to the level's recipe (set_generator in play): the next build (restart_level) uses them. */
+  generatorPatch: Record<string, unknown> = {};
   /** What scripts drew on the screen, by id (kept until erased or the level restarts). */
   readonly drawings = new Map<string, ScreenDrawing>();
   /**
@@ -591,9 +596,18 @@ export class Runtime {
     // A random level: built anew (each restart too, "the next floor"), for the floor the game is on.
     const gen = this.baseScene.generator;
     if (gen) {
-      this.dungeonSeed = gen.seed ?? newSeed();
+      // (With what scripts changed of the recipe; a change that doesn't check out was said when it was made.)
+      let recipe = gen;
+      try {
+        recipe = patchGenerator(this.project, gen, this.generatorPatch);
+      } catch {
+        this.generatorPatch = {};
+      }
+      this.dungeonSeed = recipe.seed ?? newSeed();
       const floor = Number(this.game.get('floor') ?? 1) || 1;
-      this.scene = withDungeon(this.project, this.baseScene, this.registry, this.dungeonSeed, floor);
+      const built = buildLevel(this.project, { ...this.baseScene, generator: recipe }, this.registry, this.dungeonSeed, floor);
+      this.scene = built.scene;
+      this.dungeon = built.dungeon;
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
     // Fog of war, seen by whoever has it (the player).
@@ -633,6 +647,8 @@ export class Runtime {
     this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level);
     this.scripts.reset();
     this.gameplay.reset();
+    // Scripts can add to what was built (a key in a room, a boss before the stairs): the signal "level_built".
+    if (gen) this.gameplay.emit('signal', null, null, { name: 'level_built' });
   }
 
   /** Starts the level again from the beginning (a rule action, or R in play). */
@@ -818,7 +834,14 @@ export class Runtime {
       if (e.dying <= 0) this.respawn(e, 'died');
     }
     // Fog of war: what the player sees now (again only when it changed square, or something solid changed).
-    if (this.fog) this.fog.update(this.solidCells(), this.fogDirty);
+    if (this.fog) {
+      const lights: { x: number; y: number; r: number }[] = [];
+      for (const e of this.entities) {
+        const l = e.alive ? e.base.components.Light : undefined;
+        if (l && l.on !== false) lights.push({ x: e.x, y: e.y, r: typeof l.radius === 'number' ? l.radius : 3 });
+      }
+      this.fog.update(this.solidCells(), this.fogDirty, lights);
+    }
     this.fogDirty = false;
   }
 

@@ -124,6 +124,11 @@ export type Stmt =
   | { do: 'menu'; items: string[]; title: string | null; cancel: boolean; at: Exclude<DrawAnchor, 'world'> }
   | { do: 'kit_style'; menu_color?: string | null; menu_border?: string | null; menu_text?: string | null; menu_title?: string | null; menu_greyed?: string | null; menu_selected?: string | null; menu_size?: string | null; pointer?: string | null; pointer_color?: string | null; cursor_color?: string | null; cursor_style?: string | null; highlight_alpha?: string | null; popup_size?: string | null; popup_rise?: string | null; popup_seconds?: string | null; popup_style?: string | null; banner?: string | null; banner_seconds?: string | null; banner_color?: string | null; banner_size?: string | null }
   | { do: 'set_game'; var: string; value: string }
+  | { do: 'set_generator'; values: Record<string, string> }
+  | { do: 'fog_radius'; value: string }
+  | { do: 'reveal'; x: string | null; y: string | null; radius: string }
+  | { do: 'turn_order'; value: string; on: string | null }
+  | { do: 'walk_rules'; diagonal: string; through_units: string; through_walls: string; on: string | null }
   | { do: 'visit_level'; level: string }
   | { do: 'return_level'; result: string }
   | { do: 'close_menu' }
@@ -140,6 +145,9 @@ export type Stmt =
   | { do: 'camera_zoom'; zoom: string; seconds: string }
   | { do: 'camera_focus'; target: string; seconds: string }
   | { do: 'camera_follow'; target: string | null };
+
+/** What of a random level's recipe a script may change (set_generator). */
+export const GENERATOR_KEYS = ['style', 'seed', 'width', 'height', 'rooms', 'roomMin', 'roomMax', 'corridor', 'loops', 'wall', 'floor', 'stairs', 'monsterCount', 'monstersPerFloor', 'lootCount', 'lootPerFloor'] as const;
 
 export const DRAW_SHAPES = ['text', 'rect', 'circle', 'sprite'] as const;
 export type DrawShape = (typeof DRAW_SHAPES)[number];
@@ -203,6 +211,8 @@ export const BUILTIN_NAMES: Record<string, string> = {
   my_turn: 'true while it is this unit\'s go (from unit_turn until done)',
   turn_done: 'true when this unit has had its go this turn',
   walking_path: 'true while it is walking a path (walk_to)',
+  dungeon_seed: 'the seed the random level was built from this time (0: the level is not random); set_generator {"seed": "dungeon_seed"} then restart_level builds the same one again',
+  fog_radius: 'how far the fog-of-war viewer sees now, in grid squares (0 without fog); fog_radius changes it',
   level_flipped: 'true while the level is mirrored by flip_level (an odd number of flips, either way)',
   paused: 'true while the game is paused (pause / resume)',
   sound_on: 'true while sound effects are on (set_sound)',
@@ -317,6 +327,15 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   nth: { args: 'tag, n', min: 2, max: 2, doc: 'the nth living entity with the tag (1 = the first), top row first, left to right; null when there are fewer: target menus ("{nth(\'monster\', 1).name}")' },
   highlighted: { args: 'id, x, y', min: 3, max: 3, doc: 'the grid square at x, y is in the highlight with that id (highlight)' },
   steps_to: { args: 'x, y', min: 2, max: 2, doc: 'how many grid steps it takes it to walk to that square, around walls and units (-1: it can\'t get there)' },
+  room_count: { args: '', min: 0, max: 0, doc: 'how many rooms the random level has this time (0: none: caves, maze, or not random)' },
+  room_x: { args: 'n', min: 1, max: 1, doc: 'the middle x of the nth room of the random level (1 = the first, where the player starts); 0 when there is none' },
+  room_y: { args: 'n', min: 1, max: 1, doc: 'the middle y of the nth room (see room_x)' },
+  room_w: { args: 'n', min: 1, max: 1, doc: 'the width of the nth room, px (inside the walls)' },
+  room_h: { args: 'n', min: 1, max: 1, doc: 'the height of the nth room, px (inside the walls)' },
+  next_step_x: { args: 'x, y', min: 2, max: 2, doc: 'the middle x of the first grid square on its way to x, y (round walls and units, its walk_rules); its own when there is no way: your own chasing or fleeing' },
+  next_step_y: { args: 'x, y', min: 2, max: 2, doc: 'the middle y of the first square on its way to x, y (see next_step_x)' },
+  sees_square: { args: 'x, y', min: 2, max: 2, doc: 'the fog-of-war viewer sees the square at x, y right now (true everywhere without fog)' },
+  explored_square: { args: 'x, y', min: 2, max: 2, doc: 'the square at x, y has been seen (now or before) or revealed (true everywhere without fog)' },
   grid_cell: { args: 'v', min: 1, max: 1, doc: 'the middle of the grid square that x (or y) v is in: grid_cell(self.x)' },
   ladder_top: { args: '', min: 0, max: 0, doc: 'the y of the top of the ladder it is at (0 when there is none): compare self.feet with it' },
   floor_below_ladder: { args: '', min: 0, max: 0, doc: 'it stands on the floor (not on a ladder top): Down there does not climb' },
@@ -458,6 +477,14 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     example: '{"do":"set_game","var":"{self.name}_hp","value":"self.health"}',
     doc: 'sets one of the GAME\'s own variables, kept across levels and visits for the whole game (the party\'s health, gold, potions, which bosses are beaten); read with game_value(name, default). {expression} in the name: one per hero',
   },
+  set_generator: {
+    example: '{"do":"set_generator","values":{"style":"\'caves\'","monsterCount":"4 + game_value(\'floor\', 1) * 2","wall":"\'Lava\'"}}',
+    doc: 'changes the random level\'s recipe for its next build (restart_level, the stairs; the level in the editor stays as it is): each value is an expression. style "rooms", "caves" or "maze"; width, height (squares); rooms, roomMin, roomMax, corridor, loops (0-1); wall, floor, stairs (an object\'s name); monsterCount, monstersPerFloor, lootCount, lootPerFloor; seed (a number: always that dungeon, or null: a new one). After a build, the "level_built" signal: put things in rooms (room_count, room_x…), a boss before the stairs',
+  },
+  fog_radius: { example: '{"do":"fog_radius","value":"fog_radius + 2"}', doc: 'how far the fog-of-war viewer sees, in grid squares (a torch, a blinding spell); stays until changed or the level starts again' },
+  reveal: { example: '{"do":"reveal","x":null,"y":null,"radius":"0"}', doc: 'marks the squares within radius (grid squares) of x, y as explored (shown dim in the fog: a map, a magic scroll); radius 0: the whole level. x, y null: round this entity. For squares lit for good, add a Light' },
+  turn_order: { example: '{"do":"turn_order","value":"self.speed_stat","on":null}', doc: 'where this unit (on: another) comes in its team\'s turn: higher goes first (default 0, then top row first, left to right)' },
+  walk_rules: { example: '{"do":"walk_rules","diagonal":"true","through_units":"false","through_walls":"has_tag(self, \'ghost\')","on":null}', doc: 'how this unit (on: another) walks paths (walk_to, steps_to, highlight reach, next_step_x/y): diagonal steps (8 ways, never cutting a wall\'s corner), through other units, through walls (a ghost, a flyer)' },
   visit_level: {
     example: '{"do":"visit_level","level":"Battle"}',
     doc: 'takes the game to another level (by name) and keeps this one exactly as it is to come back to: a battle screen, a house\'s inside, a shop. There, return_level comes back; then this entity\'s "level_returned" handlers run and visit_result says how it went',
@@ -644,6 +671,11 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(120)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
     z.object({ do: z.literal('kit_style'), menu_color: z.string().max(30).nullable().optional(), menu_border: z.string().max(30).nullable().optional(), menu_text: z.string().max(30).nullable().optional(), menu_title: z.string().max(30).nullable().optional(), menu_greyed: z.string().max(30).nullable().optional(), menu_selected: z.string().max(30).nullable().optional(), menu_size: expr.nullable().optional(), pointer: z.string().max(60).nullable().optional(), pointer_color: z.string().max(30).nullable().optional(), cursor_color: z.string().max(30).nullable().optional(), cursor_style: z.string().max(30).nullable().optional(), highlight_alpha: expr.nullable().optional(), popup_size: expr.nullable().optional(), popup_rise: expr.nullable().optional(), popup_seconds: expr.nullable().optional(), popup_style: z.string().max(30).nullable().optional(), banner: z.string().max(60).nullable().optional(), banner_seconds: expr.nullable().optional(), banner_color: z.string().max(30).nullable().optional(), banner_size: expr.nullable().optional() }),
     z.object({ do: z.literal('set_game'), var: z.string().min(1).max(60), value: expr }),
+    z.object({ do: z.literal('set_generator'), values: z.partialRecord(z.enum(GENERATOR_KEYS), expr) }),
+    z.object({ do: z.literal('fog_radius'), value: expr }),
+    z.object({ do: z.literal('reveal'), x: nexpr, y: nexpr, radius: expr.default('0') }),
+    z.object({ do: z.literal('turn_order'), value: expr, on: nexpr }),
+    z.object({ do: z.literal('walk_rules'), diagonal: expr.default('false'), through_units: expr.default('false'), through_walls: expr.default('false'), on: nexpr }),
     z.object({ do: z.literal('visit_level'), level: z.string().min(1).max(80) }),
     z.object({ do: z.literal('return_level'), result: expr.default("'done'") }),
     z.object({ do: z.literal('close_menu') }),
@@ -858,6 +890,16 @@ export function exprSlots(s: Stmt): string[] {
       return messageParts(s.level);
     case 'return_level':
       return [s.result];
+    case 'set_generator':
+      return Object.values(s.values);
+    case 'fog_radius':
+      return [s.value];
+    case 'reveal':
+      return [...(s.x ? [s.x] : []), ...(s.y ? [s.y] : []), s.radius];
+    case 'turn_order':
+      return [s.value, ...(s.on ? [s.on] : [])];
+    case 'walk_rules':
+      return [s.diagonal, s.through_units, s.through_walls, ...(s.on ? [s.on] : [])];
     case 'kit_style':
       return [s.menu_size, s.highlight_alpha, s.popup_size, s.popup_rise, s.popup_seconds, s.banner_seconds, s.banner_size].filter((v): v is string => typeof v === 'string').concat(
         // ({value} in colors and texts.)

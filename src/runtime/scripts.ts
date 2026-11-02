@@ -16,6 +16,7 @@ import { CELL } from './turns';
 import { parseExpr, type Expr } from '../core/script/expr';
 import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
+import { patchGenerator } from '../core/model/mutations';
 import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
 
@@ -779,6 +780,37 @@ export class ScriptSystem {
         else this.report(e, ctx.inst, `set_game: "${name}" can only be a number, text or true/false`);
         break;
       }
+      case 'set_generator': {
+        // (Objects by name; numbers, text and null as they come. A change that doesn't fit the recipe is said now.)
+        const patch: Record<string, unknown> = {};
+        for (const [k, x] of Object.entries(s.values)) patch[k] = this.eval(x, ctx);
+        const next = { ...this.rt.generatorPatch, ...patch };
+        if (!this.rt.baseScene.generator) this.report(e, ctx.inst, 'set_generator: this level is not random (Tool panel → Random level)');
+        else
+          try {
+            patchGenerator(this.rt.project, this.rt.baseScene.generator, next);
+            this.rt.generatorPatch = next;
+          } catch (err) {
+            this.report(e, ctx.inst, `set_generator: ${(err as Error).message}`);
+          }
+        break;
+      }
+      case 'fog_radius':
+        if (this.rt.fog) this.rt.fog.radius = Math.max(0, Math.min(40, n(s.value)));
+        break;
+      case 'reveal':
+        if (this.rt.fog) this.rt.fog.reveal(s.x ? n(s.x) : e.x, s.y ? n(s.y) : e.y, n(s.radius));
+        break;
+      case 'turn_order': {
+        const t = ent(s.on);
+        if (t) this.rt.kit.priority.set(t, n(s.value));
+        break;
+      }
+      case 'walk_rules': {
+        const t = ent(s.on);
+        if (t) this.rt.kit.rules.set(t, { diagonal: truthy(this.eval(s.diagonal, ctx)), units: truthy(this.eval(s.through_units, ctx)), walls: truthy(this.eval(s.through_walls, ctx)) });
+        break;
+      }
       case 'visit_level':
         this.rt.visitLevel(s.level.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx))), e);
         break;
@@ -1016,6 +1048,10 @@ export class ScriptSystem {
         return this.rt.kit.hasActed(ctx.self);
       case 'walking_path':
         return this.rt.kit.walking(ctx.self);
+      case 'dungeon_seed':
+        return this.rt.dungeon ? (this.rt.dungeonSeed ?? 0) : 0;
+      case 'fog_radius':
+        return this.rt.fog?.radius ?? 0;
       case 'level_flipped':
         return this.rt.flips.upside_down % 2 === 1 || this.rt.flips.left_right % 2 === 1;
       case 'view_x':
@@ -1277,6 +1313,23 @@ export class ScriptSystem {
         return this.rt.kit.highlighted(show(v[0]), n(1), n(2));
       case 'steps_to':
         return this.rt.kit.stepsTo(self, n(0), n(1));
+      case 'next_step_x':
+        return this.rt.kit.nextStep(self, n(0), n(1)).x;
+      case 'next_step_y':
+        return this.rt.kit.nextStep(self, n(0), n(1)).y;
+      case 'room_count':
+        return this.rt.dungeon?.roomList.length ?? 0;
+      case 'room_x':
+      case 'room_y':
+      case 'room_w':
+      case 'room_h': {
+        const room = this.rt.dungeon?.roomList[Math.round(n(0)) - 1];
+        return room ? room[fn.slice(5) as 'x' | 'y' | 'w' | 'h'] : 0;
+      }
+      case 'sees_square':
+        return this.rt.fog ? this.rt.fog.sees(n(0), n(1)) : true;
+      case 'explored_square':
+        return this.rt.fog ? this.rt.fog.explores(n(0), n(1)) || this.rt.fog.sees(n(0), n(1)) : true;
       case 'grid_cell':
         return Math.floor(n(0) / CELL) * CELL + CELL / 2;
       case 'ladder_top':

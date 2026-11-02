@@ -211,6 +211,8 @@ export interface DungeonSpawn {
 }
 
 export interface DungeonGenerator {
+  /** How it is laid out: rooms joined by corridors, winding caves, or a maze. */
+  style?: 'rooms' | 'caves' | 'maze';
   /** The seed each play uses: null = a new dungeon every play (a number: the same one, for testing). */
   seed: number | null;
   /** The example the editor shows. */
