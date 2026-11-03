@@ -1707,11 +1707,8 @@ function drawIsoSelectionBox(ctx: CanvasRenderingContext2D, box: Rect, bottom: n
 
 /** Isometric: the height of the top of these (a block's top face; anything else where it stands), in isoLift units. */
 function isoTopOf(list: ResolvedEntity[]): number {
-  // (A standing thing: the top of its picture, which stands a little in front of its square's middle.)
-  const standTop = (e: ResolvedEntity) => {
-    const size = getEntitySize(e);
-    return isoLiftOf(e) + Math.abs(size.y * e.transform.scale.y) - Math.abs(size.x * e.transform.scale.x) / 8;
-  };
+  // (A standing thing: its box one block high, as a block on its square would be: its picture may reach higher.)
+  const standTop = (e: ResolvedEntity) => isoLiftOf(e) + 16;
   return Math.max(...list.map((e) => isoVolume(e)?.top ?? (isoLookOf(e) === 'stand' ? standTop(e) : isoLiftOf(e))));
 }
 
