@@ -30,7 +30,7 @@ export const ISO_TILES: Record<string, PixelArt> = {
   ),
   'Island Corner North': tile(
     'a#19000b b#190819 c#2ce8f4 d#140d20 e#ffffff f#63c74d g#0095db h#160000 i#18001b j#3e8948 k#1e493e l#193c3e m#265c42 n#408f46 o#1b0000',
-    ['.......aa.......', '.....bbccab.....', '...ddccceecdd...', '.bbfffffffcgchi.', 'bfffffjfffffjccb', 'bfjffkjffffkjjcb', 'bljjfffffffjjmjb', 'bljljjjffjjmjmmb', 'bllljljjjmjmmmmb', 'bmmllljlnmmmmmmb', 'bllmmljlmmmmmmmb', 'bllllllmmmllmmmb', '.bblllmmllmmmbb.', '...bblllmmmbo...', '.....bblmbb.....', '.......bb.......'],
+    ['.......aa.......', '.....bbccab.....', '...ddccceecdd...', '.bbccfffffcgchi.', 'bccfffjfffffjccb', 'bfjffkjffffkjjcb', 'bljjfffffffjjmjb', 'bljljjjffjjmjmmb', 'bllljljjjmjmmmmb', 'bmmllljlnmmmmmmb', 'bllmmljlmmmmmmmb', 'bllllllmmmllmmmb', '.bblllmmllmmmbb.', '...bblllmmmbo...', '.....bblmbb.....', '.......bb.......'],
   ),
   'Grass': tile(
     'a#231912 b#1b0000 c#3e8948 d#63c74d e#20151e f#211d19 g#265c42 h#190819 i#1e493e j#193c3e k#408f46',
@@ -53,8 +53,8 @@ export const ISO_TILES: Record<string, PixelArt> = {
     ['.......ab.......', '.....ccddcc.....', '...efgghhddfc...', '.ifhhddgghhddff.', 'jddgghhddgghhddk', 'khhddgghhddgghhe', 'ellhhddgghhddhhe', 'ellllhhddgghhhhe', 'ellllllhhhhhhhhe', 'elllllllghhhhhhe', 'elllllllghhhhhhe', 'elllllllghhhhhhj', '.bclllllghhhhcc.', '...emlllghhkj...', '.....nnlgoo.....', '.......ec.......'],
   ),
   'Island Corner West': tile(
-    'a#19000b b#190819 c#2ce8f4 d#140d20 e#63c74d f#160000 g#18001b h#3e8948 i#1e493e j#193c3e k#265c42 l#408f46 m#1b0000',
-    ['.......aa.......', '.....bbccab.....', '...ddccccccdd...', '.bbcceeeeeeeefg.', 'bcceeeheeeeehehb', 'bcheeiheeeeihhhb', 'bjhheeeeeeehhkhb', 'bjhjhhheehhkhkkb', 'bjjjhjhhhkhkkkkb', 'bkkjjjhjlkkkkkkb', 'bjjkkjhjkkkkkkkb', 'bjjjjjjkkkjjkkkb', '.bbjjjkkjjkkkbb.', '...bbjjjkkkbm...', '.....bbjkbb.....', '.......bb.......'],
+    'a#19000b b#190819 c#3e8948 d#63c74d e#140d20 f#2ce8f4 g#0095db h#160000 i#18001b j#1e493e k#265c42 l#124e8a m#ffffff n#103e81 o#0099dc p#009ee3 q#193c3e r#1b0000 s#181425',
+    ['.......aa.......', '.....bbcdab.....', '...eeffddddee...', '.bbgfddddddddhi.', 'bfffcdcdddddcdcb', 'bfffcjcddddjcccb', 'bfggfcccddccckcb', 'bllffgmcccckckkb', 'bllllffffkckkkkb', 'bllllnnffgkkkkkb', 'blloolllookkkkkb', 'bpplloolllqqkkkb', '.aapplllpokkkbb.', '...bbpolplkbr...', '.....bbplbb.....', '.......es.......'],
   ),
   'Dark Grass': tile(
     'a#231912 b#1b0000 c#3e8948 d#63c74d e#20151e f#211d19 g#190819 h#265c42 i#1e493e j#193c3e k#408f46 l#1f1d23',
@@ -77,8 +77,8 @@ export const ISO_TILES: Record<string, PixelArt> = {
     ['.......ab.......', '.....aacdaa.....', '...efccccccfe...', '.ghdijjcdkjjdhg.', 'lddccccccccccddl', 'acccccccccccccca', 'akkdcccccccccjja', 'akkkkckjjccjjjja', 'akkkkkkccjjjjjja', 'akkkkkkkjjjjjjja', 'akkkkkkkjjjjjjja', 'mkkkkkkkjjjjjjja', '.mmnkkkkjjjjoea.', '...efkkkjjjfp...', '.....afkofa.....', '.......fb.......'],
   ),
   'Island Corner South': tile(
-    'a#231912 b#1b0000 c#3e8948 d#63c74d e#20151e f#211d19 g#265c42 h#190819 i#0099dc j#2ce8f4 k#1e493e l#ffffff m#124e8a n#0095db o#140d20 p#103e81 q#009ee3 r#19000b s#181425',
-    ['.......ab.......', '.....aacdea.....', '...bfcdddcdfa...', '.fedddddgcdddhe.', 'hijdddcdddddcddh', 'hiijjddddddkccch', 'hjjiijlddddddddh', 'hmmjjnljjnnddddo', 'hmmmmjjnljjiiiih', 'hmmmmppjjnnimmih', 'hmmiimmmiimmqiih', 'hqqmmiimmmiiimmh', '.rrqqmmmqiimmrh.', '...hhqimqmmho...', '.....hhqmhh.....', '.......os.......'],
+    'a#231912 b#1b0000 c#3e8948 d#63c74d e#20151e f#211d19 g#265c42 h#190819 i#0099dc j#2ce8f4 k#ffffff l#124e8a m#0095db n#140d20 o#103e81 p#009ee3 q#19000b r#181425',
+    ['.......ab.......', '.....aacdea.....', '...bfcdddcdfa...', '.fedddddgcdddhe.', 'hccdddcdddddccch', 'hiijjdddddcciiih', 'hjjiijkccciiiiih', 'hlljjmkjjiiiiiin', 'hlllljjmkjjiiiih', 'hlllloojjmmillih', 'hlliillliillpiih', 'hpplliillliiillh', '.qqpplllpiillqh.', '...hhpilpllhn...', '.....hhplhh.....', '.......nr.......'],
   ),
   'Road Turn SE-SW': tile(
     'a#190819 b#3e8948 c#63c74d d#b86f4f e#733e3a f#3e2731',
@@ -101,7 +101,7 @@ export const ISO_TILES: Record<string, PixelArt> = {
     ['.......aa.......', '.....aabcaa.....', '...adbbefbbda...', '.ddcbbbbbbbccdd.', 'abbbgehcbeefbbba', 'abbbbeefbehbbbba', 'ahhcbbbbbbbbbgea', 'ahhhhbbefbbeeeea', 'ahhhhhhcceeeeeea', 'ahhhhhhheehheeea', 'ahhhheehhheeeeea', 'ahhhhhheeeeeeeea', '.aaihhhheeeejda.', '...adhheeeedd...', '.....adhjda.....', '.......da.......'],
   ),
   'Island Corner East': tile(
-    'a#231912 b#1b0000 c#3e8948 d#63c74d e#20151e f#211d19 g#265c42 h#190819 i#2ce8f4 j#0095db k#ffffff l#140d20 m#0099dc n#124e8a o#103e81 p#009ee3 q#19000b r#181425',
-    ['.......ab.......', '.....aacdea.....', '...bfcdddcdfa...', '.fecddddgcdddhe.', 'hcddddcddddicjjh', 'hddddddjkiikijkl', 'hiimmikiikijkiih', 'hnniijkiijkiijml', 'hnnnniijkiimmmmh', 'hnnnnooiijjmnnmh', 'hnnmmnnnmmnnpmmh', 'hppnnmmnnnmmmnnh', '.qqppnnnpmmnnqh.', '...hhpmnpnnhl...', '.....hhpnhh.....', '.......lr.......'],
+    'a#231912 b#1b0000 c#3e8948 d#2ce8f4 e#20151e f#211d19 g#63c74d h#265c42 i#0095db j#190819 k#ffffff l#140d20 m#193c3e n#0099dc o#124e8a p#009ee3 q#19000b r#181425',
+    ['.......ab.......', '.....aacdea.....', '...bfcgggddfa...', '.fecgggghdiddje.', 'jcggggcggikddiij', 'jggggggggddddikl', 'jmcccgggdkdikddj', 'jmcmcccgdikddinl', 'jmmmcmcdkddnnnnj', 'jhhmmmcddiinoonj', 'jmmhhmcdnnoopnnj', 'jmmmmmmooonnnooj', '.jjmmmhppnnooqj.', '...bjmmppoojl...', '.....jjoojj.....', '.......jr.......'],
   ),
 };

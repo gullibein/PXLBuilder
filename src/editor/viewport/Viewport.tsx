@@ -1108,7 +1108,14 @@ export function Viewport() {
     const definitionId = ev.dataTransfer.getData(DEFINITION_DRAG_TYPE);
     if (!definitionId) return;
     ev.preventDefault();
-    placeDefinition(definitionId, toWorld(ev));
+    // Isometric: in 3D, as the pen puts it (on top of or beside the block under the mouse, into a hole).
+    const preview = isoPickView ? brushPreview(definitionId) : null;
+    if (isoPickView && preview) {
+      const state = useEditor.getState();
+      const t = isoBrushTarget(localPoint(canvasRef.current!, ev), resolveSceneEntities(state.project, state.activeSceneId), preview, isoPickView.camera, isoPickView.view);
+      const cell = cellSize(getEntitySize(preview), state.project.settings.gridSize);
+      placeDefinition(definitionId, cellCenter(cellAt(t.at, cell), cell), isoLiftFor(preview, t.bottom));
+    } else placeDefinition(definitionId, toWorld(ev));
     useEditor.getState().setDock(null);
     canvasRef.current?.focus();
   };
@@ -1185,7 +1192,7 @@ export function Viewport() {
 }
 
 /** Places an instance of a definition in the active scene at a world point and selects it (asking first if it covers something). */
-export function placeDefinition(definitionId: Id, world: Vec2): void {
+export function placeDefinition(definitionId: Id, world: Vec2, isoLift: number | null = null): void {
   const state = useEditor.getState();
   const def = state.project.definitions.find((d) => d.id === definitionId);
   if (!def) return;
@@ -1193,8 +1200,9 @@ export function placeDefinition(definitionId: Id, world: Vec2): void {
   const scene = getActiveScene(state);
   const count = scene.entities.filter((e) => e.definitionId === def.id).length;
   const entity = instantiateDefinition(def, pos, count === 0 ? def.name : `${def.name} ${count + 1}`);
+  if (isoLift) entity.components = { ...entity.components, Sprite: { ...(entity.components.Sprite ?? {}), isoLift } };
   const resolved = resolveEntity(state.project, entity, componentRegistry);
-  placeOver(coveredObjects([getWorldBounds(resolved)], new Set(), isUnderlay(resolved.components)), def.name, (overwrite) => {
+  placeOver(coveredObjects([getWorldBounds(resolved)], new Set(), isUnderlay(resolved.components), isoLift), def.name, (overwrite) => {
     const s = useEditor.getState();
     const ok = s.edit(overwrite.length ? `Place ${def.name}, replacing ${overwrite.length}` : `Place ${def.name}`, (p) => {
       if (overwrite.length) removeEntities(p, scene.id, overwrite);
@@ -1658,7 +1666,8 @@ const EYEDROPPER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
 /** The selection's box (exactly around it) and its handles; corners only for one unturned object. */
 function selectionFrame(selected: ResolvedEntity[]): { box: Rect; handles: Handle[] } {
   const box = boxAround(selected.map(getWorldBounds))!;
-  const resizable = selected.length === 1 && selected[0].transform.rotation % 360 === 0 && !!(selected[0].components.Sprite || selected[0].components.Collider);
+  // (Isometric: no corners: its points only draw more of it, as the side points do; a block is not stretched.)
+  const resizable = !isoPickView && selected.length === 1 && selected[0].transform.rotation % 360 === 0 && !!(selected[0].components.Sprite || selected[0].components.Collider);
   return { box, handles: handlesFor(box, resizable) };
 }
 

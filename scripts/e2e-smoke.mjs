@@ -3506,6 +3506,7 @@ try {
     const wy = 3 * 32 + 16 - cy;
     await page.mouse.click(box.x + box.width / 2 + 0.5 * (wx - wy) * zoom, box.y + box.height / 2 + 0.25 * (wx + wy) * zoom - 8 * zoom);
     await check(async () => (await canvas.getAttribute('data-selection')) === '144,112', 'a click on a block standing on its square selects it (picked where it is drawn)');
+    await check(async () => (await canvas.getAttribute('data-handles')).split(' ').every((h) => h.startsWith('s')), 'its selection has only side points (they draw more of it; nothing stretches a block)');
     await page.keyboard.press('Escape');
     // Building in 3D with the pen: on the top of a block, on top of it; on its side, beside it; right-click takes away.
     const ents = async () => Number(await canvas.getAttribute('data-entities'));
