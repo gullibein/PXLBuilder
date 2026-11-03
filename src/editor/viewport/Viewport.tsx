@@ -1342,11 +1342,26 @@ function drawIsoBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Dra
   ctx.restore();
   // What is in front of it is drawn again over it, as the level has it: a ghost in a hole shows only its top, one
   // on top of the block in front all of it.
-  const near = entities.filter((e) => !e.components.StartsHidden && e.components.Sprite?.visible !== false && ghosts.some((g) => Math.abs(e.transform.position.x - g.transform.position.x) <= 96 && Math.abs(e.transform.position.y - g.transform.position.y) <= 96));
+  // (Only inside the ghost's own picture: nothing outside it changes. Everything in front that can reach into it is
+  // drawn again there, in order, so their sides cover what they cover in the level.)
+  const near = entities.filter((e) => !e.components.StartsHidden && e.components.Sprite?.visible !== false && ghosts.some((g) => Math.abs(e.transform.position.x - g.transform.position.x) <= 192 && Math.abs(e.transform.position.y - g.transform.position.y) <= 192));
   const order = isoOrder<ResolvedEntity>([...near, ...ghosts]);
   const first = order.findIndex((e) => e.id.startsWith('\u0000ghost'));
   const front = order.slice(first + 1).filter((e) => !e.id.startsWith('\u0000ghost'));
-  if (front.length) drawEntities(ctx, front, images);
+  if (!front.length) return;
+  const dpr = ctx.canvas.width / view.width;
+  const m = ctx.getTransform();
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.beginPath();
+  for (const g of ghosts) {
+    const b = isoScreenBox(g, camera, view);
+    if (b) ctx.rect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+  }
+  ctx.clip();
+  ctx.setTransform(m);
+  drawEntities(ctx, front, images);
+  ctx.restore();
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
