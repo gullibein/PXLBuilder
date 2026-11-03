@@ -15,7 +15,7 @@ import { MusicStudio } from './chrome/MusicStudio';
 import { SpriteExport } from './chrome/SpriteExport';
 import { useEffect } from 'react';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from './quickCommands';
-import { deleteSelection, duplicateSelection, frameView, nudgeSelection, selectAll } from './actions';
+import { deleteSelection, duplicateSelection, frameView, nudgeSelection, raiseSelection, selectAll } from './actions';
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
@@ -34,7 +34,7 @@ import { openGame, PlayButton, TopBar } from './chrome/TopBar';
 import { Tray } from './chrome/Tray';
 import { Inspector } from './panels/Inspector';
 import { ContextPrompt } from './prompt/ContextPrompt';
-import { useEditor } from './store';
+import { getActiveScene, useEditor } from './store';
 import { PlayView, playSummaryLine } from './play/PlayView';
 import { Viewport } from './viewport/Viewport';
 import { applyAccent, applyStyle } from './theme';
@@ -255,6 +255,10 @@ function useGlobalShortcuts() {
         state.setLayout({ wireframe: !state.layout.wireframe });
       } else if (key === 'i' && !mod) {
         state.setInspectorOpen(!state.inspectorOpen);
+      } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && getActiveScene(state).world.view === 'iso') {
+        // Isometric: Alt + Up / Down raises or lowers the selection half a block.
+        e.preventDefault();
+        raiseSelection(e.key === 'ArrowUp' ? 1 : -1);
       } else if (e.key.startsWith('Arrow')) {
         e.preventDefault();
         const grid = state.project.settings.gridSize;

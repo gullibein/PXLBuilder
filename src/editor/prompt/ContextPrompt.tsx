@@ -220,9 +220,9 @@ function AIStar({ anchorKey }: { anchorKey: string }) {
           return;
         }
         // Centered over the selection, just above it (below it when there's no room above).
-        const x = (a.rect.minX + a.rect.maxX) / 2;
+        const x = a.star?.x ?? (a.rect.minX + a.rect.maxX) / 2;
         // (Its bottom 10 px above the selection: clear of the selection box's top point.)
-        const above = a.rect.minY - 28;
+        const above = (a.star?.y ?? a.rect.minY) - 28;
         const y = above < CHROME_INSETS.top ? a.rect.maxY + 10 : above;
         el.style.transform = `translate(${Math.round(x - 9)}px, ${Math.round(y)}px)`;
         el.style.visibility = 'visible';

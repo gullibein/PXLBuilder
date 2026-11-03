@@ -140,6 +140,28 @@ export function nudgeSelection(dx: number, dy: number): void {
   edit('Nudge', (p) => moveEntities(p, activeSceneId, ids, { x: dx, y: dy }));
 }
 
+/** Isometric height: half a block (in isoLift units), the step tiles go up and down by. */
+export const ISO_HALF_STEP = 8;
+
+/** Isometric: raises (or lowers) these placed things by `delta` (isoLift units), one Undo step. */
+export function raiseEntities(ids: Id[], delta: number): void {
+  const { project, activeSceneId, edit } = useEditor.getState();
+  if (!ids.length || !delta) return;
+  const all = resolveSceneEntities(project, activeSceneId).filter((e) => ids.includes(e.id) && e.components.Sprite);
+  if (!all.length) return;
+  edit(delta > 0 ? 'Raise' : 'Lower', (p) => {
+    for (const e of all) {
+      const now = Number(e.components.Sprite?.isoLift ?? 0) || 0;
+      setEntityComponentField(p, activeSceneId, e.id, 'Sprite', 'isoLift', Math.max(-256, Math.min(256, now + delta)), componentRegistry);
+    }
+  });
+}
+
+/** Isometric: the selection up or down half a block (Alt + Up / Down). */
+export function raiseSelection(steps: number): void {
+  raiseEntities(useEditor.getState().selectedEntityIds, steps * ISO_HALF_STEP);
+}
+
 let viewSize = { width: 800, height: 500 };
 
 /** Called by the viewport when it resizes, so framing knows the visible area. */

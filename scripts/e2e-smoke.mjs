@@ -3543,6 +3543,27 @@ try {
     await page.mouse.up();
     await check(async () => (await ents()) === n1 + 2, 'dragging its side point (on its top\'s diamond) copies it along two squares, at its height (the ground below stays)');
     await page.keyboard.press('Escape');
+    // Up and down: the triangle in the middle of the selection dragged up, Alt + Down; the ✦ over its north corner.
+    {
+      const t = at(3, 1, 16);
+      await page.mouse.click(t.x, t.y);
+      await check(async () => (await canvas.getAttribute('data-selection-top')) === '16', 'a terrace block selected: its top one block up');
+      const star = page.locator('.ai-star');
+      await check(async () => {
+        const b = await star.boundingBox();
+        const north = at(3, 1, 16);
+        return !!b && Math.abs(b.x + b.width / 2 - north.x) < 4 && b.y + b.height < north.y - 8 * zoom;
+      }, 'the ✦ is above the north corner of its diamond');
+      await page.mouse.move(t.x, t.y);
+      await page.mouse.down();
+      await page.mouse.move(t.x, t.y - 8 * zoom, { steps: 4 });
+      await page.mouse.move(t.x, t.y - 16 * zoom, { steps: 4 });
+      await page.mouse.up();
+      await check(async () => (await canvas.getAttribute('data-selection-top')) === '32', 'dragging the triangle in its middle up a block raises it a block (in half blocks)');
+      await page.keyboard.press('Alt+ArrowDown');
+      await check(async () => (await canvas.getAttribute('data-selection-top')) === '24', 'Alt + Down lowers it half a block');
+      await page.keyboard.press('Escape');
+    }
     // A hole in the ground, filled again with a click (the blocks round it are clicked by their outlines, not boxes).
     const hole = at(7, 5, 0);
     const behind = at(7, 4, 0);
@@ -3569,7 +3590,7 @@ try {
     await check(async () => (await page.getByTestId('play-canvas').count()) === 1, 'it plays');
     await page.waitForTimeout(300);
     await page.getByTestId('play').click();
-    for (let n = 0; n < 10; n++) await page.getByTestId('undo').click();
+    for (let n = 0; n < 12; n++) await page.getByTestId('undo').click();
     await check(async () => (await canvas.getAttribute('data-entities')) === entitiesBefore, '(Undo: the game from before)');
   }
   // (The AI is answered by the stand-in again for this.)

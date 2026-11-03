@@ -12,6 +12,8 @@ export interface Anchor {
   view: { w: number; h: number };
   /** False when the anchored thing is scrolled out of view. */
   visible: boolean;
+  /** Where the ✦ goes, when not over the middle of the top (isometric: above the selection diamond's north corner). */
+  star?: { x: number; y: number };
 }
 
 type Listener = (anchor: Anchor | null) => void;

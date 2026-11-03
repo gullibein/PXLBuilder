@@ -18,7 +18,7 @@ import { relationshipLabel } from '../../core/logic/describe';
 import { ContextMenu, editSpriteOf } from '../chrome/Dock';
 import { hasCopiedObjects, pasteObjects, runQuickCommand } from '../quickCommands';
 import { openProjectFile } from '../persistence';
-import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, resizeEntity, shortenSelection } from '../actions';
+import { connectSwitch, coveredObjects, deleteSelection, isUnderlay, extendSelection, placeOver, raiseEntities, ISO_HALF_STEP, resizeEntity, shortenSelection } from '../actions';
 import { edgeLayers, edgeSlice, extendCount, pastSide, shrinkCount, extendOffsets, handleAt, handleCursor, handlesFor, resizeRect, unionRect as boxAround, type Handle } from './handles';
 import { applyCamera, byLayer, cameraKeeping, drawBackground, drawEntities, insideOutline, isoLiftFor, isoLiftOf, isoLookOf, isoOrder, isoScreenBox, isoVolume, screenDelta, screenToWorld, worldBoundsOfView, worldToScreen, type Camera, type ImageLookup, type ViewSize } from '../../render/renderer';
 import { imageLookup } from '../images';
@@ -41,6 +41,8 @@ type Drag =
   | { kind: 'marquee'; startWorld: Vec2; currentWorld: Vec2; additive: boolean; baseSelection: Id[]; moved: boolean }
   /** A brush stroke: cells visited so far (painted on release as one undoable step). */
   | { kind: 'paint'; definitionId: Id; erase: boolean; start: Cell; last: Cell; cells: Map<string, Cell>; iso?: IsoStroke }
+  /** Isometric: the triangle in the middle of the selection dragged up or down: its height, in half blocks (`delta` in isoLift units). */
+  | { kind: 'lift'; ids: Id[]; startY: number; delta: number }
   /**
    * Dragging a side point of the selection box: out, copies of what is along that side (`ids`), `step` apart;
    * in, the selection gets shorter from that side (`layers`, outermost first). `count`: copies so far, or minus
@@ -149,6 +151,8 @@ export function Viewport() {
   const hoverRef = useRef<Id | null>(null);
   /** The connection (arrow) under the pointer, if any. */
   const hoverLinkRef = useRef<Id | null>(null);
+  /** Isometric: the mouse is over the selection's height triangle. */
+  const hoverLiftRef = useRef(false);
   /** The camera outline under the mouse (it glows a little). */
   const hoverOutlineRef = useRef<CameraOutline | null>(null);
   /** The level drawn once (see the render loop): redrawn only when the game, the view or a drag changes it. */
@@ -224,6 +228,7 @@ export function Viewport() {
         );
       }
       if (drag?.kind === 'resize') entities = entities.map((e) => (e.id === drag.id ? resizedEntity(e, drag.rect) : e));
+      if (drag?.kind === 'lift' && drag.delta) entities = entities.map((e) => (drag.ids.includes(e.id) && e.components.Sprite ? { ...e, components: { ...e.components, Sprite: { ...e.components.Sprite, isoLift: isoLiftOf(e) + drag.delta } } } : e));
       // Shortening: what will go is shown faint (and out of the selection) until let go.
       const shortening = drag?.kind === 'extend' && drag.count < 0 ? new Set(drag.layers.slice(0, -drag.count).flatMap((l) => l.ids)) : null;
       if (shortening) entities = entities.map((e) => (shortening.has(e.id) ? { ...e, alpha: 0.2 } : e));
@@ -346,6 +351,11 @@ export function Viewport() {
       // Isometric: the selection's diamond and its points round the top of what is selected (a block's top face).
       isoSelectionPlane = isoLevel && selected.length ? isoTopOf(selected) : 0;
       atHeight(ctx, isoSelectionPlane, state.camera.zoom * dpr, () => drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach));
+      // Isometric: the triangle in the middle of the selection, dragged up or down for its height.
+      const liftAt = isoLevel && selected.length && (!drag || drag.kind === 'lift') ? liftHandle(selected, state.camera, view) : null;
+      if (liftAt) drawLiftHandle(ctx, liftAt, dpr, drag?.kind === 'lift' || hoverLiftRef.current);
+      const topAttr = isoLevel && selected.length ? String(isoSelectionPlane) : '';
+      if ((canvas.dataset.selectionTop ?? '') !== topAttr) canvas.dataset.selectionTop = topAttr;
       const bgBox = backgroundBox(state);
       if (bgBox) drawBackgroundBox(ctx, bgBox, state.camera.zoom);
       // A selected picture that fills the screen or repeats: its outline only (it can't be moved or resized).
@@ -461,9 +471,22 @@ export function Viewport() {
         const a = toScreen({ x: rect.minX, y: rect.minY });
         const b = toScreen({ x: rect.maxX, y: rect.maxY });
         let screenRect: Rect = { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
+        let isoStar: Vec2 | undefined;
+        if (isoLevel && selected.length !== 2) {
+          // Isometric: round the selection's diamond, on its top (the ✦ above its north corner, at the top).
+          const pts = [
+            { x: rect.minX, y: rect.minY },
+            { x: rect.maxX, y: rect.minY },
+            { x: rect.minX, y: rect.maxY },
+            { x: rect.maxX, y: rect.maxY },
+          ].map((q) => toScreen(q));
+          const up = isoSelectionPlane * state.camera.zoom;
+          screenRect = { minX: Math.min(...pts.map((q) => q.x)), maxX: Math.max(...pts.map((q) => q.x)), minY: Math.min(...pts.map((q) => q.y)) - up, maxY: Math.max(...pts.map((q) => q.y)) - up };
+          isoStar = { x: pts[0].x, y: pts[0].y - up };
+        }
         // The prompt sits beside the selection's info panels, not on top of them.
         if (selected.length !== 2) for (const p of panels) if (state.selectedEntityIds.includes(p.entityId)) screenRect = unionRect(screenRect, p.rect);
-        publishAnchor({ key: anchorKey, rect: screenRect, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height });
+        publishAnchor({ key: anchorKey, rect: screenRect, view: viewWH, visible: b.x > 0 && a.x < view.width && b.y > 0 && a.y < view.height, ...(isoStar ? { star: isoStar } : {}) });
       } else if (state.selectedConnectionId) {
         const l = links.find((x) => x.selected);
         const p = l ? toScreen(curveMidpoint(l.a, l.b)) : { x: view.width / 2, y: view.height / 2 };
@@ -710,6 +733,18 @@ export function Viewport() {
         return;
       }
       const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+      // Isometric: the triangle in the middle of the selection, dragged up or down, raises or lowers it.
+      if (isoPickView && !additive && state.selectedEntityIds.length) {
+        const chosenIso = entities.filter((e) => state.selectedEntityIds.includes(e.id));
+        const h = chosenIso.length ? liftHandle(chosenIso, isoPickView.camera, isoPickView.view) : null;
+        const here = localPoint(canvas, ev);
+        if (h && Math.hypot(here.x - h.x, here.y - h.y) <= (ev.pointerType === 'touch' ? 18 : 11)) {
+          dragRef.current = { kind: 'lift', ids: chosenIso.map((e) => e.id), startY: ev.clientY, delta: 0 };
+          state.setObjectDrag(true);
+          capture(canvas, ev.pointerId);
+          return;
+        }
+      }
       // A point on the selection box: sides repeat the selection in a line, corners resize one object.
       const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
       const frame = chosen.length && !additive ? selectionFrame(chosen) : null;
@@ -816,6 +851,15 @@ export function Viewport() {
         return;
       }
       const chosen = entities.filter((e) => state.selectedEntityIds.includes(e.id));
+      // Isometric: over the height triangle.
+      const lift = isoPickView && chosen.length ? liftHandle(chosen, isoPickView.camera, isoPickView.view) : null;
+      const here = localPoint(canvasRef.current!, ev);
+      hoverLiftRef.current = !!lift && Math.hypot(here.x - lift.x, here.y - lift.y) <= 11;
+      if (hoverLiftRef.current) {
+        hoverRef.current = null;
+        canvasRef.current!.style.cursor = spaceDownRef.current ? 'grab' : 'ns-resize';
+        return;
+      }
       const frame = chosen.length ? selectionFrame(chosen) : null;
       const handle = frame && handleAt(frame.handles, frame.box, selectionPoint(ev, world), state.camera.zoom, 8);
       if (handle) {
@@ -839,6 +883,11 @@ export function Viewport() {
       drag.current = toWorld(ev);
       const over = pick(resolveSceneEntities(state.project, state.activeSceneId), drag.current);
       drag.targetId = over && over.id !== drag.fromId ? over.id : null;
+      return;
+    }
+    if (drag.kind === 'lift') {
+      // Up the screen is up; in half blocks, as moving does in the other directions.
+      drag.delta = Math.round(-(ev.clientY - drag.startY) / state.camera.zoom / ISO_HALF_STEP) * ISO_HALF_STEP;
       return;
     }
     if (drag.kind === 'extend') {
@@ -948,6 +997,10 @@ export function Viewport() {
     }
     if (drag?.kind === 'connect') {
       if (drag.targetId) connectSwitch(drag.fromId, drag.targetId);
+      return;
+    }
+    if (drag?.kind === 'lift') {
+      if (drag.delta) raiseEntities(drag.ids, drag.delta);
       return;
     }
     if (drag?.kind === 'extend') {
@@ -1365,8 +1418,12 @@ function pickIso(entities: ResolvedEntity[], p: Vec2, camera: Camera, view: View
       if (containsPoint(e, p)) return e;
       continue;
     }
-    // (A block by its own outline: the gaps and holes round it are not it.)
-    if (box.outline ? insideOutline(screen, box.outline) : screen.x >= box.left && screen.x <= box.right && screen.y >= box.top && screen.y <= box.bottom) return e;
+    // (A block by its own outline: the gaps and holes round it are not it. A standing thing by the middle of its
+    // picture, where it is drawn: not the empty corners round a coin or a character.)
+    const w = box.right - box.left;
+    const h = box.bottom - box.top;
+    const standing = screen.x >= box.left + w * 0.2 && screen.x <= box.right - w * 0.2 && screen.y >= box.top + h * 0.15 && screen.y <= box.bottom;
+    if (box.outline ? insideOutline(screen, box.outline) : standing) return e;
   }
   return null;
 }
@@ -1534,6 +1591,35 @@ function traceShape(ctx: CanvasRenderingContext2D, e: ResolvedEntity, pad: numbe
   if (e.components.Collider?.shape === 'circle') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
   else if (rounded) ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(6, w / 4, h / 4));
   else ctx.rect(-w / 2, -h / 2, w, h);
+}
+
+/** Isometric: where the height triangle is (screen px): the middle of the selection's diamond, on its top. */
+function liftHandle(selected: ResolvedEntity[], camera: Camera, view: ViewSize): Vec2 {
+  const b = selected.map(getWorldBounds).reduce(unionRect);
+  const p = worldToScreen(camera, view, { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+  return { x: p.x, y: p.y - isoTopOf(selected) * camera.zoom };
+}
+
+/** The height triangle: pointing up over pointing down, in the selection's color (brighter while held or under the mouse). */
+function drawLiftHandle(ctx: CanvasRenderingContext2D, at: Vec2, dpr: number, hot: boolean): void {
+  const before = ctx.getTransform();
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = theme.select;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.lineWidth = 1;
+  const s = hot ? 7 : 6;
+  for (const dir of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(at.x, at.y + dir * (s + 2));
+    ctx.lineTo(at.x - s, at.y + dir * 1.5);
+    ctx.lineTo(at.x + s, at.y + dir * 1.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.setTransform(before);
 }
 
 /** Isometric: the height of the top of these (a block's top face; anything else where it stands), in isoLift units. */
