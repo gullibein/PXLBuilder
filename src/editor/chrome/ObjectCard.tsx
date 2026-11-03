@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getActiveScene, useEditor } from '../store';
-import { canAutotile, editSpriteOf, Thumb } from './Dock';
+import { canAutotile, editSpriteOf, IsoShapes, Thumb } from './Dock';
 
 /**
  * A small card at the top right for the object being worked with: the one selected in the level, or else the one
@@ -40,6 +40,7 @@ export function ObjectCard() {
           {entity && entity.name !== def.name ? entity.name : def.name}
         </span>
       </div>
+      <IsoShapes def={def} size={22} />
       <button className="chip-btn" data-testid="object-card-edit-sprite" onClick={() => editSpriteOf(def.id)}>
         Edit sprite
       </button>

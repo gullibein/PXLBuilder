@@ -432,6 +432,14 @@ export function isoAutoOf(e: ResolvedEntity): IsoAuto {
 
 const isWaterBlock = (e: ResolvedEntity) => isoAutoOf(e) === 'water' || e.tags.includes('water');
 
+/** What each of an auto-tiled block's pictures (Sprite.isoPictures) is, in order: the shapes it takes. */
+export function isoShapeNames(kind: IsoAuto): string[] {
+  if (kind === 'road') return ['Variation', 'Turn SE–SW', 'Turn SE–NE', 'Turn NW–NE', 'Turn NW–SW'];
+  if (kind === 'land') return ['Corner north', 'Corner east', 'Corner south', 'Corner west', 'Variation'];
+  if (kind === 'water') return ['Shore north', 'Shore east', 'Shore south', 'Shore west', 'Variation'];
+  return [];
+}
+
 /**
  * Isometric auto-tiling: which of its pictures a block is drawn with, from the blocks around it at its own height
  * (`at(dx, dy)`: what is on the square that far along the level's x and y). On the screen -y is north-east, +x
@@ -439,7 +447,8 @@ const isWaterBlock = (e: ResolvedEntity) => isoAutoOf(e) === 'water' || e.tags.i
  * - road (Sprite.isoPictures: variation, turns SE-SW, SE-NE, NW-NE, NW-SW): where the road of the same object
  *   turns, the turn; elsewhere its own picture or the variation, mixed by where it is.
  * - land (north, east, south, west corners, variation): where water is on two sides next to each other, that
- *   corner; elsewhere its own picture or the variation, mixed by where it is.
+ *   corner (not where that water itself turns: its shore corners already round it off); elsewhere its own picture
+ *   or the variation, mixed by where it is.
  * - water (north, east, south, west corners, variation): the same where land is on two sides next to each other.
  * null: its own picture.
  */
@@ -448,12 +457,11 @@ export function isoAutoPicture(e: ResolvedEntity, at: (dx: number, dy: number) =
   const pics = e.components.Sprite?.isoPictures;
   if (kind === 'none' || !Array.isArray(pics)) return null;
   const pic = (n: number) => (typeof pics[n] === 'string' && pics[n] ? (pics[n] as string) : null);
-  const side = (test: (o: ResolvedEntity) => boolean) => {
-    const has = (dx: number, dy: number) => at(dx, dy).some(test);
-    return { ne: has(0, -1), se: has(1, 0), sw: has(0, 1), nw: has(-1, 0) };
+  const sides = (test: (o: ResolvedEntity) => boolean) => isoSides(at, test);
+  const corner = (s: Sides) => {
+    const n = isoCorner(s);
+    return n < 0 ? null : pic(n);
   };
-  const corner = (s: { ne: boolean; se: boolean; sw: boolean; nw: boolean }) =>
-    s.nw && s.ne ? pic(0) : s.ne && s.se ? pic(1) : s.se && s.sw ? pic(2) : s.sw && s.nw ? pic(3) : null;
   // (Mixed by where it is: the same square always gets the same one; `in5` of 5 squares the variation.)
   const mixed = (n: number, in5: number) => {
     const i = Math.floor(e.transform.position.x / 32);
@@ -461,7 +469,7 @@ export function isoAutoPicture(e: ResolvedEntity, at: (dx: number, dy: number) =
     return (((i * 73856093) ^ (j * 19349663)) >>> 0) % 5 < in5 ? pic(n) : null;
   };
   if (kind === 'road') {
-    const s = side((o) => o.definitionId === e.definitionId && o !== e);
+    const s = sides((o) => o.definitionId === e.definitionId && o !== e);
     const n = +s.ne + +s.se + +s.sw + +s.nw;
     if (n === 2) {
       const turn = s.se && s.sw ? pic(1) : s.se && s.ne ? pic(2) : s.nw && s.ne ? pic(3) : s.nw && s.sw ? pic(4) : null;
@@ -469,9 +477,33 @@ export function isoAutoPicture(e: ResolvedEntity, at: (dx: number, dy: number) =
     }
     return mixed(0, 2);
   }
-  if (kind === 'land') return corner(side(isWaterBlock)) ?? mixed(4, 1);
-  return corner(side((o) => o !== e && !isWaterBlock(o) && isoLookOf(o) === 'iso_floor')) ?? mixed(4, 1);
+  if (kind === 'land') {
+    // (Water that turns, a shore corner, next to it: the land stays as it is, or the two round off twice.)
+    const turning = (dx: number, dy: number) => at(dx, dy).some((o) => isoAutoOf(o) === 'water' && isoCorner(isoSides((x, y) => at(dx + x, dy + y), isLandFor(o))) >= 0);
+    const s = sides(isWaterBlock);
+    const n = isoCorner(s);
+    const steps = [[[-1, 0], [0, -1]], [[0, -1], [1, 0]], [[1, 0], [0, 1]], [[0, 1], [-1, 0]]][n];
+    if (n >= 0 && !steps.some(([dx, dy]) => turning(dx, dy))) return pic(n);
+    return mixed(4, 1);
+  }
+  return corner(sides(isLandFor(e))) ?? mixed(4, 1);
 }
+
+type Sides = { ne: boolean; se: boolean; sw: boolean; nw: boolean };
+
+/** Which of a square's four sides (north-east -y, south-east +x, south-west +y, north-west -x) have what passes the test. */
+function isoSides(at: (dx: number, dy: number) => ResolvedEntity[], test: (o: ResolvedEntity) => boolean): Sides {
+  const has = (dx: number, dy: number) => at(dx, dy).some(test);
+  return { ne: has(0, -1), se: has(1, 0), sw: has(0, 1), nw: has(-1, 0) };
+}
+
+/** The corner two sides next to each other make: 0 north (NW+NE), 1 east (NE+SE), 2 south (SE+SW), 3 west (SW+NW); -1 none. */
+function isoCorner(s: Sides): number {
+  return s.nw && s.ne ? 0 : s.ne && s.se ? 1 : s.se && s.sw ? 2 : s.sw && s.nw ? 3 : -1;
+}
+
+/** Land, as water sees it: a floor block that is not water. */
+const isLandFor = (water: ResolvedEntity) => (o: ResolvedEntity) => o !== water && !isWaterBlock(o) && isoLookOf(o) === 'iso_floor';
 
 /** A block's height (half its width: 2:1 blocks), in isoLift units. */
 export function isoBlockHeight(e: ResolvedEntity): number {

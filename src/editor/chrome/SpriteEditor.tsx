@@ -32,6 +32,7 @@ import {
 } from '../../core/model/spriteDraft';
 import { whenImageReady } from '../images';
 import { SpriteImage } from '../SpriteImage';
+import { isoShapeNames, type IsoAuto } from '../../render/renderer';
 import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
 
@@ -310,6 +311,10 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
       out.push({ assetId, label, asset: a, editable });
     };
     add(def.components.Sprite?.assetId, 'Its look');
+    // An auto-tiled isometric block: each shape it takes from the blocks around it.
+    const shapes = isoShapeNames((def.components.Sprite?.isoAuto ?? 'none') as IsoAuto);
+    const pics = def.components.Sprite?.isoPictures;
+    if (Array.isArray(pics)) shapes.forEach((name, n) => add(pics[n], name));
     for (const [situation, id] of Object.entries((def.components.SpriteStates ?? {}) as Record<string, unknown>)) add(id, situationLabel(situation));
     for (const r of m.getDefinitionSprites(def)) add(r.assetId, 'In its sprites');
     return out;

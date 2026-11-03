@@ -15,6 +15,7 @@ import type { ObjectDefinition } from '../../core/types';
 import { CATEGORIES, categoryOf } from '../categories';
 import { PromptBox } from '../prompt/PromptBox';
 import { SpriteImage } from '../SpriteImage';
+import { isoShapeNames, type IsoAuto } from '../../render/renderer';
 import { getActiveScene, useEditor } from '../store';
 import { DEFINITION_DRAG_TYPE } from '../viewport/Viewport';
 
@@ -532,6 +533,40 @@ export function canAutotile(def: ObjectDefinition): boolean {
 }
 
 /** Opens the sprite editor on an object's look (a new drawing when it has no picture the editor can edit). */
+/**
+ * An auto-tiled isometric block's shapes (Sprite.isoAuto, isoPictures): its own picture and each shape it takes
+ * from the blocks around it (turns, corners, shores, the variation), small; a click draws that one in the sprite
+ * editor.
+ */
+export function IsoShapes({ def, size = 26 }: { def: ObjectDefinition; size?: number }) {
+  const assets = useEditor((s) => s.project.assets);
+  const sprite = def.components.Sprite ?? {};
+  const kind = sprite.isoAuto as IsoAuto | undefined;
+  const names = kind ? isoShapeNames(kind) : [];
+  const pics = Array.isArray(sprite.isoPictures) ? (sprite.isoPictures as unknown[]) : [];
+  if (!names.length) return null;
+  const shapes = [{ id: sprite.assetId, name: kind === 'road' ? 'Straight' : 'Plain' }, ...names.map((name, n) => ({ id: pics[n], name }))];
+  return (
+    <div className="iso-shapes" data-testid="iso-shapes" aria-label={`${def.name}'s shapes`}>
+      {shapes.map(({ id, name }, n) => {
+        const asset = typeof id === 'string' ? assets.find((a) => a.id === id) : undefined;
+        return (
+          <button
+            key={n}
+            className="iso-shape"
+            data-testid={`iso-shape-${n}`}
+            title={asset ? `${name}: ${asset.name} (click to draw it)` : `${name}: no picture yet (set it in Details: Sprite → isoPictures)`}
+            disabled={!asset}
+            onClick={() => asset && useEditor.getState().openSpriteEditor({ definitionId: def.id, assetId: asset.id })}
+          >
+            {asset ? <SpriteImage asset={asset} size={size} /> : <span style={{ width: size, height: size }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function editSpriteOf(definitionId: string): void {
   const { project, openSpriteEditor } = useEditor.getState();
   const def = project.definitions.find((d) => d.id === definitionId);

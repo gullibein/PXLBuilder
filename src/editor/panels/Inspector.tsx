@@ -8,7 +8,7 @@ import { CATEGORIES, categoryOf } from '../categories';
 import { getActiveScene, useEditor } from '../store';
 import { EntityLogic } from '../logic/LogicPanel';
 import { FieldEditor, ListInput, NumberInput, TextInput, Vec2Input } from './FieldEditor';
-import { canAutotile, editSpriteOf, Thumb } from '../chrome/Dock';
+import { canAutotile, editSpriteOf, IsoShapes, Thumb } from '../chrome/Dock';
 
 /** The details panel: floating over the level (opened on demand), or `docked` as a column beside it (an editor setting). */
 export function Inspector({ docked = false }: { docked?: boolean }) {
@@ -68,22 +68,25 @@ export function Inspector({ docked = false }: { docked?: boolean }) {
 /** At the top of an object's details: its picture, and Edit sprite (the sprite editor on it) beside it. */
 function ObjectLook({ def }: { def: ObjectDefinition }) {
   return (
-    <div className="inspector-look" data-testid="inspector-look">
-      <Thumb def={def} size={44} />
-      <button className="chip-btn" data-testid="inspector-edit-sprite" title={`Draw ${def.name}'s picture in the sprite editor`} onClick={() => editSpriteOf(def.id)}>
-        Edit sprite
-      </button>
-      {canAutotile(def) && (
-        <button
-          className={`chip-btn${def.components.Sprite?.autotile === true ? ' on' : ''}`}
-          data-testid="inspector-autotile"
-          title="Autotile: each tile drawn with the picture that fits the tiles around it (edges, ends, corners)"
-          onClick={() => useEditor.getState().setAutotileEditor(def.id)}
-        >
-          Autotile…
+    <>
+      <div className="inspector-look" data-testid="inspector-look">
+        <Thumb def={def} size={44} />
+        <button className="chip-btn" data-testid="inspector-edit-sprite" title={`Draw ${def.name}'s picture in the sprite editor`} onClick={() => editSpriteOf(def.id)}>
+          Edit sprite
         </button>
-      )}
-    </div>
+        {canAutotile(def) && (
+          <button
+            className={`chip-btn${def.components.Sprite?.autotile === true ? ' on' : ''}`}
+            data-testid="inspector-autotile"
+            title="Autotile: each tile drawn with the picture that fits the tiles around it (edges, ends, corners)"
+            onClick={() => useEditor.getState().setAutotileEditor(def.id)}
+          >
+            Autotile…
+          </button>
+        )}
+      </div>
+      <IsoShapes def={def} />
+    </>
   );
 }
 

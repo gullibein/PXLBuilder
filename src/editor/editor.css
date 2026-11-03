@@ -826,6 +826,11 @@ select option, select optgroup { background-color: var(--option-bg); color: var(
 .inspector-look { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .inspector-look .thumb { flex: none; width: 48px; height: 48px; border-radius: 10px; }
 .inspector-look .chip-btn { white-space: nowrap; padding: 4px 9px; font-size: 12px; }
+.iso-shapes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.object-card .iso-shapes { margin-bottom: 0; }
+.iso-shape { display: grid; place-items: center; padding: 2px; border-radius: 6px; background: var(--surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--line); cursor: pointer; }
+.iso-shape:hover:not(:disabled) { border-color: var(--accent, #8b7cff); }
+.iso-shape:disabled { opacity: 0.4; cursor: default; }
 
 /* The Autotile editor: style and the switch on the left; the 16 pictures (4 × 4) and a small level to try them. */
 .autotile-editor { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }

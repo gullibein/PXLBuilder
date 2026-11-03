@@ -5,7 +5,7 @@ import { ISO_TILES } from '../core/model/isoTiles';
 import { resolveEntity } from '../core/model/resolve';
 import { InputState } from '../runtime/input';
 import { Runtime } from '../runtime/runtime';
-import { cameraKeeping, insideOutline, isoAutoPicture, isoLiftOf, isoScreenBox, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
+import { cameraKeeping, insideOutline, isoAutoPicture, isoShapeNames, isoLiftOf, isoScreenBox, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
 
 const registry = createBuiltinRegistry();
 
@@ -149,6 +149,24 @@ describe('the isometric view', () => {
     expect(pick(10, 9)).toBe('Water Corner East');
     expect(pick(10, 10)).toBe('Water Corner South');
     expect(pick(9, 10)).toBe('Water Corner West');
+  });
+
+  it('auto-tiling: grass next to water that turns (a shore corner) does not round off as well', () => {
+    // An L of water: (0,0), (1,0), (0,1); grass all round. Ascii rows are the level's y, columns its x.
+    const rows = ['GGGGG', 'GWWGG', 'GWGGG', 'GGGGG'];
+    const ent = (kind: 'land' | 'water', i: number, j: number) =>
+      ({ definitionId: kind, tags: kind === 'water' ? ['water'] : [], transform: { position: { x: i * 32 + 16, y: j * 32 + 16 } }, components: { Sprite: { isoLook: 'iso_floor', isoAuto: kind, isoPictures: isoShapeNames(kind).map((n) => `${kind}:${n}`) } } }) as unknown as Parameters<typeof isoAutoPicture>[0];
+    const grid = rows.map((r, j) => [...r].map((c, i) => ent(c === 'W' ? 'water' : 'land', i, j)));
+    const at = (i: number, j: number) => (dx: number, dy: number) => (grid[j + dy]?.[i + dx] ? [grid[j + dy][i + dx]] : []);
+    const pick = (i: number, j: number) => isoAutoPicture(grid[j][i], at(i, j));
+    // The water at the L's bend has land on its north-west and north-east: a shore corner.
+    expect(pick(1, 1)).toBe('water:Shore north');
+    // The grass inside the bend has water on its north-west and north-east, but that water turns: no corner.
+    expect(String(pick(2, 2))).not.toMatch(/Corner/);
+    // A lone water square on an edge of the island (not turning): the grass beside it with water on two sides rounds off.
+    const rows2 = ['WWW', 'WGG', 'WGG'];
+    const grid2 = rows2.map((r, j) => [...r].map((c, i) => ent(c === 'W' ? 'water' : 'land', i, j)));
+    expect(isoAutoPicture(grid2[1][1], (dx, dy) => (grid2[1 + dy]?.[1 + dx] ? [grid2[1 + dy][1 + dx]] : []))).toBe('land:Corner north');
   });
 
   describe('walkable heights', () => {
