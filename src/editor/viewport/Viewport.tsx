@@ -1335,14 +1335,18 @@ function drawIsoBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Dra
     at = [cellCenter(cellAt(t.at, cell), cell)];
   }
   const lift = isoLiftFor(preview, bottom);
+  const ghosts = at.map((p, n) => ({ ...preview, id: `\u0000ghost${n}`, transform: { ...preview.transform, position: p }, components: { ...preview.components, Sprite: { ...preview.components.Sprite, isoLift: lift } } }));
   ctx.save();
   ctx.globalAlpha = 0.6;
-  drawEntities(
-    ctx,
-    at.map((p) => ({ ...preview, transform: { ...preview.transform, position: p }, components: { ...preview.components, Sprite: { ...preview.components.Sprite, isoLift: lift } } })),
-    images,
-  );
+  drawEntities(ctx, ghosts, images);
   ctx.restore();
+  // What is in front of it is drawn again over it, as the level has it: a ghost in a hole shows only its top, one
+  // on top of the block in front all of it.
+  const near = entities.filter((e) => !e.components.StartsHidden && e.components.Sprite?.visible !== false && ghosts.some((g) => Math.abs(e.transform.position.x - g.transform.position.x) <= 96 && Math.abs(e.transform.position.y - g.transform.position.y) <= 96));
+  const order = isoOrder<ResolvedEntity>([...near, ...ghosts]);
+  const first = order.findIndex((e) => e.id.startsWith('\u0000ghost'));
+  const front = order.slice(first + 1).filter((e) => !e.id.startsWith('\u0000ghost'));
+  if (front.length) drawEntities(ctx, front, images);
 }
 
 /** Ghost of the brush under the pointer, plus the cells of the stroke in progress. */
