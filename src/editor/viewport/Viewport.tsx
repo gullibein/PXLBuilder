@@ -1707,7 +1707,12 @@ function drawIsoSelectionBox(ctx: CanvasRenderingContext2D, box: Rect, bottom: n
 
 /** Isometric: the height of the top of these (a block's top face; anything else where it stands), in isoLift units. */
 function isoTopOf(list: ResolvedEntity[]): number {
-  return Math.max(...list.map((e) => isoVolume(e)?.top ?? isoLiftOf(e)));
+  // (A standing thing: the top of its picture, which stands a little in front of its square's middle.)
+  const standTop = (e: ResolvedEntity) => {
+    const size = getEntitySize(e);
+    return isoLiftOf(e) + Math.abs(size.y * e.transform.scale.y) - Math.abs(size.x * e.transform.scale.x) / 8;
+  };
+  return Math.max(...list.map((e) => isoVolume(e)?.top ?? (isoLookOf(e) === 'stand' ? standTop(e) : isoLiftOf(e))));
 }
 
 /** Draws on the level's plane `height` up (isometric: that many units higher on the screen; 0: as it is). */
@@ -1770,14 +1775,19 @@ function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[]
   ctx.shadowBlur = 16 * breathe;
   ctx.strokeStyle = color;
   ctx.lineWidth = 1.5 / zoom;
-  for (const e of selected) {
-    ctx.save();
-    traceShape(ctx, e, 0, false);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.shadowBlur = 0;
   const frame = selectionFrame(selected);
+  // (Isometric: the top of the selection box, the same square as its bottom.)
+  if (isoPickView && !extended) {
+    const b = frame.box;
+    ctx.strokeRect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+  } else
+    for (const e of selected) {
+      ctx.save();
+      traceShape(ctx, e, 0, false);
+      ctx.stroke();
+      ctx.restore();
+    }
+  ctx.shadowBlur = 0;
   if (selected.length > 1 || extended) {
     // The box the side points belong to (and how far a side drag reaches).
     const b = extended ?? frame.box;

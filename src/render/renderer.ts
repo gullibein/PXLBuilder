@@ -882,6 +882,15 @@ export function drawEntities(
         const top = look === 'stand' ? at.y + W / 8 - H : look === 'iso_floor' ? at.y - W / 4 : at.y - W / 4 - (H - W / 2);
         const x0 = Math.round(at.x - W / 2);
         const y0 = Math.round(top - lift);
+        // A standing thing's shadow on its square, where it stands: shows which square it is on.
+        if (look === 'stand' && !invisible) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+          ctx.beginPath();
+          ctx.ellipse(at.x, at.y - lift, W * 0.3, W * 0.13, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = color;
+        }
         const w = Math.max(1, Math.round(W));
         const h = Math.max(1, Math.round(H));
         ctx.setTransform((w / size.x) * Math.sign(scale.x || 1), 0, 0, (h / size.y) * Math.sign(scale.y || 1), x0 + w / 2, y0 + h / 2);

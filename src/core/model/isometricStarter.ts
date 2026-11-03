@@ -14,8 +14,10 @@ import type { PixelArt } from './pixelArt';
 
 const art = (palette: Record<string, string>, rows: string[]): PixelArt => ({ palette: Object.entries(palette).map(([key, color]) => ({ key, color })), rows });
 
-/** A coin standing on its edge, in the blocks' pixel size (16 × 16 for a whole square; the coin in its middle). */
+/** A coin standing on its edge, in the blocks' pixel size (16 × 16 for a whole square; resting on the ground: its bottom near the picture's). */
 const COIN = art({ o: '#3a2a08', y: '#ffd166', Y: '#fff2a8', d: '#c8902a' }, [
+  '................',
+  '................',
   '................',
   '................',
   '................',
@@ -29,8 +31,6 @@ const COIN = art({ o: '#3a2a08', y: '#ffd166', Y: '#fff2a8', d: '#c8902a' }, [
   '....oyyyyddo....',
   '.....oyyddo.....',
   '......oooo......',
-  '................',
-  '................',
   '................',
 ]);
 
