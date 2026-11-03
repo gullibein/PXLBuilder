@@ -1342,9 +1342,13 @@ function drawIsoBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Dra
   ctx.restore();
   // What is in front of it is drawn again over it, as the level has it: a ghost in a hole shows only its top, one
   // on top of the block in front all of it.
-  // (Only inside the ghost's own picture: nothing outside it changes. Everything in front that can reach into it is
-  // drawn again there, in order, so their sides cover what they cover in the level.)
-  const near = entities.filter((e) => !e.components.StartsHidden && e.components.Sprite?.visible !== false && ghosts.some((g) => Math.abs(e.transform.position.x - g.transform.position.x) <= 192 && Math.abs(e.transform.position.y - g.transform.position.y) <= 192));
+  // (Only inside the ghost's own outline: nothing outside it changes. Into that, only the line of squares right in
+  // front of it reaches, and anything tall (standing or raised) from a little farther.)
+  const reach = (e: ResolvedEntity, g: ResolvedEntity) => {
+    const d = Math.max(Math.abs(e.transform.position.x - g.transform.position.x), Math.abs(e.transform.position.y - g.transform.position.y));
+    return d <= 32 || (d <= 96 && (isoLookOf(e) === 'stand' || isoLiftOf(e) > 0));
+  };
+  const near = entities.filter((e) => !e.components.StartsHidden && e.components.Sprite?.visible !== false && ghosts.some((g) => reach(e, g)));
   const order = isoOrder<ResolvedEntity>([...near, ...ghosts]);
   const first = order.findIndex((e) => e.id.startsWith('\u0000ghost'));
   const front = order.slice(first + 1).filter((e) => !e.id.startsWith('\u0000ghost'));
@@ -1356,7 +1360,13 @@ function drawIsoBrush(ctx: CanvasRenderingContext2D, definitionId: Id, drag: Dra
   ctx.beginPath();
   for (const g of ghosts) {
     const b = isoScreenBox(g, camera, view);
-    if (b) ctx.rect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+    if (!b) continue;
+    if (!b.outline) {
+      ctx.rect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+      continue;
+    }
+    b.outline.forEach((q, n) => (n ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.closePath();
   }
   ctx.clip();
   ctx.setTransform(m);
