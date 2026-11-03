@@ -350,7 +350,9 @@ export function Viewport() {
       const reach = drag?.kind === 'extend' ? (shortening ? boxAround(selected.map(getWorldBounds)) : boxAround([drag.box, ...ghosts.map(getWorldBounds)])) : null;
       // Isometric: the selection's diamond and its points round the top of what is selected (a block's top face).
       isoSelectionPlane = isoLevel && selected.length ? isoTopOf(selected) : 0;
-      atHeight(ctx, isoSelectionPlane, state.camera.zoom * dpr, () => drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach));
+      // Isometric: a box round what is selected: its bottom (red) and its top (blue, with its points), corners joined.
+      if (isoLevel && selected.length) drawIsoSelectionBox(ctx, reach ?? selectionFrame(selected).box, isoBottomOf(selected), isoSelectionPlane, state.camera, view, dpr);
+      atHeight(ctx, isoSelectionPlane, state.camera.zoom * dpr, () => drawSelection(ctx, selected, state.camera.zoom, time, !drag || drag.kind === 'extend' || drag.kind === 'resize', reach, isoLevel ? ISO_TOP_COLOR : theme.select));
       // Isometric: the triangle in the middle of the selection, dragged up or down for its height.
       const liftAt = isoLevel && selected.length && (!drag || drag.kind === 'lift') ? liftHandle(selected, state.camera, view) : null;
       if (liftAt) drawLiftHandle(ctx, liftAt, dpr, drag?.kind === 'lift' || hoverLiftRef.current);
@@ -1659,6 +1661,50 @@ function drawLiftHandle(ctx: CanvasRenderingContext2D, at: Vec2, dpr: number, ho
   ctx.setTransform(before);
 }
 
+/** The isometric selection box's colors: its top (with the points) and its bottom. */
+const ISO_TOP_COLOR = '#4aa3ff';
+const ISO_BOTTOM_COLOR = '#ff4d5e';
+
+/** Isometric: the height of the bottom of these (a block's bottom; anything else where it stands), in isoLift units. */
+function isoBottomOf(list: ResolvedEntity[]): number {
+  return Math.min(...list.map((e) => isoVolume(e)?.bottom ?? isoLiftOf(e)));
+}
+
+/** Isometric: the selection box's bottom diamond (red) and the lines up its corners to the top; the top is drawn after, blue. */
+function drawIsoSelectionBox(ctx: CanvasRenderingContext2D, box: Rect, bottom: number, top: number, camera: Camera, view: ViewSize, dpr: number): void {
+  const corners = [
+    { x: box.minX, y: box.minY },
+    { x: box.maxX, y: box.minY },
+    { x: box.maxX, y: box.maxY },
+    { x: box.minX, y: box.maxY },
+  ].map((p) => worldToScreen(camera, view, p));
+  const z = camera.zoom;
+  const before = ctx.getTransform();
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = ISO_BOTTOM_COLOR;
+  ctx.beginPath();
+  corners.forEach((c, n) => (n ? ctx.lineTo(c.x, c.y - bottom * z) : ctx.moveTo(c.x, c.y - bottom * z)));
+  ctx.closePath();
+  ctx.stroke();
+  if (top > bottom) {
+    // (Up the corners: red at the bottom into blue at the top.)
+    for (const c of corners) {
+      const g = ctx.createLinearGradient(c.x, c.y - bottom * z, c.x, c.y - top * z);
+      g.addColorStop(0, ISO_BOTTOM_COLOR);
+      g.addColorStop(1, ISO_TOP_COLOR);
+      ctx.strokeStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y - bottom * z);
+      ctx.lineTo(c.x, c.y - top * z);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.setTransform(before);
+}
+
 /** Isometric: the height of the top of these (a block's top face; anything else where it stands), in isoLift units. */
 function isoTopOf(list: ResolvedEntity[]): number {
   return Math.max(...list.map((e) => isoVolume(e)?.top ?? isoLiftOf(e)));
@@ -1716,13 +1762,13 @@ function resizedEntity(e: ResolvedEntity, r: Rect): ResolvedEntity {
  * The selection: each object outlined exactly (no gap), and the points to drag: on one object its corners
  * (resize) and sides (repeat in a line); on several, the sides of the box around them all.
  */
-function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[], zoom: number, time: number, withHandles: boolean, extended: Rect | null): void {
+function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[], zoom: number, time: number, withHandles: boolean, extended: Rect | null, color: string = theme.select): void {
   if (!selected.length) return;
   const breathe = 0.75 + 0.25 * Math.sin(time / 600);
   ctx.save();
   ctx.shadowColor = theme.selectGlow;
   ctx.shadowBlur = 16 * breathe;
-  ctx.strokeStyle = theme.select;
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1.5 / zoom;
   for (const e of selected) {
     ctx.save();
@@ -1743,7 +1789,7 @@ function drawSelection(ctx: CanvasRenderingContext2D, selected: ResolvedEntity[]
   if (withHandles && !extended && Math.min(frame.box.maxX - frame.box.minX, frame.box.maxY - frame.box.minY) * zoom >= 12) {
     const s = 7 / zoom;
     ctx.fillStyle = theme.handle;
-    ctx.strokeStyle = theme.select;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.25 / zoom;
     for (const h of frame.handles) {
       ctx.beginPath();

@@ -49,7 +49,20 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
         description:
           'In an isometric level (seen at an angle): stand: upright on its square (characters, trees, items); flat: lying on the ground (a rug, a puddle, a top-down floor tile); block: a block with its picture on top and shaded sides (a top-down wall tile); iso_floor: the picture is an isometric block whose top is the ground (a floor of blocks); iso_block: an isometric block standing on its square (a wall of blocks). auto: tiles that block the way are blocks, other tiles flat, everything else stands',
       },
-      isoLift: { kind: 'number', default: 0, min: -256, max: 256, step: 1, description: 'In an isometric level: drawn this many level pixels higher (a raised floor, something floating, a block on a block: 16 for one block up); how it moves and collides is the same' },
+      isoLift: { kind: 'number', default: 0, min: -256, max: 256, step: 1, description: 'In an isometric level: drawn this many level pixels higher (a raised floor, something floating, a block on a block: 16 for one block up, 8 for half a block); how it moves and collides is the same' },
+      isoAuto: {
+        kind: 'enum',
+        options: ['none', 'road', 'land', 'water'],
+        default: 'none',
+        description:
+          'In an isometric level, auto-tiling: the block picks one of its pictures (isoPictures) from the blocks around it at its height. road: where a road of this object turns, the turn picture; straight stretches mix its own picture and the variation. land: where water is on two sides next to each other, a corner rounding off into the water. water: where land is on two sides next to each other, a corner of the shore. none: always its own picture',
+      },
+      isoPictures: {
+        kind: 'stringList',
+        default: [],
+        description:
+          'The auto-tiled pictures (asset ids), in this order. road: the variation, then the turns south-east+south-west, south-east+north-east, north-west+north-east, north-west+south-west. land and water: the north, east, south and west corners (north is up on the screen), then a variation mixed in elsewhere',
+      },
     },
   },
   {

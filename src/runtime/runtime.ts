@@ -194,9 +194,9 @@ const LADDER_GRIP = 0.5;
 const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
-/** Isometric heights: the squares heights are looked up on, how high a mover steps up (a block), how fast. */
+/** Isometric heights: the squares heights are looked up on, how high a mover steps up (half a block; a whole block up is a cliff), how fast. */
 const ISO_CELL = 32;
-const ISO_STEP = 16;
+const ISO_STEP = 8;
 const ISO_STEP_SPEED = 160;
 const ISO_FALL = 900;
 const ISO_FALL_MAX = 600;

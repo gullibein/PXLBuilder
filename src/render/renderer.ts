@@ -422,6 +422,57 @@ export function isoLiftOf(e: ResolvedEntity): number {
   return typeof l === 'number' && Number.isFinite(l) ? l : 0;
 }
 
+/** Isometric auto-tiling (Sprite.isoAuto): the kind of block this is, for the blocks around it. */
+export type IsoAuto = 'none' | 'road' | 'land' | 'water';
+
+export function isoAutoOf(e: ResolvedEntity): IsoAuto {
+  const a = e.components.Sprite?.isoAuto;
+  return a === 'road' || a === 'land' || a === 'water' ? a : 'none';
+}
+
+const isWaterBlock = (e: ResolvedEntity) => isoAutoOf(e) === 'water' || e.tags.includes('water');
+
+/**
+ * Isometric auto-tiling: which of its pictures a block is drawn with, from the blocks around it at its own height
+ * (`at(dx, dy)`: what is on the square that far along the level's x and y). On the screen -y is north-east, +x
+ * south-east, +y south-west, -x north-west.
+ * - road (Sprite.isoPictures: variation, turns SE-SW, SE-NE, NW-NE, NW-SW): where the road of the same object
+ *   turns, the turn; elsewhere its own picture or the variation, mixed by where it is.
+ * - land (north, east, south, west corners, variation): where water is on two sides next to each other, that
+ *   corner; elsewhere its own picture or the variation, mixed by where it is.
+ * - water (north, east, south, west corners, variation): the same where land is on two sides next to each other.
+ * null: its own picture.
+ */
+export function isoAutoPicture(e: ResolvedEntity, at: (dx: number, dy: number) => ResolvedEntity[]): string | null {
+  const kind = isoAutoOf(e);
+  const pics = e.components.Sprite?.isoPictures;
+  if (kind === 'none' || !Array.isArray(pics)) return null;
+  const pic = (n: number) => (typeof pics[n] === 'string' && pics[n] ? (pics[n] as string) : null);
+  const side = (test: (o: ResolvedEntity) => boolean) => {
+    const has = (dx: number, dy: number) => at(dx, dy).some(test);
+    return { ne: has(0, -1), se: has(1, 0), sw: has(0, 1), nw: has(-1, 0) };
+  };
+  const corner = (s: { ne: boolean; se: boolean; sw: boolean; nw: boolean }) =>
+    s.nw && s.ne ? pic(0) : s.ne && s.se ? pic(1) : s.se && s.sw ? pic(2) : s.sw && s.nw ? pic(3) : null;
+  // (Mixed by where it is: the same square always gets the same one; `in5` of 5 squares the variation.)
+  const mixed = (n: number, in5: number) => {
+    const i = Math.floor(e.transform.position.x / 32);
+    const j = Math.floor(e.transform.position.y / 32);
+    return (((i * 73856093) ^ (j * 19349663)) >>> 0) % 5 < in5 ? pic(n) : null;
+  };
+  if (kind === 'road') {
+    const s = side((o) => o.definitionId === e.definitionId && o !== e);
+    const n = +s.ne + +s.se + +s.sw + +s.nw;
+    if (n === 2) {
+      const turn = s.se && s.sw ? pic(1) : s.se && s.ne ? pic(2) : s.nw && s.ne ? pic(3) : s.nw && s.sw ? pic(4) : null;
+      if (turn) return turn;
+    }
+    return mixed(0, 2);
+  }
+  if (kind === 'land') return corner(side(isWaterBlock)) ?? mixed(4, 1);
+  return corner(side((o) => o !== e && !isWaterBlock(o) && isoLookOf(o) === 'iso_floor')) ?? mixed(4, 1);
+}
+
 /** A block's height (half its width: 2:1 blocks), in isoLift units. */
 export function isoBlockHeight(e: ResolvedEntity): number {
   return (getEntitySize(e).x * Math.abs(e.transform.scale.x)) / 2;
@@ -696,6 +747,20 @@ export function drawEntities(
   const iso = Math.abs(base.b) > 1e-12 && Math.abs(base.c) > 1e-12;
   const isoScale = iso ? Math.hypot(base.a, base.b) / Math.hypot(0.5, 0.25) : 1;
 
+  // Isometric auto-tiling: what is on each square at each height (only built when something auto-tiles).
+  let isoCells: Map<string, ResolvedEntity[]> | null = null;
+  const isoKey = (x: number, y: number, lift: number) => `${Math.floor(x / 32)},${Math.floor(y / 32)},${Math.round(lift)}`;
+  if (iso && near.some((e) => isoAutoOf(e) !== 'none')) {
+    isoCells = new Map();
+    for (const e of near) {
+      if (!e.components.Sprite) continue;
+      const k = isoKey(e.transform.position.x, e.transform.position.y, isoLiftOf(e));
+      const list = isoCells.get(k);
+      if (list) list.push(e);
+      else isoCells.set(k, [e]);
+    }
+  }
+
   for (const entity of iso ? isoOrder(near) : byLayer(near)) {
     const sprite = entity.components.Sprite;
     const invisible = sprite?.visible === false;
@@ -728,7 +793,10 @@ export function drawEntities(
       const sy = size.y * Math.abs(scale.y);
       return autotileIndex((dx, dy) => tiles.has(tileKey(entity.definitionId, position.x + dx * sx, position.y + dy * sy)));
     };
-    const img = sheet?.grid ? sheet : typeof sprite.assetId === 'string' ? images(sprite.assetId) : null;
+    const cells = isoCells;
+    const autoPicture = cells && isoAutoOf(entity) !== 'none' ? isoAutoPicture(entity, (dx, dy) => cells.get(isoKey(position.x + dx * 32, position.y + dy * 32, isoLiftOf(entity))) ?? []) : null;
+    const assetId = autoPicture ?? (typeof sprite.assetId === 'string' ? sprite.assetId : null);
+    const img = sheet?.grid ? sheet : assetId ? images(assetId) : null;
     const source = img && sprite.tint === true ? tinted(img.source, color) : img?.source;
     const cell = img === sheet && sheet ? cellRect(sheet.grid!, neighbours() + 1) : img?.grid ? cellRect(img.grid, img.animation ? animationFrame(img.animation, clock) : typeof sprite.frame === 'number' ? sprite.frame : 1) : null;
     /** The picture (or, without one, the color) over the tile's own square moved `dy` tiles down. */

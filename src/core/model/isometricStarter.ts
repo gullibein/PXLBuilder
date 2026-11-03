@@ -55,40 +55,32 @@ const FLAG = art({ o: '#1a1420', w: '#d8d2c8', r: '#e8344a', R: '#ff7a8a', g: '#
 ]);
 
 /** Blocks that are floors (walked on), walls (in the way, one block high), water (in the way, at floor height). */
-const FLOORS = ['Grass', 'Dark Grass', 'Dirt', 'Dark Dirt', 'Snow', 'Road Turn SE-SW', 'Road Turn SE-NE', 'Road Turn NW-NE', 'Road Turn NW-SW', 'Island Corner North', 'Island Corner East', 'Island Corner South', 'Island Corner West'];
+const FLOORS = ['Grass', 'Dirt', 'Snow'];
 const WALLS = ['Cobblestone', 'Wood', 'Dark Stone', 'Light Stone', 'Ice'];
-const WATER = ['Water', 'Water Corner West', 'Water Corner North', 'Water Corner South', 'Water Corner East'];
-
+const WATER = ['Water'];
 /**
- * A road through these corners (squares; each leg straight along the level's x or y): plain dirt where it runs
- * straight, the road-turn blocks where it bends. On the screen the level's +x runs down-right (south-east), -x
- * up-left (north-west), +y down-left (south-west), -y up-right (north-east).
+ * Auto-tiled blocks (Sprite.isoAuto) and the pictures each holds besides its own (Sprite.isoPictures, in that
+ * order): the dirt road turns where it bends and mixes in its variation; grass rounds off into the water at its
+ * corners and mixes in the dark grass; water has shore corners where land is on two sides.
  */
-function windingRoad(corners: [number, number][]): Map<string, string> {
-  const cells: [number, number][] = [corners[0]];
+const AUTO: Record<string, { kind: 'road' | 'land' | 'water'; pictures: string[] }> = {
+  Dirt: { kind: 'road', pictures: ['Dark Dirt', 'Road Turn SE-SW', 'Road Turn SE-NE', 'Road Turn NW-NE', 'Road Turn NW-SW'] },
+  Grass: { kind: 'land', pictures: ['Island Corner North', 'Island Corner East', 'Island Corner South', 'Island Corner West', 'Dark Grass'] },
+  Water: { kind: 'water', pictures: ['Water Corner North', 'Water Corner East', 'Water Corner South', 'Water Corner West'] },
+};
+
+/** A road through these corners (squares; each leg straight along the level's x or y): its squares. */
+function windingRoad(corners: [number, number][]): Set<string> {
+  const out = new Set<string>([corners[0].join(',')]);
   for (let n = 1; n < corners.length; n++) {
     const [x1, y1] = corners[n];
-    let [x, y] = cells[cells.length - 1];
+    let [x, y] = corners[n - 1];
     while (x !== x1 || y !== y1) {
-      x += Math.sign(x1 - x);
-      if (x === x1) y += Math.sign(y1 - y);
-      cells.push([x, y]);
+      if (x !== x1) x += Math.sign(x1 - x);
+      else y += Math.sign(y1 - y);
+      out.add(`${x},${y}`);
     }
   }
-  const side = (dx: number, dy: number) => (dx > 0 ? 'SE' : dx < 0 ? 'NW' : dy > 0 ? 'SW' : 'NE');
-  const turns: Record<string, string> = { 'SE+SW': 'Road Turn SE-SW', 'NE+SE': 'Road Turn SE-NE', 'NE+NW': 'Road Turn NW-NE', 'NW+SW': 'Road Turn NW-SW' };
-  const out = new Map<string, string>();
-  cells.forEach(([x, y], n) => {
-    const prev = cells[n - 1];
-    const next = cells[n + 1];
-    let block = 'Dirt';
-    if (prev && next && prev[0] !== next[0] && prev[1] !== next[1]) {
-      const a = side(prev[0] - x, prev[1] - y);
-      const b = side(next[0] - x, next[1] - y);
-      block = turns[[a, b].sort().join('+')] ?? 'Dirt';
-    }
-    out.set(`${x},${y}`, block);
-  });
   return out;
 }
 
@@ -98,7 +90,14 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   const block = (n: string, look: 'iso_floor' | 'iso_block', extra: Record<string, Record<string, unknown>>, tags: string[], description: string, picture = n): ObjectDefinition => {
     const asset = createPixelArtAsset(picture, ISO_TILES[picture]);
     project.assets.push(asset);
-    const d = createDefinition(n, { Sprite: c('Sprite', { width: 32, height: 32, assetId: asset.id, isoLook: look }), ...extra }, tags, description);
+    const auto = AUTO[n];
+    const pictures = (auto?.pictures ?? []).map((p) => {
+      const a = createPixelArtAsset(p, ISO_TILES[p]);
+      project.assets.push(a);
+      return a.id;
+    });
+    const look2 = auto ? { isoAuto: auto.kind, isoPictures: pictures } : {};
+    const d = createDefinition(n, { Sprite: c('Sprite', { width: 32, height: 32, assetId: asset.id, isoLook: look, ...look2 }), ...extra }, tags, description);
     d.metadata.category = 'Isometric';
     d.metadata.placement = 'tile';
     return d;
@@ -142,12 +141,8 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   const W = 16;
   const H = 12;
   const lavaPool = (i: number, j: number) => i >= 12 && i <= 13 && j >= 8 && j <= 9;
-  const magma = (i: number, j: number) => !lavaPool(i, j) && i >= 11 && i <= 14 && j >= 7 && j <= 10;
-  // The island's own four corner squares: grass rounding off into the water (on the screen north is at the top,
-  // east at the right, south at the bottom, west at the left).
-  const corner: Record<string, string> = { '0,0': 'Island Corner North', [`${W - 1},0`]: 'Island Corner East', [`${W - 1},${H - 1}`]: 'Island Corner South', [`0,${H - 1}`]: 'Island Corner West' };
-  // A pond: the same corner blocks the other way round, each with its land on the outside.
-  const pond: Record<string, string> = { '9,9': 'Water Corner North', '10,9': 'Water Corner East', '9,10': 'Water Corner West', '10,10': 'Water Corner South' };
+  // (The island's corners, the pond's shore and the road's bends are picked by the blocks themselves: isoAuto.)
+  const pond = (i: number, j: number) => i >= 9 && i <= 10 && j >= 9 && j <= 10;
   const road = windingRoad([
     [1, 6],
     [3, 6],
@@ -163,15 +158,16 @@ export function createIsometricProject(registry: ComponentRegistry, name = 'Unti
   for (let j = -1; j <= H; j++)
     for (let i = -1; i <= W; i++) {
       if (i < 0 || j < 0 || i >= W || j >= H) at('Water', i, j);
-      else if (corner[`${i},${j}`]) at(corner[`${i},${j}`], i, j);
       else if (lavaPool(i, j)) at('Lava', i, j);
-      else if (magma(i, j)) at('Dark Dirt', i, j);
-      else if (road.has(`${i},${j}`)) at(road.get(`${i},${j}`)!, i, j);
-      else if (pond[`${i},${j}`]) at(pond[`${i},${j}`], i, j);
-      else at((i * 7 + j * 3) % 11 === 0 ? 'Dark Grass' : 'Grass', i, j);
+      else if (road.has(`${i},${j}`)) at('Dirt', i, j);
+      else if (pond(i, j)) at('Water', i, j);
+      else at('Grass', i, j);
     }
-  // A hill: a terrace one block up, and a smaller one on top of it (the player steps up one block at a time).
+  // A hill: what walks steps up half a block at a time (a whole block up is a cliff). A step half a block up, a
+  // terrace one block up, a step on it, and the top two blocks up.
+  for (let i = 1; i <= 3; i++) at('Grass', i, 3, 8);
   for (let j = 0; j <= 2; j++) for (let i = 1; i <= 4; i++) at('Grass', i, j, 16);
+  at('Grass', 3, 0, 24);
   at('Grass', 1, 0, 32);
   at('Grass', 2, 0, 32);
   // Ruins and crates (walls stand on the floor blocks).

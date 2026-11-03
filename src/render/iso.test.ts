@@ -5,7 +5,7 @@ import { ISO_TILES } from '../core/model/isoTiles';
 import { resolveEntity } from '../core/model/resolve';
 import { InputState } from '../runtime/input';
 import { Runtime } from '../runtime/runtime';
-import { cameraKeeping, insideOutline, isoScreenBox, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
+import { cameraKeeping, insideOutline, isoAutoPicture, isoLiftOf, isoScreenBox, isoLiftFor, isoLookOf, isoOrder, isoVolume, isoProject, isoUnproject, screenToWorld, worldToScreen } from './renderer';
 
 const registry = createBuiltinRegistry();
 
@@ -118,6 +118,39 @@ describe('the isometric view', () => {
     expect(player.y).toBeGreaterThan(0);
   });
 
+  it('auto-tiling: the dirt road turns where it bends, the grass rounds off at the island corners, the pond has shores', () => {
+    const project = createIsometricProject(registry);
+    const all = project.scenes[0].entities.map((e) => resolveEntity(project, e, registry));
+    const name = (id: string | null) => project.assets.find((a) => a.id === id)?.name;
+    const atCell = (i: number, j: number, lift = 0) => all.filter((e) => Math.floor(e.transform.position.x / 32) === i && Math.floor(e.transform.position.y / 32) === j && isoLiftOf(e) === lift);
+    const pick = (i: number, j: number) => {
+      const e = atCell(i, j)[0];
+      return name(isoAutoPicture(e, (dx, dy) => atCell(i + dx, j + dy)));
+    };
+    // One object each: no separate turn, corner or shore objects.
+    expect(project.definitions.some((d) => /Road Turn|Corner|Dark Dirt|Dark Grass/.test(d.name))).toBe(false);
+    // The island's corners (north is up on the screen: the square at the level's 0,0).
+    expect(pick(0, 0)).toBe('Island Corner North');
+    expect(pick(15, 0)).toBe('Island Corner East');
+    expect(pick(15, 11)).toBe('Island Corner South');
+    expect(pick(0, 11)).toBe('Island Corner West');
+    // An edge of the island: its own picture or the dark grass.
+    expect([undefined, 'Dark Grass']).toContain(pick(5, 0));
+    expect(new Set([...Array(12).keys()].map((i) => pick(i + 2, 8))).size).toBeGreaterThan(1);
+    // The road: from (1,6) along +x to (3,6), then -y: there it turns north-west and north-east.
+    expect(pick(3, 6)).toBe('Road Turn NW-NE');
+    // (3,4): from +y (south-west) turning +x (south-east).
+    expect(pick(3, 4)).toBe('Road Turn SE-SW');
+    // A straight stretch is the dirt or its variation.
+    const straight = [5, 7, 8, 10, 11, 12].map((i) => pick(i, i < 9 ? 7 : 5));
+    for (const p of straight) expect([undefined, 'Dark Dirt']).toContain(p);
+    // The pond's corner squares.
+    expect(pick(9, 9)).toBe('Water Corner North');
+    expect(pick(10, 9)).toBe('Water Corner East');
+    expect(pick(10, 10)).toBe('Water Corner South');
+    expect(pick(9, 10)).toBe('Water Corner West');
+  });
+
   describe('walkable heights', () => {
     const hold = (rt: Runtime, keys: ('up' | 'down' | 'left' | 'right')[], seconds: number) => {
       const input = new InputState();
@@ -134,15 +167,23 @@ describe('the isometric view', () => {
       return { rt, p };
     };
 
-    it('the player steps up a block at a time onto the hill, to its top, and picks up the coin there', () => {
-      const { rt, p } = start(2, 4);
-      expect(rt.groundHeight(2 * 32 + 16, 1 * 32 + 16)).toBe(16);
+    it('the player steps up half a block at a time onto the hill, to its top, and picks up the coin there', () => {
+      const { rt, p } = start(3, 4);
+      expect(rt.groundHeight(3 * 32 + 16, 3 * 32 + 16)).toBe(8);
+      expect(rt.groundHeight(3 * 32 + 16, 1 * 32 + 16)).toBe(16);
+      expect(rt.groundHeight(3 * 32 + 16, 16)).toBe(24);
       expect(rt.groundHeight(2 * 32 + 16, 16)).toBe(32);
       const coins = () => rt.entities.filter((e) => e.alive && e.name.startsWith('Coin')).length;
       const before = coins();
-      // Up the level's y (up and right on the screen).
+      // Up the level's y (up and right on the screen): the step, the terrace, the step on it.
       hold(rt, ['up', 'right'], 2.5);
       expect(Math.floor(p.y / 32)).toBe(0);
+      expect(Math.floor(p.x / 32)).toBe(3);
+      expect(p.z).toBe(24);
+      // Along the level's -x (up and left on the screen) onto the top.
+      for (let n = 0; n < 40 && Math.floor(p.x / 32) > 2; n++) hold(rt, ['left', 'up'], 0.05);
+      hold(rt, [], 0.3);
+      expect(Math.floor(p.x / 32)).toBe(2);
       expect(p.z).toBe(32);
       expect(coins()).toBe(before - 1);
       // Drawn up there, after the block it stands on.
@@ -150,9 +191,9 @@ describe('the isometric view', () => {
       expect(drawn.components.Sprite!.isoLift).toBe(32);
     });
 
-    it('two blocks up is a cliff: it stops the player; walking off a terrace, it falls', () => {
-      const low = start(0, 0);
-      // Along the level's x (right and down on the screen), into the two-block-high top of the hill.
+    it('a whole block up is a cliff: it stops the player; walking off a terrace, it falls', () => {
+      const low = start(0, 1);
+      // Along the level's x (right and down on the screen), into the terrace one block up.
       hold(low.rt, ['right', 'down'], 1);
       expect(Math.floor(low.p.x / 32)).toBe(0);
       expect(low.p.z).toBe(0);
