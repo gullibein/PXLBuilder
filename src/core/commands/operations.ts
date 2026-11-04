@@ -27,6 +27,7 @@ import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize, getWorldBounds, type Rect } from '../model/geometry';
 import { ISO_SHAPE_KEYS, isoShapesOf } from '../model/isoShapes';
+import { isoBlockFromFlat, looksFlat } from '../model/isoBlockArt';
 import * as m from '../model/mutations';
 import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
@@ -943,7 +944,18 @@ export function applyOperations(
           frames.push(fitted.rows);
         }
         if (frames.length > MAX_FRAMES) throw new m.ModelError(`An animation can have at most ${MAX_FRAMES} frames`);
-        const asset = createAnimatedPixelArtAsset(op.name.trim() || 'Sprite', art.palette, frames, op.fps && op.fps > 0 ? Math.min(60, op.fps) : 8);
+        // An isometric block drawn flat (a square seen from above): made into a block, the drawing on its top, so it
+        // fits the blocks around it.
+        let palette = art.palette;
+        const look = resolveEntity(project, entity, registry).components.Sprite?.isoLook;
+        if ((look === 'iso_floor' || look === 'iso_block') && frames.length === 1 && looksFlat(art)) {
+          const block = isoBlockFromFlat(art);
+          if (block) {
+            palette = block.palette;
+            frames[0] = block.rows;
+          }
+        }
+        const asset = createAnimatedPixelArtAsset(op.name.trim() || 'Sprite', palette, frames, op.fps && op.fps > 0 ? Math.min(60, op.fps) : 8);
         m.addAsset(project, asset);
         const situation = op.situation ?? null;
         const shape = op.isoShape ?? null;

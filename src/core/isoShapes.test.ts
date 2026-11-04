@@ -4,6 +4,7 @@ import { codeFor } from './ai/context';
 import { applyOperations } from './commands/operations';
 import { createBuiltinRegistry } from './components/builtin';
 import { createIsometricProject } from './model/isometricStarter';
+import { looksFlat } from './model/isoBlockArt';
 
 const registry = createBuiltinRegistry();
 const palette = [{ key: 's', color: '#f4f8ff' }];
@@ -37,6 +38,15 @@ describe('auto-tiled isometric blocks and the AI', () => {
     const wood = project.definitions.find((d) => d.name === 'Wood')!;
     expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: wood.id, name: 'x', palette, rows: snow, situation: null, isoShape: 'variation' }], registry))).toThrow(/not auto-tiled/);
     expect(() => produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: dirt.id, name: 'x', palette, rows: snow, situation: null, isoShape: 'corner_north' }], registry))).toThrow(/no such shape/);
+  });
+
+  it('a block drawn flat (a square seen from above) is made into a block', () => {
+    const project = createIsometricProject(registry);
+    const snowDef = project.definitions.find((d) => d.name === 'Snow')!;
+    const p = produce(project, (d) => void applyOperations(d, [{ op: 'draw_sprite', frames: null, fps: null, target: 'definition', id: snowDef.id, name: 'Flat snow', palette, rows: snow, situation: null }], registry));
+    const art = p.assets.find((a) => a.id === p.definitions.find((d) => d.id === snowDef.id)!.components.Sprite.assetId)!.pixelArt!;
+    expect(looksFlat(art)).toBe(false);
+    expect(art.rows[0][0]).toBe('.');
   });
 
   it('redrawing the normal look keeps the shapes', () => {

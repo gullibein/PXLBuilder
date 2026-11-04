@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { isoDrawingProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
 import { TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
@@ -168,6 +169,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     body.code = codeFor(state.project, along);
     trace?.('note', `Sent along: the code of ${body.code.map((c) => c.name).join(', ')}`);
   }
+  // An isometric level and a request about how things look: the isometric blocks' pictures go along, pixels and all
+  // (each shape of the auto-tiled ones too), so a restyle builds on them instead of drawing flat squares.
+  const isoBlocks = isoBlocksToSend(state.project, ctx.sceneId, request, !!options.newGame && options.sprites === 'ai');
+  if (isoBlocks.length) {
+    const looks = codeFor(state.project, isoBlocks).filter((c) => !(body.code ?? []).some((x) => x.id === c.id));
+    body.code = [...(body.code ?? []), ...looks];
+    trace?.('note', `Sent along: the pictures of ${looks.map((c) => c.name.replace(/^the pictures of /, '')).join(', ')}`);
+  }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topics = topicsFor(ctx, request, body.history);
   // Pictures attached: they go along, with how to read them.
@@ -283,8 +292,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const unasked = gameOps(response) && !broken && !stuck && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
     // A new game asked with AI-drawn sprites (or pictures) that leaves objects with the engine's pictures or as boxes.
     const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
+    // Isometric blocks drawn flat, or restyled without their turns and corners.
+    const isoDrawn = gameOps(response) && !broken ? isoDrawingProblem(useEditor.getState().project, response.operations) : null;
     // (Everything wrong with it at once: one more answer fixes it all.)
-    const problem = broken ?? ([stuck?.text, unasked, undrawn].filter(Boolean).join('; also, ') || null);
+    const problem = broken ?? ([stuck?.text, unasked, undrawn, isoDrawn].filter(Boolean).join('; also, ') || null);
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');
@@ -684,4 +695,14 @@ function notDrawn(sceneId: Id, operations: Operation[], pictures: boolean): stri
 function mapText(map: LevelMap | null): string {
   if (!map) return '';
   return `\n\nThe level after your previous answer would look like this (same legend as context.level.map):\n${[map.ruler, ...map.rows].join('\n')}`;
+}
+
+/** Words of a request about how things look (draw, style, colors, tiles…). */
+const LOOK_WORDS = /\b(draw|redraw|repaint|paint|look|looks|style|styled|restyle|sprite|sprites|tile|tiles|block|blocks|picture|pictures|art|pixel|colou?r|colou?rs|texture|theme|cartoon\w*|realistic|cute|retro|darker|lighter|brighter|snow\w*|winter|autumn|fall|desert|spooky|grass|dirt|road|water|lava|stone|wood)\b/i;
+
+/** In an isometric level, for a request about how things look: "look:<id>" for each isometric block object there. */
+export function isoBlocksToSend(project: Project, sceneId: string, request: string, always: boolean): string[] {
+  const scene = project.scenes.find((x) => x.id === sceneId);
+  if (scene?.world.view !== 'iso' || (!always && !LOOK_WORDS.test(request))) return [];
+  return project.definitions.filter((d) => d.components.Sprite?.isoLook === 'iso_floor' || d.components.Sprite?.isoLook === 'iso_block').map((d) => `look:${d.id}`);
 }
