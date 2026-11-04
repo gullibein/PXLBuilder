@@ -26,6 +26,7 @@ import { checkPixelArt, fitPixelArt, normalizePixelArt } from '../model/pixelArt
 import * as logic from '../logic/mutations';
 import * as scripts from '../script/mutations';
 import { getEntitySize, getWorldBounds, type Rect } from '../model/geometry';
+import { ISO_SHAPE_KEYS, isoShapesOf } from '../model/isoShapes';
 import * as m from '../model/mutations';
 import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
@@ -174,6 +175,11 @@ export const operationSchema = z.union([
       .enum(['run', 'jump', 'fall', 'climb', 'hang', 'hurt', 'shoot', 'defeated', 'up', 'down'])
       .nullable()
       .describe('null: the normal look. A situation: an extra image shown only while that happens (e.g. "jump" for a jumping sprite); the normal look stays'),
+    isoShape: z
+      .enum(ISO_SHAPE_KEYS)
+      .nullable()
+      .optional()
+      .describe('An auto-tiled isometric block (Sprite.isoAuto road / land / water, target "definition"): which of its shapes this picture is (a road\'s variation or turns, land\'s corners toward water, water\'s shore corners, land\'s or water\'s variation); its other pictures stay. null: its normal look (or a situation)'),
   }),
   z.object({
     op: z.literal('make_sound'),
@@ -940,7 +946,22 @@ export function applyOperations(
         const asset = createAnimatedPixelArtAsset(op.name.trim() || 'Sprite', art.palette, frames, op.fps && op.fps > 0 ? Math.min(60, op.fps) : 8);
         m.addAsset(project, asset);
         const situation = op.situation ?? null;
-        if (situation) {
+        const shape = op.isoShape ?? null;
+        if (shape) {
+          // One shape of an auto-tiled isometric block: its other pictures (and its normal look) stay.
+          if (op.target !== 'definition') throw new m.ModelError('isoShape: draw the shapes on the library object (target "definition")');
+          const def = m.getDefinition(project, op.id);
+          const sprite = def.components.Sprite ?? {};
+          const shapes = isoShapesOf(sprite.isoAuto);
+          const n = shapes.findIndex((s) => s.key === shape);
+          if (n < 0) throw new m.ModelError(`isoShape "${shape}": ${def.name} ${shapes.length ? `has no such shape (its shapes: ${shapes.map((s) => s.key).join(', ')})` : 'is not auto-tiled (set Sprite.isoAuto to road, land or water first)'}`);
+          const pics = Array.isArray(sprite.isoPictures) ? [...(sprite.isoPictures as unknown[])] : [];
+          while (pics.length < shapes.length) pics.push('');
+          const old = pics[n];
+          pics[n] = asset.id;
+          m.setDefinitionComponentField(project, op.id, 'Sprite', 'isoPictures', pics, registry);
+          if (typeof old === 'string' && old && !result.createdAssetIds.includes(old)) m.removeUnusedPictures(project, [old]);
+        } else if (situation) {
           // An extra image for one situation: the normal look stays as it is.
           if (op.target === 'definition') {
             const def = m.getDefinition(project, op.id);

@@ -2,6 +2,7 @@
  * Scene renderer shared by the editor viewport and (later) the play-mode
  * runtime, so both draw the game identically.
  */
+import { isoShapesOf } from '../core/model/isoShapes';
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
 import { animationFrame, cellRect } from '../core/model/spriteGrid';
@@ -434,10 +435,7 @@ const isWaterBlock = (e: ResolvedEntity) => isoAutoOf(e) === 'water' || e.tags.i
 
 /** What each of an auto-tiled block's pictures (Sprite.isoPictures) is, in order: the shapes it takes. */
 export function isoShapeNames(kind: IsoAuto): string[] {
-  if (kind === 'road') return ['Variation', 'Turn SE–SW', 'Turn SE–NE', 'Turn NW–NE', 'Turn NW–SW'];
-  if (kind === 'land') return ['Corner north', 'Corner east', 'Corner south', 'Corner west', 'Variation'];
-  if (kind === 'water') return ['Shore north', 'Shore east', 'Shore south', 'Shore west', 'Variation'];
-  return [];
+  return isoShapesOf(kind).map((s) => s.name);
 }
 
 /**

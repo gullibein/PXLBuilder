@@ -31,7 +31,7 @@ export function userMessageParts(body: AIRequestBody): { context: string; rest: 
     : '';
   // Code the AI asked for comes after the (cached) game data, so asking again reuses the cache.
   const code = body.code?.length
-    ? `FULL CODE (the full scripts of these library objects: the ones this request names, and any you asked for; use their ids and script ids as given):\n${JSON.stringify(body.code)}\n\n`
+    ? `FULL CODE (the full scripts of these library objects: the ones this request names, and any you asked for; use their ids and script ids as given; "look:<id>" entries are an object's pictures with their pixels, as asked for):\n${JSON.stringify(body.code)}\n\n`
     : '';
   // Guidance only this request needs (music, sound effects…): sent with it instead of with every request.
   const topics = (body.topics ?? []).filter((t) => TOPICS[t]);

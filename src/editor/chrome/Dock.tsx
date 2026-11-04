@@ -529,6 +529,9 @@ function CreatePanel() {
 /** Objects that can autotile: laid out in a grid (tiles, platforms, ground…), or already autotiling. */
 export function canAutotile(def: ObjectDefinition): boolean {
   if (!def.components.Sprite) return false;
+  // (An isometric block picks its shapes itself: isoAuto, its shapes on its card. The flat autotile isn't for it.)
+  const look = def.components.Sprite.isoLook;
+  if (look === 'iso_floor' || look === 'iso_block' || (def.components.Sprite.isoAuto ?? 'none') !== 'none') return false;
   return def.metadata.placement === 'tile' || ['Platforms', 'Environment'].includes(categoryOf(def)) || def.components.Sprite.autotile === true;
 }
 

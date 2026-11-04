@@ -27,6 +27,7 @@ import { levelDesignIdea, type LevelDesignIdea } from './levelIdeas';
 import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
 import { gridFor } from '../model/spriteResolution';
+import { isoShapesOf } from '../model/isoShapes';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
 import type { BehaviorScript, Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
@@ -127,6 +128,8 @@ export interface EntityDetail {
   look: {
     sprite: LookImage | null;
     situations: Record<string, LookImage>;
+    /** An auto-tiled isometric block (Sprite.isoAuto): each of its other shapes by isoShape key (turns, corners, variation). */
+    isoShapes?: Record<string, LookImage | null>;
   };
   /** Behavior scripts, in full: its object's (every copy runs them) and its own (only this one). */
   scripts: { object: BehaviorScript[]; own: BehaviorScript[] };
@@ -393,18 +396,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
     };
   };
 
-  const image = (assetId: unknown): LookImage | null => {
-    const a = typeof assetId === 'string' ? project.assets.find((x) => x.id === assetId) : undefined;
-    return a ? { image: a.name, pixelArt: a.pixelArt ?? null, ...(a.animation ? { animation: { frames: a.animation.frames.length, fps: a.animation.fps } } : {}) } : null;
-  };
-  const lookOf = (c: Record<string, Record<string, unknown>>): EntityDetail['look'] => {
-    const situations: Record<string, LookImage> = {};
-    for (const [k, v] of Object.entries(c.SpriteStates ?? {})) {
-      const img = image(v);
-      if (img) situations[k] = img;
-    }
-    return { sprite: image(c.Sprite?.assetId), situations };
-  };
+  const lookOf = (c: Record<string, Record<string, unknown>>): EntityDetail['look'] => lookOfComponents(project, c);
 
   /**
    * The level's placed things worth listing one by one, briefly, and how many plain copies are left to the map: an
@@ -633,10 +625,38 @@ export function codeToSend(project: Project, ctx: AIContext, request: string): I
   return out;
 }
 
-/** The full scripts of these library objects (by id or name), for a "need_code" answer. Unknown ones are left out. */
-export function codeFor(project: Project, ids: string[]): { id: Id; name: string; scripts: BehaviorScript[] }[] {
-  const out: { id: Id; name: string; scripts: BehaviorScript[] }[] = [];
+/** A picture for the AI: its name and its pixels (an animation's frames too). */
+function lookImage(project: Project, assetId: unknown): LookImage | null {
+  const a = typeof assetId === 'string' ? project.assets.find((x) => x.id === assetId) : undefined;
+  return a ? { image: a.name, pixelArt: a.pixelArt ?? null, ...(a.animation ? { animation: { frames: a.animation.frames.length, fps: a.animation.fps } } : {}) } : null;
+}
+
+/** How something looks, for the AI: its picture, its situations' pictures, an auto-tiled isometric block's shapes. */
+function lookOfComponents(project: Project, c: Record<string, Record<string, unknown>>): EntityDetail['look'] {
+  const situations: Record<string, LookImage> = {};
+  for (const [k, v] of Object.entries(c.SpriteStates ?? {})) {
+    const img = lookImage(project, v);
+    if (img) situations[k] = img;
+  }
+  const shapes = isoShapesOf(c.Sprite?.isoAuto);
+  const pics = Array.isArray(c.Sprite?.isoPictures) ? (c.Sprite.isoPictures as unknown[]) : [];
+  return { sprite: lookImage(project, c.Sprite?.assetId), situations, ...(shapes.length ? { isoShapes: Object.fromEntries(shapes.map((s, n) => [s.key, lookImage(project, pics[n])])) } : {}) };
+}
+
+/**
+ * The full scripts of these library objects (by id or name), for a "need_code" answer. Unknown ones are left out.
+ * "look:<id or name>": that object's pictures instead (its look, situations and isometric shapes, with their pixels),
+ * to redraw it starting from them.
+ */
+export function codeFor(project: Project, ids: string[]): { id: Id; name: string; scripts: BehaviorScript[]; look?: EntityDetail['look'] }[] {
+  const out: { id: Id; name: string; scripts: BehaviorScript[]; look?: EntityDetail['look'] }[] = [];
   for (const want of ids) {
+    const look = /^look:(.+)$/.exec(want.trim());
+    if (look) {
+      const d = project.definitions.find((x) => x.id === look[1]) ?? project.definitions.find((x) => x.name.toLowerCase() === look[1].trim().toLowerCase());
+      if (d && !out.some((o) => o.id === `look:${d.id}`)) out.push({ id: `look:${d.id}`, name: `the pictures of ${d.name}`, scripts: [], look: lookOfComponents(project, d.components) });
+      continue;
+    }
     // "engine:<part>" (or "engine:<part>:<object id>"): the ready-made script of a part of the engine's own code,
     // made for that object when named (only asked for when one is to become a script, so it isn't sent every time).
     const engine = /^engine:([a-z_]+)(?::(.+))?$/.exec(want.trim());
