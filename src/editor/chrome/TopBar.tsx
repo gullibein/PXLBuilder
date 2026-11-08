@@ -467,7 +467,7 @@ function AudioPromptButton() {
     <>
       <button
         ref={button}
-        className={`icon-btn note-btn${open ? ' active' : ''}`}
+        className={`icon-btn note-btn job-anchor${open ? ' active' : ''}`}
         title="Ask the AI for sounds, music or instruments"
         aria-label="Sounds and music: ask the AI"
         aria-pressed={open}
@@ -476,6 +476,8 @@ function AudioPromptButton() {
         onClick={() => setOpen(!open)}
       >
         <NoteIcon size={16} />
+        {/* (The card closed while the AI works on something sound or music: the dots say so.) */}
+        <JobDots prefixes={['sound:', 'song:', 'instrument:']} workingOnly open={open} below />
       </button>
       {open && button.current && <AudioPrompt anchor={button.current} onClose={() => setOpen(false)} />}
     </>

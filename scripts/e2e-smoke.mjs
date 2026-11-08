@@ -5115,7 +5115,12 @@ try {
     const mp = await mc.newPage();
     mp.on('pageerror', (e) => errors.push(`pageerror (music): ${e.message}`));
     mp.on('console', (m) => m.type() === 'error' && !ignorable(m) && errors.push(`console (music): ${m.text()}`));
-    await mp.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await mp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      // ("Take your time": slowly, so the dots can be seen while it works.)
+      if (/take your time/i.test(body.request)) await new Promise((r) => setTimeout(r, 2500));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(body)) });
+    });
     await mp.goto(URL);
     await startPlatformer(mp);
     await mp.getByTestId('dock-music').click();
@@ -5290,13 +5295,27 @@ try {
     await mp.getByTestId('music-ai').click();
     await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, 'the ✦ again closes it too');
     await mp.getByTestId('music-ai').click();
-    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('make the drums busier');
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('make the drums busier, take your time');
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
+    // Closed while the AI works: the dots say it still is, on the ✦; with the music machine closed, on Music and the ♪.
+    await mp.getByTestId('music-song-prompt').getByTestId('prompt-close').click();
+    await check(async () => await mp.getByTestId('music-ai').getByTestId('job-dots').isVisible(), 'its card closed while the AI works: dots on the ✦');
+    await mp.getByTestId('music-close').click();
+    await check(async () => (await mp.getByTestId('dock-music').getByTestId('job-dots').isVisible()) && (await mp.getByTestId('audio-prompt-toggle').getByTestId('job-dots').isVisible()), 'the music machine closed too: dots on the Music button and on the ♪ at the top');
+    await check(async () => (await mp.getByTestId('dock-music').getByTestId('job-dots').count()) === 0, '(gone when it is done)');
+    await mp.getByTestId('dock-music').click();
+    await mp.getByTestId('music-tab-songs').click();
     await check(async () => Number(await roll.getAttribute('data-notes')) === Number(notesBefore) + 16 + 4 + 2, "the Songs tab's prompt changes only the drums (the melody's notes stay)");
     {
       const sent = aiRequests.at(-1).context;
-      await check(sent.scope === 'song' && sent.song.song.channels.filter((c) => c.drum).length === 3 && sent.song.song.patterns.length === 2, 'the AI is told the whole song, its drum channels marked');
+      await check(sent.scope === 'song' && sent.song.song.channels.filter((c) => c.drum).length === 3 && sent.song.song.patterns.length === 2 && sent.song.song.chip === '8bit', 'the AI is told the whole song, its drum channels marked, and that it is 8-bit');
     }
+    // 8-bit or 16-bit, chosen at the top (the AI keeps to it).
+    await check(async () => (await mp.getByTestId('music-chip-8bit').getAttribute('aria-checked')) === 'true', 'the song is marked 8-bit at the top');
+    await mp.getByTestId('music-chip-16bit').click();
+    await check(async () => (await mp.getByTestId('music-chip-16bit').getAttribute('aria-checked')) === 'true' && (await mp.getByTestId('music-chip-odd').count()) === 1, 'switching it to 16-bit marks its 8-bit instruments (!)');
+    await mp.getByTestId('music-chip-8bit').click();
+    await mp.getByTestId('music-ai').click();
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('a new spooky song');
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
     await check(async () => (await mp.getByTestId('music-song-pick').locator('option:checked').textContent()) === 'Spooky waltz', 'a song the AI writes opens in the Songs tab (chosen in the list at the top)');

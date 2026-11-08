@@ -75,6 +75,28 @@ describe('music in the game', () => {
     expect(faster.scenes[0].music).toBe(song.id);
   });
 
+  it("8-bit or 16-bit: a song keeps to its chip's instruments; the AI's song that mixes them is refused, saying why", () => {
+    const { project, song } = withMusic();
+    // (All its instruments are 8-bit: an 8-bit song, and it says so.)
+    expect(song.song!.chip).toBe('8bit');
+    const PAD = '{"chip":"16bit","wave":"supersaw","attack":0.4}';
+    const withPad = apply(project, [{ op: 'make_instrument', name: 'Pad', description: '', instrumentJson: PAD, replaceId: null }]);
+    // edit_song putting a 16-bit pad on a channel of the 8-bit song: refused.
+    expect(() => apply(withPad, [{ op: 'edit_song', id: song.id, changesJson: JSON.stringify({ channels: [{ index: 0, instrument: 'Pad' }] }) }])).toThrow(/8-bit song.*"Pad", a 16-bit instrument/);
+    // A 16-bit song that plays the 8-bit lead: refused too.
+    expect(() => apply(withPad, [{ op: 'make_song', name: 'Calm', description: '', songJson: SONG.replace('{', '{"chip":"16bit",'), replaceId: null }])).toThrow(/16-bit song.*"Lead", a 8-bit instrument/);
+    // Changing only the tempo of an old song that mixes them: fine (only the channels an edit gives an instrument count).
+    const mixed = produce(withPad, (d) => {
+      const s = d.assets.find((a) => a.id === song.id)!.song!;
+      s.channels[1].instrument = d.assets.find((a) => a.name === 'Pad')!.id;
+      delete s.chip;
+    });
+    expect(apply(mixed, [{ op: 'edit_song', id: song.id, changesJson: '{"bpm":90}' }]).assets.find((a) => a.id === song.id)!.song!.bpm).toBe(90);
+    // The AI is told the chip.
+    const payload = buildAIPayload(withPad, { kind: 'song', sceneId: withPad.scenes[0].id, assetId: song.id }, registry);
+    expect((payload.song as { song: { chip: string } }).song.chip).toBe('8bit');
+  });
+
   it('instruments, songs and level music are saved and loaded', () => {
     const { project, song } = withMusic();
     const loaded = projectFromBundle(JSON.parse(JSON.stringify(projectToBundle(project))), registry);

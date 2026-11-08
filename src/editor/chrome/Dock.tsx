@@ -28,6 +28,8 @@ export function Dock() {
   const dock = useEditor((s) => s.dock);
   const setDock = useEditor((s) => s.setDock);
   const playHere = useEditor((s) => s.layout.playButton === 'bottom');
+  const soundEditorOpen = useEditor((s) => !!s.soundEditor);
+  const musicOpen = useEditor((s) => !!s.musicStudio);
   // The Objects tab closes as soon as the top bar, the tool bar or the AI History / Console / Debug buttons are used.
   useEffect(() => {
     if (dock !== 'library') return;
@@ -55,17 +57,21 @@ export function Dock() {
           </svg>
           <span className="dock-label">Objects</span>
         </button>
-        <button className="dock-btn" title="Sounds: the sound editor" aria-label="Sounds" data-testid="dock-sounds" onClick={() => (setDock(null), useEditor.getState().setSoundEditor('open'))}>
+        <button className="dock-btn job-anchor" title="Sounds: the sound editor" aria-label="Sounds" data-testid="dock-sounds" onClick={() => (setDock(null), useEditor.getState().setSoundEditor('open'))}>
           <NoteIcon />
           <span className="dock-label">Sounds</span>
+          {/* (The AI working on a sound, its editor closed: the dots say so.) */}
+          <JobDots prefixes={['sound:']} workingOnly open={soundEditorOpen} />
         </button>
-        <button className="dock-btn" title="Music: instruments and songs" aria-label="Music" data-testid="dock-music" onClick={() => (setDock(null), useEditor.getState().setMusicStudio({}))}>
+        <button className="dock-btn job-anchor" title="Music: instruments and songs" aria-label="Music" data-testid="dock-music" onClick={() => (setDock(null), useEditor.getState().setMusicStudio({}))}>
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M5.5 12.5V3.5l8-1.8v9M5.5 6.2l8-1.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
             <circle cx="3.8" cy="12.6" r="1.8" fill="currentColor" />
             <circle cx="11.8" cy="10.8" r="1.8" fill="currentColor" />
           </svg>
           <span className="dock-label">Music</span>
+          {/* (The AI working on a song or an instrument, the music machine closed: the dots say so.) */}
+          <JobDots prefixes={['song:', 'instrument:']} workingOnly open={musicOpen} />
         </button>
         <TrashButton />
         {playHere && <PlayButton />}

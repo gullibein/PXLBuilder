@@ -105,9 +105,29 @@ export const songSchema = z.object({
   order: z.array(z.number().int().min(0).max(MAX_PATTERNS - 1)).min(1).max(MAX_ORDER),
   /** Starts over at the end (level music) or plays once (a jingle). */
   loop: z.boolean().default(true),
+  /** 8-bit or 16-bit music: every instrument it plays is of that chip (absent in older songs: what most of them are). */
+  chip: z.enum(CHIPS).optional(),
 });
 
 export type Song = z.infer<typeof songSchema>;
+
+/** Whether a song is 8-bit or 16-bit: as set, else what most of its instruments are (8-bit when even). */
+export function songChip(song: Song, chipOf: (instrumentId: string | null) => Chip | null): Chip {
+  if (song.chip) return song.chip;
+  const chips = song.channels.map((c) => chipOf(c.instrument)).filter((c): c is Chip => !!c);
+  return chips.filter((c) => c === '16bit').length > chips.length / 2 ? '16bit' : '8bit';
+}
+
+/**
+ * The channels of a song that play an instrument of the other chip (only those in `channels`, when given: the ones
+ * an edit touched), as an error for the AI, or null.
+ */
+export function chipMismatch(song: Song, chip: Chip, chipOf: (instrumentId: string | null) => Chip | null, nameOf: (instrumentId: string | null) => string, channels?: Set<number>): string | null {
+  const bad = song.channels.map((c, i) => ({ c, i })).filter(({ c, i }) => (!channels || channels.has(i)) && c.instrument && chipOf(c.instrument) && chipOf(c.instrument) !== chip);
+  if (!bad.length) return null;
+  const other = chip === '8bit' ? '16-bit' : '8-bit';
+  return `This is a ${chip === '8bit' ? '8-bit' : '16-bit'} song (chosen in the song editor): ${bad.map(({ c, i }) => `channel ${i} plays "${nameOf(c.instrument)}", a ${other} instrument`).join('; ')}. Use only ${chip} instruments (context.music.instruments with that chip, or make_instrument with "chip":"${chip}")`;
+}
 export type SongChannel = z.infer<typeof songChannelSchema>;
 export type SongPattern = z.infer<typeof songPatternSchema>;
 
@@ -163,9 +183,10 @@ export const STARTER_KITS: Record<Chip, { instruments: string[]; drums: string[]
 };
 
 /** A new song: one empty pattern, a channel per instrument (drum channels marked). */
-export function emptySong(instruments: { id: string | null; name: string; drum?: boolean }[], bpm = 120): Song {
+export function emptySong(instruments: { id: string | null; name: string; drum?: boolean }[], bpm = 120, chip?: Chip): Song {
   return songSchema.parse({
     type: 'song',
+    ...(chip ? { chip } : {}),
     bpm,
     steps: 16,
     channels: (instruments.length ? instruments : [{ id: null, name: 'Channel 1', drum: false }]).slice(0, MAX_CHANNELS).map((i) => ({ name: i.name, instrument: i.id, drum: i.drum ?? false })),

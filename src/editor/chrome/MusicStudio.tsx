@@ -6,6 +6,7 @@
  * patterns of notes drawn on a piano roll, and the order the patterns play in; a song can be a level's music, or
  * be played by a script (play_music). Everything is saved with the game, and every change is one Undo step.
  */
+import { JobDots } from './JobDots';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CHIPS,
@@ -18,6 +19,7 @@ import {
   noteName,
   preset,
   renderNote,
+  songChip,
   STARTER_KITS,
   WAVE_LABELS,
   WAVES_16BIT,
@@ -63,7 +65,7 @@ export function MusicStudio() {
             </button>
           </div>
           <button
-            className={`icon-btn spark-btn${asking ? ' active' : ''}`}
+            className={`icon-btn spark-btn job-anchor${asking ? ' active' : ''}`}
             title={tab === 'songs' ? 'Ask the AI about this song (or for a new one)' : 'Ask the AI about this instrument (or for a new one)'}
             aria-label="Ask the AI"
             aria-pressed={asking}
@@ -72,6 +74,8 @@ export function MusicStudio() {
             onClick={() => setAsking(!asking)}
           >
             ✦
+            {/* (Its card closed while the AI works on a song or an instrument: the dots say so.) */}
+            <JobDots prefixes={['song:', 'instrument:']} workingOnly open={asking} below />
           </button>
           {tab === 'songs' && <SongBar />}
           <span className="grow" />
@@ -668,9 +672,37 @@ function newSong(chip: Chip): void {
       const have = p.assets.find((a) => a.kind === 'instrument' && a.name === name && a.instrument?.chip === chip);
       return { id: have ? have.id : addInstrumentAsset(p, name, preset(name)), name, drum };
     });
-    id = addSongAsset(p, 'Song', emptySong(kit, chip === '8bit' ? 140 : 120));
+    id = addSongAsset(p, 'Song', emptySong(kit, chip === '8bit' ? 140 : 120, chip));
   });
   useEditor.getState().setMusicStudio({ tab: 'songs', songId: id });
+}
+
+/**
+ * 8-bit or 16-bit: what the open song is. The AI uses only instruments of that chip in it (and the app checks).
+ * Instruments already in the song stay; ones of the other chip are marked in the title.
+ */
+function ChipPick({ songId }: { songId: Id }) {
+  const project = useEditor((s) => s.project);
+  const asset = project.assets.find((a) => a.id === songId);
+  if (!asset?.song) return null;
+  const chipOf = (id: string | null) => (id ? (project.assets.find((a) => a.id === id)?.instrument?.chip ?? null) : null);
+  const chip = songChip(asset.song, chipOf);
+  const odd = asset.song.channels.filter((c) => c.instrument && chipOf(c.instrument) && chipOf(c.instrument) !== chip).length;
+  const set = (to: Chip) =>
+    useEditor.getState().edit(`Song ${asset.name}: ${to === '8bit' ? '8-bit' : '16-bit'}`, (p) => {
+      const s = p.assets.find((a) => a.id === songId)?.song;
+      if (s) s.chip = to;
+    });
+  return (
+    <span className="ms-chip-pick" role="radiogroup" aria-label="8-bit or 16-bit" title={odd ? `${odd} channel${odd === 1 ? '' : 's'} play${odd === 1 ? 's' : ''} an instrument of the other chip` : 'The AI uses only instruments of this chip in this song'}>
+      {CHIPS.map((c) => (
+        <button key={c} type="button" role="radio" aria-checked={chip === c} className={`chip-btn small${chip === c ? ' on' : ''}`} data-testid={`music-chip-${c}`} onClick={() => set(c)}>
+          {c === '8bit' ? '8-bit' : '16-bit'}
+        </button>
+      ))}
+      {odd > 0 && <span className="ms-chip-odd" data-testid="music-chip-odd">!</span>}
+    </span>
+  );
 }
 
 /**
@@ -722,6 +754,7 @@ function SongBar() {
           ))}
         </select>
       )}
+      {asset?.song && !renaming && <ChipPick songId={asset.id} />}
       {asset && !renaming && (
         <>
           <button className="icon-btn small" aria-label={`Rename ${asset.name}`} title="Rename" data-testid="music-rename" onClick={() => setRenaming(true)}>

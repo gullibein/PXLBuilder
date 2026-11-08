@@ -18,7 +18,7 @@ import { createAnimatedPixelArtAsset, createDefinition, createLevelFor, instanti
 import { buildPath } from './buildPath';
 import { soundDataUrl } from '../audio/sound';
 import { parseSteps } from '../audio/steps';
-import { parseInstrument, parseNoteName, parseSong } from '../audio/music';
+import { chipMismatch, parseInstrument, parseNoteName, parseSong, songChip } from '../audio/music';
 import * as music from '../model/music';
 import { ENGINE_PARTS, findSong } from '../script/language';
 import { generateId } from '../ids';
@@ -860,6 +860,14 @@ export function applyOperations(
         const parsed = parseSong(raw.value);
         if ('error' in parsed) throw new m.ModelError(parsed.error);
         const name = op.name.trim() || 'Song';
+        // 8-bit or 16-bit: as the song says, else the chip of the song it rewrites, else what most instruments are.
+        {
+          const was = op.replaceId ? project.assets.find((a) => a.id === op.replaceId && a.kind === 'music')?.song : undefined;
+          const chip = parsed.song.chip ?? was?.chip ?? songChip(parsed.song, chipOfInstrument(project));
+          parsed.song.chip = chip;
+          const mismatch = chipMismatch(parsed.song, chip, chipOfInstrument(project), nameOfInstrument(project));
+          if (mismatch) throw new m.ModelError(mismatch);
+        }
         if (op.replaceId) {
           const old = project.assets.find((a) => a.id === op.replaceId && a.kind === 'music');
           if (!old) throw new m.ModelError(`There is no song "${op.replaceId}" to rewrite`);
@@ -892,6 +900,15 @@ export function applyOperations(
         }
         const parsed = parseSong(edited);
         if ('error' in parsed) throw new m.ModelError(parsed.error);
+        // Its chip kept: the channels the edit gave an instrument (changed or new) must play one of that chip.
+        {
+          const before = asset.song!;
+          const chip = parsed.song.chip ?? songChip(before, chipOfInstrument(project));
+          parsed.song.chip = chip;
+          const touched = new Set(parsed.song.channels.map((c, i) => (before.channels[i]?.instrument !== c.instrument ? i : -1)).filter((i) => i >= 0));
+          const mismatch = chipMismatch(parsed.song, chip, chipOfInstrument(project), nameOfInstrument(project), touched);
+          if (mismatch) throw new m.ModelError(mismatch);
+        }
         for (const c of parsed.song.channels) if (!c.name) c.name = project.assets.find((a) => a.id === c.instrument)?.name ?? '';
         music.setSong(project, asset.id, parsed.song);
         result.createdAssetIds.push(asset.id);
@@ -1176,6 +1193,10 @@ export function pruneOperations(project: Project, ops: Operation[], registry: Co
  * A song from the AI: its channels name their instruments (by name or id), and pitches may be note names ("C4").
  * Returns the song with instrument ids and MIDI pitches, ready to check.
  */
+/** An instrument's chip, by its id (null: none). */
+const chipOfInstrument = (project: Project) => (id: string | null) => (id ? (project.assets.find((a) => a.id === id && a.kind === 'instrument')?.instrument?.chip ?? null) : null);
+const nameOfInstrument = (project: Project) => (id: string | null) => (id ? (project.assets.find((a) => a.id === id)?.name ?? id) : '');
+
 function readSongJson(text: string, project: Project): { value: unknown } | { error: string } {
   let value: unknown;
   try {

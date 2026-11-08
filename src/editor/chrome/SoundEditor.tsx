@@ -4,6 +4,7 @@
  * with, and the speed. Space plays. Every finished stroke is one undoable change to the game, so the AI and the
  * user can take turns on the same sound.
  */
+import { JobDots } from './JobDots';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { emptySteps, isStepSound, MAX_NOTES, MAX_SMOOTH, MAX_SPEED, MAX_VOLUME, PITCHES, pitchName, STEP_EFFECTS, STEP_WAVES, TICK_SECONDS, audibleNotes, fullNotes, stepSeconds, type StepNote, type StepSound } from '../../core/audio/steps';
@@ -68,7 +69,7 @@ export function SoundEditor() {
   if (!target) return null;
   const ai = (
     <button
-      className={`icon-btn spark-btn${asking ? ' active' : ''}`}
+      className={`icon-btn spark-btn job-anchor${asking ? ' active' : ''}`}
       title={asset ? 'Ask the AI about this sound' : 'Ask the AI for a sound'}
       aria-label="Ask the AI"
       aria-pressed={asking}
@@ -77,6 +78,7 @@ export function SoundEditor() {
       onClick={() => setAsking(!asking)}
     >
       ✦
+      <JobDots prefixes={['sound:']} workingOnly open={asking} below />
     </button>
   );
   const picker = (
