@@ -27,6 +27,17 @@ function recorder(scale: number) {
 }
 
 describe('the pixel font', () => {
+  it('accents never touch the line above: one empty pixel row between them, in every font', () => {
+    for (const font of [TINY_FONT, FONT_5X7, FONT_10X14, FONT_20X28]) {
+      const chars = [...'ÁÉÍÓÚÝÖáéíóúýögjpqyþ,;'];
+      const lowest = Math.max(...chars.map((c) => font.bitmap(c)).map((b) => b.top + b.rows.length - 1 - (b.rows.length - 1 - b.rows.map((r) => r.includes('#')).lastIndexOf(true))));
+      const highest = Math.min(...chars.map((c) => font.bitmap(c)).map((b) => b.top + b.rows.findIndex((r) => r.includes('#'))));
+      // (The next line's highest pixel minus this line's lowest, less one: the empty rows between them.)
+      // One empty pixel row (in the font's own pixels; the finer fonts' pixels are halves and quarters of those).
+      expect(font.line + highest - lowest - 1).toBe(font === TINY_FONT || font === FONT_5X7 ? 1 : font === FONT_10X14 ? 2 : 4);
+    }
+  });
+
   it('has the Icelandic letters: Ð Þ Æ of their own, accents in the row above', () => {
     const draw = (t: string) => {
       const r = recorder(1);
@@ -81,9 +92,9 @@ describe('the pixel font', () => {
     expect(fitPixelFont(200, 1, FONT_5X7).font).toBe(FONT_5X7);
   });
 
-  it('3×5 characters, 4 pixels apart, 6 pixels a line; lower case drawn as capitals', () => {
+  it('3×5 characters, 4 pixels apart, 7 pixels a line; lower case drawn as capitals', () => {
     expect(pixelTextSize('HI')).toEqual({ w: 7, h: 5 });
-    expect(pixelTextSize('ab\ncd')).toEqual({ w: 7, h: 11 });
+    expect(pixelTextSize('ab\ncd')).toEqual({ w: 7, h: 12 });
     const a = recorder(1);
     drawPixelText(a.ctx, 'i', 0, 0, 1);
     const b = recorder(1);

@@ -1,6 +1,6 @@
 /**
  * Pixel fonts for game text, one for each sprite size (pixelFontFor). The tiny one, like PICO-8's: every character
- * 3×5 pixels, 4 pixels apart, lines 6 pixels apart. Used for text in a game drawn at a low
+ * 3×5 pixels, 4 pixels apart, lines 7 pixels apart. Used for text in a game drawn at a low
  * resolution, where an ordinary font would be 2 or 3 pixels tall and smear
  * into an unreadable blur. Drawn as whole canvas pixels, so it stays sharp.
  * Lower-case letters are drawn as capitals (as on PICO-8).
@@ -12,7 +12,8 @@ const W = 3;
 const H = 5;
 /** Pixels from one character to the next, and from one line to the next. */
 export const PIXEL_FONT_ADVANCE = 4;
-export const PIXEL_FONT_LINE = 6;
+// (7 apart: an accent, in the row above its letter, keeps two empty rows below the line above.)
+export const PIXEL_FONT_LINE = 7;
 
 /** Each glyph: its 5 rows of 3 joined ("#" = a pixel). */
 const GLYPHS: Record<string, string> = {
@@ -148,7 +149,8 @@ export const FONT_5X7: PixelFont = {
   w: 5,
   h: 7,
   advance: 6,
-  line: 11,
+  // (12 apart: a capital's accent, two rows over it and a row clear, stays two rows below the descenders above.)
+  line: 12,
   bitmap(ch) {
     const acc = ACCENTED_5X7[ch];
     if (acc) {
