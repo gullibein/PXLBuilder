@@ -11,6 +11,12 @@ import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
+/** New game dialog: a starting point (under Advanced). */
+async function pickStarter(pg, kind) {
+  if (!(await pg.getByTestId(`game-${kind}`).isVisible())) await pg.getByTestId('game-advanced').click();
+  await pg.getByTestId(`game-${kind}`).click();
+}
+
 const PORT = 4179;
 // Built for GitHub Pages, so the app lives under /PXLBuilder/ (vite.config.ts).
 const URL = `http://localhost:${PORT}/PXLBuilder/`;
@@ -46,7 +52,7 @@ const check = async (cond, msg) => {
 /** A first visit (nothing saved) asks what kind of game to make; pages that don't test that pick a platformer. */
 const startPlatformer = async (p) => {
   await p.getByTestId('viewport-canvas').waitFor();
-  if (await p.getByTestId('game-chooser').count()) await p.getByTestId('game-platformer').click();
+  if (await p.getByTestId('game-chooser').count()) await pickStarter(p, 'platformer');
 };
 
 /** Stand-in for the language model: same protocol, deterministic answers. */
@@ -705,7 +711,7 @@ try {
   await page.goto(URL);
   await check(async () => await page.getByTestId('game-chooser').isVisible(), 'the first visit asks what kind of game to make');
   await page.screenshot({ path: `${OUT}/00-game-chooser.png` });
-  await page.getByTestId('game-platformer').click();
+  await pickStarter(page, 'platformer');
   await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'picking Platformer goes straight to the editor');
 
   const canvas = page.getByTestId('viewport-canvas');
@@ -3386,7 +3392,7 @@ try {
   await page.getByTestId('menu-new').click();
   await check(async () => await page.getByTestId('game-chooser').isVisible(), 'New project asks what kind of game');
   const entitiesBefore = await canvas.getAttribute('data-entities');
-  await page.getByTestId('game-topdown').click();
+  await pickStarter(page, 'topdown');
   await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'a new top-down game starts with an empty level');
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Wall').count()) === 1 && (await page.getByTestId('definition-Floor').count()) === 1 && (await page.getByTestId('definition-Ladder').count()) === 0, 'with the top-down objects (walls, floor, a slime…) and no ladders');
@@ -3398,7 +3404,7 @@ try {
     // The RPG starter: a map with slimes, and a battle level played in turns with menus.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
-    await page.getByTestId('game-rpg').click();
+    await pickStarter(page, 'rpg');
     await check(async () => Number(await canvas.getAttribute('data-entities')) > 40, 'New project → RPG: a map walled round, with the hero and slimes');
     await page.getByTestId('scene-selector').click();
     const levels = page.getByTestId('scene-menu');
@@ -3418,7 +3424,7 @@ try {
     // The Roguelike starter: a random level, its recipe and the hero with fog of war.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
-    await page.getByTestId('game-roguelike').click();
+    await pickStarter(page, 'roguelike');
     await check(async () => (await canvas.getAttribute('data-entities')) === '1', 'New project → Roguelike: only the hero is placed; the dungeon is the level\'s recipe');
     await page.getByTestId('play').click();
     const rpc = page.getByTestId('play-canvas');
@@ -3443,7 +3449,7 @@ try {
     // A random level: built anew each play; the editor shows an example, faint.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
-    await page.getByTestId('game-topdown').click();
+    await pickStarter(page, 'topdown');
     await page.getByTestId('tool-dungeon').click();
     const dp = page.getByTestId('dungeon-panel');
     await dp.getByTestId('dungeon-make').click();
@@ -3471,7 +3477,7 @@ try {
     // Isometric: a top-down level seen at an angle; a block is picked where it is drawn on the screen.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
-    await page.getByTestId('game-isometric').click();
+    await pickStarter(page, 'isometric');
     await check(async () => Number(await canvas.getAttribute('data-entities')) > 200, 'New project → Isometric: an island of blocks is placed');
     await page.waitForTimeout(300);
     // Kept as it is: opened again (the saved game, in another tab), it is still seen isometric.
@@ -3604,6 +3610,16 @@ try {
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await check(async () => (await page.getByTestId('game-idea-go').isDisabled()) === true, 'New game has a field to tell the AI what game you want (Make it waits for words)');
+  await check(
+    async () =>
+      (await page.getByTestId('game-idea').isVisible()) &&
+      (await page.getByTestId('new-sprite-size-16').isVisible()) &&
+      (await page.getByTestId('game-advanced-body').count()) === 0 &&
+      (await page.getByTestId('game-chooser').getByTestId('ai-picker').count()) === 0,
+    'New game is simple: the prompt and the sprite size; the rest is under Advanced',
+  );
+  await page.getByTestId('game-advanced').click();
+  await check(async () => (await page.getByTestId('game-platformer').isVisible()) && (await page.getByTestId('new-sprites-engine').isVisible()), 'Advanced shows the starting points, the sprites and the AI');
   {
     const picker = page.getByTestId('game-chooser').getByTestId('ai-picker');
     await picker.click();
@@ -3611,6 +3627,8 @@ try {
     await picker.click();
     await check(async () => (await page.getByTestId('ai-picker-menu').count()) === 0 && (await page.getByTestId('game-chooser').isVisible()), '(and closes again, the dialog still open)');
   }
+  // (The engine's sprites here: this is about choosing the starter; AI-drawn sprites are checked further on.)
+  await page.getByTestId('new-sprites-engine').click();
   await page.getByTestId('game-idea').fill('A cave game where you dig for diamonds, take your time');
   await page.getByTestId('game-idea').press('Enter');
   await check(async () => (await page.getByTestId('game-chooser').count()) === 0, 'telling it closes the New game window');
@@ -3668,8 +3686,8 @@ try {
     // New game: the engine's sprites (the default), or every object drawn by the AI, which the app checks.
     await page.getByTestId('project-menu').click();
     await page.getByTestId('menu-new').click();
-    await check(async () => (await page.getByTestId('new-sprites-engine').getAttribute('aria-checked')) === 'true', "New game offers the engine's sprites (chosen) or AI-drawn ones");
-    await page.getByTestId('new-sprites-ai').click();
+    await page.getByTestId('game-advanced').click();
+    await check(async () => (await page.getByTestId('new-sprites-ai').getAttribute('aria-checked')) === 'true' && (await page.getByTestId('new-sprites-engine').getAttribute('aria-checked')) === 'false', "New game offers AI-drawn sprites (chosen by default) or the engine's");
     await page.getByTestId('game-idea').fill('ai drawn sprites test');
     await page.getByTestId('game-idea').press('Enter');
     await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
@@ -3811,7 +3829,7 @@ try {
   await page.getByTestId('project-menu').click();
   await page.getByTestId('menu-new').click();
   await page.getByTestId('new-sprite-size-8').click();
-  await page.getByTestId('game-platformer').click();
+  await pickStarter(page, 'platformer');
   await check(async () => (await canvas.getAttribute('data-entities')) === '0', 'New project → Platformer starts an empty level');
   await check(async () => (await canvas.getAttribute('data-camera-frame')) === '', 'no camera outline on an empty level');
   await page.getByTestId('project-menu').click();

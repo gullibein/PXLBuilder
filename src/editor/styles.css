@@ -169,11 +169,18 @@
 .ngp-pictures img { max-height: 96px; max-width: 160px; border-radius: 6px; border: 1px solid var(--line); image-rendering: pixelated; object-fit: contain; }
 .ngp-stage { margin: 0; font-weight: 600; }
 .ngp-foot { display: flex; justify-content: flex-end; padding: 8px 16px 12px; }
-.game-idea { display: flex; gap: 8px; align-items: stretch; }
-.game-idea .prompt-icon.ai-picker { height: auto; align-self: stretch; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); font-size: 12px; }
-.game-idea textarea { flex: 1; min-width: 0; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; }
-.game-idea button { padding: 0 16px; }
+.game-idea { display: grid; gap: 8px; }
+.game-idea textarea { width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; }
+/* (The picture button and Make it: one row under the field, the same height.) */
+.game-idea-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+/* Every control in the dialog the same height and corners (the game cards aside). */
+.game-dialog :is(.chip-btn, .btn-primary, .picture-btn, .prompt-icon.ai-picker) { height: 32px; box-sizing: border-box; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
+.game-dialog .chip-btn { padding: 0 12px; }
+.game-idea-actions .picture-btn { width: 32px; padding: 0; border: 1px solid var(--line); }
+.game-idea-actions .btn-primary { padding: 0 20px; }
+.game-dialog .game-advanced { justify-self: start; align-self: start; width: auto; }
 .game-idea button:disabled { opacity: 0.5; }
+.game-ai .prompt-icon.ai-picker { padding: 0 12px; border: 1px solid var(--line); color: var(--text); }
 .game-or { margin: 8px 0 6px; }
 .game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .game-card { padding: 10px; cursor: pointer; }

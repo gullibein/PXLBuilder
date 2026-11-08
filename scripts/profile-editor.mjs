@@ -8,6 +8,12 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+
+/** New game dialog: a starting point (under Advanced). */
+async function pickStarter(pg, kind) {
+  if (!(await pg.getByTestId(`game-${kind}`).isVisible())) await pg.getByTestId('game-advanced').click();
+  await pg.getByTestId(`game-${kind}`).click();
+}
 const PORT = 4188;
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
 await new Promise((r) => server.stdout.on('data', (d) => d.toString().includes(String(PORT)) && r()));
@@ -15,7 +21,7 @@ const browser = await chromium.launch({ executablePath: existsSync('/opt/pw-brow
 const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
 await page.goto(`http://localhost:${PORT}/`);
 await page.getByTestId('viewport-canvas').waitFor();
-if (await page.getByTestId('game-chooser').count()) await page.getByTestId('game-platformer').click();
+if (await page.getByTestId('game-chooser').count()) await pickStarter(page, 'platformer');
 await page.getByTestId('open-file-input').setInputFiles(process.argv[2]);
 await page.waitForTimeout(1500);
 const cdp = await page.context().newCDPSession(page);

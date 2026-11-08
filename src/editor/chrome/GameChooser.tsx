@@ -1,7 +1,7 @@
 import { AIPicker } from '../prompt/AIPicker';
 import { ISO_TILES } from '../../core/model/isoTiles';
 import { AddPictureButton, PictureStrip, usePictures } from '../prompt/Pictures';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_SPRITE_RESOLUTION, SPRITE_RESOLUTIONS, type SpriteResolution } from '../../core/model/spriteResolution';
 import { createStarterAssets } from '../../core/model/factory';
 import { createTopDownStarterAssets } from '../../core/model/topDownStarters';
@@ -28,8 +28,17 @@ export function GameChooser() {
   const [idea, setIdea] = useState('');
   const pics = usePictures();
   // How the AI draws the game it builds: the engine's sprites, or every object drawn anew (always with pictures).
-  const [drawn, setDrawn] = useState<'engine' | 'ai'>('engine');
+  // (AI-drawn by default: the game gets a look of its own.)
+  const [drawn, setDrawn] = useState<'engine' | 'ai'>('ai');
+  // Everything but the prompt and the sprite size: under Advanced, closed each time.
+  const [advanced, setAdvanced] = useState(false);
   const sprites = pics.pictures.length ? 'ai' : drawn;
+  // (Each time the dialog opens: Advanced closed, AI-drawn sprites.)
+  useEffect(() => {
+    if (!mode) return;
+    setAdvanced(false);
+    setDrawn('ai');
+  }, [mode]);
   if (!mode) return null;
   const pick = (type: Starter) => {
     startNewGame(type, mode === 'first', res);
@@ -70,9 +79,9 @@ export function GameChooser() {
         >
           <textarea
             value={idea}
-            rows={2}
+            rows={3}
             autoFocus
-            placeholder="Tell the AI what game you want, e.g. “a Boulder Dash game: dig through dirt, collect diamonds, dodge falling rocks”. Paste or drop a picture of one (a screenshot, a sprite sheet) to show it."
+            placeholder="Tell the AI what kind of game you want"
             aria-label="Describe the game you want"
             data-testid="game-idea"
             onChange={(e) => setIdea(e.target.value)}
@@ -84,81 +93,99 @@ export function GameChooser() {
               }
             }}
           />
-          <AddPictureButton pics={pics} />
-          <AIPicker />
-          <button type="submit" className="btn-primary" disabled={(!idea.trim() && !pics.pictures.length) || pics.reading} data-testid="game-idea-go">
-            Make it
-          </button>
+          {/* Under the field: a picture to show (also pasted or dropped), and Make it. */}
+          <div className="game-idea-actions">
+            <AddPictureButton pics={pics} />
+            <button type="submit" className="btn-primary" disabled={(!idea.trim() && !pics.pictures.length) || pics.reading} data-testid="game-idea-go">
+              Make it
+            </button>
+          </div>
         </form>
         <PictureStrip pics={pics} />
-        <div className="game-sprites small" role="radiogroup" aria-label="Sprites">
-          <span>Sprites:</span>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={sprites === 'engine'}
-            className={`chip-btn${sprites === 'engine' ? ' on' : ''}`}
-            data-testid="new-sprites-engine"
-            disabled={pics.pictures.length > 0}
-            title={pics.pictures.length ? 'With a picture, the AI always draws the game in its style' : "The engine's ready-made player, enemies, tiles…: the AI draws only what they don't cover"}
-            onClick={() => setDrawn('engine')}
-          >
-            Use the engine's sprites
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={sprites === 'ai'}
-            className={`chip-btn${sprites === 'ai' ? ' on' : ''}`}
-            data-testid="new-sprites-ai"
-            title="The AI draws every object of the game anew, in one style (a little more AI use: the drawings are part of its answer)"
-            onClick={() => setDrawn('ai')}
-          >
-            AI-drawn sprites
-          </button>
-          {pics.pictures.length > 0 && <span className="muted">(with a picture, drawn by the AI in its style)</span>}
-        </div>
-        <p className="muted small game-or">The AI picks the best starting point and builds it. Or start from one yourself:</p>
-        <div className="game-grid">
-          <button className="style-card game-card" data-testid="game-platformer" onClick={() => pick('platformer')}>
-            <PlatformerPreview />
-            <span className="style-name">Platformer</span>
-            <span className="style-blurb">Seen from the side, with gravity: run, jump and climb (like Mario).</span>
-          </button>
-          <button className="style-card game-card" data-testid="game-topdown" onClick={() => pick('topdown')}>
-            <TopDownPreview />
-            <span className="style-name">Top-down</span>
-            <span className="style-blurb">Seen from above: walk in every direction through rooms and corridors (like Zelda or Rogue).</span>
-          </button>
-          <button className="style-card game-card" data-testid="game-rpg" onClick={() => pick('rpg')}>
-            <RpgPreview />
-            <span className="style-name">RPG</span>
-            <span className="style-blurb">A map to explore, and battles in turns: a party with Fight, Magic, Potion and Run against monsters (like Dragon Quest).</span>
-          </button>
-          <button className="style-card game-card" data-testid="game-roguelike" onClick={() => pick('roguelike')}>
-            <RoguelikePreview />
-            <span className="style-name">Roguelike</span>
-            <span className="style-blurb">A new dungeon every play, deeper and harder floor by floor, step by step with fog of war; one life per run (like Rogue).</span>
-          </button>
-          <button className="style-card game-card" data-testid="game-isometric" onClick={() => pick('isometric')}>
-            <IsometricPreview />
-            <span className="style-name">Isometric</span>
-            <span className="style-blurb">Seen from above at an angle: blocks and characters standing on a diamond grid (like an isometric adventure).</span>
-          </button>
-        </div>
-        <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size">
+        <div className="sprite-size-pick" role="radiogroup" aria-label="Sprite size" title='Pixels a tile. Change it any time: ⋯ project menu, or ask "make the sprites 8x8"'>
           <span>Sprite size</span>
           {SPRITE_RESOLUTIONS.map((r) => (
             <button key={r} role="radio" aria-checked={r === res} className={`chip-btn${r === res ? ' on' : ''}`} data-testid={`new-sprite-size-${r}`} onClick={() => setRes(r)}>
               {r}×{r}
             </button>
           ))}
-          <span className="muted small">pixels a tile (change it any time: ⋯ project menu, or ask "make the sprites 8x8")</span>
         </div>
-        <p className="muted small">
-          This picks the starting objects; nothing is locked. Mix freely later, or ask the AI to turn it into the other kind.
-          {mode === 'new' && ' Undo brings back the game you have now.'}
-        </p>
+        <button
+          type="button"
+          className={`chip-btn game-advanced${advanced ? ' on' : ''}`}
+          aria-expanded={advanced}
+          data-testid="game-advanced"
+          onClick={() => setAdvanced(!advanced)}
+        >
+          Advanced {advanced ? '▴' : '▾'}
+        </button>
+        {advanced && (
+          <div className="game-advanced-body" data-testid="game-advanced-body">
+            <div className="game-ai small">
+              <span>AI:</span>
+              <AIPicker />
+            </div>
+            <div className="game-sprites small" role="radiogroup" aria-label="Sprites">
+              <span>Sprites:</span>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sprites === 'engine'}
+                className={`chip-btn${sprites === 'engine' ? ' on' : ''}`}
+                data-testid="new-sprites-engine"
+                disabled={pics.pictures.length > 0}
+                title={pics.pictures.length ? 'With a picture, the AI always draws the game in its style' : "The engine's ready-made player, enemies, tiles…: the AI draws only what they don't cover"}
+                onClick={() => setDrawn('engine')}
+              >
+                Use the engine's sprites
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sprites === 'ai'}
+                className={`chip-btn${sprites === 'ai' ? ' on' : ''}`}
+                data-testid="new-sprites-ai"
+                title="The AI draws every object of the game anew, in one style (a little more AI use: the drawings are part of its answer)"
+                onClick={() => setDrawn('ai')}
+              >
+                AI-drawn sprites
+              </button>
+              {pics.pictures.length > 0 && <span className="muted">(with a picture, drawn by the AI in its style)</span>}
+            </div>
+            <p className="muted small game-or">The AI picks the best starting point and builds it. Or start from one yourself:</p>
+            <div className="game-grid">
+              <button className="style-card game-card" data-testid="game-platformer" onClick={() => pick('platformer')}>
+                <PlatformerPreview />
+                <span className="style-name">Platformer</span>
+                <span className="style-blurb">Seen from the side, with gravity: run, jump and climb (like Mario).</span>
+              </button>
+              <button className="style-card game-card" data-testid="game-topdown" onClick={() => pick('topdown')}>
+                <TopDownPreview />
+                <span className="style-name">Top-down</span>
+                <span className="style-blurb">Seen from above: walk in every direction through rooms and corridors (like Zelda or Rogue).</span>
+              </button>
+              <button className="style-card game-card" data-testid="game-rpg" onClick={() => pick('rpg')}>
+                <RpgPreview />
+                <span className="style-name">RPG</span>
+                <span className="style-blurb">A map to explore, and battles in turns: a party with Fight, Magic, Potion and Run against monsters (like Dragon Quest).</span>
+              </button>
+              <button className="style-card game-card" data-testid="game-roguelike" onClick={() => pick('roguelike')}>
+                <RoguelikePreview />
+                <span className="style-name">Roguelike</span>
+                <span className="style-blurb">A new dungeon every play, deeper and harder floor by floor, step by step with fog of war; one life per run (like Rogue).</span>
+              </button>
+              <button className="style-card game-card" data-testid="game-isometric" onClick={() => pick('isometric')}>
+                <IsometricPreview />
+                <span className="style-name">Isometric</span>
+                <span className="style-blurb">Seen from above at an angle: blocks and characters standing on a diamond grid (like an isometric adventure).</span>
+              </button>
+            </div>
+            <p className="muted small">
+              This picks the starting objects; nothing is locked. Mix freely later, or ask the AI to turn it into the other kind.
+              {mode === 'new' && ' Undo brings back the game you have now.'}
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
