@@ -55,6 +55,10 @@ describe('the pixel font', () => {
     expect(draw('ú')).toEqual(draw('Ú'));
     expect(draw('Ý').filter(([, y]) => y === 9)).toEqual([[3, 9, 1, 1]]);
     expect(draw('ý')).toEqual(draw('Ý'));
+    // A period one empty pixel after the letter before it (as letters are spaced), in both fonts.
+    const after = (font: typeof TINY_FONT, ch: string) => font.advance - font.bitmap(ch).rows.reduce((m, r) => Math.max(m, r.lastIndexOf('#')), -1) - 1 + Math.min(...font.bitmap('.').rows.map((r) => (r.includes('#') ? r.indexOf('#') : 99)));
+    expect(after(TINY_FONT, 'A')).toBe(1);
+    expect(after(FONT_5X7, 'a')).toBe(1);
     expect(draw('Ö').filter(([, y]) => y === 9).reduce((n, [, , w]) => n + w, 0)).toBe(2);
   });
 

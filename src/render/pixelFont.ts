@@ -54,7 +54,8 @@ const GLYPHS: Record<string, string> = {
   "8": '####.#####.####',
   "9": '####.####..#..#',
   " ": '...............',
-  ".": '.............#.',
+  // (At the left of its cell: one pixel from the letter before it, as letters are from each other.)
+  ".": '............#..',
   ",": '..........#.#..',
   ":": '....#.....#....',
   ";": '....#.....#.#..',
