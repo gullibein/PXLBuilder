@@ -9,6 +9,9 @@ import { canExportGame, exportPlayer } from '../gameExport';
 import { openFileWithPicker, openProjectFile, PROJECT_FILE_EXTENSION, quickSave } from '../persistence';
 import { cloudSavesAvailable } from '../cloudSaves';
 import { NoteIcon } from './NoteIcon';
+import { createPortal } from 'react-dom';
+import { PromptBox } from '../prompt/PromptBox';
+import { useCloseOutside } from '../prompt/closeOutside';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
 
@@ -63,9 +66,7 @@ export function TopBar() {
           {/* The whole-level, whole-game and editor prompts (the level's own card shares the level's). */}
           <JobDots keys={['project', 'editor', `level:${activeSceneId}`]} open={globalOpen} below />
         </button>
-        <button className="icon-btn note-btn" title="Sound editor" aria-label="Sound editor" data-testid="sound-editor-toggle" onClick={() => useEditor.getState().setSoundEditor('open')}>
-          <NoteIcon size={16} />
-        </button>
+        <AudioPromptButton />
         <MainMenu />
       </div>
       <input
@@ -452,5 +453,60 @@ function GameNameField() {
         }}
       />
     </label>
+  );
+}
+
+/**
+ * The ♪ at the top: an AI prompt for anything about the game's sound: sound effects, music (songs, the level's
+ * music) and instruments. (The Sounds button at the bottom opens the sound editor; Music the music machine.)
+ */
+function AudioPromptButton() {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button
+        ref={button}
+        className={`icon-btn note-btn${open ? ' active' : ''}`}
+        title="Ask the AI for sounds, music or instruments"
+        aria-label="Sounds and music: ask the AI"
+        aria-pressed={open}
+        data-testid="audio-prompt-toggle"
+        data-prompt-opener
+        onClick={() => setOpen(!open)}
+      >
+        <NoteIcon size={16} />
+      </button>
+      {open && button.current && <AudioPrompt anchor={button.current} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+const AUDIO_ASK_WIDTH = 380;
+
+function AudioPrompt({ anchor, onClose }: { anchor: HTMLElement; onClose: () => void }) {
+  const sceneId = useEditor((s) => s.activeSceneId);
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(12, Math.min(r.right - AUDIO_ASK_WIDTH, window.innerWidth - AUDIO_ASK_WIDTH - 12));
+  return createPortal(
+    <div className="library-ask audio-ask" ref={ref} style={{ left, top: r.bottom + 8, width: AUDIO_ASK_WIDTH }} data-testid="audio-prompt">
+      <PromptBox
+        ctx={{ kind: 'sound', sceneId, assetId: null }}
+        header={
+          <span className="library-ask-head">
+            <NoteIcon />
+            Sounds and music
+          </span>
+        }
+        autoFocus
+        placeholder="A sound, music or an instrument…"
+        testId="sounds-prompt"
+        onEscape={onClose}
+        onClose={onClose}
+      />
+    </div>,
+    document.body,
   );
 }

@@ -39,7 +39,7 @@ export interface EditOptions {
   coalesceKey?: string;
 }
 
-export type DockPanel = 'library' | 'create' | 'sounds' | null;
+export type DockPanel = 'library' | 'create' | null;
 
 /**
  * Select (click, drag, box-select), marquee (a drag always draws a selection box, even starting on an object),

@@ -1,8 +1,6 @@
 import { PlayButton } from './TopBar';
 import { useCloseOutside } from '../prompt/closeOutside';
 import { NoteIcon } from './NoteIcon';
-import { openNewSound } from '../sounds';
-import { DeleteConfirm } from './SoundEditor';
 import { deleteSelection } from '../actions';
 import { JobDots } from './JobDots';
 import { playSound } from '../audio/synth';
@@ -30,10 +28,9 @@ export function Dock() {
   const dock = useEditor((s) => s.dock);
   const setDock = useEditor((s) => s.setDock);
   const playHere = useEditor((s) => s.layout.playButton === 'bottom');
-  // The Objects and Sounds tabs close as soon as the top bar, the tool bar or the AI History / Console / Debug
-  // buttons are used.
+  // The Objects tab closes as soon as the top bar, the tool bar or the AI History / Console / Debug buttons are used.
   useEffect(() => {
-    if (dock !== 'library' && dock !== 'sounds') return;
+    if (dock !== 'library') return;
     const away = (e: PointerEvent) => {
       if ((e.target as Element | null)?.closest?.('.topbar, .tool-panel, .tray-chips')) useEditor.getState().setDock(null);
     };
@@ -44,7 +41,6 @@ export function Dock() {
     <div className="dock-wrap">
       {dock === 'create' && <CreatePanel />}
       {dock === 'library' && <ObjectsPanel />}
-      {dock === 'sounds' && <SoundsPanel />}
       <nav className="dock" aria-label="Create and objects">
         <button className={`dock-btn primary job-anchor${dock === 'create' ? ' on' : ''}`} data-testid="dock-create" onClick={() => setDock(dock === 'create' ? null : 'create')}>
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -59,7 +55,7 @@ export function Dock() {
           </svg>
           <span className="dock-label">Objects</span>
         </button>
-        <button className={`dock-btn${dock === 'sounds' ? ' on' : ''}`} title="Sounds" aria-label="Sounds" data-testid="dock-sounds" onClick={() => setDock(dock === 'sounds' ? null : 'sounds')}>
+        <button className="dock-btn" title="Sounds: the sound editor" aria-label="Sounds" data-testid="dock-sounds" onClick={() => (setDock(null), useEditor.getState().setSoundEditor('open'))}>
           <NoteIcon />
           <span className="dock-label">Sounds</span>
         </button>
@@ -75,14 +71,6 @@ export function Dock() {
         {playHere && <PlayButton />}
       </nav>
     </div>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v5M9.4 6.5v5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
@@ -417,80 +405,6 @@ function ObjectsPanel() {
         <p className="panel-hint">Click an object to draw with it. Drag across the level to draw a row.</p>
       </div>
       {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
-    </section>
-  );
-}
-
-/** The game's sounds: hear them, edit them in the sound editor, make new ones. */
-function SoundsPanel() {
-  const assets = useEditor((s) => s.project.assets);
-  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
-  const sounds = assets.filter((a) => a.kind === 'sound' && a.synth);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number; row: Element } | null>(null);
-  const [asking, setAsking] = useState<LibraryAsk | null>(null);
-  const menuSound = menu ? sounds.find((a) => a.id === menu.id) : undefined;
-  const sceneId = useEditor((s) => s.activeSceneId);
-  return (
-    <section className="dock-panel sounds" data-testid="sounds-panel" data-movable="sounds-panel" aria-label="Sounds">
-      <div className="move-grip wide" data-move-handle title="Drag to move" />
-      <PanelClose />
-      <div className="sound-list" data-testid="sound-list">
-        {sounds.map((a) => (
-          <div
-            key={a.id}
-            className="sound-row"
-            data-testid={`sound-${a.name}`}
-            title="Right-click for more"
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu({ id: a.id, x: e.clientX, y: e.clientY, row: e.currentTarget });
-            }}
-          >
-            <button className="sound-btn" data-testid="sound-play" title="Play" onClick={() => playSound(a.synth!)}>
-              ▶ {a.name}
-            </button>
-            <span className="muted small">{a.description}</span>
-            <button className="icon-btn" aria-label={`Edit ${a.name}`} title="Edit this sound in the sound editor" data-testid="sound-edit" onClick={() => useEditor.getState().setSoundEditor(a.id)}>
-              ✎
-            </button>
-            <button className="icon-btn" aria-label={`Delete ${a.name}`} title="Delete this sound" data-testid="sound-list-delete" onClick={() => setDeleting({ id: a.id, name: a.name })}>
-              <TrashIcon />
-            </button>
-          </div>
-        ))}
-        {sounds.length === 0 && <p className="muted small">No sounds yet.</p>}
-      </div>
-      {menu && menuSound && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            { label: 'Ask AI…', testId: 'menu-ai-prompt', run: () => setAsking({ kind: 'sound', id: menuSound.id, rect: tileRect(menu.row) }) },
-            { label: 'Play', testId: 'menu-play', run: () => playSound(menuSound.synth!) },
-            { label: 'Edit…', testId: 'menu-edit-sound', run: () => useEditor.getState().setSoundEditor(menuSound.id) },
-            { label: 'Delete…', testId: 'menu-delete-sound', run: () => setDeleting({ id: menuSound.id, name: menuSound.name }) },
-          ]}
-        />
-      )}
-      {asking && <LibraryPrompt ask={asking} onClose={() => setAsking(null)} />}
-      <button className="chip-btn sound-new" data-testid="sound-new" onClick={() => void openNewSound()}>
-        + New sound
-      </button>
-      {deleting && (
-        <DeleteConfirm
-          name={deleting.name}
-          onCancel={() => setDeleting(null)}
-          onDelete={() => {
-            const { id, name } = deleting;
-            setDeleting(null);
-            useEditor.getState().edit(`Delete sound ${name}`, (p) => void (p.assets = p.assets.filter((x) => x.id !== id)));
-          }}
-        />
-      )}
-      <div className="sounds-ask">
-        <PromptBox ctx={{ kind: 'sound', sceneId, assetId: null }} placeholder={'Describe a sound: "a springy boing when the player jumps"'} testId="sounds-prompt" />
-      </div>
     </section>
   );
 }

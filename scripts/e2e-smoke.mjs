@@ -1154,58 +1154,34 @@ try {
   await ask('Make the player quack twice at the start.');
   await check(async () => (await result.getAttribute('data-status')) === 'applied' && aiRequests.at(-1).context.targets.some((t) => t.scripts?.object?.some((sc) => sc.name === 'Quack')), 'a small change to a script is made with edit_script (just that part)');
   await page.keyboard.press('Escape');
-  await page.getByTestId('dock-sounds').click();
-  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), 'the Sounds tab (next to Objects) lists the sounds, to play them again');
-  await check(async () => {
-    const play = await page.getByTestId('sound-play').first().boundingBox();
-    const edit = await page.getByTestId('sound-edit').first().boundingBox();
-    const trash = await page.getByTestId('sound-list-delete').first().boundingBox();
-    const mid = (b) => b.y + b.height / 2;
-    return Math.abs(mid(trash) - mid(play)) < 4 && Math.abs(mid(edit) - mid(play)) < 4 && trash.x > edit.x;
-  }, 'each sound is one line: ▶ name, what it is, ✎ and a trash can');
-  await page.getByTestId('sound-list-delete').first().click();
-  await check(async () => (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'its trash asks "Delete sound?" in a dialog');
-  await page.getByTestId('sound-delete-cancel').click();
-  await check(async () => (await page.getByTestId('sound-list').innerText()).includes('Quack'), '(Cancel keeps it)');
   {
-    // The AI's sound opens in the sound editor, note by note.
-    await page.getByTestId('sound-edit').first().click();
+    // The Sounds button opens the sound editor; the AI's sound is in it, note by note.
+    await page.getByTestId('dock-sounds').click();
     const editor = page.getByTestId('sound-editor');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-pick').innerText()).includes('Quack'), 'the Sounds button opens the sound editor, with the AI\'s sound in it');
+    await page.getByTestId('sound-pick').selectOption({ label: 'Quack' });
     const notesNow = async () => JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]');
-    await check(async () => (await editor.isVisible()) && JSON.stringify(await notesNow()) === JSON.stringify([[22, 2, 6, 0], [20, 2, 5, 1], [18, 2, 3, 5], [0, 0, 0, 0], [21, 2, 5, 0], [17, 2, 3, 5]]), "✎ opens the AI's sound in the sound editor, its notes as bars");
+    await check(async () => JSON.stringify(await notesNow()) === JSON.stringify([[22, 2, 6, 0], [20, 2, 5, 1], [18, 2, 3, 5], [0, 0, 0, 0], [21, 2, 5, 0], [17, 2, 3, 5]]), "the AI's sound in the sound editor, its notes as bars");
     await page.screenshot({ path: `${OUT}/5e-sound-editor.png` });
-    await page.getByTestId('sound-editor-close').click();
-  }
-  {
-    // Right-click a sound → Ask AI…: "lower in pitch" remakes that sound.
-    const panelWasOpen = (await page.getByTestId('sounds-panel').count()) === 1;
-    if (!panelWasOpen) await page.getByTestId('dock-sounds').click();
-    await page.getByTestId('sound-Quack').click({ button: 'right' });
-    await check(async () => (await page.getByTestId('object-menu').innerText()).startsWith('Ask AI'), 'right-clicking a sound opens a menu, Ask AI… first');
-    await page.getByTestId('menu-ai-prompt').click();
-    const card = page.getByTestId('library-prompt');
-    await check(async () => (await card.getAttribute('data-context')) === 'sound' && (await card.innerText()).includes('Quack') && (await card.getByTestId('prompt-input').evaluate((el) => el === document.activeElement)), 'Ask AI… opens a prompt card about that sound, ready to type in');
-    const row = await page.getByTestId('sound-Quack').boundingBox();
-    const cardBox = await card.boundingBox();
-    await check(cardBox.y + cardBox.height <= row.y + 1, 'the card sits just above the sound');
+    await page.getByTestId('sound-delete').click();
+    await check(async () => (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'its trash asks "Delete sound?" in a dialog');
+    await page.getByTestId('sound-delete-cancel').click();
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Quack', '(Cancel keeps it)');
+    // Its ✦: "lower in pitch" remakes that sound.
+    await page.getByTestId('sound-ai').click();
+    const card = page.getByTestId('sound-editor-prompt');
     await card.getByTestId('prompt-input').fill('I want this sound to be lower in pitch');
     await card.getByTestId('prompt-input').press('Enter');
     await check(async () => (await card.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'the AI changes it');
     const sent = aiRequests.at(-1).context;
     await check(sent.scope === 'sound' && sent.sound?.name === 'Quack' && Array.isArray(sent.sound?.sound?.notes), 'the AI is told which sound, with its notes');
-    await check(async () => (await card.getByTestId('library-prompt-play').count()) === 1, 'the card has ▶ Play it, to hear the change');
-    await page.getByTestId('sound-edit').first().click();
-    await check(async () => JSON.stringify(JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]')) === JSON.stringify([[17, 2, 6, 0], [15, 2, 5, 1], [13, 2, 3, 5], [0, 0, 0, 0], [16, 2, 5, 0], [12, 2, 3, 5]]), 'the sound itself is lower (its notes, 5 semitones down; the same sound, so scripts still play it)');
+    await check(async () => JSON.stringify(await notesNow()) === JSON.stringify([[17, 2, 6, 0], [15, 2, 5, 1], [13, 2, 3, 5], [0, 0, 0, 0], [16, 2, 5, 0], [12, 2, 3, 5]]), 'the sound itself is lower (its notes, 5 semitones down; the same sound, so scripts still play it)');
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('undo').click();
-    if ((await page.getByTestId('sounds-panel').count()) === 0) await page.getByTestId('dock-sounds').click();
-    await page.getByTestId('sound-edit').first().click();
-    await check(async () => JSON.parse((await page.getByTestId('sound-canvas').getAttribute('data-notes')) ?? '[]')[0][0] === 22, 'Undo brings the old sound back');
+    await page.getByTestId('dock-sounds').click();
+    await check(async () => (await notesNow())[0][0] === 22, 'Undo brings the old sound back');
     await page.getByTestId('sound-editor-close').click();
-    const openNow = (await page.getByTestId('sounds-panel').count()) === 1;
-    if (openNow !== panelWasOpen) await page.getByTestId('dock-sounds').click();
   }
-  await page.getByTestId('dock-sounds').click();
   await page.getByTestId('play').click();
   await check(async () => Number((await page.getByTestId('play-canvas').getAttribute('data-sounds')) ?? '0') >= 2, 'in play, the script plays the sound (twice, as edited)');
   await page.keyboard.press('Escape');
@@ -1225,10 +1201,7 @@ try {
   }
 
   step = 'tabs close from the bars';
-  for (const [tab, panel] of [
-    ['dock-library', 'library-panel'],
-    ['dock-sounds', 'sounds-panel'],
-  ]) {
+  for (const [tab, panel] of [['dock-library', 'library-panel']]) {
     for (const [where, testId] of [
       ['the top bar', 'project-menu'],
       ['the tool bar', 'tool-select'],
@@ -1248,22 +1221,26 @@ try {
 
   step = 'sound editor';
   {
-    // (The Sounds tab closes when the top bar is used, e.g. Undo: opened again to read it.)
-    const listText = async () => {
-      if (!(await page.getByTestId('sounds-panel').count())) await page.getByTestId('dock-sounds').click();
-      return page.getByTestId('sound-list').innerText();
+    // The game's sounds, as the sound editor's picker lists them (opened for a moment when it is closed).
+    const soundNames = async () => {
+      const open = (await page.getByTestId('sound-editor').count()) > 0;
+      if (!open) await page.getByTestId('dock-sounds').click();
+      const names = await page.getByTestId('sound-pick').evaluate((el) => [...el.options].filter((o) => o.value && o.value !== '+new').map((o) => o.textContent));
+      if (!open) await page.getByTestId('sound-editor-close').click();
+      return names;
     };
-    // The note at the top opens the sound editor on a new sound; nothing is added to the game until a note is drawn.
-    const soundCount = async () => (await page.getByTestId('dock-sounds').click(), (await page.getByTestId('sound-list').getByTestId('sound-play').count()) + (await page.getByTestId('dock-sounds').click(), 0));
+    const listText = async () => (await soundNames()).join('\n');
+    const soundCount = async () => (await soundNames()).length;
+    // The Sounds button opens the sound editor (here, with no sound in the game yet, on none); nothing is added to the game until a note is drawn.
     const before = await soundCount();
-    await page.getByTestId('sound-editor-toggle').click();
+    await page.getByTestId('dock-sounds').click();
     const editor = page.getByTestId('sound-editor');
     const cv = page.getByTestId('sound-canvas');
     const notesNow = async () => JSON.parse((await cv.getAttribute('data-notes')) ?? '[]');
-    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && (await page.getByTestId('sound-editor-play').isDisabled()) && (await page.getByTestId('sound-delete').isDisabled()) && !(await page.getByTestId('sound-editor-new').isDisabled()), 'the ♪ at the top opens the sound editor; with no sound open everything is greyed out but + New');
+    await check(async () => (await editor.isVisible()) && (await page.getByTestId('sound-editor-body').getAttribute('data-off')) === 'true' && (await page.getByTestId('sound-editor-play').isDisabled()) && (await page.getByTestId('sound-delete').isDisabled()) && !(await page.getByTestId('sound-editor-new').isDisabled()), 'the Sounds button opens the sound editor; with no sound open everything is greyed out but + New');
     await page.getByTestId('sound-editor-close').click();
     await check(async () => (await soundCount()) === before, 'opening it makes no sound by itself');
-    await page.getByTestId('sound-editor-toggle').click();
+    await page.getByTestId('dock-sounds').click();
     await page.getByTestId('sound-editor-new').click();
     await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await notesNow()).length === 0 && (await page.getByTestId('sound-delete').isVisible()), '+ New sound makes a new, silent sound (its trash right next to its name)');
     // Draw: the square wave at volume 5; a sweep over notes 1–4 rising from C4 to C5 (measured once the dialog's opening zoom is over).
@@ -1322,8 +1299,7 @@ try {
     // The picker switches to another sound (and keeps the chosen pens).
     await check(async () => (await page.getByTestId('sound-pick').locator('option').allInnerTexts()).some((t) => t.includes('Rise')), 'the picker at the top lists the game\'s sounds');
     await page.getByTestId('sound-editor-close').click();
-    await page.getByTestId('dock-sounds').click();
-    await check(async () => (await listText()).includes('Rise'), 'the edited, renamed sound is in the Sounds tab');
+    await check(async () => (await listText()).includes('Rise'), 'the edited, renamed sound is among the game\'s sounds');
     // Every change is one undo step: rename, smooth ×2, all-notes volume, all-notes wave, speed, delete, volume on, volume off, effect, volume, the first notes, and New sound.
     await page.getByTestId('undo').click();
     await check(async () => (await listText()).includes('Sound 1'), 'Undo takes the editor\'s changes back one by one');
@@ -1331,8 +1307,8 @@ try {
     await check(async () => !(await listText()).includes('Sound 1'), '(and the new sound itself)');
     // The trash at the top deletes the sound, after asking.
     await page.getByTestId('redo').click();
-    await listText();
-    await page.getByTestId('sound-edit').first().click();
+    await page.getByTestId('dock-sounds').click();
+    await page.getByTestId('sound-pick').selectOption({ label: 'Sound 1' });
     await page.getByTestId('sound-delete').click();
     await check(async () => (await page.getByRole('alertdialog', { name: 'Delete sound?' }).isVisible()) && (await page.getByTestId('sound-delete-confirm').innerText()).includes('Delete sound?'), 'the trash next to the name asks "Delete sound?" first, in a dialog');
     await page.getByTestId('sound-delete-cancel').click();
@@ -1344,13 +1320,13 @@ try {
     await page.getByTestId('undo').click();
     await check(async () => (await listText()).includes('Sound 1'), 'Undo brings a deleted sound back');
     await page.getByTestId('undo').click();
-    // + New sound in the Sounds tab makes one and opens it too; the ♪ then opens the sound last edited.
-    await listText();
-    await page.getByTestId('sound-new').click();
-    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await page.getByTestId('sound-delete').isVisible()), '+ New sound in the Sounds tab makes a new sound and opens it');
+    // + New sound in the picker makes one and opens it; the Sounds button then opens the sound last edited.
+    await page.getByTestId('dock-sounds').click();
+    await page.getByTestId('sound-pick').selectOption('+new');
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1' && (await page.getByTestId('sound-delete').isVisible()), '+ New sound in the picker makes a new sound and opens it');
     await page.getByTestId('sound-editor-close').click();
-    await page.getByTestId('sound-editor-toggle').click();
-    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1', 'the ♪ opens the sound last edited');
+    await page.getByTestId('dock-sounds').click();
+    await check(async () => (await page.getByTestId('sound-name').inputValue()) === 'Sound 1', 'the Sounds button opens the sound last edited');
     // + New next to the name (left of the trash) makes another one.
     await check(async () => {
       const n = await page.getByTestId('sound-editor-new').boundingBox();
@@ -1363,7 +1339,6 @@ try {
     await page.getByTestId('sound-editor-close').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
-    if (await page.getByTestId('sounds-panel').count()) await page.getByTestId('dock-sounds').click();
   }
 
   step = 'golden test 7: create with AI';
@@ -5090,14 +5065,19 @@ try {
     await sp.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
     await sp.goto(URL);
     await startPlatformer(sp);
-    await sp.getByTestId('dock-sounds').click();
-    const sPrompt = sp.getByTestId('sounds-panel').getByTestId('sounds-prompt');
-    await check(async () => await sPrompt.isVisible(), 'the Sounds card has an AI prompt');
+    // The ♪ at the top: an AI prompt for anything about sound (sound effects, music, instruments).
+    await sp.getByTestId('audio-prompt-toggle').click();
+    const sPrompt = sp.getByTestId('audio-prompt').getByTestId('sounds-prompt');
+    await check(async () => (await sPrompt.isVisible()) && (await sPrompt.getByTestId('prompt-input').evaluate((el) => el === document.activeElement)), 'the ♪ at the top opens an AI prompt for sounds and music, ready to type in');
     await sPrompt.getByTestId('prompt-input').fill('a zap sound');
     await sPrompt.getByTestId('prompt-input').press('Enter');
-    await check(async () => (await sp.getByTestId('sound-Zap').count()) === 1, 'asked there, the AI makes the sound and it is in the list');
-    await check(aiRequests.at(-1).context.scope === 'sound' && !aiRequests.at(-1).context.sound, '(asked about the sounds, not one of them)');
-    await sp.getByTestId('sound-Zap').getByTestId('sound-edit').click();
+    await check(async () => (await sPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'applied', 'asked there, the AI makes the sound');
+    await check(aiRequests.at(-1).context.scope === 'sound' && !aiRequests.at(-1).context.sound && Array.isArray(aiRequests.at(-1).context.music?.songs), '(asked about the game\'s sound in general, with its music too, not one sound)');
+    await sp.keyboard.press('Escape');
+    await check(async () => (await sp.getByTestId('audio-prompt').count()) === 0, 'Esc closes it');
+    // The Sounds button at the bottom opens the sound editor; the new sound is in it.
+    await sp.getByTestId('dock-sounds').click();
+    await sp.getByTestId('sound-pick').selectOption({ label: 'Zap' });
     await check(async () => (await sp.getByTestId('sound-prompt-card').count()) === 0 && (await sp.getByTestId('sound-ai').isVisible()), 'the sound editor has a ✦ (no card until it is clicked)');
     await sp.getByTestId('sound-ai').click();
     const ePrompt = sp.getByTestId('sound-editor-prompt');
