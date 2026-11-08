@@ -39,6 +39,9 @@ describe('the pixel font', () => {
     expect(draw('Á').filter(([, y]) => y === 9).reduce((n, [, , w]) => n + w, 0)).toBe(1);
     expect(draw('Á').filter(([, y]) => y >= 10)).toEqual(draw('A'));
     expect(draw('ö')).toEqual(draw('Ö'));
+    // Ú's accent one pixel right of the U (in the gap after it), not over its right stem; ú the same.
+    expect(draw('Ú').filter(([, y]) => y === 9)).toEqual([[3, 9, 1, 1]]);
+    expect(draw('ú')).toEqual(draw('Ú'));
     expect(draw('Ö').filter(([, y]) => y === 9).reduce((n, [, , w]) => n + w, 0)).toBe(2);
   });
 

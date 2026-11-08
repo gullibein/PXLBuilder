@@ -92,7 +92,7 @@ const GLYPHS: Record<string, string> = {
  * acute one pixel in the middle, umlaut two, ring and caron as marks of their own.
  */
 const ACCENTED: Record<string, [string, string]> = {
-  "Á": ['A', '..#'], "É": ['E', '..#'], "Í": ['I', '..#'], "Ó": ['O', '..#'], "Ú": ['U', '..#'], "Ý": ['Y', '..#'],
+  "Á": ['A', '..#'], "É": ['E', '..#'], "Í": ['I', '..#'], "Ó": ['O', '..#'], "Ú": ['U', '...#'], "Ý": ['Y', '..#'],
   "À": ['A', '..#'], "È": ['E', '..#'], "Ò": ['O', '..#'], "Ù": ['U', '..#'],
   "Ä": ['A', '#.#'], "Ë": ['E', '#.#'], "Ï": ['I', '#.#'], "Ö": ['O', '#.#'], "Ü": ['U', '#.#'],
   "Â": ['A', '#.#'], "Ê": ['E', '#.#'], "Ô": ['O', '#.#'], "Å": ['A', '..#'],
@@ -105,7 +105,7 @@ function glyph(ch: string): string {
   return GLYPHS[ch] ?? GLYPHS[ch.toUpperCase()] ?? '####.##.##.####';
 }
 
-/** The accent above a letter (3 pixels, "#" a pixel), or null. */
+/** The accent above a letter ("#" a pixel, from the letter's left; Ú's reaches one past it, clear of the U's stem), or null. */
 function accentOf(ch: string): string | null {
   return (ACCENTED[ch] ?? ACCENTED[ch.toUpperCase()])?.[1] ?? null;
 }
