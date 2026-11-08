@@ -1051,6 +1051,45 @@ describe('behavior scripts', () => {
     expect(events(rt, 'level_started').length).toBeGreaterThanOrEqual(3);
     expect(rt.find('Coin')!.scripts[0].vars.get('n')).toBe(0);
   });
+
+  it('a speed set on a thing with no PhysicsBody moves it (a shot bubble); a solid one stays put', () => {
+    const { rt, input } = level((b) => {
+      const def = createDefinition('Shot', { Sprite: registry.createDefault('Sprite', { width: 16, height: 16 }), Collider: registry.createDefault('Collider', { size: { x: 16, y: 16 }, isTrigger: true }) });
+      m.addDefinition(b.d, def, registry);
+      script(b, b.place('Shot', { x: 200, y: -200 }), { handlers: [{ when: { on: 'start' }, do: [{ do: 'velocity', x: '0', y: '-120' }] }] });
+    });
+    const shot = rt.find('Shot')!;
+    expect(shot.body).toBe('none');
+    const y0 = shot.y;
+    run(rt, input, 0.5);
+    expect(shot.y).toBeLessThan(y0 - 50);
+    expect(rt.scripts.errors).toEqual([]);
+  });
+
+  it('a drawing\'s color can be a formula (with or without braces); a color stays as written', () => {
+    const { rt, input } = level((b) =>
+      script(b, rt0(b, 'Player'), {
+        vars: [{ name: 'c', value: 2 }],
+        handlers: [
+          {
+            when: { on: 'tick' },
+            do: [
+              { do: 'draw', id: 'bare', shape: 'circle', anchor: 'world', x: '0', y: '0', w: '8', h: '8', color: "pick(c == 2, '#5db0ff', '#ff5d5d')" },
+              { do: 'draw', id: 'braced', shape: 'circle', anchor: 'world', x: '0', y: '0', w: '8', h: '8', color: "{pick(c == 0, '#ff5d5d', '#5dff7a')}" },
+              { do: 'draw', id: 'plain', shape: 'circle', anchor: 'world', x: '0', y: '0', w: '8', h: '8', color: '#ffe35d' },
+              { do: 'draw', id: 'named', shape: 'circle', anchor: 'world', x: '0', y: '0', w: '8', h: '8', color: 'red' },
+            ],
+          },
+        ],
+      }),
+    );
+    run(rt, input, 0.05);
+    expect(rt.drawings.get('bare')!.color).toBe('#5db0ff');
+    expect(rt.drawings.get('braced')!.color).toBe('#5dff7a');
+    expect(rt.drawings.get('plain')!.color).toBe('#ffe35d');
+    expect(rt.drawings.get('named')!.color).toBe('red');
+    expect(rt.scripts.errors).toEqual([]);
+  });
 });
 
 describe('the example scripts the AI learns from', () => {

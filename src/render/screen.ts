@@ -89,6 +89,11 @@ function artSize(look: ResolvedEntity, images: ImageLookup): { w: number; h: num
   return w && h ? { w, h } : null;
 }
 
+/** A drawing of a tinted object (Sprite.tint) in the drawing's color: one picture for every color (bubbles, gems). */
+function tintOf(sprite: Record<string, unknown> | undefined, color: string): { color?: string } {
+  return sprite?.tint === true && /^#[0-9a-f]{3,8}$/i.test(color) ? { color } : {};
+}
+
 /** Text in the pixel font at (x, y) canvas pixels (anchored by ax, ay), `scale` canvas pixels per font pixel, with a shadow one grid cell down. */
 export function pixelLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ax: number, ay: number, scale: number, color: string, cell: number, font: PixelFont = TINY_FONT): { left: number; top: number; w: number; h: number } {
   const box = pixelTextSize(text, font);
@@ -162,7 +167,7 @@ function drawOnGrid(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number,
   else if (d.shape === 'circle') gridEllipse(ctx, left, top, w, h, cell);
   else if (look?.components.Sprite) {
     if (!art) ctx.fillStyle = typeof look.components.Sprite.color === 'string' ? look.components.Sprite.color : d.color;
-    drawEntities(ctx, [{ ...look, transform: { position: { x: left + w / 2, y: top + h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...look.components.Sprite, width: w, height: h, visible: true } } }], images, 0, clock);
+    drawEntities(ctx, [{ ...look, transform: { position: { x: left + w / 2, y: top + h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...look.components.Sprite, ...tintOf(look.components.Sprite, d.color), width: w, height: h, visible: true } } }], images, 0, clock);
   }
 }
 
@@ -202,7 +207,7 @@ function drawFree(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number, p
       const look = d.object ? looks.get(d.object) : null;
       const sprite = look?.components.Sprite;
       if (look && sprite) {
-        drawEntities(ctx, [{ ...look, transform: { position: { x: left + d.w / 2, y: top + d.h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...sprite, width: d.w, height: d.h, visible: true } } }], images, 0, clock);
+        drawEntities(ctx, [{ ...look, transform: { position: { x: left + d.w / 2, y: top + d.h / 2 }, rotation: 0, scale: { x: 1, y: 1 } }, components: { ...look.components, Sprite: { ...sprite, ...tintOf(sprite, d.color), width: d.w, height: d.h, visible: true } } }], images, 0, clock);
       }
     }
   }

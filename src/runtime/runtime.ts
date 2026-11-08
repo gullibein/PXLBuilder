@@ -781,7 +781,10 @@ export class Runtime {
     this.scripts.before(dt, steer);
     const kinematicSolids: Box[] = [];
     for (const e of this.entities) {
-      if (e.body === 'kinematic' && e.alive) {
+      // (A thing with no body that a script gave a speed moves by it too, through everything: a shot bubble, a
+      // floating label. Only solid ones stay put: they are part of the level's fixed walls.)
+      const drifts = e.body === 'none' && (e.vx !== 0 || e.vy !== 0) && !this.isSolid(e);
+      if ((e.body === 'kinematic' || drifts) && e.alive) {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
         if (this.isSolid(e)) kinematicSolids.push({ ...boxOf(e)!, friction: e.friction });

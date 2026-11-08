@@ -4,7 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { isoDrawingProblem } from '../../core/ai/isoDrawing';
+import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
 import { TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
@@ -197,7 +197,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   // (An original game, asked for in words, is drawn anew too: the starter's look is anything but.)
   const original = /\b(original|unique|unusual|creative|novel|weird|nothing (typical|usual|standard)|not (typical|usual|standard)|surprise me)\b/i.test(request);
   const sprites = newGame ? (options.images?.length || (original && !options.sprites) ? 'ai' : (options.sprites ?? 'engine')) : undefined;
-  if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites };
+  // (The sprite size chosen in the New game window goes along: the AI keeps it.)
+  if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites, spriteSize: state.project.settings.spriteResolution ?? 32 };
   let response: AIResponse;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
@@ -294,8 +295,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
     // Isometric blocks drawn flat, or restyled without their turns and corners.
     const isoDrawn = gameOps(response) && !broken ? isoDrawingProblem(useEditor.getState().project, response.operations) : null;
+    // The sprite size changed when nobody asked (the user chose it).
+    const resized = gameOps(response) && !broken ? spriteSizeProblem(useEditor.getState().project, request, response.operations) : null;
     // (Everything wrong with it at once: one more answer fixes it all.)
-    const problem = broken ?? ([stuck?.text, unasked, undrawn, isoDrawn].filter(Boolean).join('; also, ') || null);
+    const problem = broken ?? ([stuck?.text, unasked, undrawn, isoDrawn, resized].filter(Boolean).join('; also, ') || null);
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');

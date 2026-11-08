@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isoDrawingProblem } from './ai/isoDrawing';
+import { isoDrawingProblem, spriteSizeProblem } from './ai/isoDrawing';
+import { createProject } from './model/factory';
 import type { Operation } from './commands/operations';
 import { createBuiltinRegistry } from './components/builtin';
 import { isoBlockFromFlat, looksFlat } from './model/isoBlockArt';
@@ -44,5 +45,15 @@ describe('isometric block pictures', () => {
     // All of it, as blocks: fine.
     const all = ['corner_north', 'corner_east', 'corner_south', 'corner_west', 'variation'].map((k) => draw('Grass', ISO_TILES['Island Corner North'], k));
     expect(isoDrawingProblem(project, [draw('Grass', ISO_TILES.Grass), ...all])).toBeNull();
+  });
+
+  it("the sprite size is the user's: an answer changing it unasked is sent back; asked for, it is fine", () => {
+    const project = createProject(registry);
+    project.settings.spriteResolution = 32;
+    const ops = [{ op: 'set_sprite_resolution', resolution: 8 }] as Operation[];
+    expect(spriteSizeProblem(project, 'I want to make a puzzle bobble clone', ops)).toMatch(/user chose 32×32/);
+    expect(spriteSizeProblem(project, 'make the sprites 8x8', ops)).toBeNull();
+    expect(spriteSizeProblem(project, 'a chunkier, more retro look', ops)).toBeNull();
+    expect(spriteSizeProblem(project, 'a puzzle game', [])).toBeNull();
   });
 });

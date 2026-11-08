@@ -44,3 +44,18 @@ export function isoDrawingProblem(project: Project, operations: Operation[]): st
     );
   return out.length ? out.join('; also, ') : null;
 }
+
+/** Words of a request that asks for a sprite size ("8x8", "16×16 sprites", "chunkier pixels", "more detailed sprites"). */
+const SIZE_WORDS = /\b(8|16|32|64)\s*[x×*]\s*(8|16|32|64)\b|sprite\s*size|pixel\s*size|resolution|chunk(y|ier)|8.?bit|16.?bit|bigger pixels|smaller pixels|more detail|less detail|lower.?res|higher.?res|hi.?res|low.?res/i;
+
+/**
+ * The sprite size changed (set_sprite_resolution) when the request didn't ask for one: the user chose it (the New
+ * game window, the ⋯ menu), so it is sent back. Null when it is fine.
+ */
+export function spriteSizeProblem(project: Project, request: string, operations: Operation[]): string | null {
+  const now = project.settings.spriteResolution ?? 32;
+  const op = operations.find((o) => o.op === 'set_sprite_resolution' && (o as { resolution?: number }).resolution !== now);
+  if (!op || SIZE_WORDS.test(request)) return null;
+  const to = (op as { resolution?: number }).resolution;
+  return `it changes the sprite size to ${to}×${to}, but the user chose ${now}×${now} sprites and did not ask for another size: leave set_sprite_resolution out and draw every sprite at ${now}×${now} (each target's spriteGrid)`;
+}

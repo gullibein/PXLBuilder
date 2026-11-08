@@ -674,8 +674,8 @@ export class ScriptSystem {
           h: Math.max(0, opt(s.h, 32)),
           text: s.text === null ? '' : fill(s.text),
           size: Math.min(200, Math.max(4, opt(s.size, 18))),
-          // ("{a_setting}": a color from a variable.)
-          color: fill(s.color),
+          // ("{a_setting}": a color from a variable; a formula written without the braces is worked out too.)
+          color: this.drawColor(s.color, fill, ctx),
           object: s.object,
           alpha: Math.min(1, Math.max(0, opt(s.alpha, 1))),
           order: old?.order ?? this.rt.drawings.size,
@@ -1367,6 +1367,22 @@ export class ScriptSystem {
       }
     }
     return null;
+  }
+
+  /**
+   * A drawing's color: "#ff5d5d", "red", "{a_setting}" as written; a formula without the braces ("pick(c == 0,
+   * '#f00', '#0f0')") is worked out too, as was surely meant (it used to be taken as a color it isn't, silently).
+   */
+  private drawColor(text: string, fill: (t: string) => string, ctx: Ctx): string {
+    if (text.includes('{')) return fill(text);
+    const t = text.trim();
+    if (/^#[0-9a-f]{3,8}$/i.test(t) || /^[a-z]+$/i.test(t) || /^(rgb|rgba|hsl|hsla)\(/i.test(t)) return t;
+    try {
+      const v = this.eval(t, ctx);
+      return typeof v === 'string' ? v : t;
+    } catch {
+      return t;
+    }
   }
 
   private report(e: RuntimeEntity, inst: ScriptInstance, message: string): void {
