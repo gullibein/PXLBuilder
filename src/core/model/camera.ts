@@ -28,6 +28,13 @@ export interface CameraSettings {
   customBounds: CameraBounds | null;
   /** Where a still camera (nothing has a CameraTarget) looks; null = the middle of the level. */
   fixedAt: Vec2 | null;
+  /**
+   * Fit to the screen in Play: "height": the screen shows exactly fitSize level pixels top to bottom, however tall
+   * the window, its width whatever the window gives; "width" the other way round; "none" (or absent): zoom as set.
+   */
+  fit?: 'none' | 'height' | 'width';
+  /** The level pixels that fit (with fit height or width); null = the whole level's height or width. */
+  fitSize?: number | null;
 }
 
 export const ZOOM_RANGE = { min: 0.25, max: 4 };
@@ -48,6 +55,8 @@ export const cameraSchema = z.object({
   bounds: z.enum(['none', 'level', 'custom']),
   customBounds: boundsSchema.nullable(),
   fixedAt: vec2.nullable(),
+  fit: z.enum(['none', 'height', 'width']).optional(),
+  fitSize: z.number().min(16).max(100000).nullable().optional(),
 });
 
 /** What each setting means (inspector hints and the AI). */
@@ -58,7 +67,18 @@ export const CAMERA_HELP: Record<keyof CameraSettings, string> = {
   bounds: '"none" (goes anywhere), "level" (never shows past the edges of what is placed in the level), "custom" (never past customBounds)',
   customBounds: '{minX, minY, maxX, maxY} in level pixels, or null (for bounds "custom")',
   fixedAt: '{x, y} where a still camera looks when nothing has a CameraTarget, or null = the middle of the level',
+  fit: '"height": in Play the screen shows exactly fitSize level pixels top to bottom, whatever the window size (its width follows the window); "width": exactly fitSize across (the height follows); "none": the zoom as set. With a fit, zoom is worked out from the window',
+  fitSize: 'level pixels that fit the screen\'s height or width (one tile = 32; e.g. 384 = 12 tiles), or null = the whole level\'s height or width',
 };
+
+/** The zoom that fits the camera's fit to a screen of `view` CSS pixels (level: the level's limits), or null when it doesn't fit. */
+export function fitZoom(settings: CameraSettings, view: { width: number; height: number }, level: CameraBounds | null): number | null {
+  const f = settings.fit;
+  if (f !== 'height' && f !== 'width') return null;
+  const size = settings.fitSize ?? (level ? (f === 'height' ? level.maxY - level.minY : level.maxX - level.minX) : null);
+  if (!size || !(size > 0)) return null;
+  return (f === 'height' ? view.height : view.width) / size;
+}
 
 /**
  * Play at a game resolution (the screen shows `pixels` picture pixels tall,

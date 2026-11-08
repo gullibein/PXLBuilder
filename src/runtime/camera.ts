@@ -6,7 +6,7 @@
  *
  * `camera` is where the camera is; `view()` adds the shake, for drawing.
  */
-import { cameraLimits, clampCamera, startCamera, type CameraBounds, type CameraSettings } from '../core/model/camera';
+import { cameraLimits, clampCamera, fitZoom, startCamera, type CameraBounds, type CameraSettings } from '../core/model/camera';
 import type { Vec2 } from '../core/types';
 import { worldBoundsOfView, type Camera } from '../render/renderer';
 import type { RuntimeEntity } from './runtime';
@@ -41,7 +41,7 @@ export class CameraController {
     this.flashFx = { color: '#ffffff', left: 0, total: 0 };
     this.zoomFx = null;
     this.focus = null;
-    this.camera.zoom = settings.zoom;
+    this.camera.zoom = fitZoom(settings, this.view, level) ?? settings.zoom;
     this.snap();
   }
 
@@ -57,6 +57,12 @@ export class CameraController {
   setView(width: number, height: number): void {
     if (width < 2 || height < 2) return;
     this.view = { width, height };
+    // Fitted to the screen: the zoom follows the window (unless a zoom effect is running).
+    const fit = this.settings && !this.zoomFx ? fitZoom(this.settings, this.view, this.level) : null;
+    if (fit && fit !== this.camera.zoom) {
+      this.camera.zoom = fit;
+      this.snap();
+    }
   }
 
   /** What the camera shows now, in the level (without any shake). */

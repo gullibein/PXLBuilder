@@ -1,7 +1,8 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
-import type { CameraSettings } from '../core/model/camera';
+import { checkCamera, fitZoom, type CameraSettings } from '../core/model/camera';
+import { CameraController } from './camera';
 import { createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import type { Vec2 } from '../core/types';
@@ -208,5 +209,40 @@ describe('camera from rules, scripts and AI operations', () => {
     }
     expect(rt.eventLog.some((e) => e.type === 'damaged' && e.subject === 'Player')).toBe(true);
     expect(shook && flashed).toBe(true);
+  });
+});
+
+describe('camera fitted to the screen', () => {
+  const level = { minX: 0, minY: 0, maxX: 1280, maxY: 640 };
+  const base: CameraSettings = { zoom: 1, lookAhead: 0, deadZone: { x: 0, y: 0 }, bounds: 'level', customBounds: null, fixedAt: null };
+
+  it('height: exactly so many level pixels top to bottom, whatever the window; the width follows the window', () => {
+    const cam = new CameraController();
+    cam.reset({ ...base, fit: 'height', fitSize: 384 }, null, 0.15, level);
+    cam.setView(800, 768);
+    expect(cam.camera.zoom).toBe(2);
+    let v = cam.visible();
+    expect(v.maxY - v.minY).toBeCloseTo(384);
+    // A wider, shorter window: still 384 tall, now wider.
+    cam.setView(1600, 600);
+    v = cam.visible();
+    expect(v.maxY - v.minY).toBeCloseTo(384);
+    expect(v.maxX - v.minX).toBeCloseTo(1024);
+  });
+
+  it("width: exactly so many across; null fits the whole level's width; off: the zoom as set", () => {
+    const cam = new CameraController();
+    cam.reset({ ...base, fit: 'width', fitSize: null }, null, 0.15, level);
+    cam.setView(640, 480);
+    expect(cam.camera.zoom).toBe(0.5);
+    const v = cam.visible();
+    expect(v.maxX - v.minX).toBeCloseTo(1280);
+    expect(fitZoom({ ...base, fit: 'none' }, { width: 640, height: 480 }, level)).toBeNull();
+    expect(fitZoom(base, { width: 640, height: 480 }, level)).toBeNull();
+  });
+
+  it('is kept with the level (saved) and checked', () => {
+    expect(checkCamera({ ...base, fit: 'height', fitSize: 384 })).toEqual({ camera: { ...base, fit: 'height', fitSize: 384 } });
+    expect('error' in checkCamera({ ...base, fit: 'sideways' })).toBe(true);
   });
 });

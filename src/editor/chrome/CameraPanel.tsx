@@ -1,5 +1,6 @@
 import { componentRegistry } from '../../core/components/builtin';
-import { CAMERA_HELP, ZOOM_RANGE, type CameraSettings } from '../../core/model/camera';
+import { boundsOf, CAMERA_HELP, ZOOM_RANGE, type CameraSettings } from '../../core/model/camera';
+import { getEntitySize } from '../../core/model/geometry';
 import { setCameraFollow, setCameraSettings, setEntityComponentField, setPlayPixels } from '../../core/model/mutations';
 import { resolveEntity } from '../../core/model/resolve';
 import type { Id } from '../../core/types';
@@ -37,6 +38,16 @@ export function CameraPanel() {
     const name = id ? scene.entities.find((e) => e.id === id)?.name : null;
     edit(name ? `Camera follows ${name}` : 'Still camera', (p) => setCameraFollow(p, sid, id, componentRegistry));
   };
+
+  // Fitted to the screen's height or width: the zoom comes from the window (the whole level's, or so many tiles).
+  const fitting = c.fit === 'height' || c.fit === 'width';
+  const levelBox = boundsOf(
+    resolved.map(({ r }) => {
+      const sz = getEntitySize(r);
+      return { x: r.transform.position.x, y: r.transform.position.y, w: sz.x, h: sz.y };
+    }),
+  );
+  const fitLevel = levelBox ? (c.fit === 'width' ? levelBox.maxX - levelBox.minX : levelBox.maxY - levelBox.minY) : 384;
 
   const gamePixels = project.settings.playPixels;
   const resolutionValue = gamePixels ? String(gamePixels) : 'editor';
@@ -97,13 +108,50 @@ export function CameraPanel() {
           </>
         )}
 
-        <label htmlFor="cam-zoom" title={CAMERA_HELP.zoom}>
-          Zoom
+        <label htmlFor="cam-fit" title={CAMERA_HELP.fit}>
+          Fit
         </label>
-        <span className="cam-slider">
-          <input id="cam-zoom" type="range" min={ZOOM_RANGE.min} max={ZOOM_RANGE.max} step={0.05} value={c.zoom} data-testid="camera-zoom-slider" onChange={(e) => set('Camera zoom', { zoom: Number(e.target.value) }, 'zoom')} />
-          <NumberInput value={c.zoom} step={0.05} testId="camera-panel-zoom" onCommit={(zoom) => set('Camera zoom', { zoom })} />
-        </span>
+        <select
+          id="cam-fit"
+          data-testid="camera-fit"
+          title={CAMERA_HELP.fit}
+          value={c.fit ?? 'none'}
+          onChange={(e) => {
+            const fit = e.target.value as 'none' | 'height' | 'width';
+            set(fit === 'none' ? 'Camera: zoom as set' : `Camera fits the screen's ${fit}`, { fit });
+          }}
+        >
+          <option value="none">Off: zoom as set</option>
+          <option value="height">Height: fits the screen top to bottom</option>
+          <option value="width">Width: fits the screen side to side</option>
+        </select>
+        {fitting ? (
+          <>
+            <label title={CAMERA_HELP.fitSize}>Shows</label>
+            <span className="cam-fit-size">
+              <select
+                data-testid="camera-fit-what"
+                value={c.fitSize == null ? 'level' : 'tiles'}
+                onChange={(e) => set('Camera fit size', { fitSize: e.target.value === 'level' ? null : Math.max(1, Math.round(fitLevel / 32)) * 32 })}
+              >
+                <option value="level">the whole level</option>
+                <option value="tiles">tiles:</option>
+              </select>
+              {c.fitSize != null && <NumberInput value={Math.round(c.fitSize / 32)} step={1} testId="camera-fit-tiles" onCommit={(n) => set('Camera fit size', { fitSize: Math.max(1, Math.round(n)) * 32 })} />}
+              <span className="muted small">{c.fit === 'height' ? 'top to bottom; the width follows the window' : 'side to side; the height follows the window'}</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <label htmlFor="cam-zoom" title={CAMERA_HELP.zoom}>
+              Zoom
+            </label>
+            <span className="cam-slider">
+              <input id="cam-zoom" type="range" min={ZOOM_RANGE.min} max={ZOOM_RANGE.max} step={0.05} value={c.zoom} data-testid="camera-zoom-slider" onChange={(e) => set('Camera zoom', { zoom: Number(e.target.value) }, 'zoom')} />
+              <NumberInput value={c.zoom} step={0.05} testId="camera-panel-zoom" onCommit={(zoom) => set('Camera zoom', { zoom })} />
+            </span>
+          </>
+        )}
 
         {followed && (
           <>

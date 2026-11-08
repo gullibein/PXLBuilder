@@ -168,6 +168,15 @@
 .ngp-pictures { display: flex; gap: 6px; flex-wrap: wrap; }
 .ngp-pictures img { max-height: 96px; max-width: 160px; border-radius: 6px; border: 1px solid var(--line); image-rendering: pixelated; object-fit: contain; }
 .ngp-stage { margin: 0; font-weight: 600; }
+.ngp-show { margin: 4px 0; display: grid; justify-items: center; gap: 6px; animation: ngp-in 360ms ease-out; }
+.ngp-show canvas { image-rendering: pixelated; animation: ngp-bob 1s ease-in-out infinite alternate; }
+.ngp-show figcaption, .ngp-piece figcaption { font-size: 12px; color: var(--muted, #8a90a8); }
+.ngp-drawn { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.ngp-piece { margin: 0; display: grid; justify-items: center; gap: 4px; width: 72px; text-align: center; animation: ngp-in 360ms ease-out both; }
+.ngp-piece canvas { image-rendering: pixelated; }
+@keyframes ngp-in { from { opacity: 0; transform: translateY(6px) scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes ngp-bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .ngp-show, .ngp-show canvas, .ngp-piece { animation: none; } }
 .ngp-foot { display: flex; justify-content: flex-end; padding: 8px 16px 12px; }
 .game-idea { display: grid; gap: 8px; }
 .game-idea textarea { width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: inherit; }

@@ -3611,6 +3611,7 @@ try {
     async () => (await page.getByTestId('new-game-progress').isVisible()) && (await page.getByTestId('global-prompt').count()) === 0 && /planning the game|building|starting/i.test(await page.getByTestId('new-game-stage').innerText()),
     'the game is built in a window of its own, saying what the AI is doing (no prompt card while there is nothing to edit)',
   );
+  await check(async () => (await page.getByTestId('new-game-piece').isVisible()) && (await page.getByTestId('new-game-piece').locator('canvas').count()) === 1, "while it works, the game's pieces are shown one after another");
   await page.screenshot({ path: `${OUT}/00b-building.png` });
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
@@ -3665,6 +3666,10 @@ try {
     await check(async () => (await page.getByTestId('new-sprites-ai').getAttribute('aria-checked')) === 'true' && (await page.getByTestId('new-sprites-engine').getAttribute('aria-checked')) === 'false', "New game offers AI-drawn sprites (chosen by default) or the engine's");
     await page.getByTestId('game-idea').fill('ai drawn sprites test');
     await page.getByTestId('game-idea').press('Enter');
+    // Done: what the AI drew is shown together first; then the game.
+    await page.getByTestId('new-game-drawn').waitFor({ timeout: 10000 });
+    await check(async () => (await page.getByTestId('new-game-drawn').innerText()).includes('Player') && (await page.getByTestId('new-game-drawn').locator('canvas').count()) >= 1, 'when the game is built, the pictures the AI drew for it are shown');
+    await page.getByTestId('new-game-open').click();
     await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
     const said = await page.getByTestId('global-prompt').innerText();
     await check(said.includes('Sprites: ai; drew them.'), `AI-drawn sprites: the AI is told so, and an answer that left the player with the engine's picture was sent back to be drawn: ${said.slice(0, 160)}`);

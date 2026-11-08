@@ -46,7 +46,9 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   const dpr = canvas.width / size.width;
   // Every picture pixel the same size: the zoom is rounded to the nearest that gives whole canvas pixels.
   const frameNow = runtime.cam.frame();
-  const zoomNow = pixelPerfectZoom(frameNow.zoom * f.extraZoom, dpr, worldPerArt);
+  // (Fitted to the screen's height or width: exactly, as asked, even if a picture pixel is then not a whole number of canvas pixels.)
+  const fitted = f.scene.camera?.fit === 'height' || f.scene.camera?.fit === 'width';
+  const zoomNow = fitted ? frameNow.zoom * f.extraZoom : pixelPerfectZoom(frameNow.zoom * f.extraZoom, dpr, worldPerArt);
   // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
   const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
   let view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };
