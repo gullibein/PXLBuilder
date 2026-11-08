@@ -73,6 +73,7 @@ export const sceneSchema = z.object({
       rect: z.object({ x: z.number().finite(), y: z.number().finite(), w: z.number().positive(), h: z.number().positive() }).nullable().optional(),
       scroll: vec2.nullable().optional(),
       stars: z.object({ density: z.number().min(0).max(60), speed: vec2, layers: z.number().int().min(1).max(3), color: z.string() }).nullable().optional(),
+      gradient: z.object({ top: z.string(), bottom: z.string(), bands: z.number().int().min(0).max(64).optional() }).nullable().optional(),
     }),
     view: z.enum(['flat', 'iso']).optional(),
   }),

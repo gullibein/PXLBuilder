@@ -4,8 +4,9 @@ import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
 import { baseName, readImageFile } from '../imageFiles';
 import { offerFile, slugify } from '../persistence';
-import { DEFAULT_IMAGE_WORKER, generateImage, imageWorkerUrl, pixelateTo, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
-import { limitsBox, pictureBox, pixelsFor, placeBackground, rememberOriginal, type PictureSize } from '../background';
+import { DEFAULT_IMAGE_WORKER, imageWorkerUrl, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
+import { useBackgroundGen } from '../backgroundGen';
+import { limitsBox, pictureBox, pixelsFor, placeBackground } from '../background';
 import { PromptBox } from '../prompt/PromptBox';
 import { ColorButton } from './ColorPicker';
 import { getActiveScene, useEditor } from '../store';
@@ -96,6 +97,7 @@ export function BackgroundPanel() {
             {null}
           </ColorButton>
         </div>
+        <Fade sceneId={sid} />
       </div>
 
       <div className="bg-section">
@@ -153,6 +155,12 @@ export function BackgroundPanel() {
       </div>
 
       <GenerateBackground sceneId={sid} />
+
+      {/* The one prompt: the AI paints the backdrop with the image generator and makes the rest itself. */}
+      <div className="bg-prompt">
+        <div className="bg-ai" aria-hidden="true" />
+        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
+      </div>
 
       {asset && (
         <div className="bg-section">
@@ -227,11 +235,56 @@ export function BackgroundPanel() {
 
       <Stars sceneId={sid} stars={bg.stars ?? null} edit={edit} />
 
-      <div className="bg-prompt">
-        <div className="bg-ai" aria-hidden="true" />
-        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
-      </div>
     </section>
+  );
+}
+
+/**
+ * A fade from one color at the top to another at the bottom (a sky), instead of the plain color: on or off, its two
+ * colors, smooth or in bands.
+ */
+function Fade({ sceneId }: { sceneId: string }) {
+  const scene = useEditor((s) => s.project.scenes.find((x) => x.id === sceneId));
+  const edit = useEditor.getState().edit;
+  if (!scene) return null;
+  const fade = scene.world.background.gradient ?? null;
+  const color = /^#[0-9a-f]{6}$/i.test(scene.world.backgroundColor) ? scene.world.backgroundColor : '#000000';
+  const set = (label: string, gradient: { top: string; bottom: string; bands?: number } | null) => edit(label, (p) => setBackground(p, sceneId, { gradient }));
+  return (
+    <div className="bg-fade" data-testid="bg-fade">
+      <label className="bg-check">
+        <input type="checkbox" checked={!!fade} data-testid="bg-fade-on" onChange={(e) => set(e.target.checked ? 'Background fade' : 'Background: plain color', e.target.checked ? { top: '#8fd3ff', bottom: color } : null)} />
+        Fade
+      </label>
+      {fade && (
+        <>
+          <span className="small muted">top</span>
+          <ColorButton className="swatch-btn" style={{ background: fade.top }} title="The color at the top" ariaLabel="Fade: top color" testId="bg-fade-top" value={fade.top} onPick={(top) => set('Background fade: top', { ...fade, top })}>
+            {null}
+          </ColorButton>
+          <span className="small muted">bottom</span>
+          <ColorButton className="swatch-btn" style={{ background: fade.bottom }} title="The color at the bottom" ariaLabel="Fade: bottom color" testId="bg-fade-bottom" value={fade.bottom} onPick={(bottom) => set('Background fade: bottom', { ...fade, bottom })}>
+            {null}
+          </ColorButton>
+          <select
+            aria-label="Smooth or in bands"
+            data-testid="bg-fade-bands"
+            value={String(fade.bands ?? 0)}
+            onChange={(e) => {
+              const bands = Number(e.target.value);
+              set('Background fade: bands', bands ? { ...fade, bands } : { top: fade.top, bottom: fade.bottom });
+            }}
+          >
+            <option value="0">smooth</option>
+            {[4, 6, 8, 12, 16].map((n) => (
+              <option key={n} value={n}>
+                {n} bands
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -271,18 +324,16 @@ function Stars({ sceneId, stars, edit }: { sceneId: string; stars: StarField | n
   );
 }
 
-/** Generate: a picture from the user's own image generator, brought down to the game's pixels and set as the background. */
+/**
+ * The image generator: where its pictures go (the size: Level, Screen or one's own, shown as a box in the level), its
+ * address, and how a picture being made is going. What it paints is asked of the AI, in the card's one prompt: the AI
+ * decides what the generator paints (the backdrop) and what it makes itself (clouds drifting in front, stars).
+ */
 function GenerateBackground({ sceneId }: { sceneId: string }) {
-  const [prompt, setPrompt] = useState('');
-  // How big the picture is: the camera limits box (Level), what the camera shows (Screen), or a size of one's own.
-  const [sizeMode, setSizeMode] = useState<PictureSize>('level');
-  const [size, setSize] = useState(() => {
-    const { project } = useEditor.getState();
-    const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
-    return pixelsFor(project, limitsBox(project, scene));
-  });
+  const { sizeMode, custom, busy, message, error } = useBackgroundGen();
   const project = useEditor((s) => s.project);
   const sceneNow = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
+  const size = custom ?? pixelsFor(project, limitsBox(project, sceneNow));
   const target = pictureBox(project, sceneNow, sizeMode, size);
   const targetKey = `${target.x},${target.y},${target.w},${target.h}`;
   // The box shows in the level while this card is open: where the new picture goes, and how big it is.
@@ -293,35 +344,7 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
   useEffect(() => () => useEditor.getState().setBackgroundTarget(null), []);
   const [url, setUrl] = useState(imageWorkerUrl);
   const [settings, setSettings] = useState(false);
-  const [state, setState] = useState<{ busy: boolean; message: string | null; error: boolean }>({ busy: false, message: null, error: false });
-  const run = async () => {
-    const what = prompt.trim();
-    if (!what || state.busy) return;
-    setState({ busy: true, message: 'Making the picture… (this can take half a minute)', error: false });
-    try {
-      const { w, h } = target.pixels;
-      // Not "pixel art": image generators draw that as big fake pixels, many real pixels each, which come out far too
-      // coarse once the picture is brought down to the game's pixels. A finely detailed picture, brought down here,
-      // becomes pixel art at the game's own resolution (a small star one or two game pixels).
-      const blob = await generateImage(backgroundPrompt(what), { width: w, height: h });
-      const { project, edit, logMessage } = useEditor.getState();
-      const scene = project.scenes.find((x) => x.id === sceneId) ?? project.scenes[0];
-      const img = await pixelateTo(blob, w, h);
-      const asset = createImageAsset(what.slice(0, 40), img.data, img.width, img.height, 'png');
-      rememberOriginal(asset.id, blob);
-      // In the box shown in the level, each picture pixel one game pixel. The size of the screen stays on the screen
-      // (the usual background); others move with the level.
-      const box = pictureBox(project, scene, sizeMode, size);
-      edit('Generate background', (p) => {
-        addAsset(p, asset);
-        setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: sizeMode === 'screen' ? 0 : 1, rect: { x: box.x, y: box.y, w: box.w, h: box.h } });
-      });
-      logMessage('info', `Background made: "${what}" (${img.width}×${img.height}, the game's own pixels).`);
-      setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`, error: false });
-    } catch (e) {
-      setState({ busy: false, message: (e as Error).message, error: true });
-    }
-  };
+  const setSize = (v: { w: number; h: number }) => useBackgroundGen.setState({ custom: v });
   return (
     <div className="bg-section" data-testid="bg-generate">
       <span className="bg-label">
@@ -372,7 +395,7 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
             onClick={() => {
               // Your own size starts from the one shown now.
               if (mode === 'custom' && sizeMode !== 'custom') setSize(target.pixels);
-              setSizeMode(mode);
+              useBackgroundGen.setState({ sizeMode: mode });
             }}
           >
             {label}
@@ -393,31 +416,14 @@ function GenerateBackground({ sceneId }: { sceneId: string }) {
           </span>
         )}
       </div>
-      <div className="bg-gen-row">
-        <input
-          placeholder="Describe the picture…"
-          value={prompt}
-          aria-label="Describe the background picture"
-          data-testid="bg-gen-prompt"
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && void run()}
-        />
-        <button className="chip-btn" data-testid="bg-gen-go" disabled={!prompt.trim() || state.busy || !validWorkerUrl(imageWorkerUrl())} onClick={() => void run()}>
-          {state.busy ? 'Making…' : 'Generate'}
-        </button>
-      </div>
-      {state.message && (
-        <p className={`small ${state.error ? 'warn' : 'muted'}`} data-testid="bg-gen-status">
-          {state.message}
+      {message && (
+        <p className={`small ${error ? 'warn' : 'muted'}`} data-testid="bg-gen-status">
+          {busy && <span className="bg-gen-busy" aria-hidden="true" />}
+          {message}
         </p>
       )}
     </div>
   );
-}
-
-/** What is sent to the image generator for a background described as `what`. */
-export function backgroundPrompt(what: string): string {
-  return `${what}, video game background scenery, finely detailed digital painting with small crisp details, flat even lighting, no characters, no text`;
 }
 
 /** How the background moves as the camera moves one way (left/right or up/down): with the level, slower, or not at all. */

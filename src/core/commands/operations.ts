@@ -92,6 +92,14 @@ export const operationSchema = z.union([
       .describe('How the level is seen: "flat" (straight on) or "iso" (isometric: from above at an angle; the level plays as seen from above, gravity 0, and is drawn as diamonds with things standing upright)'),
   }),
   z.object({
+    op: z.literal('generate_background'),
+    sceneId: z.string(),
+    prompt: z.string().describe('What the image generator paints, in plain words: the scenery itself (e.g. "rolling green hills under a summer sky, distant blue mountains, a few birch trees"); its style and pixels are added by the app'),
+    size: z.enum(['level', 'screen', 'custom']).nullable().describe('level: as big as the level (moves with it); screen: as big as the screen (stays on it, the usual backdrop); custom: customSize game pixels; null = as chosen in the background card. It also becomes the card\'s setting'),
+    customSize: z.object({ width: z.number(), height: z.number() }).nullable().optional().describe('size custom: the picture\'s width and height in game pixels (8-2048 each)'),
+    parallax: z.number().nullable().describe('How it moves with the level: 0 stays on the screen, 1 moves with the level, 0.2-0.6 depth; null = the usual for its size'),
+  }),
+  z.object({
     op: z.literal('set_background'),
     sceneId: z.string(),
     color: z.string().nullable().describe('Background color "#rrggbb", or null to keep'),
@@ -104,6 +112,12 @@ export const operationSchema = z.union([
       .object({ density: z.number(), speedX: z.number(), speedY: z.number(), layers: z.number(), color: z.string() })
       .nullable()
       .describe('Stars the engine draws over the color, moving by themselves (space, flying): density = stars per 100×100 level px (10-20 typical, up to 60; 0 removes them), speedX/speedY = px a second of the nearest layer (a vertical shooter: speedY 60-200, flying up past them), layers 1-3 (depth: farther layers slower and dimmer), color "#rrggbb"; null = keep'),
+    gradient: z
+      .object({ top: z.string().describe('"#rrggbb" at the top of the screen'), bottom: z.string().describe('"#rrggbb" at the bottom'), bands: z.number().describe('0 = a smooth fade; 3-16 = that many even bands of color, as old games drew skies') })
+      .nullable()
+      .optional()
+      .describe('A fade between two colors over the screen instead of the plain color (a sky light at the top, darker at the horizon; a dark sea fading up): stays on the screen, under any picture; null = keep'),
+    removeGradient: z.boolean().nullable().optional().describe('true: back to the plain color (the fade removed)'),
   }),
   z.object({
     op: z.literal('create_definition'),
@@ -388,6 +402,8 @@ export interface ApplyResult {
   createdAssetIds: Id[];
   /** New levels (create_level), in order. */
   createdSceneIds: Id[];
+  /** Background pictures to make with the image generator (generate_background): the editor makes them afterwards. */
+  backgroundRequests?: { sceneId: Id; prompt: string; size: 'level' | 'screen' | 'custom' | null; parallax: number | null; width?: number; height?: number }[];
 }
 
 /** Largest number of cells one draw_tiles may fill. */
@@ -740,6 +756,7 @@ export function applyOperations(
           ...(op.removeImage ? { imageAssetId: null } : {}),
           ...(op.scroll ? { scroll: op.scroll } : {}),
           ...(op.stars ? { stars: { density: op.stars.density, speed: { x: op.stars.speedX, y: op.stars.speedY }, layers: op.stars.layers, color: op.stars.color } } : {}),
+          ...(op.gradient ? { gradient: { top: op.gradient.top, bottom: op.gradient.bottom, ...(op.gradient.bands > 0 ? { bands: Math.round(op.gradient.bands) } : {}) } } : op.removeGradient ? { gradient: null } : {}),
         });
         break;
       }
@@ -922,6 +939,14 @@ export function applyOperations(
         const song = findSong(project, op.music);
         if (!song) throw new m.ModelError(`There is no song "${op.music}" (make one with make_song first)`);
         music.setLevelMusic(project, op.sceneId, song.id);
+        break;
+      }
+      case 'generate_background': {
+        // (Made by the editor once this is applied: the image generator takes a while, out of this transaction.)
+        m.getScene(project, op.sceneId);
+        const cs = op.customSize;
+        if (op.size === 'custom' && !(cs && cs.width >= 8 && cs.width <= 2048 && cs.height >= 8 && cs.height <= 2048)) throw new m.ModelError('generate_background size "custom" needs customSize: width and height (8-2048 game pixels)');
+        (result.backgroundRequests ??= []).push({ sceneId: op.sceneId, prompt: op.prompt, size: op.size ?? null, parallax: op.parallax ?? null, ...(op.size === 'custom' && cs ? { width: Math.round(cs.width), height: Math.round(cs.height) } : {}) });
         break;
       }
       case 'draw_autotile': {

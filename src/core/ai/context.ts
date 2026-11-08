@@ -194,6 +194,8 @@ export interface AIPayload {
    * from (current) and the other starters there are. Build on current if it suits the request, else switch_starter.
    */
   newGame?: { current: string; starters: { id: string; is: string }[]; sprites?: 'engine' | 'ai'; spriteSize?: number };
+  /** The image generator (generate_background): whether it can be asked, and the size its pictures are made at. */
+  imageGenerator?: { ready: boolean; size: 'level' | 'screen' | 'custom'; pixels: { w: number; h: number } };
   /** A brief drawn at random for a NEW song (see "Music"): ignored when only changing a song. */
   songIdea?: SongIdea;
   /** The connection the user selected (scope "connection"): in words and as data. */
@@ -206,7 +208,7 @@ export interface AIPayload {
     name: string;
     gravity: Vec2;
     backgroundColor: string;
-    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number; parallaxY?: number; scroll?: { x: number; y: number }; stars?: { density: number; speed: { x: number; y: number }; layers: number; color: string } };
+    background: { image: { name: string; width: number; height: number } | null; fit: 'cover' | 'tile' | 'placed'; parallax: number; parallaxY?: number; scroll?: { x: number; y: number }; stars?: { density: number; speed: { x: number; y: number }; layers: number; color: string }; gradient?: { top: string; bottom: string; bands?: number } };
     isStartLevel: boolean;
     /** The level grid for drawing (draw_tiles, erase_area) and what is already drawn, in cells. */
     grid: { cell: number; occupied: { minCol: number; maxCol: number; minRow: number; maxRow: number } | null };
@@ -329,7 +331,7 @@ const SCOPE_NOTES: Record<AIContext['kind'], string> = {
   group: 'The user selected several entities (see targets) and is addressing them together ("these", "them", "all of them").',
   level: 'The user is addressing the level itself: its world settings and its contents. "here" refers to `point` if set.',
   background:
-    'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth); parallaxY when up/down should differ from left/right, e.g. "stay on screen left/right but not up/down" = parallax 0, parallaxY 1). You cannot create or edit pictures; the user uploads background images themselves.',
+    'The user is editing the level BACKGROUND (level.background, level.backgroundColor). Use set_background. "Move along with the level" / "scroll with the level" means parallax (0 fixed on screen, 1 moves with the level; about 0.3-0.6 for depth); parallaxY when up/down should differ from left/right, e.g. "stay on screen left/right but not up/down" = parallax 0, parallaxY 1). COLORS: one plain color (set_background color), or a FADE between two (set_background gradient {top, bottom, bands}: "dark blue at the bottom fading to light blue at the top" = top light blue, bottom dark blue; bands 0 smooth, 4-12 in steps like old games; removeGradient true goes back to the plain color). PICTURES: you cannot paint a big picture yourself, but the IMAGE GENERATOR can (context.imageGenerator): generate_background with the scenery described in plain words (what is in it, the time of day, the colors; the app adds the style and brings it down to the game\'s pixels); it is made after your answer and takes about half a minute, at context.imageGenerator.size (and context.imageGenerator.pixels) unless you set its size: "screen" (the screen, staying on it), "level" (as big as the level) or "custom" with customSize (width and height in game pixels) (a wide panorama, a tall tower): what you choose becomes the background card\'s setting too. DECIDE WHAT GOES WHERE: the generator paints the far, still backdrop in one picture (sky, distant mountains, hills, a skyline, a cave wall); you make yourself what is nearer or moves, as objects: clouds drifting across, birds, falling snow or leaves, mist, a sun (create_definition with a Sprite on layer -1 or lower, so it is behind the play but over the backdrop; no Collider, no PhysicsBody; draw_sprite; place a few copies at different heights and sizes; a script giving them a slow velocity, e.g. 4-15 px a second, the farther the slower, that moves each back to the other side of the level when it leaves it), and stars with set_background stars. A backdrop that stays on the screen (parallax 0) with clouds and such in the level (moving with it) looks deep: they pass in front of it. Say what the generator is painting and what you made. With context.imageGenerator.ready false, say the generator has no address yet (the background card\'s settings) and make what you can yourself.',
   project: 'The user is addressing the whole game, across all levels.',
   create: 'The user wants a NEW object added to the object library. Use create_definition. Do not place it unless asked.',
   connection:
@@ -491,6 +493,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         ...(typeof scene.world.background.parallaxY === 'number' ? { parallaxY: scene.world.background.parallaxY } : {}),
         ...(scene.world.background.scroll ? { scroll: scene.world.background.scroll } : {}),
         ...(scene.world.background.stars ? { stars: scene.world.background.stars } : {}),
+        ...(scene.world.background.gradient ? { gradient: scene.world.background.gradient } : {}),
       },
       isStartLevel: project.startSceneId === scene.id,
       grid: { cell: LEVEL_CELL, occupied: occupiedCells(scene) },

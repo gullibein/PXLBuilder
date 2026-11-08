@@ -89,6 +89,11 @@ export interface BackgroundSettings {
   scroll?: { x: number; y: number } | null;
   /** Stars drawn by the engine over the color (under the picture), moving by themselves: flying through space. */
   stars?: StarField | null;
+  /**
+   * A fade from one color at the top of the screen to another at the bottom, instead of the plain color (a sky): it
+   * stays on the screen. `bands`: in so many even steps, as old games drew it (0 or missing: smooth).
+   */
+  gradient?: { top: string; bottom: string; bands?: number } | null;
 }
 
 export interface StarField {

@@ -145,6 +145,8 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
     throw new ModelError('Background movement (up and down) must be between 0 and 1');
   }
   if (patch.scroll && !([patch.scroll.x, patch.scroll.y].every((v) => Number.isFinite(v) && Math.abs(v) <= 2000))) throw new ModelError('Background scrolling must be at most 2000 px a second each way');
+  if (patch.gradient && !(/^#[0-9a-f]{6}$/i.test(patch.gradient.top) && /^#[0-9a-f]{6}$/i.test(patch.gradient.bottom))) throw new ModelError('A background fade needs two colors "#rrggbb" (top and bottom)');
+  if (patch.gradient?.bands !== undefined && !(Number.isInteger(patch.gradient.bands) && patch.gradient.bands >= 0 && patch.gradient.bands <= 64)) throw new ModelError('A background fade has 0 (smooth) to 64 bands');
   if (patch.stars) {
     const s = patch.stars;
     if (!(Number.isFinite(s.density) && s.density >= 0 && s.density <= 60)) throw new ModelError('Stars: density must be between 0 and 60 (stars per 100×100 level pixels)');

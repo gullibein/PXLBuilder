@@ -610,6 +610,10 @@ function stubModel(body) {
       ],
     };
   }
+  if (body.context.scope === 'background' && req.includes('starry night')) {
+    // The background card's one prompt: the AI has the image generator paint the backdrop.
+    return { kind: 'apply', message: 'The image generator is painting a starry night over mountains.', changes: ['Background: a starry night over mountains (being painted)'], operations: [{ op: 'generate_background', sceneId: body.context.level.id, prompt: 'a starry night over mountains', size: null, parallax: null }] };
+  }
   if (body.context.scope === 'background' && req.includes('not up')) {
     // Stays on the screen as the camera goes left and right, moves with the level up and down.
     return { kind: 'apply', message: 'It stays on the screen sideways and moves with the level up and down.', changes: ['Background: stays on screen left/right, moves with the level up/down'], operations: [{ op: 'set_background', sceneId: body.context.level.id, color: null, fit: null, parallax: 0, parallaxY: 1, removeImage: false }] };
@@ -1761,8 +1765,7 @@ try {
     let realCalls = 0;
     await page.route('https://pxlbuilder-image.gundur.workers.dev/**', (route) => (realCalls++, route.abort()));
     const gen = bgPanel.getByTestId('bg-generate');
-    await gen.getByTestId('bg-gen-prompt').fill('x');
-    await check(async () => (await gen.getByTestId('bg-gen-url').count()) === 0 && !(await gen.getByTestId('bg-gen-go').isDisabled()), "Generate works out of the box (PXLBuilder's own image generator; no address to set)");
+    await check(async () => (await gen.getByTestId('bg-gen-url').count()) === 0 && (await gen.getByTestId('bg-gen-prompt').count()) === 0 && (await bgPanel.getByTestId('background-prompt').isVisible()), "one prompt for the background: the AI's, which asks the image generator (PXLBuilder's own, no address to set); no field of the generator's own");
     await gen.getByTestId('bg-gen-settings').click();
     await check(async () => (await gen.getByTestId('bg-gen-url').inputValue()) === 'https://pxlbuilder-image.gundur.workers.dev', '(settings show its address, and another can be set)');
     await gen.getByTestId('bg-gen-url').fill('https://pxl-test-image.example.workers.dev/');
@@ -1784,9 +1787,10 @@ try {
       const t = await targetOf();
       return t[2] - t[0] === 320 && t[3] - t[1] === 180;
     }, 'User defined: the box takes the size typed (320 × 180 game pixels)');
-    await gen.getByTestId('bg-gen-prompt').fill('a starry night over mountains');
-    await gen.getByTestId('bg-gen-go').click();
-    await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'the picture is made at the size asked for (320×180 game pixels) and becomes the background');
+    await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').fill('a starry night over mountains');
+    await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').press('Enter');
+    await check(async () => aiRequests.at(-1).context.imageGenerator?.ready === true && aiRequests.at(-1).context.imageGenerator?.size === 'custom' && aiRequests.at(-1).context.imageGenerator?.pixels.w === 320, 'the AI is told about the image generator and the size chosen (320 × 180)');
+    await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'asked in the prompt, the AI has the generator paint it at the size chosen (320×180 game pixels), and it becomes the background');
     const boxOf = async () => ((await canvas.getAttribute('data-background-box')) ?? '').split(',').map(Number);
     // (The box is written when the level is next drawn.)
     await check(async () => {

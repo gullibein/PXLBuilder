@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { generatorReady, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
@@ -182,6 +183,11 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topics = topicsFor(ctx, request, body.history);
+  // About the background (its card, or the words): the image generator's state and size go along.
+  if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {
+    const t = generatorTarget(ctx.sceneId);
+    body.context.imageGenerator = { ready: generatorReady(), size: useBackgroundGen.getState().sizeMode, pixels: t.pixels };
+  }
   // Music in the request: a song brief drawn at random goes along, so no two new songs come out the same.
   // (Familiar choices, unless the request asks for something unusual or original.)
   if (topics.includes('music')) body.context.songIdea = songIdea(Math.random, UNUSUAL_SONG_WORDS.test(request));
@@ -664,7 +670,16 @@ export function applyAIOperations(request: string, message: string, changes: str
   const touched = touchedBy(after.project, after.activeSceneId, operations);
   const ids = touched.flatMap((t) => t.entityIds);
   if (ids.length) after.flashEntities(ids);
-  return { status: 'applied', message, changes, result, touched, transactionId: after.history.past.at(-1)?.id };
+  // Background pictures the AI asked the image generator for: made now, one after another (its own Undo step each).
+  const pictures = result.backgroundRequests ?? [];
+  if (pictures.length) void (async () => {
+    for (const b of pictures) {
+      // (The size the AI chose becomes the background card's setting too.)
+      if (b.size) useBackgroundGen.setState({ sizeMode: b.size, ...(b.size === 'custom' && b.width && b.height ? { custom: { w: b.width, h: b.height } } : {}) });
+      await makeBackground(b.sceneId, b.prompt, b.size ?? undefined, b.parallax);
+    }
+  })();
+  return { status: 'applied', message, changes, result, touched, transactionId: after.history.past.at(-1)?.id, ...(pictures.length ? { note: 'The image generator is making the background picture: it takes about half a minute (the background card shows how it goes).' } : {}) };
 }
 
 /**

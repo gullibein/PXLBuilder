@@ -132,10 +132,38 @@ export interface BackgroundView {
   time?: number;
 }
 
+/** "#rrggbb" a fraction `t` of the way from `a` to `b`. */
+function mixColor(a: string, b: string, t: number): string {
+  const c = (s: string, i: number) => parseInt(s.slice(1 + i * 2, 3 + i * 2), 16);
+  const ch = (i: number) => Math.round(c(a, i) + (c(b, i) - c(a, i)) * t).toString(16).padStart(2, '0');
+  return `#${ch(0)}${ch(1)}${ch(2)}`;
+}
+
+/** The background's fade over the screen: top color to bottom color, smooth, or in `bands` even steps. */
+function drawFade(ctx: CanvasRenderingContext2D, fade: { top: string; bottom: string; bands?: number }, view: ViewSize): void {
+  const bands = fade.bands ?? 0;
+  if (bands >= 2) {
+    for (let i = 0; i < bands; i++) {
+      ctx.fillStyle = mixColor(fade.top, fade.bottom, i / (bands - 1));
+      const y0 = Math.floor((i * view.height) / bands);
+      ctx.fillRect(0, y0, view.width, Math.ceil(((i + 1) * view.height) / bands) - y0);
+    }
+    return;
+  }
+  const g = ctx.createLinearGradient(0, 0, 0, view.height);
+  g.addColorStop(0, fade.top);
+  g.addColorStop(1, fade.bottom);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.width, view.height);
+}
+
 export function drawBackground(ctx: CanvasRenderingContext2D, view: ViewSize, dpr: number, world: WorldSettings, camera: Camera, images: ImageLookup = noImages, opts: BackgroundView = {}): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = world.backgroundColor;
   ctx.fillRect(0, 0, view.width, view.height);
+  // A fade from the top of the screen to the bottom (a sky), smooth or in even bands.
+  const fade = world.background.gradient;
+  if (fade) drawFade(ctx, fade, view);
   const time = opts.time ?? 0;
   if (world.background.stars) {
     // (In the editor, inside what the camera shows at the start.)

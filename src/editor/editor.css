@@ -1041,3 +1041,11 @@ body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-selec
 .al-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .al-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2, rgba(255,255,255,0.04)); }
 .al-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A background picture being made. */
+.bg-gen-busy { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -1px; animation: bg-gen-spin 0.8s linear infinite; }
+@keyframes bg-gen-spin { to { transform: rotate(360deg); } }
+
+.bg-fade { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.bg-fade .bg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-right: 4px; }
+.bg-fade .swatch-btn { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); padding: 0; cursor: pointer; }
