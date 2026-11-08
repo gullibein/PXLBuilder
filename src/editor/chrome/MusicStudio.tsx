@@ -6,6 +6,7 @@
  * patterns of notes drawn on a piano roll, and the order the patterns play in; a song can be a level's music, or
  * be played by a script (play_music). Everything is saved with the game, and every change is one Undo step.
  */
+import { useJobs } from '../ai/jobs';
 import { JobDots } from './JobDots';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -131,6 +132,23 @@ function MusicPrompt({ kind, onClose }: { kind: 'song' | 'instrument'; onClose: 
   const assetId = kind === 'song' ? ids.song : ids.instrument;
   const ref = useRef<HTMLDivElement>(null);
   useCloseOutside(ref, onClose);
+  // A song asked for here: the card closes when it is ready (the song is in the editor; its chat stays in AI History).
+  // Only for a request that finishes while the card is open, not one found finished on opening it.
+  const working = useJobs((st) =>
+    Object.values(st.jobs)
+      .filter((j) => j.key.startsWith('song:') && j.phase === 'working')
+      .map((j) => j.key)
+      .join(','),
+  );
+  const watched = useRef(new Set<string>());
+  useEffect(() => {
+    if (kind !== 'song') return;
+    const now = new Set(working.split(',').filter(Boolean));
+    // (The requests seen working that have now finished: closed when one of them made or changed the song.)
+    const finished = [...watched.current].filter((k) => !now.has(k));
+    watched.current = now;
+    if (finished.some((k) => useJobs.getState().jobs[k]?.outcome?.status === 'applied')) onClose();
+  }, [working, kind]);
   return (
     <div className="ms-ask-card" ref={ref} data-testid="music-prompt-card">
       <PromptBox

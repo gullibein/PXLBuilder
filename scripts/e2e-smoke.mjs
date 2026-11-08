@@ -5319,6 +5319,7 @@ try {
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').fill('a new spooky song');
     await mp.getByTestId('music-song-prompt').getByTestId('prompt-input').press('Enter');
     await check(async () => (await mp.getByTestId('music-song-pick').locator('option:checked').textContent()) === 'Spooky waltz', 'a song the AI writes opens in the Songs tab (chosen in the list at the top)');
+    await check(async () => (await mp.getByTestId('music-prompt-card').count()) === 0, 'and the prompt card closes when the song is ready');
     // Songs are chosen, renamed and deleted at the top.
     await mp.getByTestId('music-song-pick').selectOption({ label: 'Song' });
     await check(async () => (await mp.getByTestId('music-channel-instrument').count()) === 6, 'choosing another song in the list at the top opens it');
