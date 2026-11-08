@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { applyOperations, type Operation } from '../commands/operations';
 import { createBuiltinRegistry } from '../components/builtin';
-import { codeFor, codeToSend } from '../ai/context';
+import { codeFor, codeToSend, mentions } from '../ai/context';
 import { createProject } from '../model/factory';
 import { scriptSchema } from './language';
 
@@ -51,5 +51,32 @@ describe('what AIs commonly write in scripts', () => {
     expect(full('make it rain')).toBe('[]');
     expect(full('the coins should spin')).toBe('["Coin"]');
     expect(full('the player should jump higher')).toBe('["Player"]');
+  });
+
+  it('also the scripts that act on what a request names, and its names in other forms (Icelandic too)', () => {
+    const p = createProject(registry);
+    const box = p.definitions.find((d) => d.name === 'Box') ?? p.definitions[0];
+    const board = p.definitions.find((d) => d.name !== box.name && !d.scripts?.length) ?? p.definitions[1];
+    box.name = 'Pillur';
+    board.name = 'Stjórnandi';
+    const handler = (act: Record<string, unknown>) => ({ when: { on: 'start' as const }, state: null, if: null, do: [act] });
+    box.scripts = [{ id: 'c', name: 'Litur', description: '', enabled: true, vars: [], states: [], handlers: [handler({ do: 'tag', tag: 'x', add: true, on: null })] }] as never;
+    board.scripts = [
+      { id: 'd', name: 'Dr. Mario', description: '', enabled: true, vars: [], states: [], handlers: [handler({ do: 'spawn', object: box.id, x: '0', y: '0', tag: 'active' }), handler({ do: 'play_sound', sound: 'Pop', volume: '1', pitch: '1' })] },
+    ] as never;
+    p.assets.push({ id: 'snd_pop', kind: 'sound', name: 'Pop' } as never);
+    for (const d of p.definitions) if (d !== box && d !== board) d.scripts = [];
+    const full = (request: string) => JSON.stringify(codeFor(p, codeToSend(p, { kind: 'level', sceneId: p.scenes[0].id, point: null }, request)).map((c) => c.name).sort());
+    // "pillurnar" is Pillur ("the pills"); the board spawns them, so its code goes too.
+    expect(full('þegar pillurnar hverfa þurfa þær að blikka')).toBe('["Pillur","Stjórnandi"]');
+    // A sound named: the script that plays it.
+    expect(full('spilum frekar "pop" hljóðið')).toBe('["Stjórnandi"]');
+    // Another form of the board's own name.
+    expect(full('breyttu Stjórnanda')).toBe('["Stjórnandi"]');
+    expect(full('gerðu lag')).toBe('[]');
+    expect(mentions(['enemies'], 'Enemy')).toBe(true);
+    expect(mentions(['coins'], 'Coin')).toBe(true);
+    expect(mentions(['corn'], 'Coin')).toBe(false);
+    expect(mentions(['the', 'goal', 'flag'], 'Goal Flag')).toBe(true);
   });
 });

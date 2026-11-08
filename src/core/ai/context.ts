@@ -607,22 +607,45 @@ function scriptsInFull(project: Project, scene: Scene, targetIds: Id[]): Set<Id>
 }
 
 /**
- * Objects whose full scripts are sent with a request without being asked for (as FULL CODE): only those the request
- * names ("make the mole shake while digging"), so the AI doesn't need a second round trip to read code it obviously
- * needs, and no request pays for code it doesn't mention. Not the selected things' own (they are in targets already).
+ * Objects whose full scripts are sent with a request without being asked for (as FULL CODE), so the AI doesn't need a
+ * second round trip to read code it obviously needs, and no request pays for code it doesn't mention: those the
+ * request names ("make the mole shake while digging"), and those whose scripts act on what it names (the board that
+ * spawns and clears the pills, the script that plays the "Pop" sound). Not the selected things' own (they are in
+ * targets already).
  */
 export function codeToSend(project: Project, ctx: AIContext, request: string): Id[] {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const inTargets = scriptsInFull(project, scene, 'entityIds' in ctx ? ctx.entityIds : []);
-  const text = request.toLowerCase();
+  const words = request.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const named = (name: string) => mentions(words, name);
+  // What the request names: objects (by name) and sounds.
+  const objects = project.definitions.filter((d) => named(d.name));
+  const sounds = project.assets.filter((a) => a.kind === 'sound' && named(a.name));
   const out: Id[] = [];
   for (const d of project.definitions) {
     if (!d.scripts?.length || inTargets.has(d.id)) continue;
-    const name = d.name.toLowerCase();
-    const named = name.length >= 3 && new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|es)?([^a-z0-9]|$)`).test(text);
-    if (named) out.push(d.id);
+    if (objects.includes(d)) {
+      out.push(d.id);
+      continue;
+    }
+    const code = JSON.stringify(d.scripts);
+    const actsOn = objects.some((o) => code.includes(`"${o.id}"`) || code.includes(`'${o.id}'`)) || sounds.some((a) => code.includes(`"sound":"${a.name}"`) || code.includes(`'${a.name}'`));
+    if (actsOn) out.push(d.id);
   }
   return out;
+}
+
+/**
+ * Whether these words (a request's, lower case) mention this name: the whole name, or for a name of 5 or more
+ * letters a word starting with all of it but its last letter, so its other forms count ("enemies" for Enemy, in
+ * Icelandic "pillurnar" for Pillur and "Stjórnanda" for Stjórnandi). A name of several words: all of them in a row.
+ */
+export function mentions(words: string[], name: string): boolean {
+  const parts = name.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  if (!parts.length || parts.join('').length < 3) return false;
+  const fits = (word: string, part: string) => word === part || word === `${part}s` || word === `${part}es` || ([...part].length >= 5 && word.startsWith(part.slice(0, -1)));
+  for (let i = 0; i + parts.length <= words.length; i++) if (parts.every((p, k) => fits(words[i + k], p))) return true;
+  return false;
 }
 
 /** A picture for the AI: its name and its pixels (an animation's frames too). */
