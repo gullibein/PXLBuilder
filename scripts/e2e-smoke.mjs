@@ -5106,6 +5106,27 @@ try {
     const se = await sp.getByTestId('sound-editor').boundingBox();
     await sp.mouse.click(se.x + 20, se.y + se.height - 12);
     await check(async () => (await sp.getByTestId('sound-prompt-card').count()) === 0, 'a click outside closes the card');
+    // Your library: the sound saved, to use in other games.
+    await sp.getByTestId('library-save-sound').click();
+    await check(async () => (await sp.getByTestId('library-note').innerText()).includes('Saved “Zap” to your library'), 'the sound is saved to your library (here: this browser)');
+    await sp.getByTestId('library-open-sound').click();
+    await check(async () => (await sp.getByTestId('audio-library').getByTestId('library-item-Zap').count()) === 1, 'your library lists it');
+    await sp.getByTestId('audio-library-close').click();
+    await sp.getByTestId('sound-editor-close').click();
+    // Another game: nothing of the first one, but the library is the same.
+    await sp.getByTestId('project-menu').click();
+    await sp.getByTestId('menu-new').click();
+    await pickStarter(sp, 'topdown');
+    await sp.getByTestId('dock-sounds').click();
+    await check(async () => !(await sp.getByTestId('sound-pick').innerText()).includes('Zap'), '(a new game has no Zap of its own)');
+    await sp.getByTestId('library-open-sound').click();
+    await sp.getByTestId('audio-library').getByTestId('library-item-Zap').getByTestId('library-add').click();
+    await check(async () => (await sp.getByTestId('audio-library').count()) === 0 && (await sp.getByTestId('sound-name').inputValue()) === 'Zap', 'added from your library to the other game, and opened there');
+    await sp.getByTestId('library-open-sound').click();
+    await sp.getByTestId('audio-library').getByTestId('library-item-Zap').getByTestId('library-delete').click();
+    await sp.getByTestId('audio-library').getByTestId('library-delete-yes').click();
+    await check(async () => (await sp.getByTestId('audio-library-empty').isVisible()) && (await sp.getByTestId('sound-name').inputValue()) === 'Zap', 'deleted from your library (asking first); the game keeps its own');
+    await sp.getByTestId('audio-library-close').click();
     await sc.close();
   }
 

@@ -4,6 +4,7 @@
  * with, and the speed. Space plays. Every finished stroke is one undoable change to the game, so the AI and the
  * user can take turns on the same sound.
  */
+import { LibraryButtons } from './AudioLibrary';
 import { JobDots } from './JobDots';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -67,7 +68,7 @@ export function SoundEditor() {
   }, [target, asset === undefined]);
   if (asset) lastSound = asset.id;
   if (!target) return null;
-  const ai = (
+  const aiButton = (
     <button
       className={`icon-btn spark-btn job-anchor${asking ? ' active' : ''}`}
       title={asset ? 'Ask the AI about this sound' : 'Ask the AI for a sound'}
@@ -80,6 +81,13 @@ export function SoundEditor() {
       ✦
       <JobDots prefixes={['sound:']} workingOnly open={asking} below />
     </button>
+  );
+  // (The ✦, then saving the open sound to the user's library and adding one of theirs: for other games.)
+  const ai = (
+    <>
+      {aiButton}
+      <LibraryButtons kind="sound" current={() => asset?.id ?? null} onAdded={(id) => useEditor.getState().setSoundEditor(id)} />
+    </>
   );
   const picker = (
     <select

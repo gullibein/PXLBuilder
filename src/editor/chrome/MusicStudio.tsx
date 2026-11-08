@@ -6,6 +6,7 @@
  * patterns of notes drawn on a piano roll, and the order the patterns play in; a song can be a level's music, or
  * be played by a script (play_music). Everything is saved with the game, and every change is one Undo step.
  */
+import { LibraryButtons } from './AudioLibrary';
 import { useJobs } from '../ai/jobs';
 import { JobDots } from './JobDots';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -78,6 +79,13 @@ export function MusicStudio() {
             {/* (Its card closed while the AI works on a song or an instrument: the dots say so.) */}
             <JobDots prefixes={['song:', 'instrument:']} workingOnly open={asking} below />
           </button>
+          {/* (Save the open song or instrument to the user's library, or add one of theirs: for other games.) */}
+          <LibraryButtons
+            key={tab}
+            kind={tab === 'songs' ? 'song' : 'instrument'}
+            current={() => (tab === 'songs' ? openIds().song : openIds().instrument)}
+            onAdded={(id) => useEditor.getState().setMusicStudio(tab === 'songs' ? { songId: id } : { instrumentId: id })}
+          />
           {tab === 'songs' && <SongBar />}
           <span className="grow" />
           <button className="icon-btn" aria-label="Close" title="Close (Esc)" data-testid="music-close" onClick={close}>
