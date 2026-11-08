@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { songIdea } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
 import { TOPICS, topicsFor } from '../../core/ai/topics';
@@ -181,6 +182,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topics = topicsFor(ctx, request, body.history);
+  // Music in the request: a song brief drawn at random goes along, so no two new songs come out the same.
+  if (topics.includes('music')) body.context.songIdea = songIdea();
   // Pictures attached: they go along, with how to read them.
   if (options.images?.length) {
     body.images = options.images;
