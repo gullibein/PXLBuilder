@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SONG_IDEA_LISTS, songIdea, UNUSUAL_SONG_WORDS } from './songIdeas';
+import { SONG_IDEA_LISTS, songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from './songIdeas';
 import { TOPICS } from './topics';
 
 /** A repeatable random sequence. */
@@ -11,7 +11,11 @@ function seeded(seed: number): () => number {
 describe('song briefs', () => {
   it('differ from song to song: time signatures, scales, progressions and melodic tricks', () => {
     const ideas = Array.from({ length: 40 }, (_, i) => songIdea(seeded(i + 1)));
-    for (const k of ['meter', 'scale', 'progression', 'drums', 'form'] as const) expect(new Set(ideas.map((x) => x[k])).size).toBeGreaterThan(3);
+    for (const k of ['meter', 'scale', 'progression', 'drums', 'form', 'sound'] as const) expect(new Set(ideas.map((x) => x[k])).size).toBeGreaterThan(3);
+    // Many ways to vary a part: two different ones a song, and many across songs.
+    for (const x of ideas) expect(x.variations[0]).not.toBe(x.variations[1]);
+    expect(new Set(ideas.flatMap((x) => x.variations)).size).toBeGreaterThan(12);
+    expect(SONG_IDEA_LISTS.FORMS.usual.length).toBeGreaterThanOrEqual(10);
     // Two melodic tricks, not the same one twice.
     for (const x of ideas) {
       expect(x.melody).toHaveLength(2);
@@ -24,7 +28,7 @@ describe('song briefs', () => {
   it('the unusual choices (5/4, 7/8, Lydian, Phrygian, key changes…) only when the user asks for an unusual or original song', () => {
     const usual = Array.from({ length: 200 }, (_, i) => songIdea(seeded(i + 1)));
     const everyUnusual = Object.values(SONG_IDEA_LISTS).flatMap((l) => l.unusual);
-    for (const x of usual) for (const v of [x.meter, x.scale, x.progression, x.drums, x.form, ...x.melody]) expect(everyUnusual).not.toContain(v);
+    for (const x of usual) for (const v of [x.meter, x.scale, x.progression, x.drums, x.form, x.sound, ...x.melody, ...x.variations]) expect(everyUnusual).not.toContain(v);
     const wild = Array.from({ length: 200 }, (_, i) => songIdea(seeded(i + 1), true));
     expect(wild.some((x) => [x.meter, x.scale, x.progression, x.drums, x.form, ...x.melody].some((v) => everyUnusual.includes(v)))).toBe(true);
     expect(UNUSUAL_SONG_WORDS.test('make me happy music')).toBe(false);
@@ -38,5 +42,12 @@ describe('song briefs', () => {
     expect(text).toContain('context.songIdea');
     expect(text).not.toMatch(/C–Am–F–G/);
     expect(text).not.toMatch(/kick on beats 0 and 8, snare on 4 and 12/);
+  });
+
+  it('a new song without instruments of its own is sent back; with them, or a rewrite, it is fine', () => {
+    expect(songInstrumentsProblem([{ op: 'make_song', replaceId: null }])).toMatch(/instruments of its own/);
+    expect(songInstrumentsProblem([{ op: 'make_instrument' }, { op: 'make_song', replaceId: null }])).toBeNull();
+    expect(songInstrumentsProblem([{ op: 'make_song', replaceId: 'mus_1' }])).toBeNull();
+    expect(songInstrumentsProblem([{ op: 'edit_song' }])).toBeNull();
   });
 });

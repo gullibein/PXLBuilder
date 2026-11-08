@@ -4,7 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { songIdea, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
+import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
 import { TOPICS, topicsFor } from '../../core/ai/topics';
@@ -310,8 +310,10 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const isoDrawn = gameOps(response) && !broken ? isoDrawingProblem(useEditor.getState().project, response.operations) : null;
     // The sprite size changed when nobody asked (the user chose it).
     const resized = gameOps(response) && !broken ? spriteSizeProblem(useEditor.getState().project, request, response.operations) : null;
+    // A new song without instruments of its own (made for its mood).
+    const ownSound = gameOps(response) && !broken ? songInstrumentsProblem(response.operations) : null;
     // (Everything wrong with it at once: one more answer fixes it all.)
-    const problem = broken ?? ([stuck?.text, unasked, undrawn, isoDrawn, resized].filter(Boolean).join('; also, ') || null);
+    const problem = broken ?? ([stuck?.text, unasked, undrawn, isoDrawn, resized, ownSound].filter(Boolean).join('; also, ') || null);
     if (problem) {
       trace?.('check', `Didn't check out: ${problem}`);
       trace?.('retry', 'Sent back once with that problem');
