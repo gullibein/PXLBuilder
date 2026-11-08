@@ -5,9 +5,9 @@
  * each of its pixels the level's pixel size; words are in the pixel font.
  */
 import type { ResolvedEntity } from '../core/model/resolve';
-import { PIXEL_FONT_ADVANCE, pixelTextSize } from './pixelFont';
+import { fitPixelFont, pixelTextSize, TINY_FONT, type PixelFont } from './pixelFont';
 import { drawEntities, type ImageLookup } from './renderer';
-import { onGrid, pixelFontScale, pixelLabel, type PixelGrid } from './screen';
+import { onGrid, pixelLabel, type PixelGrid } from './screen';
 
 export interface BuiltinHud {
   health: { current: number; max: number } | null;
@@ -44,26 +44,29 @@ function wrap(text: string, max: number): string[] {
 }
 
 /** A box of whole grid cells behind words, then the words (centered at x, y). */
-function panel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, scale: number, color: string, v: HudView): void {
+function panel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, fit: { font: PixelFont; scale: number }, color: string, v: HudView): void {
   const cell = v.grid.cell;
+  const { font, scale } = fit;
   const pad = 2 * scale;
-  const maxChars = Math.max(4, Math.floor((v.width - 4 * pad) / (PIXEL_FONT_ADVANCE * scale)));
+  const maxChars = Math.max(4, Math.floor((v.width - 4 * pad) / (font.advance * scale)));
   const lines = wrap(text, maxChars).join('\n');
-  const box = pixelTextSize(lines);
+  const box = pixelTextSize(lines, font);
   const w = box.w * scale + 2 * pad;
   const h = box.h * scale + 2 * pad;
   const left = Math.round((x - w / 2) / cell) * cell;
   const top = Math.round((y - h / 2) / cell) * cell;
   ctx.fillStyle = 'rgba(15, 12, 30, 0.85)';
   ctx.fillRect(left, top, snapUp(w, cell), snapUp(h, cell));
-  pixelLabel(ctx, lines, left + pad, top + pad, 0, 0, scale, color, cell);
+  pixelLabel(ctx, lines, left + pad, top + pad, 0, 0, scale, color, cell, font);
 }
 
 /** Draws the built-in display over the game (expects no transform: canvas pixels). */
 export function drawBuiltinHud(ctx: CanvasRenderingContext2D, hud: BuiltinHud, v: HudView, heart: ResolvedEntity | null, images: ImageLookup, clock = 0): void {
   const cell = v.grid.cell;
   const margin = snapUp(Math.max(2 * cell, 10 * v.cssPx), cell);
-  const words = pixelFontScale(14 * v.cssPx, cell);
+  const wordsFit = fitPixelFont(14 * v.cssPx, cell, v.grid.font);
+  const font = wordsFit.font;
+  const words = wordsFit.scale;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   let y = margin;
@@ -88,16 +91,19 @@ export function drawBuiltinHud(ctx: CanvasRenderingContext2D, hud: BuiltinHud, v
       y += h + 2 * cell;
     } else {
       // No Heart picture: hearts in the pixel font.
-      const scale = Math.max(words, 2 * cell);
-      for (let i = 0; i < n; i++) pixelLabel(ctx, '♥', margin + i * PIXEL_FONT_ADVANCE * scale, y, 0, 0, scale, i < hud.health.current ? '#ff4d6d' : 'rgba(255,255,255,0.3)', cell);
-      y += 6 * scale;
+      const scale = Math.max(words, font === TINY_FONT ? 2 * cell : cell);
+      for (let i = 0; i < n; i++) pixelLabel(ctx, '♥', margin + i * font.advance * scale, y, 0, 0, scale, i < hud.health.current ? '#ff4d6d' : 'rgba(255,255,255,0.3)', cell, font);
+      y += font.line * scale;
     }
   }
   for (const [item, count] of hud.items) {
-    const label = pixelLabel(ctx, count > 1 ? `${item} ×${count}` : item, margin, y, 0, 0, words, '#ffffff', cell);
+    const label = pixelLabel(ctx, count > 1 ? `${item} ×${count}` : item, margin, y, 0, 0, words, '#ffffff', cell, font);
     y += label.h + 2 * cell;
   }
-  if (hud.message) panel(ctx, hud.message, v.width / 2, v.height * 0.25, words, '#ffffff', v);
-  if (hud.banner) panel(ctx, hud.banner, v.width / 2, v.height * 0.42, Math.max(2 * cell, pixelFontScale(26 * v.cssPx, cell)), '#ffe08f', v);
+  if (hud.message) panel(ctx, hud.message, v.width / 2, v.height * 0.25, wordsFit, '#ffffff', v);
+  if (hud.banner) {
+    const big = fitPixelFont(26 * v.cssPx, cell, v.grid.font);
+    panel(ctx, hud.banner, v.width / 2, v.height * 0.42, big.font === TINY_FONT ? { font: big.font, scale: Math.max(2 * cell, big.scale) } : big, '#ffe08f', v);
+  }
   ctx.restore();
 }

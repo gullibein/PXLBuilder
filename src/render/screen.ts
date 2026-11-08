@@ -11,7 +11,7 @@ import type { DrawAnchor } from '../core/script/language';
 import type { Project } from '../core/types';
 import type { ScreenDrawing } from '../runtime/runtime';
 import { drawEntities, type ImageLookup } from './renderer';
-import { drawPixelText, pixelTextSize } from './pixelFont';
+import { drawPixelText, fitPixelFont, pixelTextSize, TINY_FONT, type PixelFont } from './pixelFont';
 
 /** Text less than this many canvas pixels tall is drawn in the pixel font (an ordinary font is a blur there). */
 export const PIXEL_FONT_BELOW = 12;
@@ -52,6 +52,8 @@ export class LookCache {
 export interface PixelGrid {
   cell: number;
   lowRes: boolean;
+  /** The pixel font that fits the game's sprite size (pixelFontFor); the tiny one when not given. */
+  font?: PixelFont;
 }
 
 /** The size a picture of `art` pixels is drawn closest to `want` canvas pixels: a whole number of the grid's cells per picture pixel. */
@@ -88,22 +90,22 @@ function artSize(look: ResolvedEntity, images: ImageLookup): { w: number; h: num
 }
 
 /** Text in the pixel font at (x, y) canvas pixels (anchored by ax, ay), `scale` canvas pixels per font pixel, with a shadow one grid cell down. */
-export function pixelLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ax: number, ay: number, scale: number, color: string, cell: number): { left: number; top: number; w: number; h: number } {
-  const box = pixelTextSize(text);
+export function pixelLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ax: number, ay: number, scale: number, color: string, cell: number, font: PixelFont = TINY_FONT): { left: number; top: number; w: number; h: number } {
+  const box = pixelTextSize(text, font);
   const w = box.w * scale;
   const h = box.h * scale;
   const left = snapTo(x - ax * w, 0, cell);
   const top = snapTo(y - ay * h, 0, cell);
   ctx.fillStyle = 'rgba(10, 8, 24, 0.7)';
-  drawPixelText(ctx, text, left, top + cell, scale);
+  drawPixelText(ctx, text, left, top + cell, scale, font);
   ctx.fillStyle = color;
-  drawPixelText(ctx, text, left, top, scale);
+  drawPixelText(ctx, text, left, top, scale, font);
   return { left, top, w, h };
 }
 
 /** The pixel font's size for text meant to be `tall` canvas pixels: a whole number of grid cells per font pixel. */
-export function pixelFontScale(tall: number, cell: number): number {
-  return cell * Math.max(1, Math.round((tall * 0.7) / 5 / cell));
+export function pixelFontScale(tall: number, cell: number, font: PixelFont = TINY_FONT): number {
+  return cell * Math.max(1, Math.round((tall * 0.7) / font.h / cell));
 }
 
 /**
@@ -142,13 +144,10 @@ function drawOnGrid(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number,
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (d.shape === 'text') {
     const tall = d.size * Math.abs(m.d);
-    if (grid.lowRes || tall < PIXEL_FONT_BELOW) {
-      pixelLabel(ctx, d.text, cx, cy, ax, ay, pixelFontScale(tall, cell), d.color, cell);
-      return;
-    }
-    // (A game without a resolution of its own: ordinary text, as given.)
-    ctx.setTransform(m);
-    drawFree(ctx, d, px, py, ax, ay, m, looks, images, clock);
+    // In the game, text keeps to its pixels too: the pixel font, as big as asked, on the grid (an ordinary font's
+    // smooth letters break a pixel-art game's look).
+    const fit = fitPixelFont(tall, cell, grid.font);
+    pixelLabel(ctx, d.text, cx, cy, ax, ay, fit.scale, d.color, cell, fit.font);
     return;
   }
   const look = d.shape === 'sprite' && d.object ? looks.get(d.object) : null;
