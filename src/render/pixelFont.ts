@@ -92,10 +92,10 @@ const GLYPHS: Record<string, string> = {
  * acute one pixel in the middle, umlaut two, ring and caron as marks of their own.
  */
 const ACCENTED: Record<string, [string, string]> = {
-  "Á": ['A', '.#.'], "É": ['E', '.#.'], "Í": ['I', '.#.'], "Ó": ['O', '.#.'], "Ú": ['U', '.#.'], "Ý": ['Y', '.#.'],
-  "À": ['A', '.#.'], "È": ['E', '.#.'], "Ò": ['O', '.#.'], "Ù": ['U', '.#.'],
+  "Á": ['A', '..#'], "É": ['E', '..#'], "Í": ['I', '..#'], "Ó": ['O', '..#'], "Ú": ['U', '..#'], "Ý": ['Y', '..#'],
+  "À": ['A', '..#'], "È": ['E', '..#'], "Ò": ['O', '..#'], "Ù": ['U', '..#'],
   "Ä": ['A', '#.#'], "Ë": ['E', '#.#'], "Ï": ['I', '#.#'], "Ö": ['O', '#.#'], "Ü": ['U', '#.#'],
-  "Â": ['A', '#.#'], "Ê": ['E', '#.#'], "Ô": ['O', '#.#'], "Å": ['A', '.#.'],
+  "Â": ['A', '#.#'], "Ê": ['E', '#.#'], "Ô": ['O', '#.#'], "Å": ['A', '..#'],
 };
 
 /** The rows of a glyph (5 of 3, joined); lower case as capitals; unknown characters a small box. */
@@ -156,7 +156,8 @@ export const FONT_5X7: PixelFont = {
       const mark = acc[1] === 'acute' ? ACUTE : UMLAUT;
       // A small letter: the accent in its own empty top rows; a capital: above it, with a row between.
       if (acc[0] === acc[0].toLowerCase()) return { rows: [mark[0], mark[1], ...base.slice(2)], top: 0 };
-      return { rows: [acc[1] === 'acute' ? '..##.' : '.#.#.', '.....', ...base], top: -2 };
+      // (An acute slants up to the right over two rows, so it doesn't read as a dot.)
+      return acc[1] === 'acute' ? { rows: ['...#.', '..#..', '.....', ...base], top: -3 } : { rows: ['.#.#.', '.....', ...base], top: -2 };
     }
     const g = GLYPHS_5X7[ch] ?? GLYPHS_5X7[ch.toUpperCase()] ?? GLYPHS_5X7[ch.toLowerCase()] ?? ['#####', '#...#', '#...#', '#...#', '#...#', '#...#', '#####'];
     return { rows: g, top: 0 };

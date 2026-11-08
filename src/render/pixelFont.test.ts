@@ -62,7 +62,8 @@ describe('the pixel font', () => {
     expect(TINY_FONT.bitmap('a').rows).toEqual(TINY_FONT.bitmap('A').rows);
     // Icelandic: þ ð æ and accents in each.
     for (const ch of ['þ', 'ð', 'æ', 'Þ', 'Ð', 'Æ', 'á', 'Ó', 'ö']) expect(FONT_5X7.bitmap(ch).rows).not.toEqual(FONT_5X7.bitmap('?').rows);
-    expect(FONT_5X7.bitmap('Á').top).toBe(-2);
+    expect(FONT_5X7.bitmap('Á').top).toBe(-3);
+    expect(FONT_5X7.bitmap('Ö').top).toBe(-2);
     expect(pixelTextSize('Hi', FONT_5X7)).toEqual({ w: 11, h: 7 });
   });
 
