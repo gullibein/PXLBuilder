@@ -3612,6 +3612,7 @@ try {
     'the game is built in a window of its own, saying what the AI is doing (no prompt card while there is nothing to edit)',
   );
   await check(async () => (await page.getByTestId('new-game-piece').isVisible()) && (await page.getByTestId('new-game-piece').locator('canvas').count()) === 1, "while it works, the game's pieces are shown one after another");
+  await check(async () => /Sent your request: 32×32 sprites, the engine's sprites/.test(await page.getByTestId('new-game-steps').innerText()), "under them, by turns with tips: the app's steps so far (first, the request as it was sent)");
   await page.screenshot({ path: `${OUT}/00b-building.png` });
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');

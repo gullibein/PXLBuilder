@@ -6,6 +6,24 @@ import { useEditor } from '../store';
 
 /** Seconds each picture is shown while the game is being built. */
 const SHOW_EACH = 2;
+/** Seconds each line under it is shown: the steps so far and a tip, by turns. */
+const LINE_EACH = 6;
+
+/** Tips for the wait: true of the editor, a line each. */
+export const BUILD_TIPS = [
+  'Click anything in the level and ask the AI about just that one.',
+  'Ctrl+K asks the AI about the whole level or the whole game.',
+  'The ♪ at the top makes sound effects, music and instruments.',
+  'Undo (Ctrl+Z) takes back anything the AI did, one step at a time.',
+  'Every rule in the game is a script: open an object\'s Details to read or change it.',
+  'Paste or drop a picture into a prompt to show the AI what you mean.',
+  'Pick an object in Objects, then draw it into the level with the pen.',
+  'The Camera panel can fit the screen exactly to the level\'s height or width.',
+  'The sprite size can be changed any time, in the ⋯ menu.',
+  'Right-click an object in Objects to ask the AI about it or redraw its sprite.',
+  'AI History shows each request, what was sent and what the AI answered.',
+  'Sounds at the bottom opens the sound editor: draw a sound note by note.',
+];
 
 /** The game's objects that have a picture: their name and picture (what can be shown while the AI works). */
 function objectPictures(project: Project): { name: string; asset: AssetRecord }[] {
@@ -31,6 +49,24 @@ export function NewGameProgress() {
   const [now, setNow] = useState(Date.now());
   const shown = useRef<string | null>(null);
   const [drawn, setDrawn] = useState<{ name: string; asset: AssetRecord }[] | null>(null);
+  // The app's own steps so far (what it really did: planning, reading a guide, moving to a starter, fixing…).
+  const [steps, setSteps] = useState<string[]>([]);
+  const tipStart = useRef(Math.floor(Math.random() * BUILD_TIPS.length));
+  const stepsFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!job) return;
+    // (Before its first stage it is only starting: not a step of its own.)
+    const now = job.stage;
+    if (stepsFor.current !== job.key) {
+      // The first step: the request as the app sent it.
+      stepsFor.current = job.key;
+      const o = job.again?.options;
+      const res = useEditor.getState().project.settings.spriteResolution ?? 32;
+      const pics = o?.images?.length ?? 0;
+      const sent = `Sent your request: ${res}×${res} sprites, ${o?.sprites === 'engine' ? "the engine's sprites" : 'drawn by the AI'}${pics ? `, ${pics} picture${pics === 1 ? '' : 's'}` : ''}`;
+      setSteps(now ? [sent, now] : [sent]);
+    } else if (now) setSteps((s) => (s.at(-1) === now ? s : [...s, now]));
+  }, [job?.key, job?.stage]);
   useEffect(() => {
     if (!job) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -95,6 +131,9 @@ export function NewGameProgress() {
   const pictures = job.again?.options.images ?? [];
   const pieces = objectPictures(project);
   const piece = pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null;
+  // Under the picture, by turns: the steps so far, then a tip.
+  const slot = Math.floor(seconds / LINE_EACH);
+  const tip = slot % 2 === 1 ? BUILD_TIPS[(tipStart.current + (slot - 1) / 2) % BUILD_TIPS.length] : null;
   return (
     <div className="dialog-backdrop">
       <section className="dialog new-game-progress" role="dialog" aria-label="Building your game" data-testid="new-game-progress">
@@ -117,6 +156,22 @@ export function NewGameProgress() {
               <figcaption>{piece.name}</figcaption>
             </figure>
           )}
+          <div className="ngp-line" key={tip ? `tip:${tip}` : `steps:${steps.length}`} data-testid={tip ? 'new-game-tip' : 'new-game-steps'}>
+            {tip ? (
+              <p className="ngp-tip">
+                <span className="ngp-tip-label">Tip</span> {tip}
+              </p>
+            ) : (
+              <ol className="ngp-steps">
+                {/* (Done: all but the one going on now, which is shown below.) */}
+                {(steps.at(-1) === job.stage ? steps.slice(0, -1) : steps).map((st, i) => (
+                  <li key={i} className="done">
+                    {st}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
           <div className="prompt-progress" aria-label="Working" />
           <p className="ngp-stage" data-testid="new-game-stage">
             {job.stage ?? 'Starting'}…
