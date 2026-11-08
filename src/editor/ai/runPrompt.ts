@@ -137,6 +137,8 @@ export interface PromptOptions {
   sprites?: 'engine' | 'ai';
   /** What it is doing now, in a few words (the New game window shows it while the game is built). */
   onStage?: (stage: string) => void;
+  /** The sprites an answer drew (its pixels), as soon as it comes back: shown while the game is built. */
+  onDrawings?: (drawn: { name: string; palette: { key: string; color: string }[]; rows: string[] }[]) => void;
 }
 
 /** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
@@ -204,8 +206,15 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   try {
     const provider = await currentProvider();
     const stage = options.onStage ?? (() => {});
+    // Every answer passes here: the sprites it drew go to whoever shows them while it works (the building window).
+    const ask: typeof provider.respond = async (b, sig, tr) => {
+      const r = await provider.respond(b, sig, tr);
+      const drawn = r.operations.flatMap((o) => (o.op === 'draw_sprite' && !o.situation ? [{ name: o.name, palette: o.palette, rows: o.rows }] : []));
+      if (drawn.length) options.onDrawings?.(drawn);
+      return r;
+    };
     stage(newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
-    response = await provider.respond(body, signal, trace);
+    response = await ask(body, signal, trace);
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
     const fetchCode = async () => {
@@ -228,7 +237,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
           stage(`Read the code of ${names}; working on it`);
           body.code = [...(body.code ?? []), ...fresh];
         }
-        response = await provider.respond(body, signal, trace);
+        response = await ask(body, signal, trace);
       }
     };
     await fetchCode();
@@ -248,13 +257,13 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: to, starters: STARTERS, sprites };
-        response = await provider.respond(body, signal, trace);
+        response = await ask(body, signal, trace);
         await fetchCode();
         // Still nothing built (or another switch): once more, plainly.
         if (response.kind === 'switch_starter' || (!response.operations.length && response.kind !== 'need_code')) {
           trace?.('retry', 'Nothing built on the new starter: asked once more, plainly');
           stage('Nothing was built yet: asking once more');
-          response = await provider.respond({ ...body, request: `${request}\n\n[The game is now on the ${switchedTo ?? starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
+          response = await ask({ ...body, request: `${request}\n\n[The game is now on the ${switchedTo ?? starterNow()} starter, as you chose (context.newGame.current). Build the whole game now, in this answer (operations); do not switch starters again.]` }, signal, trace);
         }
       }
       if (response.kind === 'switch_starter') response = { ...response, kind: 'answer', operations: [], message: response.message || 'The AI wanted another starter but did not build the game. Ask again.' };
@@ -271,7 +280,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     if (echoed(response)) {
       trace?.('retry', 'The answer only repeated the request (or was empty): asked once more');
       state.logMessage('info', 'The AI only repeated the request instead of answering; asking it again.');
-      response = await provider.respond(
+      response = await ask(
         {
           ...body,
           request: `${request}\n\n[Your previous answer only repeated this request (or said nothing), so the user got no answer. Answer it now: make the changes it asks for (operations), or, if the game already does what it asks (check the context: components, scripts, what the engine does), say so in your own words and what makes it so.]`,
@@ -316,7 +325,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         trace?.('note', `Only the ${failed.length} part(s) that failed go back; the other ${ops.length - failed.length} are kept`);
         stage(`Fixing ${failed.length === 1 ? 'one part' : `${failed.length} parts`} that didn't check out`);
         try {
-          const fix = await provider.respond(
+          const fix = await ask(
             {
               ...body,
               history: [...body.history, { request, reply: first }],
@@ -343,7 +352,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         }
       } else {
         try {
-          response = await provider.respond(
+          response = await ask(
             {
               ...body,
               history: [...body.history, { request, reply: first }],

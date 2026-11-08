@@ -32,6 +32,8 @@ export interface PromptJob {
   stage?: string;
   /** When it started (ms, Date.now). */
   started?: number;
+  /** The sprites the AI has drawn so far (pixels), from the answers that came back. */
+  drawings?: { name: string; palette: { key: string; color: string }[]; rows: string[] }[];
 }
 
 interface JobState {
@@ -77,6 +79,14 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     const job = useJobs.getState().jobs[key];
     if (job?.phase === 'working' && controllers.get(key) === controller) put(key, { ...job, stage });
   };
+  // The sprites the AI has finished so far (the latest drawing of each name).
+  const onDrawings = (drawn: NonNullable<PromptJob['drawings']>) => {
+    const job = useJobs.getState().jobs[key];
+    if (job?.phase !== 'working' || controllers.get(key) !== controller) return;
+    const byName = new Map((job.drawings ?? []).map((d) => [d.name, d]));
+    for (const d of drawn) byName.set(d.name, d);
+    put(key, { ...job, drawings: [...byName.values()] });
+  };
   // What happens under the hood (AI History → Details).
   const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
@@ -104,7 +114,7 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId, again });
   };
-  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage }).then(
+  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage, onDrawings }).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });

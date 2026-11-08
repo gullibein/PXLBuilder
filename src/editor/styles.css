@@ -169,10 +169,11 @@
 .ngp-pictures img { max-height: 96px; max-width: 160px; border-radius: 6px; border: 1px solid var(--line); image-rendering: pixelated; object-fit: contain; }
 .ngp-stage { margin: 0; font-weight: 600; }
 .ngp-show { margin: 4px 0; display: grid; justify-items: center; gap: 6px; animation: ngp-in 360ms ease-out; }
+.ngp-show img { image-rendering: pixelated; animation: ngp-bob 1s ease-in-out infinite alternate; }
+.ngp-waiting { margin: 0; text-align: center; min-height: 20px; }
 .ngp-show canvas { image-rendering: pixelated; animation: ngp-bob 1s ease-in-out infinite alternate; }
 .ngp-show figcaption, .ngp-piece figcaption { font-size: 12px; color: var(--muted, #8a90a8); }
-.ngp-line { min-height: 40px; display: grid; align-content: center; animation: ngp-in 360ms ease-out; }
-.ngp-tip { margin: 0; text-align: center; font-size: 13px; color: var(--text); }
+.ngp-tip { margin: 0; min-height: 36px; text-align: center; font-size: 13px; color: var(--text); animation: ngp-in 360ms ease-out; }
 .ngp-tip-label { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 5px; background: var(--surface-2, rgba(255,255,255,0.06)); color: var(--accent, #8b7cff); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .ngp-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 13px; }
 .ngp-steps li.done { color: var(--muted, #8a90a8); }

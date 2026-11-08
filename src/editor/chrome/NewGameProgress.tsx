@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AssetRecord, Project } from '../../core/types';
 import { stopJob, useJobs } from '../ai/jobs';
 import { SpriteImage } from '../SpriteImage';
+import { normalizePixelArt, pixelArtToSvg } from '../../core/model/pixelArt';
 import { useEditor } from '../store';
 
 /** Seconds each picture is shown while the game is being built. */
@@ -24,6 +25,15 @@ export const BUILD_TIPS = [
   'AI History shows each request, what was sent and what the AI answered.',
   'Sounds at the bottom opens the sound editor: draw a sound note by note.',
 ];
+
+/** A drawing the AI sent (palette and rows), as a picture to show. */
+function svgOf(d: { palette: { key: string; color: string }[]; rows: string[] }): string {
+  try {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(pixelArtToSvg(normalizePixelArt({ palette: d.palette, rows: d.rows })))}`;
+  } catch {
+    return '';
+  }
+}
 
 /** The game's objects that have a picture: their name and picture (what can be shown while the AI works). */
 function objectPictures(project: Project): { name: string; asset: AssetRecord }[] {
@@ -129,11 +139,15 @@ export function NewGameProgress() {
   if (!job) return null;
   const seconds = Math.max(0, Math.round((now - (job.started ?? now)) / 1000));
   const pictures = job.again?.options.images ?? [];
-  const pieces = objectPictures(project);
+  // What is shown: with the engine's sprites, the game's own pieces; else ONLY the sprites the AI has finished (from
+  // the answers back so far: none while it plans the first one).
+  const engine = job.again?.options.sprites === 'engine' && !pictures.length;
+  const pieces: { key: string; name: string; asset?: AssetRecord; svg?: string }[] = engine
+    ? objectPictures(project).map((p) => ({ key: p.asset.id, name: p.name, asset: p.asset }))
+    : (job.drawings ?? []).map((d) => ({ key: `ai:${d.name}`, name: d.name, svg: svgOf(d) }));
   const piece = pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null;
-  // Under the picture, by turns: the steps so far, then a tip.
-  const slot = Math.floor(seconds / LINE_EACH);
-  const tip = slot % 2 === 1 ? BUILD_TIPS[(tipStart.current + (slot - 1) / 2) % BUILD_TIPS.length] : null;
+  // Under the picture: a tip, a new one every few seconds.
+  const tip = BUILD_TIPS[(tipStart.current + Math.floor(seconds / LINE_EACH)) % BUILD_TIPS.length];
   return (
     <div className="dialog-backdrop">
       <section className="dialog new-game-progress" role="dialog" aria-label="Building your game" data-testid="new-game-progress">
@@ -149,30 +163,29 @@ export function NewGameProgress() {
             </div>
           )}
           <p className="chat-you">{job.again?.asked ?? job.request}</p>
-          {piece && (
+          {piece ? (
             // (One piece after another; key: each comes in with its own little animation.)
-            <figure className="ngp-show" key={piece.asset.id} data-testid="new-game-piece">
-              <SpriteImage asset={piece.asset} size={72} />
+            <figure className="ngp-show" key={piece.key} data-testid="new-game-piece" data-source={engine ? 'engine' : 'ai'}>
+              {piece.asset ? <SpriteImage asset={piece.asset} size={72} /> : <img src={piece.svg} alt="" width={72} height={72} />}
               <figcaption>{piece.name}</figcaption>
             </figure>
+          ) : (
+            <p className="ngp-waiting muted small" data-testid="new-game-no-pieces">
+              The AI&apos;s sprites show here as soon as it has drawn them.
+            </p>
           )}
-          <div className="ngp-line" key={tip ? `tip:${tip}` : `steps:${steps.length}`} data-testid={tip ? 'new-game-tip' : 'new-game-steps'}>
-            {tip ? (
-              <p className="ngp-tip">
-                <span className="ngp-tip-label">Tip</span> {tip}
-              </p>
-            ) : (
-              <ol className="ngp-steps">
-                {/* (Done: all but the one going on now, which is shown below.) */}
-                {(steps.at(-1) === job.stage ? steps.slice(0, -1) : steps).map((st, i) => (
-                  <li key={i} className="done">
-                    {st}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+          <p className="ngp-tip" key={`tip:${tip}`} data-testid="new-game-tip">
+            <span className="ngp-tip-label">Tip</span> {tip}
+          </p>
           <div className="prompt-progress" aria-label="Working" />
+          {/* At the bottom: the steps done so far, then the one going on now. */}
+          <ol className="ngp-steps" data-testid="new-game-steps">
+            {(steps.at(-1) === job.stage ? steps.slice(0, -1) : steps).map((st, i) => (
+              <li key={i} className="done">
+                {st}
+              </li>
+            ))}
+          </ol>
           <p className="ngp-stage" data-testid="new-game-stage">
             {job.stage ?? 'Starting'}…
           </p>

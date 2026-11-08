@@ -3611,8 +3611,19 @@ try {
     async () => (await page.getByTestId('new-game-progress').isVisible()) && (await page.getByTestId('global-prompt').count()) === 0 && /planning the game|building|starting/i.test(await page.getByTestId('new-game-stage').innerText()),
     'the game is built in a window of its own, saying what the AI is doing (no prompt card while there is nothing to edit)',
   );
-  await check(async () => (await page.getByTestId('new-game-piece').isVisible()) && (await page.getByTestId('new-game-piece').locator('canvas').count()) === 1, "while it works, the game's pieces are shown one after another");
-  await check(async () => /Sent your request: 32×32 sprites, the engine's sprites/.test(await page.getByTestId('new-game-steps').innerText()), "under them, by turns with tips: the app's steps so far (first, the request as it was sent)");
+  {
+    // (Read at once: the window goes as soon as the answer is in.)
+    const seen = await page.getByTestId('new-game-progress').evaluate((el) => ({
+      source: el.querySelector('[data-testid="new-game-piece"]')?.getAttribute('data-source') ?? null,
+      canvas: el.querySelectorAll('[data-testid="new-game-piece"] canvas').length,
+      tip: el.querySelector('[data-testid="new-game-tip"]')?.textContent ?? '',
+      steps: el.querySelector('[data-testid="new-game-steps"]')?.textContent ?? '',
+      order: [...el.querySelectorAll('[data-testid="new-game-piece"], [data-testid="new-game-tip"], [data-testid="new-game-steps"]')].map((x) => x.getAttribute('data-testid')),
+    }));
+    await check(seen.source === 'engine' && seen.canvas === 1, "with the engine's sprites, its pieces are shown one after another while it works");
+    await check(seen.tip.startsWith('Tip') && /Sent your request: 32×32 sprites, the engine's sprites/.test(seen.steps), `a tip under them, and the app's steps so far (first, the request as it was sent): ${seen.steps}`);
+    await check(JSON.stringify(seen.order) === JSON.stringify(['new-game-piece', 'new-game-tip', 'new-game-steps']), 'the picture, the tip under it, the steps at the bottom');
+  }
   await page.screenshot({ path: `${OUT}/00b-building.png` });
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
@@ -3665,8 +3676,9 @@ try {
     await page.getByTestId('menu-new').click();
     await page.getByTestId('game-advanced').click();
     await check(async () => (await page.getByTestId('new-sprites-ai').getAttribute('aria-checked')) === 'true' && (await page.getByTestId('new-sprites-engine').getAttribute('aria-checked')) === 'false', "New game offers AI-drawn sprites (chosen by default) or the engine's");
-    await page.getByTestId('game-idea').fill('ai drawn sprites test');
+    await page.getByTestId('game-idea').fill('ai drawn sprites test, take your time');
     await page.getByTestId('game-idea').press('Enter');
+    await check(async () => (await page.getByTestId('new-game-progress').isVisible()) && (await page.getByTestId('new-game-piece').count()) === 0 && (await page.getByTestId('new-game-no-pieces').isVisible()), "with AI-drawn sprites, none of the engine's pieces are shown: only what the AI has drawn (nothing yet while it plans)");
     // Done: what the AI drew is shown together first; then the game.
     await page.getByTestId('new-game-drawn').waitFor({ timeout: 10000 });
     await check(async () => (await page.getByTestId('new-game-drawn').innerText()).includes('Player') && (await page.getByTestId('new-game-drawn').locator('canvas').count()) >= 1, 'when the game is built, the pictures the AI drew for it are shown');
