@@ -9,6 +9,7 @@ import { expandReadyScript } from '../core/script/ready';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { Runtime } from './runtime';
+import { planCrawl } from './crawl';
 
 const registry = createBuiltinRegistry();
 
@@ -139,5 +140,119 @@ describe('ready-made enemy behaviors (side games)', () => {
     ahead.player().facing = 1;
     ahead.run(1.5);
     expect(Math.abs(ahead.enemy().x - 120)).toBeLessThan(1);
+  });
+});
+
+describe('Slime: crawls over floors, walls, ceilings and ladders to the player', () => {
+  /** The slime (the Enemy with the Slime script) at `at`, the player at `player`, the level's blocks and ladders. */
+  function slimeGame(at: Vec2, player: Vec2, blocks: Vec2[], ladders: Vec2[] = [], settings: Record<string, unknown> = {}, keepScripts = false) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d: Project) => {
+      const enemy = d.definitions.find((x) => x.name === 'Enemy')!;
+      delete enemy.components.Patrol;
+      // (Only moving here: touching the player would send it back to its start.)
+      enemy.scripts = [...(keepScripts ? (enemy.scripts ?? []) : []), scriptSchema.parse({ ...expandReadyScript({ ready: 'Slime', settings }), id: 'scr_slime' }) as never];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (const b of blocks) place('Platform', b);
+      for (const l of ladders) place('Ladder', l);
+      place('Player', player);
+      place('Enemy', at);
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    let seed = 7;
+    rt.random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const input = new InputState();
+    const slime = () => rt.entities.find((e) => e.name === 'Enemy')!;
+    const run = (seconds: number, each: () => void) => {
+      for (let t = 0; t < seconds; t += 1 / 60) {
+        rt.update(1 / 60, input);
+        each();
+      }
+    };
+    return { rt, slime, run, player: () => rt.find('Player')! };
+  }
+  const row = (y: number, x0: number, x1: number) => Array.from({ length: (x1 - x0) / 32 + 1 }, (_, i) => ({ x: x0 + i * 32, y }));
+  const column = (x: number, y0: number, y1: number) => Array.from({ length: (y1 - y0) / 32 + 1 }, (_, i) => ({ x, y: y0 + i * 32 }));
+
+  it('climbs up a wall to the player standing on top of it, its underside turned to the wall', () => {
+    const g = slimeGame({ x: -80, y: 16 }, { x: 80, y: -112 }, [...row(48, -144, 144), ...column(80, -80, 16)]);
+    let closest = Infinity;
+    let climbed = false;
+    let turned = false;
+    g.run(10, () => {
+      const s = g.slime();
+      closest = Math.min(closest, Math.hypot(s.x - g.player().x, s.y - g.player().y));
+      if (Math.abs(s.x - 48) < 2 && s.y < -40) climbed = true;
+      if (Math.abs(s.angle - 270) < 5 || Math.abs(s.angle + 90) < 5) turned = true;
+    });
+    expect(climbed).toBe(true);
+    expect(turned).toBe(true);
+    expect(closest).toBeLessThan(36);
+  });
+
+  it('crawls along the ceiling and drops onto the player below', () => {
+    const g = slimeGame({ x: -80, y: -80 }, { x: 80, y: 16 }, [...row(48, -144, 144), ...row(-112, -144, 144)]);
+    let fell = false;
+    let upsideDown = false;
+    let closest = Infinity;
+    g.run(8, () => {
+      const s = g.slime();
+      if (s.vy > 250) fell = true;
+      if (Math.abs(Math.abs(s.angle) - 180) < 5) upsideDown = true;
+      closest = Math.min(closest, Math.hypot(s.x - g.player().x, s.y - g.player().y));
+    });
+    expect(upsideDown).toBe(true);
+    expect(fell).toBe(true);
+    expect(closest).toBeLessThan(36);
+  });
+
+  it('goes up a ladder standing in the open to a platform it could not get to otherwise', () => {
+    const blocks = [...row(48, -144, 144), ...row(-112, 48, 144)];
+    const ladder = column(16, -80, 16);
+    const withLadder = slimeGame({ x: -100, y: 16 }, { x: 112, y: -144 }, blocks, ladder);
+    let up = Infinity;
+    withLadder.run(10, () => (up = Math.min(up, withLadder.slime().y)));
+    expect(up).toBeLessThan(-130);
+    const without = slimeGame({ x: -100, y: 16 }, { x: 112, y: -144 }, blocks);
+    let up2 = Infinity;
+    without.run(6, () => (up2 = Math.min(up2, without.slime().y)));
+    expect(up2).toBeGreaterThan(-20);
+  });
+
+  it('dropping onto the player hurts it (the enemy keeps its own Hurts on touch script)', () => {
+    const g = slimeGame({ x: 80, y: -80 }, { x: 80, y: 16 }, [...row(48, -144, 144), ...row(-112, -144, 144)], [], {}, true);
+    g.run(2, () => {});
+    expect(g.rt.eventLog.some((e) => e.type === 'damaged')).toBe(true);
+  });
+
+  it('with sight, it waits stuck where it is until it sees the player that near', () => {
+    const g = slimeGame({ x: -112, y: 16 }, { x: 112, y: 16 }, [...row(48, -144, 144), ...column(0, -48, 16)], [], { sight: 120 });
+    let moved = 0;
+    g.run(3, () => (moved = Math.max(moved, Math.abs(g.slime().x + 112))));
+    expect(moved).toBeLessThan(1);
+  });
+});
+
+describe('planCrawl: the way a crawler plans', () => {
+  // A long room two squares tall: floor and ceiling.
+  const solidAt = (_x: number, y: number) => (y > 32 && y < 64) || (y > -64 && y < -32);
+  const world = (random: () => number) => ({ solidAt, ladderAt: () => false, canSee: () => true, random, time: 0 });
+
+  it('without wander it always takes the shortest way; with wander some ways go another way', () => {
+    const shortest = planCrawl(world(Math.random), 32, { x: -240, y: 16 }, { x: 240, y: 16 }, 0);
+    expect(shortest).toHaveLength(15);
+    expect(shortest.every((c) => c.y === 16)).toBe(true);
+    let seed = 1;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const ways = new Set(Array.from({ length: 12 }, () => JSON.stringify(planCrawl(world(rnd), 32, { x: -240, y: 16 }, { x: 240, y: 16 }, 1.5))));
+    expect(ways.size).toBeGreaterThan(1);
+  });
+
+  it('drops from the ceiling when that is the way to something below', () => {
+    const tall = { ...world(Math.random), solidAt: (_x: number, y: number) => (y > 32 && y < 64) || (y > -128 && y < -96) };
+    const way = planCrawl(tall, 32, { x: -240, y: -80 }, { x: 240, y: 16 }, 0);
+    expect(way.some((c) => c.drop)).toBe(true);
+    expect(way.at(-1)).toMatchObject({ x: 240, y: 16 });
   });
 });

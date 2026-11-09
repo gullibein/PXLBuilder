@@ -395,6 +395,22 @@ export class ScriptSystem {
         if (t.vy < 0) t.grounded = false;
         break;
       }
+      case 'crawl': {
+        const t = ent(s.target);
+        if (t && t !== e)
+          this.rt.crawl(
+            e,
+            t,
+            {
+              speed: Math.max(0, n(s.speed)),
+              wander: s.wander === null ? 0.5 : Math.max(0, n(s.wander)),
+              replan: s.replan === null ? 1 : Math.max(0.1, n(s.replan)),
+              dropOn: s.drop_on === null ? true : truthy(this.eval(s.drop_on, ctx)),
+            },
+            this.stepDt,
+          );
+        break;
+      }
       case 'chase': {
         const t = ent(s.target);
         if (t && t !== e) this.rt.chase(e, t, n(s.speed));

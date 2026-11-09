@@ -90,6 +90,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`${who(s.on)}push by ${x(s.x)}, ${x(s.y)}`);
     case 'chase':
       return one(`chase ${x(s.target)} at ${x(s.speed)}`);
+    case 'crawl':
+      return one(`crawl over walls and ceilings to ${x(s.target)} at ${x(s.speed)}`);
     case 'heading':
       return one(`look ${x(s.x)}, ${x(s.y)}`);
     case 'carry':

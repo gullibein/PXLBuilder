@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
 import { Fog } from './fog';
 import { buildLevel, newSeed, type Dungeon } from '../core/model/dungeon';
 import { patchGenerator } from '../core/model/mutations';
@@ -130,6 +131,8 @@ export interface RuntimeEntity {
   turn: { to: number; speed: number } | null;
   /** Keeps turning at this many degrees/s (spin; 0 = not spinning). */
   spin: number;
+  /** Crawling over surfaces (the "crawl" statement): its planned way, null before it first crawls. */
+  crawl: CrawlState | null;
   /** Drawn mirrored by a level flip (-1) or not (1), per axis; flipT: during a flip, how far its own turn is (0-1). */
   mirror: { x: 1 | -1; y: 1 | -1 };
   flipT: number | null;
@@ -459,6 +462,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     angle: 0,
     turn: null,
     spin: 0,
+    crawl: null,
     mirror: { x: 1, y: 1 },
     flipT: null,
     trail: c.Trail ? { length: Math.min(2, Math.max(0.02, num(c.Trail.length, 0.15))), points: [] } : null,
@@ -1609,6 +1613,33 @@ export class Runtime {
       }
     }
     if (Math.abs(dx) > 2) f.facing = dx < 0 ? -1 : 1;
+  }
+
+  /**
+   * One step of crawling to `target` over floors, walls, ceilings and ladders (crawl.ts): its gravity is off while
+   * it crawls, and it turns so its underside faces what it holds on to.
+   */
+  crawl(e: RuntimeEntity, target: RuntimeEntity, o: { speed: number; wander: number; replan: number; dropOn: boolean }, dt: number): void {
+    // (Squares of the editor's grid, as many to a side as its body needs: a 30 px slime on a 16 px grid crawls 32 px squares.)
+    const grid = Math.max(4, this.project.settings.gridSize || 32);
+    const body = boxOf(e) ?? zoneOf(e);
+    const cell = grid * Math.max(1, Math.ceil((2 * Math.max(body.hw, body.hh)) / grid - 0.01));
+    e.gravityScale = 0;
+    e.crawl ??= { path: [], planned: -Infinity, falling: false };
+    const world: CrawlWorld = {
+      solidAt: (x, y) => this.solids.some((b) => Math.abs(x - b.x) < b.hw && Math.abs(y - b.y) < b.hh),
+      ladderAt: (x, y) => this.ladders.some((l) => Math.abs(x - l.x) < l.hw && y > l.top && y < l.bottom),
+      canSee: (a, b) => this.canSee(a, b),
+      random: () => this.random(),
+      time: this.time,
+    };
+    const them = zoneOf(target);
+    const { angle } = crawlStep(world, e, e.crawl, { x: target.x, y: target.y, hw: them.hw }, { cell, ...o, dt });
+    if (angle !== null) {
+      const now = e.turn?.to ?? e.angle;
+      const delta = ((((angle - now) % 360) + 540) % 360) - 180;
+      if (Math.abs(delta) > 0.5) e.turn = { to: now + delta, speed: 900 };
+    }
   }
 
   /** A wall right in front of it that way (sideways, or up/down): the box a patroller turns at. */

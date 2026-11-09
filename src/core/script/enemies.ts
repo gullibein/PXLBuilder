@@ -267,6 +267,40 @@ export const SHY_GHOST_SCRIPT = {
   ],
 };
 
+/**
+ * Slime: crawls over floors, walls, ceilings and ladders to the player, by a way it plans again now and then, with a
+ * bit of chance so it isn't always the shortest; drops from a ceiling when that is the way, or onto the player
+ * right below. Touching hurts through the enemy's own Hurts on touch script.
+ */
+export const SLIME_SCRIPT = {
+  name: 'Slime',
+  description:
+    'Crawls over floors, walls, ceilings and ladders toward the player, finding its way again every replan seconds, not always the shortest (wander 0-1); drops from a ceiling when that is the way, and onto the player right below (drop_on). With sight > 0 it waits stuck where it is until it sees the player that near.',
+  vars: [
+    { name: 'speed', value: 45, setting: true },
+    { name: 'wander', value: 0.6, setting: true },
+    { name: 'replan', value: 1.5, setting: true },
+    { name: 'drop_on', value: true, setting: true },
+    { name: 'sight', value: 0, setting: true },
+    { name: 'hunting', value: false },
+  ],
+  handlers: [
+    { when: { on: 'start' }, do: [gravity('0')] },
+    {
+      when: { on: 'tick' },
+      if: FREE,
+      do: [
+        when('not hunting and nearest_player() and (sight <= 0 or (dist(nearest_player()) <= sight and can_see(nearest_player())))', [set('hunting', 'true')]),
+        when(
+          'hunting and nearest_player()',
+          [{ do: 'crawl', target: 'nearest_player()', speed: 'speed * self.speed_factor', wander: 'wander', replan: 'replan', drop_on: 'drop_on' }],
+          [vel('0', '0')],
+        ),
+      ],
+    },
+  ],
+};
+
 /** The enemy behaviors by name (the names the AI asks for with "ready"). */
 export const ENEMY_SCRIPTS = {
   Walker: WALKER_SCRIPT,
@@ -276,4 +310,5 @@ export const ENEMY_SCRIPTS = {
   Dropper: DROPPER_SCRIPT,
   Charger: CHARGER_SCRIPT,
   'Shy ghost': SHY_GHOST_SCRIPT,
+  Slime: SLIME_SCRIPT,
 };
