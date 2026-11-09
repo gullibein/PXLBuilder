@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { create } from 'zustand';
 import type { StarField } from '../../core/types';
 import { createImageAsset } from '../../core/model/factory';
 import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
@@ -10,6 +11,9 @@ import { limitsBox, pictureBox, pixelsFor, placeBackground } from '../background
 import { PromptBox } from '../prompt/PromptBox';
 import { ColorButton } from './ColorPicker';
 import { getActiveScene, useEditor } from '../store';
+
+/** Whether the card's Advanced part (color, image, generator, stars) is open: closed each time the card closes. */
+export const useBackgroundAdvanced = create<{ open: boolean }>(() => ({ open: false }));
 
 const SWATCHES = [
   { name: 'Dark (default)', color: '#1d2330' },
@@ -32,6 +36,10 @@ export function BackgroundPanel() {
   const scene = useEditor(getActiveScene);
   const asset = useEditor((s) => s.project.assets.find((a) => a.id === getActiveScene(s).world.background.imageAssetId));
   const fileRef = useRef<HTMLInputElement>(null);
+  const advanced = useBackgroundAdvanced((s) => s.open);
+  useEffect(() => {
+    if (!open) useBackgroundAdvanced.setState({ open: false });
+  }, [open]);
   if (!open) return null;
   const { edit, setBackgroundOpen, logMessage } = useEditor.getState();
   const sid = scene.id;
@@ -71,6 +79,25 @@ export function BackgroundPanel() {
         </button>
       </header>
 
+      {/* The one prompt: the AI paints the backdrop with the image generator and makes the rest itself. */}
+      <div className="bg-prompt">
+        <div className="bg-ai" aria-hidden="true" />
+        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
+      </div>
+
+      {/* Everything else by hand: under Advanced, closed each time the card opens. */}
+      <button
+        type="button"
+        className={`chip-btn bg-advanced${advanced ? ' on' : ''}`}
+        aria-expanded={advanced}
+        data-testid="bg-advanced"
+        onClick={() => useBackgroundAdvanced.setState({ open: !advanced })}
+      >
+        Advanced {advanced ? '▴' : '▾'}
+      </button>
+
+      {advanced && (
+      <>
       <div className="bg-section">
         <span className="bg-label">Color</span>
         <div className="swatches" role="radiogroup" aria-label="Background color">
@@ -156,12 +183,6 @@ export function BackgroundPanel() {
 
       <GenerateBackground sceneId={sid} />
 
-      {/* The one prompt: the AI paints the backdrop with the image generator and makes the rest itself. */}
-      <div className="bg-prompt">
-        <div className="bg-ai" aria-hidden="true" />
-        <PromptBox key={sid} ctx={{ kind: 'background', sceneId: sid }} placeholder="Ask the AI…" testId="background-prompt" onEscape={() => setBackgroundOpen(false)} />
-      </div>
-
       {asset && (
         <div className="bg-section">
           <span className="bg-label">Fit</span>
@@ -234,6 +255,8 @@ export function BackgroundPanel() {
       )}
 
       <Stars sceneId={sid} stars={bg.stars ?? null} edit={edit} />
+      </>
+      )}
 
     </section>
   );

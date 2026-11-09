@@ -7,6 +7,7 @@ import { CHROME_INSETS } from '../viewport/Viewport';
 import { getSelectionContext, useEditor } from '../store';
 import { subscribeAnchor } from './anchor';
 import { placePrompt } from './placement';
+import { useBackgroundAdvanced } from '../chrome/BackgroundPanel';
 import { PromptBox } from './PromptBox';
 
 /**
@@ -112,7 +113,7 @@ export function ContextPrompt() {
           className="chip-btn small camera-settings-btn"
           data-testid="background-settings-btn"
           title="The Background card: the picture, its size, how it fills and moves, the color…"
-          onClick={() => useEditor.getState().setBackgroundOpen(true)}
+          onClick={() => (useEditor.getState().setBackgroundOpen(true), useBackgroundAdvanced.setState({ open: true }))}
         >
           Settings
         </button>

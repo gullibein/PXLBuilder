@@ -183,7 +183,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     trace?.('note', `Sent along: the pictures of ${looks.map((c) => c.name.replace(/^the pictures of /, '')).join(', ')}`);
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
-  const topics = topicsFor(ctx, request, body.history);
+  const topics = topicsFor(ctx, request, body.history, !!options.newGame || (ctx.kind === 'project' && makesAGame(request)));
   // About the background (its card, or the words): the image generator's state and size go along.
   if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {
     const t = generatorTarget(ctx.sceneId);

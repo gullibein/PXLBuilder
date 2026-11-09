@@ -23,6 +23,12 @@ describe('guidance only some requests need', () => {
     expect(topicsFor(level, 'Make a Tetris game')).toContain('falling_blocks');
     expect(topicsFor(level, 'here is a retro space shooter. please make this game')).toContain('shooters');
     expect(topicsFor(level, 'make a platformer with coins')).not.toContain('shooters');
+    expect(topicsFor(level, 'make a Lode Runner game')).toContain('enemies');
+    expect(topicsFor(level, 'the enemies should walk like goombas')).toContain('enemies');
+    expect(topicsFor(level, 'a game about a cat collecting yarn')).not.toContain('enemies');
+    expect(topicsFor(level, 'a game about a cat collecting yarn', [], true)).toContain('enemies');
+    expect(TOPICS.enemies.text).toContain('"Walker"');
+    expect(TOPICS.enemies.text).toContain('turn_at_ledges false');
     expect(topicsFor(level, 'make it a turn-based game, one square per key press')).toContain('grid_games');
     expect(topicsFor(level, 'Make the player run faster')).toEqual([]);
     expect(topicsFor(level, 'a bit higher', [{ request: 'the coin plays a ding sound' }])).toContain('sounds');

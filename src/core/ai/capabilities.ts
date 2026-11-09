@@ -259,6 +259,7 @@ Top-down games (seen from above: Zelda, Rogue, Pac-Man, twin-stick shooters)
 - Enemies seen from above: Wander walks around at random (four ways, turning at walls, the classic slime or bat); Patrol with startDirection left/right goes back and forth sideways, up/down goes up and down; a "follows" relationship chases the player in every direction; Shooter direction "facing" shoots the way it last moved (a top-down player shoots the way it last walked, X); a Stomp script does nothing without gravity (nothing lands on anything: fight with shots, or a script).
 - Sprites seen from above: the up and down situations are shown while moving up or down the screen (run while moving sideways, mirrored for left), so a character can face away from or toward the camera.
 - Levels are checked by walking: everything the player needs must be reachable through free cells (doors count as open); answers that fail come back with the problem.
+- Enemy behaviors for side-view games (Walker, Chaser, Hopper, Wave flyer, Dropper, Charger, Shy ghost: ready-made scripts to pick by the kind of game and build on): topic "enemies" (attached to requests about it; otherwise ask with need_code "topic:enemies").
 - Falling-block puzzles (Tetris, Columns, Dr. Mario): topic "falling_blocks" (attached to requests about it; otherwise ask with need_code "topic:falling_blocks").
 - Grid and turn-based games (Rogue, Sokoban, one square per key press): topic "grid_games" (attached to requests about it; otherwise ask with need_code "topic:grid_games").
 

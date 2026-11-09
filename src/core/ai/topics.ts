@@ -5,9 +5,15 @@
  * pointer to each.
  */
 import { SWOOPER_SCRIPT } from '../script/swooper';
+import { ENEMY_SCRIPTS } from '../script/enemies';
 
 const SWOOPER_SETTINGS = SWOOPER_SCRIPT.vars.filter((v) => v.setting).map((v) => `${v.name} ${JSON.stringify(v.value)}`).join(', ');
 import type { AIContext } from './context';
+
+/** Each ready-made enemy behavior with its settings and defaults, for the enemies topic. */
+const ENEMY_LIST = Object.entries(ENEMY_SCRIPTS)
+  .map(([name, sc]) => `"${name}": ${sc.description} Settings: ${sc.vars.filter((v) => v.setting).map((v) => `${v.name} ${JSON.stringify(v.value)}`).join(', ')}.`)
+  .join('\n  ');
 
 export interface Topic {
   title: string;
@@ -50,6 +56,16 @@ export const TOPICS: Record<string, Topic> = {
   * Waves: winning is none_left of the enemies (complete_level), or more waves: a rule or script that, when none are left, spawns the next formation (spawn at the formation places; they fly in again).
   * SHOTS: never the built-in pill. Every shooter's shots are their own library object (create_definition with a Sprite of the shot's size, e.g. 6x16 for a bolt, 10x10 for a ball, a Collider; then draw_sprite, drawn POINTING RIGHT: the engine turns it the way it flies) set as its Shooter.projectile (the create_definition ref). Each kind of shot looks different and fits who fires it: the player's (a long cyan laser bolt, twin plasma beads, a fire streak), the small enemies' (red pellets, green acid blobs), the boss's (a big purple orb, a spread of spikes). Give them light and motion: Glow (color like the shot, size 6-14, strength 0.5-0.9, pulse 2-6 for an orb) and Trail (style "fade" for a laser streak, "sparks" for fire or plasma, "dots" for bullets; length 0.08-0.25 s; color a darker or hotter shade of the shot). Explosions: a defeated look (SpriteStates.defeated) and a sound.
   Swooper's settings and defaults: ${SWOOPER_SETTINGS}.`,
+  },
+  enemies: {
+    title: 'Enemy behaviors for side-view games',
+    scopes: [],
+    words: /enem|goomba|koopa|baddie|monster|\bfoes?\b|guard|lode ?runner|mario|platform(er|ing)? game|castlevania|ghosts? ?n|boo\b|thwomp|bat\b|frog|bull\b/i,
+    text: `- ENEMY BEHAVIORS. Enemies behave as the KIND OF GAME does: a Mario-like enemy walks one way and turns at what it hits; a Lode Runner-like guard hunts the player by ladders. Ready-made enemy behaviors (set_script on the enemy object with scriptJson {"ready": name, "settings": {...only the settings that differ}}; never write them out, the app does):
+  ${ENEMY_LIST}
+  The built-in Patrol component (walks back and forth, climbs ladders now and then, chases the player it sees) is the plain default; for a game of a known kind pick the behavior that game's enemies have: Mario-like -> Walker (Goomba: turn_at_ledges false; a red Koopa: true), Hopper for frogs; Lode Runner-like -> Chaser (sight 0, drop_down true); Castlevania-like -> Wave flyer for bats and Medusa heads, Dropper for crushers, Charger for brutes; haunted levels -> Shy ghost. Several kinds of enemies in one game: one object each, each with its own behavior and drawing.
+  Giving an enemy one of these (in a new game, or when the user asks for enemies like that): remove its Patrol and Wander components (remove_component) in the same reply, and keep its Stomp and Hurts on touch scripts (they hurt and defeat it; these only move it). Fliers (Wave flyer, Dropper, Shy ghost) switch their gravity off themselves.
+  BUILD ON THEM: when the game wants more than the settings give (a Walker that speeds up when it sees the player, a Chaser that waits a moment after climbing, a Hopper that jumps higher at the player), first set_script the ready-made one, then change it with edit_script in the same reply (only the lines that differ), rather than writing a new script from nothing.`,
   },
   pictures: {
     title: 'Pictures the user attached',
@@ -125,9 +141,10 @@ export const TOPICS: Record<string, Topic> = {
 };
 
 /** The topics a request needs: by the card it was asked on, and the words in it (or in what it follows up on). */
-export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = []): string[] {
+export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = [], newGame = false): string[] {
   const text = [request, ...history.slice(-2).map((h) => h.request)].join('\n');
   return Object.entries(TOPICS)
-    .filter(([k, t]) => t.scopes.includes(ctx.kind) || t.words.test(text) || (k === 'panels' && ctx.kind === 'object' && ctx.panel === true))
+    // (A whole new game decides its enemies too.)
+    .filter(([k, t]) => t.scopes.includes(ctx.kind) || t.words.test(text) || (k === 'panels' && ctx.kind === 'object' && ctx.panel === true) || (k === 'enemies' && newGame))
     .map(([k]) => k);
 }

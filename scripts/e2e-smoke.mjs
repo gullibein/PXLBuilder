@@ -1691,6 +1691,9 @@ try {
   await page.getByTestId('tool-background').click();
   const bgPanel = page.getByTestId('background-panel');
   await check(async () => (await bgPanel.isVisible()) && (await prompts.count()) === 0, 'the background card opens (and is the only card)');
+  await check(async () => (await bgPanel.getByTestId('background-prompt').isVisible()) && (await bgPanel.locator('.swatch-btn').count()) === 0 && (await bgPanel.getByTestId('bg-generate').count()) === 0, 'it shows only the AI prompt and an Advanced button');
+  await bgPanel.getByTestId('bg-advanced').click();
+  await check(async () => (await bgPanel.locator('.swatch-btn').count()) > 0 && (await bgPanel.getByTestId('bg-generate').isVisible()) && (await bgPanel.getByTestId('bg-upload').isVisible()), 'Advanced opens the color, the image upload and the image generator');
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Dark (default)' }).getAttribute('aria-checked')) === 'true', 'a new project starts with the dark background');
   await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');
@@ -3778,6 +3781,7 @@ try {
       await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
       await page.keyboard.press('Escape');
       await page.getByTestId('tool-background').click();
+      await page.getByTestId('bg-advanced').click();
       await check(async () => (await page.getByTestId('bg-stars-on').isChecked()) && (await page.getByTestId('bg-stars-layers').inputValue()) === '3', 'the moving stars show in the Background panel (on, 3 layers deep), to change by hand');
       await page.getByTestId('bg-stars-on').uncheck();
       await check(async () => (await page.getByTestId('undo').getAttribute('title')).includes('Remove the stars'), '(switched off there, one undo step)');
