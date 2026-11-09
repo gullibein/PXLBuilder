@@ -4,7 +4,8 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { generatorReady, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
+import { setJobNote } from './jobs';
+import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
@@ -186,7 +187,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   // About the background (its card, or the words): the image generator's state and size go along.
   if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {
     const t = generatorTarget(ctx.sceneId);
-    body.context.imageGenerator = { ready: generatorReady(), size: useBackgroundGen.getState().sizeMode, pixels: t.pixels };
+    const st = generatorStatus();
+    const lastError = useBackgroundGen.getState().lastError;
+    body.context.imageGenerator = { ready: st.ready, ...(st.why ? { why: st.why } : {}), ...(lastError ? { lastError } : {}), size: useBackgroundGen.getState().sizeMode, pixels: t.pixels };
   }
   // Music in the request: a song brief drawn at random goes along, so no two new songs come out the same.
   // (Familiar choices, unless the request asks for something unusual or original.)
@@ -472,7 +475,7 @@ export function applyResponse(ctx: AIContext, request: string, response: AIRespo
       return moved(out.status === 'applied' ? { ...out, asNew: change } : out);
     }
   }
-  return moved(applyAIOperations(request, response.message, response.changes, response.operations));
+  return moved(applyAIOperations(request, response.message, response.changes, response.operations, contextKey(ctx)));
 }
 
 /** Operations that go with a change to one thing without being about anything else (a sound for it to play). */
@@ -650,7 +653,7 @@ export function applyObjectChoice(request: string, outcome: ObjectChange, as: 'o
 }
 
 /** Applies AI operations as one transaction. Invalid operations reject the whole set. */
-export function applyAIOperations(request: string, message: string, changes: string[], operations: Operation[]): PromptOutcome {
+export function applyAIOperations(request: string, message: string, changes: string[], operations: Operation[], jobKey?: string): PromptOutcome {
   if (operations.some(isEditorOperation)) return applyEditorOperations(message, changes, operations);
   const { edit, logMessage } = useEditor.getState();
   let result: ApplyResult = EMPTY_RESULT;
@@ -674,12 +677,14 @@ export function applyAIOperations(request: string, message: string, changes: str
   const pictures = result.backgroundRequests ?? [];
   if (pictures.length) void (async () => {
     for (const b of pictures) {
-      // (The size the AI chose becomes the background card's setting too.)
+      // (The size the AI chose becomes the Background panel's setting too.)
       if (b.size) useBackgroundGen.setState({ sizeMode: b.size, ...(b.size === 'custom' && b.width && b.height ? { custom: { w: b.width, h: b.height } } : {}) });
-      await makeBackground(b.sceneId, b.prompt, b.size ?? undefined, b.parallax);
+      const done = await makeBackground(b.sceneId, b.prompt, b.size ?? undefined, b.parallax);
+      // (The answer's card says how it went: ready, or why not.)
+      if (jobKey) setJobNote(jobKey, done.ok ? `✓ ${done.message}` : `⚠ ${done.message}`);
     }
   })();
-  return { status: 'applied', message, changes, result, touched, transactionId: after.history.past.at(-1)?.id, ...(pictures.length ? { note: 'The image generator is making the background picture: it takes about half a minute (the background card shows how it goes).' } : {}) };
+  return { status: 'applied', message, changes, result, touched, transactionId: after.history.past.at(-1)?.id, ...(pictures.length ? { note: 'The image generator is painting the background picture: it takes about half a minute. This line changes when it is ready.' } : {}) };
 }
 
 /**

@@ -14,7 +14,7 @@ import { gridFor } from '../model/spriteResolution';
 import { produce } from 'immer';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
-import { createAnimatedPixelArtAsset, createDefinition, createLevelFor, instantiateDefinition, MAX_FRAMES } from '../model/factory';
+import { createAnimatedPixelArtAsset, createDefinition, createPixelArtAsset, createLevelFor, instantiateDefinition, MAX_FRAMES } from '../model/factory';
 import { buildPath } from './buildPath';
 import { soundDataUrl } from '../audio/sound';
 import { parseSteps } from '../audio/steps';
@@ -90,6 +90,14 @@ export const operationSchema = z.union([
       .nullable()
       .optional()
       .describe('How the level is seen: "flat" (straight on) or "iso" (isometric: from above at an angle; the level plays as seen from above, gravity 0, and is drawn as diamonds with things standing upright)'),
+  }),
+  z.object({
+    op: z.literal('paint_background'),
+    sceneId: z.string(),
+    name: z.string().describe('Short name for the picture, e.g. "Summer hills"'),
+    palette: z.array(z.object({ key: z.string().describe('One letter or digit'), color: z.string().describe('"#rrggbb"') })).describe('Its colors ("." is transparent: the background color or fade shows through)'),
+    rows: z.array(z.string()).describe('Pixel rows, top to bottom, all the same length: 48-160 wide, 27-100 tall (e.g. 96 × 54); it fills the screen\'s height and repeats sideways, so its left and right edges should meet'),
+    parallax: z.number().describe('How it moves with the level: 0 stays on the screen (the usual backdrop), 0.1-0.5 slow (far away), 1 with the level'),
   }),
   z.object({
     op: z.literal('generate_background'),
@@ -939,6 +947,23 @@ export function applyOperations(
         const song = findSong(project, op.music);
         if (!song) throw new m.ModelError(`There is no song "${op.music}" (make one with make_song first)`);
         music.setLevelMusic(project, op.sceneId, song.id);
+        break;
+      }
+      case 'paint_background': {
+        // A backdrop the AI paints itself, as pixel art: it fills the screen's height and repeats sideways.
+        const art = normalizePixelArt({ palette: op.palette, rows: op.rows });
+        const w = art.rows[0]?.length ?? 0;
+        const h = art.rows.length;
+        if (w < 16 || w > 160 || h < 9 || h > 100) throw new m.ModelError(`paint_background: the picture is ${w}×${h} pixels; it can be 16-160 wide and 9-100 tall (e.g. 96 × 54)`);
+        if (art.rows.some((r) => r.length !== w)) throw new m.ModelError('paint_background: every row must be as long as the first');
+        const keys = new Set(art.palette.map((p) => p.key));
+        const stray = [...new Set(art.rows.join('').replace(/\./g, ''))].filter((k) => !keys.has(k));
+        if (stray.length) throw new m.ModelError(`paint_background: the rows use "${stray.join('", "')}", which the palette doesn't have`);
+        if (art.palette.some((p) => !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(p.color))) throw new m.ModelError('paint_background: palette colors are "#rrggbb"');
+        const asset = createPixelArtAsset(op.name.trim() || 'Background', art);
+        m.addAsset(project, asset);
+        m.setBackground(project, op.sceneId, { imageAssetId: asset.id, fit: 'cover', parallax: Math.min(1, Math.max(0, op.parallax)), parallaxY: null, rect: null });
+        result.createdAssetIds.push(asset.id);
         break;
       }
       case 'generate_background': {

@@ -66,3 +66,30 @@ describe('a background that fades between two colors', () => {
     ]);
   });
 });
+
+describe('paint_background: the AI paints the backdrop itself (where the image generator cannot be used)', () => {
+  const sky = Array.from({ length: 27 }, (_, y) => (y < 14 ? 's' : y < 20 ? 'm' : 'g').repeat(48));
+  const paint = (rows: string[], palette = [{ key: 's', color: '#8fd3ff' }, { key: 'm', color: '#5a6fa8' }, { key: 'g', color: '#3f9b4a' }]) =>
+    ({ op: 'paint_background', sceneId: '', name: 'Summer hills', palette, rows, parallax: 0.2 }) as unknown as Operation;
+
+  it('becomes the level background: a pixel-art picture filling the screen height, repeating sideways', () => {
+    const project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    const after = produce(project, (d) => void applyOperations(d, [{ ...paint(sky), sceneId } as Operation], registry));
+    const bg = after.scenes[0].world.background;
+    const asset = after.assets.find((a) => a.id === bg.imageAssetId)!;
+    expect(asset.name).toBe('Summer hills');
+    expect([asset.width, asset.height]).toEqual([48, 27]);
+    expect(asset.pixelArt!.rows).toHaveLength(27);
+    expect(bg).toMatchObject({ fit: 'cover', parallax: 0.2 });
+  });
+
+  it('refuses a picture too small or too big, or with colors it does not list, saying why', () => {
+    const project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    const run = (op: Operation) => () => produce(project, (d) => void applyOperations(d, [{ ...op, sceneId } as Operation], registry));
+    expect(run(paint(['ss', 'ss']))).toThrow(/16-160 wide/);
+    expect(run(paint(Array(120).fill('s'.repeat(48))))).toThrow(/9-100 tall/);
+    expect(run(paint(sky.map((r, i) => (i === 0 ? 'x' + r.slice(1) : r))))).toThrow(/"x"/);
+  });
+});

@@ -202,3 +202,16 @@ useEditor.subscribe((s, prev) => {
     if (now !== (o.undone === true)) put(job.key, { ...job, outcome: { ...o, undone: now } });
   }
 });
+
+/**
+ * Changes the note on a finished answer's card (a background picture being made after the answer: ready, or why
+ * not). Waits a moment when the answer isn't on its card yet.
+ */
+export function setJobNote(key: string, note: string, tries = 10): void {
+  const job = useJobs.getState().jobs[key];
+  if (job?.phase === 'done' && job.outcome?.status === 'applied') {
+    put(key, { ...job, outcome: { ...job.outcome, note } });
+    return;
+  }
+  if (tries > 0) setTimeout(() => setJobNote(key, note, tries - 1), 300);
+}

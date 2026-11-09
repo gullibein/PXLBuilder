@@ -17,13 +17,27 @@ interface GenState {
   busy: boolean;
   message: string | null;
   error: boolean;
+  /** Why the last picture asked for wasn't made (for the AI's next answer), or null. */
+  lastError: string | null;
 }
 
-export const useBackgroundGen = create<GenState>(() => ({ sizeMode: 'level', custom: null, busy: false, message: null, error: false }));
+export const useBackgroundGen = create<GenState>(() => ({ sizeMode: 'level', custom: null, busy: false, message: null, error: false, lastError: null }));
 
-/** Whether the image generator can be asked (an address is set). */
+/** Inside claude.ai (the published app): the page may not contact other sites, so the generator can't be reached. */
+function insideClaude(): boolean {
+  return typeof (globalThis as { claude?: { use?: unknown } }).claude?.use === 'function';
+}
+
+/** Whether the image generator can be asked, and if not, why. */
+export function generatorStatus(): { ready: boolean; why?: string } {
+  if (insideClaude()) return { ready: false, why: "the app on claude.ai can't contact the image generator (pages there may not reach other sites); it works in PXLBuilder at gullibein.github.io/PXLBuilder" };
+  if (!validWorkerUrl(imageWorkerUrl())) return { ready: false, why: 'the image generator has no address (Background panel → settings)' };
+  return { ready: true };
+}
+
+/** Whether the image generator can be asked. */
 export function generatorReady(): boolean {
-  return validWorkerUrl(imageWorkerUrl());
+  return generatorStatus().ready;
 }
 
 /** What is sent to the image generator for a background described as `what`. */
@@ -43,12 +57,15 @@ export function generatorTarget(sceneId: string, size?: PictureSize) {
  * Makes the picture and sets it as the level's background (one Undo step). `size`: Level, Screen or the card's own
  * size; `parallax`: how it moves with the level (default: a Screen picture stays on the screen, others move with it).
  */
-export async function makeBackground(sceneId: string, what: string, size?: PictureSize, parallax?: number | null): Promise<void> {
+export async function makeBackground(sceneId: string, what: string, size?: PictureSize, parallax?: number | null): Promise<{ ok: boolean; message: string }> {
   const text = what.trim();
-  if (!text || useBackgroundGen.getState().busy) return;
-  if (!generatorReady()) {
-    useBackgroundGen.setState({ message: 'The image generator has no address: set one in the background card (settings).', error: true });
-    return;
+  if (!text) return { ok: false, message: 'Nothing to paint was given.' };
+  if (useBackgroundGen.getState().busy) return { ok: false, message: 'Another background picture is being made; ask again when it is done.' };
+  const status = generatorStatus();
+  if (!status.ready) {
+    const message = `The background picture wasn't made: ${status.why}.`;
+    useBackgroundGen.setState({ message, error: true, lastError: status.why ?? null });
+    return { ok: false, message };
   }
   useBackgroundGen.setState({ busy: true, message: `Making the picture: “${text}”… (this can take half a minute)`, error: false });
   try {
@@ -70,9 +87,13 @@ export async function makeBackground(sceneId: string, what: string, size?: Pictu
       setBackground(p, sceneId, { imageAssetId: asset.id, fit: 'placed', parallax: parallax ?? (mode === 'screen' ? 0 : 1), rect: { x: box.x, y: box.y, w: box.w, h: box.h } });
     });
     logMessage('info', `Background made: "${text}" (${img.width}×${img.height}, the game's own pixels).`);
-    useBackgroundGen.setState({ busy: false, message: `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`, error: false });
+    const message = `Done: ${img.width}×${img.height} pixels. Drag it in the level to move it, its edges to resize it; Undo takes it back.`;
+    useBackgroundGen.setState({ busy: false, message, error: false, lastError: null });
+    return { ok: true, message: `The background picture is ready (${img.width}×${img.height} pixels).` };
   } catch (e) {
-    useBackgroundGen.setState({ busy: false, message: `The picture couldn't be made: ${(e as Error).message}`, error: true });
-    useEditor.getState().logMessage('warn', `Background picture not made: ${(e as Error).message}`);
+    const why = (e as Error).message;
+    useBackgroundGen.setState({ busy: false, message: `The picture couldn't be made: ${why}`, error: true, lastError: why });
+    useEditor.getState().logMessage('warn', `Background picture not made: ${why}`);
+    return { ok: false, message: `The background picture wasn't made: ${why}` };
   }
 }

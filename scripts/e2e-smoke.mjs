@@ -1791,6 +1791,7 @@ try {
     await bgPanel.getByTestId('background-prompt').getByTestId('prompt-input').press('Enter');
     await check(async () => aiRequests.at(-1).context.imageGenerator?.ready === true && aiRequests.at(-1).context.imageGenerator?.size === 'custom' && aiRequests.at(-1).context.imageGenerator?.pixels.w === 320, 'the AI is told about the image generator and the size chosen (320 × 180)');
     await check(async () => (await bgPanel.innerText()).includes('320×180') && (await gen.getByTestId('bg-gen-status').innerText()).startsWith('Done'), 'asked in the prompt, the AI has the generator paint it at the size chosen (320×180 game pixels), and it becomes the background');
+    await check(async () => (await bgPanel.getByTestId('background-prompt').innerText()).includes('The background picture is ready (320×180 pixels)'), "the AI's answer card says when the picture is ready");
     const boxOf = async () => ((await canvas.getAttribute('data-background-box')) ?? '').split(',').map(Number);
     // (The box is written when the level is next drawn.)
     await check(async () => {
