@@ -6,9 +6,16 @@ import type { TraceFn } from './trace';
  * whether calls go through a proxy) can change without touching the UI.
  */
 export interface AIProvider {
-  /** `trace` hears what was sent and the raw answers (for AI History's Details). */
-  respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse>;
+  /**
+   * `trace` hears what was sent and the raw answers (for AI History's Details). `draft`, where the answer comes in
+   * bit by bit, hears all of it so far each time (per channel: the text, or a reply tool's input), e.g. to show the
+   * sprites it has finished while it writes the rest.
+   */
+  respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse>;
 }
+
+/** Hears the answer so far as it comes in (the whole of it each time, per channel). */
+export type DraftFn = (soFar: string, channel?: string) => void;
 
 /** Calls the PXLBuilder AI endpoint (served by the dev/preview server, which holds the API key). */
 export class HttpAIProvider implements AIProvider {

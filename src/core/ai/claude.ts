@@ -85,13 +85,13 @@ export function resetClaudeFeatures(): void {
 }
 
 /** Asks Claude for structured operations. Never throws for API problems: they come back as plain-language errors. */
-export async function askClaude(client: Anthropic, body: AIRequestBody, signal?: AbortSignal, model: ClaudeModel = MODEL, note: ClaudeNote = () => undefined): Promise<ClaudeResult> {
+export async function askClaude(client: Anthropic, body: AIRequestBody, signal?: AbortSignal, model: ClaudeModel = MODEL, note: ClaudeNote = () => undefined, draft?: (soFar: string, channel?: string) => void): Promise<ClaudeResult> {
   if (typeof body?.request !== 'string' || !body.request.trim() || typeof body.context !== 'object') {
     return { ok: false, status: 400, error: 'Missing request or context', kind: 'other' };
   }
   for (;;) {
     try {
-      return await callClaude(client, body, model, signal, note);
+      return await callClaude(client, body, model, signal, note, draft);
     } catch (e) {
       if (e instanceof Anthropic.BadRequestError) {
         const why = apiErrorText(e);
@@ -120,7 +120,7 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
   }
 }
 
-async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal: AbortSignal | undefined, note: ClaudeNote): Promise<ClaudeResult> {
+async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal: AbortSignal | undefined, note: ClaudeNote, draft?: (soFar: string, channel?: string) => void): Promise<ClaudeResult> {
   // Fast: the same model thinking less (the biggest part of the wait).
   const effort = body.speed === 'fast' ? ('low' as const) : ('medium' as const);
   // The game's data is its own block, cached: a second request with the same game (the answer sent back to be fixed,
@@ -151,7 +151,16 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     { type: 'text' as const, text: body.reference ?? text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } },
   ];
   // Streamed (a long answer takes minutes), and the whole message read at the end: the same message parse/create give.
-  const send = <P extends Parameters<typeof client.beta.messages.stream>[0]>(params: P) => client.beta.messages.stream(params, { signal }).finalMessage();
+  // (Whoever wants the answer as it is written hears it: its text so far, and a reply tool's input so far.)
+  const send = <P extends Parameters<typeof client.beta.messages.stream>[0]>(params: P) => {
+    const stream = client.beta.messages.stream(params, { signal });
+    if (draft) {
+      let input = '';
+      stream.on('text', (_delta, soFar) => draft(soFar, 'text'));
+      stream.on('inputJson', (delta) => draft((input += delta), 'tool'));
+    }
+    return stream.finalMessage();
+  };
   const used = (r: { model?: string; usage?: Parameters<typeof usageCost>[1] }) => (r.usage ? usageCost(r.model ?? model, r.usage) : undefined);
   const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };

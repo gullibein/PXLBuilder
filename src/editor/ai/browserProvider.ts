@@ -5,7 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { askClaude, CLAUDE_MODELS, claudeFormats, MODEL, rememberClaudeFormats } from '../../core/ai/claude';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
-import type { AIProvider } from '../../core/ai/provider';
+import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import type { TraceFn } from '../../core/ai/trace';
 import { getAISettings } from './aiSettings';
 import { dollars, recordSpend, tokensLine } from './spend';
@@ -24,14 +24,21 @@ export class BrowserClaudeProvider implements AIProvider {
     private readonly onNote?: (message: string) => void,
   ) {}
 
-  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+  async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse> {
     const model = getAISettings().claudeModel;
     restoreFormats();
     trace?.('sent', `Claude with your Anthropic key (${CLAUDE_MODELS[model].name}${body.speed === 'fast' ? ', fast' : ''})`);
-    const result = await askClaude(client(this.apiKey), body, signal, model, (note) => {
-      trace?.('note', note);
-      this.onNote?.(note);
-    });
+    const result = await askClaude(
+      client(this.apiKey),
+      body,
+      signal,
+      model,
+      (note) => {
+        trace?.('note', note);
+        this.onNote?.(note);
+      },
+      draft,
+    );
     keepFormats();
     if (result.usage) {
       // What it cost, from the API's own token counts: in the trace, and in the console (with the running totals).

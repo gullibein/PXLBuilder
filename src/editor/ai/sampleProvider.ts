@@ -10,7 +10,7 @@
  */
 import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIPicture, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
-import type { AIProvider } from '../../core/ai/provider';
+import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
 import { pictureGrid } from './pictures';
@@ -19,7 +19,7 @@ interface SampleError {
   code: string;
   message: string;
 }
-type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean; images?: Blob[] };
+type SampleOptions = { signal?: AbortSignal; modelTier?: 'default' | 'quick' | 'complex'; cache?: boolean; images?: Blob[]; onText?: (p: { text: string; delta: string }) => void };
 /** The viewer's sample: called, it gives the answer's text (read here, forgivingly); `json` parses it strictly. */
 type SampleInput = string | { role: 'user' | 'assistant'; content: string }[];
 type SampleFn = ((input: SampleInput, options?: SampleOptions) => Promise<{ text: string; truncated: boolean }>) & {
@@ -84,7 +84,7 @@ export class SampleAIProvider implements AIProvider {
     private readonly log?: (note: string) => void,
   ) {}
 
-  private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<{ text: string; truncated: boolean }> {
+  private async ask(input: SampleInput, body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<{ text: string; truncated: boolean }> {
     const size = typeof input === 'string' ? input.length : input.reduce((n, t) => n + t.content.length, 0);
     const pictures = body.images ?? [];
     trace?.('sent', `Claude through claude.ai (${body.speed === 'fast' ? 'quick' : 'default'} tier): ${size} characters${typeof input === 'string' ? '' : `, ${input.length} turns`}${pictures.length ? `, ${pictures.length} picture(s)` : ''}`);
@@ -92,7 +92,8 @@ export class SampleAIProvider implements AIProvider {
       try {
         // Every request is new work: no replay of an earlier answer.
         // Fast: claude.ai's quicker model tier.
-        const answer = await this.sample(input, { signal, cache: false, ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}), ...(pictures.length ? { images: pictures.map(pictureBlob) } : {}) });
+        // (The answer so far, as it is written: the whole of it each time.)
+        const answer = await this.sample(input, { signal, cache: false, ...(draft ? { onText: (p: { text: string }) => draft(p.text) } : {}), ...(body.speed === 'fast' ? { modelTier: 'quick' as const } : {}), ...(pictures.length ? { images: pictures.map(pictureBlob) } : {}) });
         trace?.('reply', `${answer.truncated ? '[cut off by the length limit] ' : ''}${answer.text}`);
         return answer;
       } catch (e) {
@@ -145,17 +146,17 @@ export class SampleAIProvider implements AIProvider {
     return { ...body, images: undefined, pictureGrids };
   }
 
-  async respond(asked: AIRequestBody, signal?: AbortSignal, trace?: TraceFn): Promise<AIResponse> {
+  async respond(asked: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse> {
     let body = await this.withPictures(asked, trace);
     let question = prompt(body);
     let answer: { text: string; truncated: boolean };
     try {
-      answer = await this.ask(question, body, signal, trace);
+      answer = await this.ask(question, body, signal, trace, draft);
     } catch (e) {
       if (!(e instanceof PicturesRefused)) throw e;
       body = await this.asText(body, trace, 'it refused them');
       question = prompt(body);
-      answer = await this.ask(question, body, signal, trace);
+      answer = await this.ask(question, body, signal, trace, draft);
     }
     // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
     // and an answer that was cut off is told apart from one that is malformed.

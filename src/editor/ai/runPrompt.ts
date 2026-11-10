@@ -4,6 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
+import { DrawingScanner } from '../../core/ai/streamDrawings';
 import { setJobNote } from './jobs';
 import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
@@ -219,9 +220,18 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   try {
     const provider = await currentProvider();
     const stage = options.onStage ?? (() => {});
-    // Every answer passes here: the sprites it drew go to whoever shows them while it works (the building window).
+    // Every answer passes here: the sprites it drew go to whoever shows them while it works (the building window),
+    // each as soon as it is finished, read from the answer while it is still being written (where it comes in bit by bit).
     const ask: typeof provider.respond = async (b, sig, tr) => {
-      const r = await provider.respond(b, sig, tr);
+      const scanners = new Map<string, DrawingScanner>();
+      const draft = options.onDrawings
+        ? (soFar: string, channel = 'text') => {
+            let s = scanners.get(channel);
+            if (!s) scanners.set(channel, (s = new DrawingScanner((d) => options.onDrawings?.([d]))));
+            s.feed(soFar);
+          }
+        : undefined;
+      const r = await provider.respond(b, sig, tr, draft);
       const drawn = r.operations.flatMap((o) => (o.op === 'draw_sprite' && !o.situation ? [{ name: o.name, palette: o.palette, rows: o.rows }] : []));
       if (drawn.length) options.onDrawings?.(drawn);
       return r;

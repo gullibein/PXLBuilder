@@ -49,7 +49,8 @@ function objectPictures(project: Project): { name: string; asset: AssetRecord }[
 /**
  * While the AI builds a game asked for in the New game window: a window of its own (there is nothing to edit yet),
  * with what was asked, what the AI is doing now and how long it has taken, and the game's pieces shown one after
- * another (the starting objects it builds from: the AI's answer, with its drawings, comes all at once at the end).
+ * another: the sprites the AI has finished drawing, each shown as soon as it is done (read from its answer while it
+ * is still being written), or with the engine's sprites the starting objects it builds from.
  * When it is done, the pictures the AI drew are shown together before the editor opens; then the Whole game card
  * shows what was built (or what went wrong, with Retry).
  */
@@ -62,6 +63,8 @@ export function NewGameProgress() {
   // The app's own steps so far (what it really did: planning, reading a guide, moving to a starter, fixing…).
   const [steps, setSteps] = useState<string[]>([]);
   const tipStart = useRef(Math.floor(Math.random() * BUILD_TIPS.length));
+  // When each of the AI's drawings came (a new one is shown at once, then they take turns).
+  const arrived = useRef(new Map<string, number>());
   const stepsFor = useRef<string | null>(null);
   useEffect(() => {
     if (!job) return;
@@ -145,7 +148,10 @@ export function NewGameProgress() {
   const pieces: { key: string; name: string; asset?: AssetRecord; svg?: string }[] = engine
     ? objectPictures(project).map((p) => ({ key: p.asset.id, name: p.name, asset: p.asset }))
     : (job.drawings ?? []).map((d) => ({ key: `ai:${d.name}`, name: d.name, svg: svgOf(d) }));
-  const piece = pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null;
+  for (const p of pieces) if (!arrived.current.has(p.key)) arrived.current.set(p.key, Date.now());
+  const newest = pieces.reduce<(typeof pieces)[number] | null>((a, p) => (!a || (arrived.current.get(p.key) ?? 0) > (arrived.current.get(a.key) ?? 0) ? p : a), null);
+  const fresh = !engine && newest && now - (arrived.current.get(newest.key) ?? 0) < SHOW_EACH * 1000 ? newest : null;
+  const piece = fresh ?? (pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null);
   // Under the picture: a tip, a new one every few seconds.
   const tip = BUILD_TIPS[(tipStart.current + Math.floor(seconds / LINE_EACH)) % BUILD_TIPS.length];
   return (
@@ -168,6 +174,11 @@ export function NewGameProgress() {
             <figure className="ngp-show" key={piece.key} data-testid="new-game-piece" data-source={engine ? 'engine' : 'ai'}>
               {piece.asset ? <SpriteImage asset={piece.asset} size={72} /> : <img src={piece.svg} alt="" width={72} height={72} />}
               <figcaption>{piece.name}</figcaption>
+              {!engine && (
+                <span className="muted small" data-testid="new-game-drawn-count">
+                  {pieces.length} drawn so far
+                </span>
+              )}
             </figure>
           ) : (
             <p className="ngp-waiting muted small" data-testid="new-game-no-pieces">
