@@ -18,6 +18,7 @@ export function ObjectPanel() {
   const project = useEditor((s) => s.project);
   const sceneId = useEditor((s) => s.activeSceneId);
   const panelAsk = useEditor((s) => s.panelAsk);
+  const panelOpen = useEditor((s) => s.panelOpen);
   const objectDrag = useEditor((s) => s.objectDrag);
   const entity = useMemo(() => (selected ? project.scenes.find((s) => s.id === sceneId)?.entities.find((e) => e.id === selected) : undefined), [project, sceneId, selected]);
   const def = entity?.definitionId ? project.definitions.find((d) => d.id === entity.definitionId) : undefined;
@@ -25,11 +26,13 @@ export function ObjectPanel() {
   const asking = !!def && panelAsk === def.id;
   const ref = useRef<HTMLDivElement>(null);
   const anchorKey = selected ? contextKey({ kind: 'entity', sceneId, entityIds: [selected] }) : null;
-  const shown = !!def && (panel || asking) && !objectDrag;
-  // Its prompt closes when the object isn't the one selected any more (selected again, the panel shows without it).
+  // Shown when its panel icon opened it (or while it is being described to the AI), not just because it is selected.
+  const shown = !!def && ((panel && panelOpen === def.id) || asking) && !objectDrag;
+  // Its prompt and the panel close when the object isn't the one selected any more (selected again: the panel icon opens it).
   useEffect(() => {
     if (panelAsk && panelAsk !== def?.id) useEditor.getState().setPanelAsk(null);
-  }, [panelAsk, def?.id]);
+    if (panelOpen && panelOpen !== def?.id) useEditor.getState().setPanelOpen(null);
+  }, [panelAsk, panelOpen, def?.id]);
 
   useEffect(() => {
     if (!shown || !anchorKey) return;
@@ -68,6 +71,20 @@ export function ObjectPanel() {
         >
           ✦
         </button>
+        <button
+          className="icon-btn"
+          title="Close the panel (the panel icon above the object opens it again)"
+          aria-label="Close the panel"
+          data-testid="object-panel-close"
+          onClick={() => {
+            useEditor.getState().setPanelAsk(null);
+            useEditor.getState().setPanelOpen(null);
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="m3.5 3.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
       </header>
       {panel && (
         <div className="object-panel-controls">
@@ -100,6 +117,67 @@ export function ObjectPanel() {
           <PromptBox ctx={ctx} autoFocus placeholder={panel ? 'Change the panel: "make them knobs", "add gravity"…' : 'Which settings? "Jump height and run speed"'} testId="panel-prompt" onEscape={() => useEditor.getState().setPanelAsk(null)} />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The panel icon (a small square of sliders) above a selected object that has an editor panel, left of the AI ✦:
+ * clicking it opens the object's panel, or closes it. Only one object selected, and not while it is dragged.
+ */
+export function PanelIcon() {
+  const selected = useEditor((s) => (s.selectedEntityIds.length === 1 ? s.selectedEntityIds[0] : null));
+  const project = useEditor((s) => s.project);
+  const sceneId = useEditor((s) => s.activeSceneId);
+  const panelOpen = useEditor((s) => s.panelOpen);
+  const objectDrag = useEditor((s) => s.objectDrag);
+  const entity = useMemo(() => (selected ? project.scenes.find((s) => s.id === sceneId)?.entities.find((e) => e.id === selected) : undefined), [project, sceneId, selected]);
+  const def = entity?.definitionId ? project.definitions.find((d) => d.id === entity.definitionId) : undefined;
+  const has = !!panelOf(def) && !objectDrag;
+  const anchorKey = selected ? contextKey({ kind: 'entity', sceneId, entityIds: [selected] }) : null;
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!has || !anchorKey) return;
+    return subscribeAnchor((a) => {
+      const el = ref.current;
+      if (!el) return;
+      if (!a || !a.visible || a.key !== anchorKey) {
+        el.style.visibility = 'hidden';
+        return;
+      }
+      // Where the ✦ is (ContextPrompt's AIStar), one button to its left.
+      const x = a.star?.x ?? (a.rect.minX + a.rect.maxX) / 2;
+      const above = (a.star?.y ?? a.rect.minY) - 28;
+      const y = above < CHROME_INSETS.top ? a.rect.maxY + 10 : above;
+      el.style.transform = `translate(${Math.round(x - 9 - 24)}px, ${Math.round(y)}px)`;
+      el.style.visibility = 'visible';
+    });
+  }, [has, anchorKey]);
+  if (!has || !def) return null;
+  const open = panelOpen === def.id;
+  return (
+    <div className="context-layer">
+      <button
+        ref={ref}
+        className={`ai-star panel-icon${open ? ' on' : ''}`}
+        style={{ visibility: 'hidden' }}
+        title={open ? 'Close the panel' : 'Open the panel'}
+        aria-label={open ? 'Close the panel' : 'Open the panel'}
+        aria-pressed={open}
+        data-testid="panel-icon"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => {
+          const s = useEditor.getState();
+          if (open) {
+            s.setPanelAsk(null);
+            s.setPanelOpen(null);
+          } else s.setPanelOpen(def.id);
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <rect x="0.75" y="0.75" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </button>
     </div>
   );
 }

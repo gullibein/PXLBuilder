@@ -197,19 +197,26 @@ describe('Slime: crawls over floors, walls, ceilings and ladders to the player',
     expect(ceiling).toBeLessThan(0.5);
   });
 
-  it('turns round corners on the corner: a moment on its belly at 45 degrees, inside corners and outside ones', () => {
+  it('turns only in quarter turns (no in-between angles in a pixel game): into an inside corner as it gets there, round an outside one halfway', () => {
     // From the floor up the left face of a block column, over its top corner, onto its top.
     const g = slimeGame({ x: -80, y: 16 }, { x: 112, y: -112 }, [...row(48, -144, 144), ...column(80, -80, 16)], [], { wander: 0 });
-    const at45: { x: number; y: number }[] = [];
-    let held = 0;
+    const angles = new Set<number>();
+    let atInsideCorner: number | null = null;
+    let beforeInsideCorner: number | null = null;
+    let overTheTop: number | null = null;
     g.run(10, () => {
       const s = g.slime();
-      if (Math.abs(s.angle - 315) < 1) (held++, at45.push({ x: s.x, y: s.y }));
+      angles.add(Math.round(s.angle * 100) / 100);
+      if (s.y === 16 && Math.abs(s.x - 40) < 3) beforeInsideCorner = s.angle;
+      if (s.y === 16 && s.x === 48 && atInsideCorner === null) atInsideCorner = s.angle;
+      // Just past the column's top edge (above its left face), on the way onto its top.
+      if (Math.abs(s.y + 112) < 0.5 && Math.abs(s.x - 52) < 3) overTheTop = s.angle;
     });
-    // The inside corner (floor and wall) low down, the outside corner (the column's top) high up.
-    expect(at45.some((p) => p.y > 0)).toBe(true);
-    expect(at45.some((p) => p.y < -80)).toBe(true);
-    expect(held).toBeGreaterThan(20);
+    expect([...angles].every((a) => a % 90 === 0)).toBe(true);
+    expect(beforeInsideCorner).toBe(0);
+    expect(atInsideCorner).toBe(270);
+    expect(overTheTop).toBe(270);
+    expect(angles.has(0) && angles.has(270)).toBe(true);
   });
 
   it('climbs up a wall to the player standing on top of it, its underside turned to the wall', () => {

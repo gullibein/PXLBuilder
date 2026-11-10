@@ -1,6 +1,6 @@
 import { AutotileEditor } from './chrome/AutotileEditor';
 import { startPanelMover } from './layout/movable';
-import { ObjectPanel } from './prompt/ObjectPanel';
+import { ObjectPanel, PanelIcon } from './prompt/ObjectPanel';
 import { usesMenuKey } from '../core/script/language';
 import { ObjectCard } from './chrome/ObjectCard';
 import { GameSite } from './gamesite/GameSite';
@@ -104,6 +104,7 @@ export function App() {
         <Viewport />
         <ContextPrompt />
         <ObjectPanel />
+        <PanelIcon />
         <ToolPanel />
         <ObjectCard />
         <BackgroundPanel />

@@ -135,6 +135,9 @@ export interface EditorState {
   /** The object whose own editor panel is being described to the AI ("Add panel…"; its prompt shows on the panel). */
   panelAsk: Id | null;
   setPanelAsk(definitionId: Id | null): void;
+  /** The object whose editor panel is open (its panel icon above the selected copy opens and closes it). */
+  panelOpen: Id | null;
+  setPanelOpen(definitionId: Id | null): void;
   /** The "Export sprites" window: these pictures (null: all of the game's), named after `name`. */
   spriteExport: { assets: AssetRecord[] | null; name: string } | null;
   /** The Code Editor: the behavior code of a library object, or of one placed thing (and its object). */
@@ -298,6 +301,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     openDialog: false,
     fileFix: null,
     panelAsk: null,
+    panelOpen: null,
     gameSite: null,
     backgroundTarget: null,
     exportGameOpen: false,
@@ -584,8 +588,12 @@ export const useEditor = create<EditorState>()((set, get) => {
     setFileFix(fileFix) {
       set({ fileFix });
     },
+    setPanelOpen(panelOpen) {
+      set({ panelOpen });
+    },
     setPanelAsk(panelAsk) {
-      set({ panelAsk });
+      // (Asking about a panel opens it.)
+      set(panelAsk ? { panelAsk, panelOpen: panelAsk } : { panelAsk });
     },
 
     setSaveDialog(saveDialog) {

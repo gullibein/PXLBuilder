@@ -2123,7 +2123,24 @@ try {
     await clickWorld(200, 200, { single: true });
     await check(async () => (await panel.count()) === 0, 'deselecting the Player hides its panel');
     await clickWorld(-256, 0, { single: true });
-    await check(async () => (await panel.isVisible()) && (await panel.getByTestId('panel-prompt').count()) === 0, 'selecting the Player again shows its panel (without the prompt)');
+    const panelIcon = page.getByTestId('panel-icon');
+    await check(async () => (await panel.count()) === 0 && (await panelIcon.isVisible()), 'selecting the Player again shows a panel icon above it, not the panel');
+    let iconAt = '';
+    await check(async () => {
+      const ib = await panelIcon.boundingBox();
+      // (The ✦ shows while the AI card is closed; the icon is where the ✦ is either way, just left of it.)
+      if (!(await page.getByTestId('ai-star').count())) {
+        await prompts.getByTestId('prompt-close').click();
+        return false;
+      }
+      const sb = await page.getByTestId('ai-star').boundingBox();
+      iconAt = JSON.stringify([ib, sb]);
+      return !!ib && !!sb && ib.x + ib.width <= sb.x + 0.5 && sb.x - (ib.x + ib.width) < 12 && Math.abs(ib.y - sb.y) < 2;
+    }, '(the panel icon is just left of the AI ✦)').catch((e) => {
+      throw new Error(`${e.message} ${iconAt}`);
+    });
+    await panelIcon.click();
+    await check(async () => (await panel.isVisible()) && (await panel.getByTestId('panel-prompt').count()) === 0, 'clicking the panel icon opens its panel (without the prompt)');
     await openDetails();
     await check(async () => (await page.getByTestId('field-CharacterController.jumpForce').inputValue()) === '370', 'the jump force in Details is the one set on the panel');
     await page.getByTestId('close-details').click();
@@ -2152,12 +2169,20 @@ try {
     await check(async () => Math.abs(moved.x - before.x - 120) < 2 && Math.abs(moved.y - before.y - 60) < 2, `dragging the panel by its title moves it (${Math.round(moved.x - before.x)}, ${Math.round(moved.y - before.y)})`);
     await clickWorld(200, 200, { single: true });
     await clickWorld(-256, 0, { single: true });
+    // (The click away may land on the panel where it was dragged to: then it stays open.)
+    if (!(await panel.count())) await panelIcon.click();
     await check(async () => {
       const again = await panel.boundingBox();
       return Math.abs(again.x - moved.x) < 2 && Math.abs(again.y - moved.y) < 2;
     }, 'selected again, the panel opens where it was moved to');
     await panel.getByTestId('object-panel-title').dblclick();
     await check(async () => Math.abs((await panel.boundingBox()).x - before.x) < 2, 'double-clicking its title puts it back');
+    await panelIcon.click();
+    await check(async () => (await panel.count()) === 0 && (await panelIcon.getAttribute('aria-pressed')) === 'false', 'clicking the panel icon again closes the panel');
+    await panelIcon.click();
+    await page.getByTestId('object-panel-close').click();
+    await check(async () => (await panel.count()) === 0, "so does the panel's own ×");
+    await panelIcon.click();
     const tools = page.getByTestId('tool-panel');
     const toolsAt = await tools.boundingBox();
     await drag(page.getByTestId('tool-panel-grip'), 300, -40);

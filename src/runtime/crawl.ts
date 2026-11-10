@@ -11,8 +11,9 @@
  * The way is planned again now and then (replan seconds), each plan with a bit of chance per step (wander), so it
  * doesn't always take the very shortest way; when it is set on an ambush (by chance, ambush) it doesn't drop
  * anywhere but onto its target. Its body moves from square middle to square middle; its picture is drawn turned
- * so its underside faces what it holds on to and moved up against it (flat on floors, walls and ceilings; on its
- * belly at 45 degrees on corners), turning partway along each move.
+ * so its underside faces what it holds on to and moved up against it, only ever in quarter turns (a pixel game has
+ * no in-between angles): into an inside corner it turns to the new surface as it gets there; round an outside
+ * corner it goes just past the edge and turns over onto the next face halfway round.
  */
 import type { RuntimeEntity } from './runtime';
 
@@ -38,6 +39,8 @@ export interface CrawlPose {
   hold: boolean;
   /** The picture's turn (degrees clockwise: 0 on a floor, 90 a wall on its left, 180 a ceiling, 270 a wall on its right). */
   angle: number;
+  /** How far along the move here it turns to this angle (0.5 halfway; 1 as it gets here: into an inside corner). */
+  turnAt: number;
   /** The picture moved from the body by this much, up against what it holds on to. */
   dx: number;
   dy: number;
@@ -82,7 +85,6 @@ const LADDER = -1;
 
 /** Shortest turn from a to b, degrees (-180..180). */
 export const turnBetween = (a: number, b: number) => ((((b - a) % 360) + 540) % 360) - 180;
-const norm = (a: number) => ((a % 360) + 360) % 360;
 
 /**
  * The way from `from` to (as near as it gets to) `to`: Dijkstra over the squares it can hold on in, each move
@@ -273,7 +275,7 @@ export function planCrawl(
       const m = wrapM[k];
       setLeave(out, pi, pj, nn);
       // The corner: on its belly over the block's corner, between the two faces.
-      out.push(cornerPose(pi + SIDES[m][0], pj + SIDES[m][1], SIDES[nn][0] - SIDES[m][0], SIDES[nn][1] - SIDES[m][1]));
+      out.push(cornerPose(pi + SIDES[m][0], pj + SIDES[m][1], nn, m));
       arrive = (m + 2) % 4;
     } else {
       arrive = DOWN;
@@ -313,45 +315,39 @@ export function planCrawl(
   function pose(i: number, j: number, a: number, b: number, drop: boolean): CrawlPose {
     const x = mid(i);
     const y = mid(j);
-    const base = { x, y, drop, hold: true, ceiling: a === 2 && b === 2 };
+    const base = { x, y, drop, hold: true, ceiling: a === 2 && b === 2, turnAt: 0.5 };
     if (a === LADDER || b === LADDER) return { ...base, angle: 0, dx: 0, dy: 0, side: LADDER };
     if (a === b) {
       const [nx, ny] = SIDES[a];
       const gap = probe(x, y, nx, ny) - size.h / 2;
       return { ...base, angle: a * 90, dx: nx * gap, dy: ny * gap, side: a };
     }
-    // An inside corner: wedged in on its belly, its two lower corners against the two surfaces.
-    const e = (size.w + size.h) / (2 * Math.SQRT2);
+    // An inside corner: turned to the new surface (b) as it gets there, pressed into the corner (its underside
+    // against b, a side against a).
     const [ax, ay] = SIDES[a];
     const [bx, by] = SIDES[b];
-    const ga = probe(x, y, ax, ay) - e;
-    const gb = probe(x, y, bx, by) - e;
-    const angle = norm(a * 90 + turnBetween(a * 90, b * 90) / 2);
-    return { ...base, angle, dx: ax * ga + bx * gb, dy: ay * ga + by * gb, side: b };
+    const ga = probe(x, y, ax, ay) - size.w / 2;
+    const gb = probe(x, y, bx, by) - size.h / 2;
+    return { ...base, angle: b * 90, turnAt: 1, dx: ax * ga + bx * gb, dy: ay * ga + by * gb, side: b };
   }
 
-  /** On an outside corner in square i, j: the block's corner is that way (qx, qy each -1 or 1); on its belly over it at 45 degrees. */
-  function cornerPose(i: number, j: number, qx: number, qy: number): CrawlPose {
+  /**
+   * Round an outside corner, in square i, j just past the edge (it went that way, m, from beside the block, on its
+   * face n): still on that face (its plane, as from the square before), not turned yet.
+   */
+  function cornerPose(i: number, j: number, n: number, m: number): CrawlPose {
     const x = mid(i);
     const y = mid(j);
-    const px = x + qx * probe(x, y + qy * cell, qx, 0);
-    const py = y + qy * probe(x + qx * cell, y, 0, qy);
-    const half = size.h / 2 / Math.SQRT2;
-    const angle = norm(Math.atan2(-qx, qy) * (180 / Math.PI));
-    return { x, y, drop: false, hold: false, ceiling: false, angle, dx: px - qx * half - x, dy: py - qy * half - y };
+    const [nx, ny] = SIDES[n];
+    const gap = probe(x - SIDES[m][0] * cell, y - SIDES[m][1] * cell, nx, ny) - size.h / 2;
+    return { x, y, drop: false, hold: false, ceiling: false, angle: n * 90, turnAt: 0.5, dx: nx * gap, dy: ny * gap };
   }
 }
 
-const ease = (t: number) => {
-  // Turns between 30% and 70% of the way (so it holds a corner's 45 degrees a moment either side of it).
-  const u = Math.max(0, Math.min(1, (t - 0.3) / 0.4));
-  return u * u * (3 - 2 * u);
-};
-
-/** How the picture is drawn partway (t 0..1) from one pose to the next. */
+/** How the picture is drawn partway (t 0..1) from one pose to the next: slid along, turned at once (a quarter turn) at the pose's turnAt. */
 function between(from: NonNullable<CrawlState['from']>, to: CrawlPose, t: number): { angle: number; dx: number; dy: number } {
-  const u = ease(t);
-  return { angle: norm(from.angle + turnBetween(from.angle, to.angle) * u), dx: from.dx + (to.dx - from.dx) * u, dy: from.dy + (to.dy - from.dy) * u };
+  const u = Math.max(0, Math.min(1, t));
+  return { angle: u >= to.turnAt ? to.angle : from.angle, dx: from.dx + (to.dx - from.dx) * u, dy: from.dy + (to.dy - from.dy) * u };
 }
 
 export interface CrawlOptions {
@@ -429,7 +425,7 @@ function arrive(w: CrawlWorld, e: RuntimeEntity, state: CrawlState, target: { x:
   if (!here.hold) return look;
   const { cell } = o;
   if (o.dropOn && here.ceiling && w.solidAt(e.x, e.y - cell) && !w.solidAt(e.x, e.y + cell) && target.y > e.y + cell / 2 && Math.abs(target.x - e.x) < target.hw + cell / 2 && w.canSee(e, target)) {
-    state.path = [{ x: e.x, y: target.y, drop: true, hold: true, ceiling: false, angle: 0, dx: 0, dy: 0 }];
+    state.path = [{ x: e.x, y: target.y, drop: true, hold: true, ceiling: false, angle: 0, turnAt: 0.5, dx: 0, dy: 0 }];
     state.falling = true;
     return look;
   }
