@@ -56,8 +56,12 @@ function markOf(r: ResolvedEntity, name: string): Mark {
   if (hurts && moves) return { ch: 'E', rank: 3, what: 'enemy' };
   if (hurts) return { ch: '^', rank: 3, what: 'hazard (hurts)' };
   if (c.Climbable) return { ch: 'H', rank: 4, what: 'ladder (climb with Up/Down; not solid)' };
+  if (c.Liquid) return { ch: '~', rank: 4, what: c.Liquid.swim === false ? 'liquid (slows and sinks; not solid)' : 'water (swim in it: Jump strokes up; not solid)' };
   if (c.MovingPlatform) return { ch: '=', rank: 4, what: 'moving platform' };
   const solid = c.Collider && c.Collider.isTrigger !== true && c.PhysicsBody?.bodyType !== 'dynamic';
+  if (solid && c.Collider.shape === 'slopeRight') return { ch: '/', rank: 5, what: 'ramp rising to the right (walk up and down it)' };
+  if (solid && c.Collider.shape === 'slopeLeft') return { ch: '\\', rank: 5, what: 'ramp rising to the left (walk up and down it)' };
+  if (solid && c.Collider.oneWay === true) return { ch: '-', rank: 5, what: 'jump-through platform (stand on it; jump up through it from below)' };
   if (solid) return { ch: '#', rank: 5, what: 'solid' };
   if (r.tags.includes('enemy')) return { ch: 'E', rank: 3, what: 'enemy' };
   return { ch: 'o', rank: 6, what: 'other' };
@@ -93,7 +97,7 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
   // letter of its name (or another free character) for each other one, so the map shows which object is where.
   const charOf = new Map<string, string>();
   {
-    const reserved = new Set(['.', '_', 'x', ' ', ...things.map((t) => t.mark.ch)]);
+    const reserved = new Set(['.', '_', 'x', ' ', '/', '\\', '-', '~', ...things.map((t) => t.mark.ch)]);
     const used = new Set<string>();
     const kinds = new Map<string, Map<string, { n: number; object: string }>>();
     for (const t of things) {

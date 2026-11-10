@@ -1126,10 +1126,10 @@ describe('the example scripts the AI learns from', () => {
 
   /** A pool of water (a trigger tagged "water", with the Water script): `size` wide/high, centered at `at`. */
   function pool(b: Builder, at: Vec2, size: Vec2): string {
-    const def = createDefinition('Water', { Sprite: registry.createDefault('Sprite', { width: size.x, height: size.y }), Collider: registry.createDefault('Collider', { size, isTrigger: true }) }, ['water']);
+    const def = createDefinition('Pond', { Sprite: registry.createDefault('Sprite', { width: size.x, height: size.y }), Collider: registry.createDefault('Collider', { size, isTrigger: true }) }, ['water']);
     m.addDefinition(b.d, def, registry);
     setScript(b.d, { target: 'definition', id: def.id }, example('Water'));
-    return b.place('Water', at);
+    return b.place('Pond', at);
   }
 
   it('Water: the player walks slowly through it and at full speed again once out', () => {

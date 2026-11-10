@@ -133,13 +133,15 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'Collider',
     label: 'Collider',
-    description: 'Collision shape. A trigger detects overlaps without blocking movement.',
+    description:
+      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (thin bridges, planks, mushroom caps, cloud platforms): things land on its top from above, jump up through it from below and walk through its sides; Down + Jump drops the player through it. Make it a 32x32 square with the platform drawn in its top rows and the Collider just that part (e.g. size 32x8, offset 0,-12, matchSprite false): level with the ground beside it. shape slopeRight / slopeLeft: a 45 degree ramp filling its square, rising to the right / to the left (◢ / ◣): characters and enemies walk up and down it.',
     category: 'Physics',
     fields: {
-      shape: { kind: 'enum', options: ['box', 'circle'], default: 'box' },
+      shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft'], default: 'box', description: 'box, circle, or a ramp: slopeRight rises to the right (◢), slopeLeft to the left (◣)' },
       size: { kind: 'vec2', default: { x: 32, y: 32 }, description: 'Box size, or circle diameter in x' },
       offset: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Offset from the entity position' },
       isTrigger: { kind: 'boolean', default: false },
+      oneWay: { kind: 'boolean', default: false, description: 'A jump-through platform: only its top holds, and only from above (jump up through it; Down + Jump drops through)' },
       matchSprite: { kind: 'boolean', default: true, description: 'Keep the collider the same size as the sprite (changing either changes both)' },
     },
   },
@@ -237,6 +239,19 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     description: 'Characters can climb this (ladders, vines, ropes) with Up/Down, at their running speed.',
     category: 'Movement',
     fields: {},
+  },
+  {
+    type: 'Liquid',
+    label: 'Liquid',
+    description:
+      'Water (or mud, slime, quicksand) to swim in: give it a trigger Collider. While the middle of something (the player, an enemy, a crate) is in it, it moves slower, sinks slowly instead of falling, and the player swims: each Jump is a stroke upward (at the surface it jumps out). Lava or acid that hurts: give it a Hurts on touch script too (then swim usually false). Draw its top tiles with a wavy surface (animated frames) and the ones under them plain.',
+    category: 'Movement',
+    fields: {
+      swim: { kind: 'boolean', default: true, description: 'The player swims in it (each Jump a stroke up); false: it only slows and sinks (mud, quicksand)' },
+      slow: { kind: 'number', default: 0.55, min: 0.05, max: 1, step: 0.05, description: 'How fast things move in it, times their normal speed' },
+      sink: { kind: 'number', default: 0.25, min: 0, max: 1, step: 0.05, description: 'How strongly it is pulled down in it, times normal gravity (0: floats where it is; 1: falls as in air)' },
+      stroke: { kind: 'number', default: 0.6, min: 0.1, max: 1.5, step: 0.05, description: 'A swim stroke, times the jump' },
+    },
   },
   // ------------------------------------------------------------ behaviors: what things do on their own
   {

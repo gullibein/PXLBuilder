@@ -249,6 +249,15 @@ export const operationSchema = z.union([
     onTop: z.boolean().nullable().describe('Where other objects already are: null/false replaces them (deletes what it covers, as placing in the editor does); true puts it on top and keeps them, only when both must really share the square'),
   }),
   z.object({
+    op: z.literal('draw_map'),
+    sceneId: z.string(),
+    col: z.number().int().describe('The cell of the map\'s top-left character (column)'),
+    row: z.number().int().describe('…and row'),
+    legend: z.array(z.object({ char: z.string().describe('One character'), object: z.string().describe('The object it stands for (id, name or create_definition ref)') })).describe('What each character in rows is; "." and " " are empty'),
+    rows: z.array(z.string()).describe('The level, top row first, one character per 32 px cell, like context.level.map'),
+    clear: z.boolean().describe('true: everything already in the area goes first (the player is kept, and moved to "P" when the map has one); false: drawn over what is there (a second map of back walls or decoration on a Sprite layer below 0, behind the first, keeps it)'),
+  }),
+  z.object({
     op: z.literal('build_path'),
     sceneId: z.string(),
     start: z
@@ -1108,6 +1117,69 @@ export function applyOperations(
           }
         }
         m.addEntities(project, op.sceneId, fresh);
+        break;
+      }
+      case 'draw_map': {
+        // The level drawn as text: each object's cells filled as draw_tiles does (an object bigger than a cell is one
+        // copy per block of its cells, its bottom-left where its character's block begins), the player moved to "P".
+        const scene = m.getScene(project, op.sceneId);
+        if (!op.rows.length) break;
+        const width = Math.max(...op.rows.map((r) => [...r].length));
+        if (width * op.rows.length > MAX_DRAW_CELLS * 2) throw new m.ModelError(`draw_map: ${width}x${op.rows.length} is too big at once (at most ${MAX_DRAW_CELLS * 2} cells)`);
+        const byChar = new Map<string, ObjectDefinition>();
+        for (const { char, object } of op.legend) {
+          const ch = [...char][0];
+          if (!ch || ch === '.' || ch === ' ') continue;
+          const id = refs.get(object) ?? object;
+          const d = project.definitions.find((q) => q.id === id) ?? project.definitions.find((q) => q.name.toLowerCase() === object.trim().toLowerCase());
+          if (!d) throw new m.ModelError(`draw_map: "${ch}" stands for "${object}", but there is no such object (create it first, and use its ref)`);
+          byChar.set(ch, d);
+        }
+        const grid = op.rows.map((r) => [...r]);
+        const unknown = new Set(grid.flat().filter((ch) => ch !== '.' && ch !== ' ' && !byChar.has(ch)));
+        if (unknown.size) throw new m.ModelError(`draw_map: the legend doesn't say what ${[...unknown].map((c) => `"${c}"`).join(', ')} ${unknown.size === 1 ? 'is' : 'are'}`);
+        const player = scene.entities.find((e) => resolveEntity(project, e, registry).components.CharacterController);
+        if (op.clear) {
+          const x0 = op.col * LEVEL_CELL;
+          const y0 = op.row * LEVEL_CELL;
+          const gone = scene.entities
+            .filter((e) => e !== player && e.transform.position.x >= x0 && e.transform.position.x < x0 + width * LEVEL_CELL && e.transform.position.y >= y0 && e.transform.position.y < y0 + op.rows.length * LEVEL_CELL)
+            .map((e) => e.id);
+          m.removeEntities(project, op.sceneId, gone);
+          result.removedEntityIds.push(...gone);
+          cover = null;
+        }
+        const used = grid.map((r) => r.map(() => false));
+        // From the bottom row up, left to right: each object's block of cells starts at its bottom-left character.
+        const rectsOf = new Map<ObjectDefinition, { col: number; row: number; width: number; height: number }[]>();
+        for (let j = grid.length - 1; j >= 0; j--) {
+          for (let i = 0; i < grid[j].length; i++) {
+            const ch = grid[j][i];
+            const d = byChar.get(ch);
+            if (!d || used[j][i]) continue;
+            const isPlayer = !!d.components.CharacterController;
+            const size = getEntitySize(resolveEntity(project, instantiateDefinition(d, { x: 0, y: 0 }), registry));
+            const sx = Math.max(1, Math.round(size.x / LEVEL_CELL));
+            const sy = Math.max(1, Math.round(size.y / LEVEL_CELL));
+            for (let a = 0; a < sy; a++) for (let b = 0; b < sx; b++) if (grid[j - a]?.[i + b] === ch) used[j - a][i + b] = true;
+            if (isPlayer) {
+              const pos = { x: (op.col + i) * LEVEL_CELL + (sx * LEVEL_CELL) / 2, y: (op.row + j + 1) * LEVEL_CELL - size.y / 2 };
+              const p = scene.entities.find((e) => resolveEntity(project, e, registry).components.CharacterController);
+              if (p) p.transform.position = pos;
+              else {
+                const e = instantiateDefinition(d, pos);
+                m.addEntity(project, op.sceneId, e);
+                result.createdEntityIds.push(e.id);
+              }
+              cover = null;
+              continue;
+            }
+            const list = rectsOf.get(d) ?? [];
+            list.push({ col: op.col + i, row: op.row + j - sy + 1, width: sx, height: sy });
+            rectsOf.set(d, list);
+          }
+        }
+        for (const [d, rects] of rectsOf) applyOne({ op: 'draw_tiles', sceneId: op.sceneId, definitionRef: d.id, rects, onTop: null });
         break;
       }
       case 'build_path': {

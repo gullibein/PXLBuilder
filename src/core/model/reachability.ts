@@ -138,6 +138,41 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     } else spans.push({ ...t, ids: [...t.ids] });
   }
 
+  // Ramps: walked up and down, from the ground at the foot to the ground at the top (whatever the jump).
+  const rampLinks: [number, number][] = [];
+  for (const r of solids) {
+    const shape = r.components.Collider?.shape;
+    if (shape !== 'slopeRight' && shape !== 'slopeLeft') continue;
+    const b = boxOf(r);
+    const highX = shape === 'slopeRight' ? b.right : b.left;
+    const lowX = shape === 'slopeRight' ? b.left : b.right;
+    const near = (top: number, x: number) => spans.findIndex((s) => Math.abs(s.top - top) <= EDGE + 2 && x >= s.left - EDGE - 1 && x <= s.right + EDGE + 1);
+    const high = near(b.top, highX);
+    const low = near(b.bottom, lowX);
+    if (high >= 0 && low >= 0 && high !== low) rampLinks.push([low, high], [high, low]);
+  }
+
+  // Water to swim in: from anywhere in a pool (its floor, ledges under water) up to the banks round its surface, and back.
+  const pools: Box[] = [];
+  for (const r of all) {
+    if (!r.components.Liquid || r.components.Liquid.swim === false) continue;
+    const b = boxOf(r);
+    const near = pools.find((p) => b.left <= p.right + 1 && b.right >= p.left - 1 && b.top <= p.bottom + 1 && b.bottom >= p.top - 1);
+    if (near) {
+      near.left = Math.min(near.left, b.left);
+      near.right = Math.max(near.right, b.right);
+      near.top = Math.min(near.top, b.top);
+      near.bottom = Math.max(near.bottom, b.bottom);
+    } else pools.push({ ...b });
+  }
+  for (const p of pools) {
+    const touching = spans
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => (s.right > p.left && s.left < p.right && s.top >= p.top - EDGE && s.top <= p.bottom + EDGE) || (gapBetween(s, p) <= pHalf * 2 + 8 && Math.abs(s.top - p.top) <= reach.height + pHeight))
+      .map(({ i }) => i);
+    for (const a of touching) for (const b of touching) if (a !== b) rampLinks.push([a, b]);
+  }
+
   // Ladders: stacked climbable pieces form columns.
   const ladderBoxes = all.filter((r) => r.components.Climbable).map((r) => boxOf(r)).sort((a, b) => a.left - b.left || a.top - b.top);
   const ladders: Box[] = [];
@@ -200,7 +235,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
           queue.push(['l', j]);
         }
       });
-      for (const [a, b] of teleports) {
+      for (const [a, b] of [...teleports, ...rampLinks]) {
         if (a === i && !reachedSpans.has(b)) {
           reachedSpans.add(b);
           queue.push(['s', b]);
@@ -233,9 +268,14 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     }) || [...reachedLadders].some((i) => gapBetween(ladders[i], b) <= pHalf * 2 && b.bottom >= ladders[i].top - pHeight && b.top <= ladders[i].bottom);
   const things = all.filter((r) => important(r) && !within(boxOf(r))).map((r) => ({ id: r.id, name: r.name }));
 
+  // An enclosed level's roof (the top of its ceiling, across nearly all of it) is no platform to get onto.
+  const levelLeft = Math.min(...boxes.map(({ b }) => b.left));
+  const levelRight = Math.max(...boxes.map(({ b }) => b.right));
+  const levelTop = Math.min(...boxes.map(({ b }) => b.top));
+  const roof = (s: Span) => s.top <= levelTop + EDGE && s.right - s.left >= (levelRight - levelLeft) * 0.8 && s.top < pBox.top;
   const platforms = spans
     .map((s, i) => ({ s, i }))
-    .filter(({ s, i }) => !reachedSpans.has(i) && s.right - s.left >= 64 && !solids.some((o) => {
+    .filter(({ s, i }) => !reachedSpans.has(i) && !roof(s) && s.right - s.left >= 64 && !solids.some((o) => {
       const b = boxOf(o);
       return b.bottom <= s.top && b.bottom >= s.top - 64 && b.left < s.right && b.right > s.left;
     }))

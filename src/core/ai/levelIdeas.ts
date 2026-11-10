@@ -16,6 +16,10 @@ import type { Project, Scene } from '../types';
 export interface LevelDesignIdea {
   /** The layout to build this time, with how to build it. */
   layout: { name: string; how: string };
+  /** Side levels: how big (in screens and cells). */
+  size?: string;
+  /** Side levels in a game that has no look of its own yet: the kind of platformer to make (with its rules). */
+  style?: { name: string; rules: string };
   /** Where things go this time. */
   start: string;
   goal: string;
@@ -28,55 +32,76 @@ export interface LevelDesignIdea {
 /** How many ideas for new levels each request carries. */
 const NEW_LEVEL_IDEAS = 4;
 
-/** Side-view (platformer) layouts, each with how to build it with build_path. */
+/**
+ * Side-view (platformer) layouts: compact levels that fill the screen, floors stacked on each other and a way
+ * through that goes up, down, left and right (never one long flat run). Drawn with draw_map.
+ */
 const SIDE_LAYOUTS: { name: string; how: string }[] = [
   {
-    name: 'Tower',
-    how: 'Mostly UP, in layers stacked right above each other, the level about as tall as it is wide: a ground floor, then climbs with back true (or turn + jumps) so each floor runs back over the one below; 3 to 5 floors; side rooms off the floors (a key at the end of one); the goal on the top floor.',
+    name: 'Stacked floors',
+    how: 'Three or four floors stacked right above each other in an enclosed room, the whole height of the level. The way zig-zags: along a floor, up (ladder, jump-through ledges, a ramp) at its far end, back the other way along the next, up again; side pockets with items; the goal on the top floor, above the start.',
   },
   {
     name: 'Descent',
-    how: 'Start HIGH and go DOWN: the player starts on a top ledge; drops (jump with negative rise), step downs, ladders going down (build the lower part as its own route from a "_" cell and connect with a climb up), hazards on the landings; the goal at the very bottom.',
+    how: 'Start at the TOP and work DOWN through stacked floors: drop through gaps and jump-through platforms, slide down ramps, ladders down into a lower cave; hazards on the landings; the goal at the very bottom, under the start.',
   },
   {
     name: 'Hub',
-    how: 'The player starts in the MIDDLE on a central platform; two or three branches go out from it (one left, one right, maybe one up a ladder): one branch hides the key, another ends at the locked goal (a Door that requires the key, or a Goal behind a switch). The player has to go out and come back.',
+    how: 'The player starts in the MIDDLE of the screen on a central floor; ways out in all directions: up a ladder to an upper room, down through a hole to a lower one, left and right into side rooms. The key in one room, the locked goal in another: out and back.',
   },
   {
-    name: 'Valley',
-    how: 'Start high on one side, go down into a deep valley or pit in the middle (hazards and enemies at the bottom), then climb back up the far side to the goal, which is at about the starting height.',
-  },
-  {
-    name: 'Mountain',
-    how: 'Start low, climb to a peak in the MIDDLE of the level (the highest point, with the key or a switch), then go down the other side to the goal at the bottom of the far slope.',
-  },
-  {
-    name: 'Switchback',
-    how: 'Zig-zag UP: long runs that alternate direction (turn, then jump up onto a ledge beyond the end of the floor below, or climb with back true), each layer above the last, enemies patrolling the long runs; the goal at the top, above the start.',
-  },
-  {
-    name: 'Two paths',
-    how: 'From the start the level splits into an UPPER path (jumps, more coins, harder) and a LOWER path (a cave or ground route, enemies, slower); they join again before the goal. Build each as its own route from the fork.',
-  },
-  {
-    name: 'Out and back',
-    how: 'The goal is right next to the start but locked (a Door that requires the key). The key is far away at the end of a long route (out along the ground, or up and over); the way back is different from the way out (a drop, a teleporter, a lower path).',
-  },
-  {
-    name: 'Islands',
-    how: 'A long horizontal stretch of small floating platforms (1-3 cells) at mixed heights over a bottomless gap: no ladders, all jumps, a few coins in the air between them; moving or enemy-guarded islands near the end.',
+    name: 'Loop',
+    how: 'A circuit round a solid middle block: the start bottom left, up the left side (ladder or ledges) along the top to the right, down the right side to a switch or key at the bottom right, and back along the bottom (now open) to the goal. Every part of the screen is used.',
   },
   {
     name: 'Shaft',
-    how: 'A narrow vertical climb, only about 6-10 cells wide: short ledges alternating left and right (turn after each), a ladder in places, hazards on some ledges; the goal at the top. Then, if the user wants more, a short run at the top.',
+    how: 'A tall level about one screen wide and two high: a shaft climbed by ledges on alternate sides, jump-through platforms across it and a ladder or two; side caves off it with items; the goal at the top.',
   },
   {
-    name: 'Basement',
-    how: 'The player starts on the surface; the way on is DOWN into an underground level (a drop or ladder down), a winding route through it to a switch or key, then a ladder back up to the goal on the surface further along.',
+    name: 'Two ways',
+    how: 'From the start the way splits into an UPPER route (jumps over gaps, jump-through platforms, coins, harder) and a LOWER route (a cave or water to swim through, enemies, slower), stacked one above the other across the screen; they meet again before the goal.',
   },
   {
-    name: 'Long run',
-    how: 'Mostly flat and long, but busy: runs broken by gaps, spikes and enemies, small steps up and down (rise ±1), a stretch where the floor drops and rises again, the goal far along; not every level has to climb.',
+    name: 'Pit and climb',
+    how: 'Start high on one side, go DOWN into a deep pit (water or hazards at the bottom, ledges on its walls), across it, then climb back up the far side by ladders and ledges to the goal at about the start\'s height.',
+  },
+  {
+    name: 'Locked up',
+    how: 'The goal is close to the start, behind a door that needs the key (or a switch). The key is in the far corner of the screen, at the end of a winding way up, across and down through the floors; the way back is shorter (a drop, a jump-through floor).',
+  },
+  {
+    name: 'Rooms',
+    how: 'Four to six small rooms in a grid on the screen (two or three across, two high), joined by doorways, holes in their floors and ladders between them; one room has the key, one the goal, others enemies, crates or water.',
+  },
+];
+
+/** How big a side level is: one screen is about 30 by 17 cells (at the normal zoom). */
+const SIDE_SIZES = ['one screen (about 30 by 17 cells)', 'one screen (about 30 by 17 cells)', 'two screens tall (about 30 by 34 cells)', 'two screens wide (about 60 by 17 cells)', 'two by two screens (about 60 by 34 cells)'];
+
+/**
+ * Kinds of platformer, each with its own look and pieces: a game is one kind throughout (the user's words decide;
+ * without any, the one suggested here), and each kind has its own rules (what is in it and what never is).
+ */
+export const PLATFORMER_STYLES: { name: string; rules: string }[] = [
+  {
+    name: 'Classic blocks',
+    rules: 'Bright sky, chunky solid blocks and bricks, floating block rows, pipes, pits; a block-built ground with a grassy top. Every platform is solid (no jump-through platforms, no ramps); coins in the air; walking enemies (Walker).',
+  },
+  {
+    name: 'Cave explorer',
+    rules: 'An enclosed cave: thick rock all round (autotiled), floors stacked inside it, a dark back wall, stalactites and vines hanging from the ceilings, glowing mushrooms; ladders, thin jump-through ledges and bridges, ramps where floors meet; pools of water (or acid); gems to collect; crates and barrels.',
+  },
+  {
+    name: 'Hills and islands',
+    rules: 'Outdoors: grassy hills of earth with 45 degree ramps up and down, floating islands, mushroom caps or clouds as jump-through platforms (on stems or nothing), vines to climb, trees, flowers and rocks as decoration, water below; a cottage or sign by the start.',
+  },
+  {
+    name: 'Indoor rooms',
+    rules: 'A building or lab: rooms with solid walls and floors, a patterned back wall, thin metal bars and plank shelves as jump-through platforms, crates and hazard boxes stacked, buttons and doors between rooms, elevators (moving platforms); no ramps.',
+  },
+  {
+    name: 'Ruined temple',
+    rules: 'Ancient stone blocks with cracks, overgrown with moss and grass, spikes on floors and ceilings, fire or lava pits, moving platforms on chains, stone ledges; a timer or a score in the corner; few ramps, no water.',
   },
 ];
 
@@ -131,14 +156,16 @@ export function levelDesignIdea(project: Project, scene: Scene, registry: Compon
     const layout = order[i % order.length];
     const mirrored = random() < 0.5;
     return {
-      layout: { name: layout.name, how: topDown ? layout.how : `${layout.how}${mirrored ? ' Build it mirrored: the main direction is LEFT (direction "left").' : ''}` },
+      layout: { name: layout.name, how: topDown ? layout.how : `${layout.how}${mirrored ? ' Mirrored: left and right swapped.' : ''}` },
       start: pick(topDown ? TD_STARTS : SIDE_STARTS),
       goal: pick(topDown ? TD_GOALS : SIDE_GOALS),
+      ...(topDown ? {} : { size: pick(SIDE_SIZES) }),
     };
   };
   const first = idea(0);
   return {
     ...first,
+    ...(topDown ? {} : { style: pick(PLATFORMER_STYLES) }),
     forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => idea(i + 1)),
     otherLevels: project.scenes.filter((s) => s.id !== scene.id).flatMap((s) => {
       const shape = levelShape(project, s, registry);

@@ -180,6 +180,122 @@ const ENEMY_ART: PixelArt = {
 };
 
 /** A wooden crate (to push). */
+/** Ramps (45 degrees, the Platform's colors): grass along the slope, earth under it. */
+const RAMP_PALETTE: PixelArt['palette'] = [{ key: 'h', color: '#86d05c' }, { key: 'g', color: '#5fa83f' }, { key: 'k', color: '#3f7d2a' }, { key: 'd', color: '#8a5a2b' }, { key: 'e', color: '#6e4521' }, { key: 's', color: '#a8743f' }];
+const RAMP_RIGHT: PixelArt = { palette: RAMP_PALETTE, rows: [
+    '...............h',
+    '..............hg',
+    '.............hgk',
+    '............hgkd',
+    '...........hgkse',
+    '..........hgkdds',
+    '.........hgkdsds',
+    '........hgkddded',
+    '.......hgkddeedd',
+    '......hgkdddeddd',
+    '.....hgkdsddddds',
+    '....hgkdddsddddd',
+    '...hgkdddddddeds',
+    '..hgkdesdsddddsd',
+    '.hgkdessddsddddd',
+    'hgkdddddddddddds',
+  ] };
+const RAMP_LEFT: PixelArt = { palette: RAMP_PALETTE, rows: [
+    'h...............',
+    'gh..............',
+    'kgh.............',
+    'dkgh............',
+    'eskgh...........',
+    'sddkgh..........',
+    'sdsdkgh.........',
+    'dedddkgh........',
+    'ddeeddkgh.......',
+    'dddedddkgh......',
+    'sdddddsdkgh.....',
+    'dddddsdddkgh....',
+    'sdedddddddkgh...',
+    'dsddddsdsedkgh..',
+    'dddddsddssedkgh.',
+    'sddddddddddddkgh',
+  ] };
+/** A plank bridge across the top of its square (the rest of the square is empty). */
+const BRIDGE: PixelArt = {
+  palette: [{ key: 'k', color: '#5a3a1e' }, { key: 'w', color: '#b07a43' }, { key: 'l', color: '#8a5a2b' }],
+  rows: [
+    'kkkkkkkkkkkkkkkk',
+    'wwwlwwwwwwwlwwww',
+    'wlwwwwwlwwwwwwlw',
+    'kkkkkkkkkkkkkkkk',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+};
+/** Water: the surface (waves moving, two frames) and the water under it. */
+const WATER_PALETTE: PixelArt['palette'] = [{ key: 'h', color: '#d6f1ff' }, { key: 'a', color: '#5cb3e8' }, { key: 'b', color: '#2f7fc4' }];
+const WATER_FRAMES: string[][] = [[
+    '...hhh......hhh.',
+    '.hhaaahh..hhaaah',
+    'haaaaaaahhaaaaaa',
+    'aaaaaaaaaaaaaaaa',
+    'bbbbbbbbbbbbbbbb',
+    'bbabbbbbbbbbbabb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbaabbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'babbbbbbbbbabbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbabbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbab',
+  ], [
+    'hhh......hhh....',
+    'aaahh..hhaaah.hh',
+    'aaaaahhaaaaaahaa',
+    'aaaaaaaaaaaaaaaa',
+    'bbbbbbbbbbbbbbbb',
+    'abbbbbbbbbbabbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbaabbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbabbbbba',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbabbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbabbb',
+  ]];
+const DEEP_WATER: PixelArt = { palette: WATER_PALETTE, rows: [
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbabbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbabbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbabbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbabb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbabbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+    'bbbbbbbbbbbbbbbb',
+  ] };
+
 const CRATE: PixelArt = {
   palette: [{ key: 'k', color: '#2a1a10' }, { key: 'w', color: '#b07a43' }, { key: 'd', color: '#7a522c' }, { key: 'l', color: '#d49a5c' }],
   rows: [
@@ -337,6 +453,11 @@ export interface StarterAssets {
   goal: AssetRecord;
   crate: AssetRecord;
   heart: AssetRecord;
+  ramp: AssetRecord;
+  rampLeft: AssetRecord;
+  bridge: AssetRecord;
+  water: AssetRecord;
+  deepWater: AssetRecord;
 }
 
 /**
@@ -409,7 +530,7 @@ export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord)
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset() };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER) };
 }
 
 /** Library categories of the starter objects. */
@@ -428,8 +549,13 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Goal: 'Environment',
   Crate: 'Environment',
   Heart: 'Items',
+  Ramp: 'Platforms',
+  'Ramp left': 'Platforms',
+  Bridge: 'Platforms',
+  Water: 'Environment',
+  'Deep water': 'Environment',
 };
-const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder']);
+const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder', 'Ramp', 'Ramp left', 'Bridge', 'Water', 'Deep water']);
 
 /**
  * Starter object definitions. These are ordinary data built from generic
@@ -566,6 +692,57 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       ['crate', 'pushable'],
       'A heavy crate the player can push sideways, slowly (it falls off ledges); stand on it to reach higher.',
     ),
+    createDefinition(
+      'Ramp',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#5fa83f', assetId: assets.ramp.id }),
+        Collider: c('Collider', { shape: 'slopeRight' }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'ground', 'ramp'],
+      'A 45 degree ramp rising to the right: walked up and down. Stand it on the ground with the ground going on, level with its top, on its right.',
+    ),
+    createDefinition(
+      'Ramp left',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#5fa83f', assetId: assets.rampLeft.id }),
+        Collider: c('Collider', { shape: 'slopeLeft' }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'ground', 'ramp'],
+      'A 45 degree ramp rising to the left: walked up and down. Stand it on the ground with the ground going on, level with its top, on its left.',
+    ),
+    createDefinition(
+      'Bridge',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#b07a43', assetId: assets.bridge.id }),
+        // (The planks along the top of the square: level with the ground beside it.)
+        Collider: c('Collider', { size: { x: 32, y: 8 }, offset: { x: 0, y: -12 }, oneWay: true, matchSprite: false }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'bridge'],
+      'A plank bridge, a jump-through platform: the player lands on it from above and jumps up through it from below (Down + Jump drops through). Draw rows of it across gaps, level with the ground.',
+    ),
+    createDefinition(
+      'Water',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.water.id, layer: -1 }),
+        Collider: c('Collider', { isTrigger: true }),
+        Liquid: c('Liquid'),
+      },
+      ['water', 'liquid'],
+      'The surface of water, its waves moving: the player swims in it (Jump strokes up) and jumps out at the top. The top row of a pool; Deep water under it.',
+    ),
+    createDefinition(
+      'Deep water',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.deepWater.id, layer: -1 }),
+        Collider: c('Collider', { isTrigger: true }),
+        Liquid: c('Liquid'),
+      },
+      ['water', 'liquid'],
+      'Water under the surface (the Water row): fills a pool below it.',
+    ),
     heartDefinition(registry, assets.heart),
   ];
   for (const def of defs) {
@@ -605,6 +782,6 @@ export function createProject(registry: ComponentRegistry, name = 'Untitled Game
     startSceneId: scene.id,
     scenes: [scene],
     definitions: createStarterDefinitions(registry, assets),
-    assets: [assets.ladder, assets.lever, assets.player, assets.enemy, assets.hazard, assets.teleporter, assets.goal, assets.crate, assets.heart],
+    assets: Object.values(assets),
   };
 }

@@ -41,6 +41,20 @@ const SET: Record<string, { frames: string[][]; fps?: number }> = {
   // Grey bricks.
   '*:Stone': { frames: [['66656666', 'ddd5dddd', 'ddd5dddd', '55555555', '66666566', 'ddddd5dd', 'ddddd5dd', '55555555']] },
   // Two rails, two rungs.
+  // Ramps in the Platform's colors: grass along the slope, earth under it.
+  'platformer:Ramp': { frames: [['.......b', '......b3', '.....b34', '....b344', '...b3444', '..b34494', '.b344444', 'b3444544']] },
+  'platformer:Ramp left': { frames: [['b.......', '3b......', '43b.....', '443b....', '4443b...', '49443b..', '444443b.', '4454443b']] },
+  // Planks across the top of the square.
+  'platformer:Bridge': { frames: [['22222222', '94999949', '22222222', '........', '........', '........', '........', '........']] },
+  // Water: the surface with moving waves, and the water under it.
+  'platformer:Water': {
+    frames: [
+      ['.77...77', '7cc77cc7', 'cccccccc', 'cccccccc', 'cc1ccccc', 'cccccccc', 'ccccc1cc', 'cccccccc'],
+      ['77...77.', 'cc77cc77', 'cccccccc', 'cccccccc', 'ccccc1cc', 'cccccccc', 'cc1ccccc', 'cccccccc'],
+    ],
+    fps: 3,
+  },
+  'platformer:Deep water': { frames: [['cccccccc', 'cc1ccccc', 'cccccccc', 'ccccc1cc', 'cccccccc', 'c1cccccc', 'cccccccc', 'cccc1ccc']] },
   '*:Ladder': { frames: [['.4....4.', '.499994.', '.4....4.', '.4....4.', '.4....4.', '.499994.', '.4....4.', '.4....4.']] },
   // A purple horned beetle.
   'platformer:Enemy': { frames: [['.e....e.', '..2222..', '.222222.', '27022702', '22222222', '2e2222e2', '.222222.', '.2.22.2.']] },

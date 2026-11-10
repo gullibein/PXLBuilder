@@ -62,10 +62,15 @@ export interface RuntimeEntity {
   /** Scales how fast it walks, climbs and patrols (1: normal; scripts set it, e.g. water). */
   speedFactor: number;
   /** Collision box relative to the position (null: no collider). */
-  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean } | null;
+  /** oneWay: a jump-through platform (only its top holds, from above); slope: a ramp rising to the right (1) or left (-1). */
+  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean; oneWay?: boolean; slope?: 1 | -1 } | null;
   controller: Controller | null;
   /** Ladders, vines…: things a character can climb. */
   climbable: boolean;
+  /** It is water (or mud…) to swim in: its Liquid settings. */
+  liquid: { swim: boolean; slow: number; sink: number; stroke: number } | null;
+  /** The liquid its middle is in now (null: none), and where that liquid's surface is. */
+  inLiquid: { swim: boolean; slow: number; sink: number; stroke: number; top?: number } | null;
   grounded: boolean;
   /** The friction of what it stands on (as of the last step it was on the ground). */
   groundFriction: number;
@@ -163,6 +168,10 @@ export interface RuntimeEntity {
   stompGrace: number;
   /** Position at the start of the step (to tell landing on top from bumping into the side). */
   prevY: number;
+  /** Dropping through jump-through platforms for this long yet (Down + Jump on one). */
+  dropThrough: number;
+  /** It stood on a slope in the last step (it may step up onto the flat ground at the top). */
+  onSlope: boolean;
   /** Isometric: how high it is (isoLift units: 16 a block); things that move follow the ground's height. */
   z: number;
   /** Isometric: how fast it is falling down to lower ground. */
@@ -174,6 +183,11 @@ export interface RuntimeEntity {
 /** Fixed simulation step: stable physics regardless of display refresh rate. */
 export const STEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 12;
+/** The fastest anything sinks in a liquid (px/s), and the speed above which a stroke up slows quickly. */
+const SINK_SPEED = 90;
+const SWIM_RISE = 160;
+/** Seconds jump-through platforms let it through after Down + Jump. */
+const DROP_THROUGH = 0.25;
 const MAX_FALL_SPEED = 1400;
 const MIN_MASS = 0.01;
 /** A Pushable this many times heavier than its pusher can't be moved by it. */
@@ -386,7 +400,8 @@ export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedE
     [w, h] = [Math.abs(w * cos) + Math.abs(h * sin), Math.abs(w * sin) + Math.abs(h * cos)];
     [ox, oy] = [ox * cos - oy * sin, ox * sin + oy * cos];
   }
-  return { ox, oy, hw: w / 2, hh: h / 2, trigger: col.isTrigger === true };
+  const slope = col.shape === 'slopeRight' ? 1 : col.shape === 'slopeLeft' ? -1 : 0;
+  return { ox, oy, hw: w / 2, hh: h / 2, trigger: col.isTrigger === true, ...(col.oneWay === true && !slope ? { oneWay: true } : {}), ...(slope ? { slope: slope as 1 | -1 } : {}) };
 }
 
 function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
@@ -427,6 +442,15 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     collider,
     controller: cc ? { movement: cc.movement === 'topdown' ? 'topdown' : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
+    liquid: c.Liquid
+      ? {
+          swim: c.Liquid.swim !== false,
+          slow: typeof c.Liquid.slow === 'number' ? c.Liquid.slow : 0.55,
+          sink: typeof c.Liquid.sink === 'number' ? c.Liquid.sink : 0.25,
+          stroke: typeof c.Liquid.stroke === 'number' ? c.Liquid.stroke : 0.6,
+        }
+      : null,
+    inLiquid: null,
     grounded: false,
     groundFriction: DEFAULT_FRICTION,
     climbing: false,
@@ -477,6 +501,8 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     hiddenBySwitch: false,
     moveTarget: null,
     prevY: r.transform.position.y,
+    dropThrough: 0,
+    onSlope: false,
     z: typeof r.components.Sprite?.isoLift === 'number' ? r.components.Sprite.isoLift : 0,
     vz: 0,
     touching: new Set(),
@@ -511,6 +537,10 @@ export class Runtime {
   private solidsDirty = true;
   /** Tops of ladders: one-way platforms. */
   private ladderTops: Box[] = [];
+  /** Jump-through platforms that stay put (only their tops hold, from above). */
+  private oneWays: Box[] = [];
+  /** Ramps that stay put: their box and which way they rise (1 to the right, -1 to the left). */
+  private slopes: (Box & { dir: 1 | -1 })[] = [];
   /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
   private ladders: Ladder[] = [];
   fallLimit = 0;
@@ -773,7 +803,11 @@ export class Runtime {
     if (this.solidsDirty) {
       this.fogDirty = true;
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
-      this.staticSolids = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none')).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
+      const fixed = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none'));
+      // (Jump-through platforms and ramps are surfaces of their own, not walls.)
+      this.staticSolids = fixed.filter((e) => !e.collider!.oneWay && !e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
+      this.oneWays = fixed.filter((e) => e.collider!.oneWay).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
+      this.slopes = fixed.filter((e) => e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction, dir: e.collider!.slope! }));
       this.rebuildLadders();
       this.solidsDirty = false;
     }
@@ -787,6 +821,7 @@ export class Runtime {
     this.behaviors.before(dt, steer);
     this.scripts.before(dt, steer);
     const kinematicSolids: Box[] = [];
+    const movingOneWays: Box[] = [];
     for (const e of this.entities) {
       // (A thing with no body that a script gave a speed moves by it too, through everything: a shot bubble, a
       // floating label. Only solid ones stay put: they are part of the level's fixed walls.)
@@ -794,15 +829,19 @@ export class Runtime {
       if ((e.body === 'kinematic' || drifts) && e.alive) {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (this.isSolid(e)) kinematicSolids.push({ ...boxOf(e)!, friction: e.friction });
+        if (this.isSolid(e)) (e.collider?.oneWay ? movingOneWays : kinematicSolids).push({ ...boxOf(e)!, friction: e.friction });
       }
     }
     const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
     const pushables = this.entities.filter((e) => e.pushable && this.isSolid(e));
+    // Liquids (water to swim in): what each moving thing's middle is in.
+    const liquids = this.entities.filter((e) => e.liquid && e.alive && e.collider);
 
     for (const e of this.entities) {
       if (e.body !== 'dynamic' || !e.alive) continue;
       e.prevY = e.y;
+      // (On the ground as the step begins: walking off onto a ramp going down, it keeps to it.)
+      const groundedBefore = e.grounded;
       if (e.moveTarget) {
         // Gliding (a script or a switch moves it): no falling meanwhile.
         e.vx = 0;
@@ -820,11 +859,34 @@ export class Runtime {
           e.knock = null;
         }
       }
+      e.inLiquid = null;
+      for (const l of liquids) {
+        const lb = boxOf(l)!;
+        if (l !== e && Math.abs(e.x - lb.x) < lb.hw && Math.abs(e.y - lb.y) < lb.hh) {
+          // (The surface: the top of this piece and of the pieces of liquid stacked right above it.)
+          let top = lb.y - lb.hh;
+          for (let more = true; more; ) {
+            more = false;
+            for (const o of liquids) {
+              const ob = boxOf(o)!;
+              if (Math.abs(ob.y + ob.hh - top) < 1 && Math.abs(e.x - ob.x) < ob.hw) {
+                top = ob.y - ob.hh;
+                more = true;
+              }
+            }
+          }
+          e.inLiquid = { ...l.liquid!, top };
+        }
+      }
       if (e.controller && !e.dying) this.control(e, this.inputFor(e, steer), dt);
       else if ((e.climbing || e.climbDir !== 0) && !this.floats(e)) this.climbAlong(e, dt);
       if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
-        e.vx += this.gravity.x * e.gravityScale * dt;
-        e.vy = Math.min(MAX_FALL_SPEED, e.vy + this.gravity.y * e.gravityScale * dt);
+        // (In a liquid: pulled down less, and it sinks slowly; it can't pick up a great speed in it either way.)
+        const pull = e.gravityScale * (e.inLiquid ? e.inLiquid.sink : 1);
+        e.vx += this.gravity.x * pull * dt;
+        e.vy = Math.min(e.inLiquid ? SINK_SPEED : MAX_FALL_SPEED, e.vy + this.gravity.y * pull * dt);
+        // (A stroke up slows quickly under water; not the leap out of it, its head already above the surface.)
+        if (e.inLiquid && e.vy < -SWIM_RISE && !(e.inLiquid.top !== undefined && zoneOf(e).y - zoneOf(e).hh < e.inLiquid.top)) e.vy = Math.max(e.vy, e.vy * (1 - 3 * dt));
       }
       const box = boxOf(e);
       if (!box) {
@@ -837,11 +899,21 @@ export class Runtime {
         const prevBottom = box.y + box.hh;
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => ({ ...boxOf(p)!, friction: p.friction })) : [];
         const base = others.length ? [...solids, ...others] : solids;
-        let surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01)];
+        // Jump-through platforms hold it only from above (not while it drops through them).
+        if (e.dropThrough > 0) e.dropThrough = Math.max(0, e.dropThrough - dt);
+        const tops = e.dropThrough > 0 ? [] : [...this.oneWays, ...movingOneWays].filter((t) => prevBottom <= t.y - t.hh + 0.01);
+        let surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01), ...tops];
         // Isometric: ground more than a block above it is a wall to it.
         const iso = this.cam.camera.iso === true;
         if (iso) surfaces = [...surfaces, ...this.cliffsAround(e).map((b) => ({ ...b, friction: DEFAULT_FRICTION }))];
         const goingDown = e.vy > 0;
+        // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at the
+        // top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
+        if (this.slopes.length && !e.climbing) {
+          const bottom = box.y + box.hh;
+          const overRamp = this.slopes.some((s) => Math.abs(box.x - s.x) <= s.hw && bottom >= s.y - s.hh - 2 && bottom <= s.y + s.hh + 2);
+          if (overRamp) surfaces = surfaces.filter((o) => (o.x - o.hw <= box.x && o.x + o.hw >= box.x) || o.y - o.hh > bottom + 0.5 || o.y - o.hh < bottom - box.hw - 1);
+        }
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
@@ -850,6 +922,19 @@ export class Runtime {
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
         e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
+        // Ramps: its feet (under its middle) go on the ramp's surface.
+        const wasOnSlope = e.onSlope;
+        e.onSlope = false;
+        if (this.slopes.length && !e.climbing && !e.hanging && !this.floats(e)) {
+          const ramp = this.onRamp(e, prevBottom, wasOnSlope || e.grounded || (groundedBefore && e.vy >= 0), dt);
+          if (ramp) {
+            e.y = ramp.y;
+            if (e.vy > 0) e.vy = 0;
+            e.grounded = true;
+            e.onSlope = true;
+            if (e.controller || (e.vx !== 0 && e.friction > 0)) e.groundFriction = ramp.friction ?? DEFAULT_FRICTION;
+          }
+        }
         // What it stands on decides its grip (only looked for when something uses it: characters, things sliding).
         if (e.grounded && (e.controller || (e.vx !== 0 && e.friction > 0))) e.groundFriction = groundUnder(boxOf(e)!, surfaces)?.friction ?? DEFAULT_FRICTION;
         // Climbing down onto the floor (or standing on it) ends the climb.
@@ -1263,7 +1348,7 @@ export class Runtime {
 
     if (!ownRun) {
       // (The ready-made Running script does exactly this: engineParts.ts.)
-      const target = dir * c.speed * e.speedFactor;
+      const target = dir * c.speed * e.speedFactor * (e.inLiquid ? e.inLiquid.slow : 1);
       // On the ground, as much as its grip there allows (its own friction and the floor's); in the air, its air control.
       const rate = c.acceleration * (e.grounded ? groundGrip(e.friction, e.groundFriction) : c.airControl);
       const diff = target - e.vx;
@@ -1272,6 +1357,23 @@ export class Runtime {
 
     if (ownJump) {
       if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
+      return;
+    }
+    // Swimming: each Jump is a stroke up (at the surface it takes it out of the water).
+    if (e.inLiquid?.swim && input.wasPressed('jump')) {
+      // (Its head out of the water: a whole jump, onto the bank.)
+      const head = zoneOf(e).y - zoneOf(e).hh;
+      e.vy = -c.jumpForce * (e.inLiquid.top !== undefined && head < e.inLiquid.top ? 1 : e.inLiquid.stroke);
+      e.grounded = false;
+      e.jumpBuffer = 0;
+      return;
+    }
+    // Down + Jump on a jump-through platform: drops through it instead of jumping.
+    if (e.grounded && input.isDown('down') && input.wasPressed('jump') && this.onJumpThrough(e)) {
+      e.dropThrough = DROP_THROUGH;
+      e.grounded = false;
+      e.coyote = 0;
+      e.jumpBuffer = 0;
       return;
     }
     // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
@@ -1291,8 +1393,8 @@ export class Runtime {
       e.jumpBuffer = 0;
     }
     if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
-    // Releasing jump early makes a shorter hop.
-    if (input.wasReleased('jump') && e.vy < 0) e.vy *= 0.5;
+    // Releasing jump early makes a shorter hop (not a swim stroke).
+    if (input.wasReleased('jump') && e.vy < 0 && !e.inLiquid?.swim) e.vy *= 0.5;
   }
 
   /**
@@ -1645,11 +1747,44 @@ export class Runtime {
     e.nudge = { x: drawn.dx, y: drawn.dy };
   }
 
+  /** It stands on a jump-through platform (and nothing solid besides). */
+  onJumpThrough(e: RuntimeEntity): boolean {
+    const box = boxOf(e);
+    if (!box) return false;
+    return standingOn(box, this.oneWays) && !standingOn(box, this.solids);
+  }
+
+  /**
+   * The ramp its feet are on (or just reached): the surface under its middle, the highest of the ramps there.
+   * It lands on one from above (it was on or above the surface a moment ago), and while it walks on ramps
+   * (or the ground just before one) it keeps to the surface going down too, instead of hopping off.
+   */
+  private onRamp(e: RuntimeEntity, prevBottom: number, stick: boolean, dt: number): { y: number; friction?: number } | null {
+    const box = boxOf(e);
+    if (!box || e.vy < 0) return null;
+    const bottom = box.y + box.hh;
+    let best: { surf: number; s: Box } | null = null;
+    for (const s of this.slopes) {
+      // (A little past its ends too, level with them: no hop where it meets the ground.)
+      if (Math.abs(box.x - s.x) > s.hw + box.hw / 2) continue;
+      // Rising to the right: low at its left edge (its bottom), high at its right edge (its top).
+      const t = Math.max(0, Math.min(1, (box.x - (s.x - s.hw)) / (2 * s.hw)));
+      const surf = s.y + s.hh - (s.dir === 1 ? t : 1 - t) * 2 * s.hh;
+      const reach = stick ? Math.abs(e.vx) * dt + 4 : 0;
+      if (bottom < surf - reach || bottom > s.y + s.hh + 1) continue;
+      if (!stick && prevBottom > surf + Math.max(4, e.vy * dt) + 1) continue;
+      if (!best || surf < best.surf) best = { surf, s };
+    }
+    return best ? { y: best.surf - box.hh - (e.collider?.oy ?? 0), friction: best.s.friction } : null;
+  }
+
   /** A wall right in front of it that way (sideways, or up/down): the box a patroller turns at. */
   wallAhead(e: RuntimeEntity, dx: number, dy: number): boolean {
     const box = boxOf(e);
     if (!box || (dx === 0 && dy === 0)) return false;
-    const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y, hw: 1, hh: box.hh - 1 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
+    // (On a ramp, the ground at its top is no wall: only what is higher than a ramp's rise under it counts.)
+    const step = dx !== 0 && e.onSlope ? box.hw + 1 : 0;
+    const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y - step / 2, hw: 1, hh: box.hh - 1 - step / 2 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
     return this.solids.some((s) => overlaps(front, s));
   }
 
@@ -1657,7 +1792,9 @@ export class Runtime {
   ledgeAhead(e: RuntimeEntity, dir: number): boolean {
     const box = boxOf(e);
     if (!box || dir === 0) return false;
-    return !this.floorIn({ x: box.x + dir * (box.hw + 2), y: box.y + box.hh + 4, hw: 1, hh: 3 });
+    // (On a ramp the ground ahead may be up to a ramp's fall lower: that is no ledge.)
+    const deep = e.onSlope ? box.hw + 4 : 0;
+    return !this.floorIn({ x: box.x + dir * (box.hw + 2), y: box.y + box.hh + 4 + deep / 2, hw: 1, hh: 3 + deep / 2 });
   }
 
   /**
@@ -1706,7 +1843,7 @@ export class Runtime {
 
   /** Floor under this box: something solid, or the top of a ladder. */
   floorIn(box: Box): boolean {
-    return this.solids.some((s) => overlaps(box, s)) || this.ladderTops.some((t) => overlaps(box, t));
+    return this.solids.some((s) => overlaps(box, s)) || this.ladderTops.some((t) => overlaps(box, t)) || this.oneWays.some((t) => overlaps(box, t)) || this.slopes.some((t) => overlaps(box, t));
   }
 
   /** Whether a character is on a ladder it could climb (or is climbing one). */
