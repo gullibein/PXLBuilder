@@ -47,7 +47,7 @@ export type Stmt =
   | { do: 'push'; x: string; y: string; on: string | null }
   | { do: 'move_toward'; target: string; speed: string }
   | { do: 'chase'; target: string; speed: string }
-  | { do: 'crawl'; target: string; speed: string; wander: string | null; replan: string | null; drop_on: string | null }
+  | { do: 'crawl'; target: string; speed: string; wander: string | null; replan: string | null; drop_on: string | null; ambush: string | null }
   | { do: 'heading'; x: string; y: string }
   | { do: 'carry'; x: string; y: string }
   | { do: 'climbing'; value: string }
@@ -382,8 +382,8 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'one step of chasing it as enemies do: flyers (no gravity) straight at it; walkers sideways, and up or down by ladder when it is higher or lower (walking to a ladder that goes that way, lining up, climbing, stepping off level with it); sets facing',
   },
   crawl: {
-    example: '{"do":"crawl","target":"nearest_player()","speed":"50","wander":"0.6","replan":"1","drop_on":"true"}',
-    doc: 'one step of crawling to it over floors, walls, ceilings and ladders, like a slime (its gravity is off meanwhile; it turns so its underside faces what it holds on to): finds a way there through the grid squares that touch something solid, letting go and dropping from above where that is the way; plans again every replan seconds (null 1), each plan with a bit of chance per step (wander: 0 always the shortest way, 1 often another; null 0.5); drop_on true (null): right under a ceiling with it straight below and nothing between, it drops onto it',
+    example: '{"do":"crawl","target":"nearest_player()","speed":"50","wander":"0.6","replan":"1","drop_on":"true","ambush":"0.5"}',
+    doc: 'one step of crawling to it over floors, walls, ceilings and ladders, like a slime (its gravity is off meanwhile; it turns so its underside faces what it holds on to): finds a way there through the grid squares that touch something solid, letting go and dropping from above where that is the way; plans again every replan seconds (null 1), each plan with a bit of chance per step (wander: 0 always the shortest way, 1 often another; null 0.5); drop_on true (null): right under a ceiling with it straight below and nothing between, it drops onto it; ambush (null 0.5): the chance, each time it lands, that it goes for an ambush: no drops but onto it (it crawls the ceiling to above it and drops on it). A square it can be in is free with something solid right beside, above or below it, or a ladder; it never crosses a gap, it goes round the corners of blocks',
   },
   climbing: {
     example: '{"do":"climbing","value":"true"}',
@@ -598,7 +598,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('push'), x: expr.default('0'), y: expr.default('0'), on: nexpr }),
     z.object({ do: z.literal('move_toward'), target: expr, speed: expr }),
     z.object({ do: z.literal('chase'), target: expr, speed: expr }),
-    z.object({ do: z.literal('crawl'), target: expr, speed: expr, wander: nexpr, replan: nexpr, drop_on: nexpr }),
+    z.object({ do: z.literal('crawl'), target: expr, speed: expr, wander: nexpr, replan: nexpr, drop_on: nexpr, ambush: nexpr }),
     z.object({ do: z.literal('heading'), x: expr, y: expr }),
     z.object({ do: z.literal('carry'), x: expr, y: expr }),
     z.object({ do: z.literal('climbing'), value: expr }),
@@ -823,7 +823,7 @@ export function exprSlots(s: Stmt): string[] {
     case 'climb':
       return [s.dir, ...(s.speed ? [s.speed] : []), ...(s.on ? [s.on] : [])];
     case 'crawl':
-      return [s.target, s.speed, ...[s.wander, s.replan, s.drop_on].filter((x): x is string => !!x)];
+      return [s.target, s.speed, ...[s.wander, s.replan, s.drop_on, s.ambush].filter((x): x is string => !!x)];
     case 'gravity':
       return [s.scale, ...(s.on ? [s.on] : [])];
     case 'speed_factor':

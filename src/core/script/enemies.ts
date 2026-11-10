@@ -275,12 +275,13 @@ export const SHY_GHOST_SCRIPT = {
 export const SLIME_SCRIPT = {
   name: 'Slime',
   description:
-    'Crawls over floors, walls, ceilings and ladders toward the player, finding its way again every replan seconds, not always the shortest (wander 0-1); drops from a ceiling when that is the way, and onto the player right below (drop_on). With sight > 0 it waits stuck where it is until it sees the player that near.',
+    'Crawls over floors, walls, ceilings and ladders toward the player, finding its way again every replan seconds, not always the shortest (wander 0-1); drops from a ceiling when that is the way, and onto the player right below (drop_on); ambush: the chance it crawls the ceiling to above the player to drop on it. With sight > 0 it waits stuck where it is until it sees the player that near.',
   vars: [
     { name: 'speed', value: 45, setting: true },
     { name: 'wander', value: 0.6, setting: true },
     { name: 'replan', value: 1.5, setting: true },
     { name: 'drop_on', value: true, setting: true },
+    { name: 'ambush', value: 0.5, setting: true },
     { name: 'sight', value: 0, setting: true },
     { name: 'hunting', value: false },
   ],
@@ -293,7 +294,7 @@ export const SLIME_SCRIPT = {
         when('not hunting and nearest_player() and (sight <= 0 or (dist(nearest_player()) <= sight and can_see(nearest_player())))', [set('hunting', 'true')]),
         when(
           'hunting and nearest_player()',
-          [{ do: 'crawl', target: 'nearest_player()', speed: 'speed * self.speed_factor', wander: 'wander', replan: 'replan', drop_on: 'drop_on' }],
+          [{ do: 'crawl', target: 'nearest_player()', speed: 'speed * self.speed_factor', wander: 'wander', replan: 'replan', drop_on: 'drop_on', ambush: 'ambush' }],
           [vel('0', '0')],
         ),
       ],

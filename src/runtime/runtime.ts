@@ -133,6 +133,8 @@ export interface RuntimeEntity {
   spin: number;
   /** Crawling over surfaces (the "crawl" statement): its planned way, null before it first crawls. */
   crawl: CrawlState | null;
+  /** Drawn moved from where its body is by this much (a crawler drawn up against the surface it holds on to). */
+  nudge: { x: number; y: number } | null;
   /** Drawn mirrored by a level flip (-1) or not (1), per axis; flipT: during a flip, how far its own turn is (0-1). */
   mirror: { x: 1 | -1; y: 1 | -1 };
   flipT: number | null;
@@ -463,6 +465,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     turn: null,
     spin: 0,
     crawl: null,
+    nudge: null,
     mirror: { x: 1, y: 1 },
     flipT: null,
     trail: c.Trail ? { length: Math.min(2, Math.max(0.02, num(c.Trail.length, 0.15))), points: [] } : null,
@@ -1619,13 +1622,13 @@ export class Runtime {
    * One step of crawling to `target` over floors, walls, ceilings and ladders (crawl.ts): its gravity is off while
    * it crawls, and it turns so its underside faces what it holds on to.
    */
-  crawl(e: RuntimeEntity, target: RuntimeEntity, o: { speed: number; wander: number; replan: number; dropOn: boolean }, dt: number): void {
+  crawl(e: RuntimeEntity, target: RuntimeEntity, o: { speed: number; wander: number; replan: number; dropOn: boolean; ambush: number }, dt: number): void {
     // (Squares of the editor's grid, as many to a side as its body needs: a 30 px slime on a 16 px grid crawls 32 px squares.)
     const grid = Math.max(4, this.project.settings.gridSize || 32);
     const body = boxOf(e) ?? zoneOf(e);
     const cell = grid * Math.max(1, Math.ceil((2 * Math.max(body.hw, body.hh)) / grid - 0.01));
     e.gravityScale = 0;
-    e.crawl ??= { path: [], planned: -Infinity, falling: false };
+    e.crawl ??= { path: [], planned: -Infinity, falling: false, from: null, ambush: null };
     const world: CrawlWorld = {
       solidAt: (x, y) => this.solids.some((b) => Math.abs(x - b.x) < b.hw && Math.abs(y - b.y) < b.hh),
       ladderAt: (x, y) => this.ladders.some((l) => Math.abs(x - l.x) < l.hw && y > l.top && y < l.bottom),
@@ -1633,13 +1636,13 @@ export class Runtime {
       random: () => this.random(),
       time: this.time,
     };
+    const look = zoneOf(e);
     const them = zoneOf(target);
-    const { angle } = crawlStep(world, e, e.crawl, { x: target.x, y: target.y, hw: them.hw }, { cell, ...o, dt });
-    if (angle !== null) {
-      const now = e.turn?.to ?? e.angle;
-      const delta = ((((angle - now) % 360) + 540) % 360) - 180;
-      if (Math.abs(delta) > 0.5) e.turn = { to: now + delta, speed: 900 };
-    }
+    const drawn = crawlStep(world, e, e.crawl, { x: target.x, y: target.y, hw: them.hw }, { cell, ...o, size: { w: 2 * look.hw, h: 2 * look.hh }, dt });
+    // Drawn turned and moved up against what it holds on to (its body, an upright box, stays where it is).
+    e.turn = null;
+    e.angle = drawn.angle;
+    e.nudge = { x: drawn.dx, y: drawn.dy };
   }
 
   /** A wall right in front of it that way (sideways, or up/down): the box a patroller turns at. */
@@ -1850,7 +1853,9 @@ export class Runtime {
       if (this.fog && e.health && e !== this.fog.viewer && !this.fog.sees(e.x, e.y)) continue;
       const t = e.base.transform;
       const mirrored = e.switch?.on === true || e.facing === -1;
-      const moved = e.x !== t.position.x || e.y !== t.position.y;
+      const nx = e.nudge?.x ?? 0;
+      const ny = e.nudge?.y ?? 0;
+      const moved = e.x + nx !== t.position.x || e.y + ny !== t.position.y;
       const turned = e.angle !== 0;
       // A level flip: mirrored afterwards; during it, turning over (its height, or width, through nothing to the other side).
       const over = e.flipT === null ? 1 : Math.cos(Math.PI * e.flipT);
@@ -1859,7 +1864,7 @@ export class Runtime {
       const sy = e.mirror.y * (e.flipT !== null && upside ? over : 1);
       let r: RenderEntity =
         moved || mirrored || turned || sx !== 1 || sy !== 1
-          ? { ...e.base, transform: { ...t, position: { x: e.x, y: e.y }, rotation: t.rotation + e.angle, scale: sx !== 1 || sy !== 1 ? { x: t.scale.x * sx, y: t.scale.y * sy } : t.scale } }
+          ? { ...e.base, transform: { ...t, position: { x: e.x + nx, y: e.y + ny }, rotation: t.rotation + e.angle, scale: sx !== 1 || sy !== 1 ? { x: t.scale.x * sx, y: t.scale.y * sy } : t.scale } }
           : e.base;
       const look = this.lookOf(e);
       if (look.assetId && r.components.Sprite) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, assetId: look.assetId, frame: 1 } } };

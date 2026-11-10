@@ -406,6 +406,7 @@ export class ScriptSystem {
               wander: s.wander === null ? 0.5 : Math.max(0, n(s.wander)),
               replan: s.replan === null ? 1 : Math.max(0.1, n(s.replan)),
               dropOn: s.drop_on === null ? true : truthy(this.eval(s.drop_on, ctx)),
+              ambush: s.ambush === null ? 0.5 : Math.max(0, Math.min(1, n(s.ambush))),
             },
             this.stepDt,
           );
