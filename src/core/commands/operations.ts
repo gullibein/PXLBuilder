@@ -1144,7 +1144,24 @@ export function applyOperations(
         // copy per block of its cells, its bottom-left where its character's block begins), the player moved to "P".
         const scene = m.getScene(project, op.sceneId);
         if (!op.rows.length) break;
-        const width = Math.max(...op.rows.map((r) => [...r].length));
+        // Every row the same length: a character is a cell, so a row one short or long shifts everything after the
+        // slip by a cell (a ladder no longer above the one below it). Sent back with the rows that are off.
+        const lengths = op.rows.map((r) => [...r].length);
+        const count = new Map<number, number>();
+        for (const n of lengths) count.set(n, (count.get(n) ?? 0) + 1);
+        const usual = [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+        const off = lengths.map((n, j) => ({ n, j })).filter((x) => x.n !== usual);
+        if (off.length) {
+          const ruler = Array.from({ length: usual }, (_, i) => String(i % 10)).join('');
+          const shown = off
+            .slice(0, 5)
+            .map(({ n, j }) => `${j > 0 ? `  row ${j - 1}: ${op.rows[j - 1]}\n` : ''}  row ${j}: ${op.rows[j]}   <- ${n} characters`)
+            .join('\n');
+          throw new m.ModelError(
+            `draw_map: every row must be exactly ${usual} characters long (one per cell), but ${off.length === 1 ? 'row' : 'rows'} ${off.map((x) => `${x.j} (${x.n})`).join(', ')} ${off.length === 1 ? 'is' : 'are'} not: a missing or extra character shifts everything after it by a cell (ladders and walls no longer line up). Count again; send the whole map with every row ${usual} long.\n  columns: ${ruler}\n${shown}`,
+          );
+        }
+        const width = usual;
         if (width * op.rows.length > MAX_DRAW_CELLS * 2) throw new m.ModelError(`draw_map: ${width}x${op.rows.length} is too big at once (at most ${MAX_DRAW_CELLS * 2} cells)`);
         const byChar = new Map<string, ObjectDefinition>();
         for (const { char, object } of op.legend) {

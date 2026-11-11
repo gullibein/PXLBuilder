@@ -128,3 +128,22 @@ describe('crates in the level checker', () => {
     expect(ledge(level(false))).toBe(false);
   });
 });
+
+describe('draw_map rows of different lengths', () => {
+  it('are sent back, with the rows that are off beside the one above them (a ladder one cell out of line)', () => {
+    const { project, sceneId } = start();
+    const rows = ['##########', '#....H...#', '#....H...#', '#.P.H...#', '##########'];
+    const op = { op: 'draw_map', sceneId, col: 0, row: 0, legend: [{ char: '#', object: 'Platform' }, { char: 'H', object: 'Ladder' }, { char: 'P', object: 'Player' }], rows, clear: true } as Operation;
+    let message = '';
+    try {
+      produce(project, (d) => void applyOperations(d, [op], registry));
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(/exactly 10 characters/);
+    expect(message).toMatch(/row 3 \(9\)/);
+    expect(message).toContain('row 2: #....H...#');
+    expect(message).toContain('row 3: #.P.H...#   <- 9 characters');
+    expect(message).toContain('columns: 0123456789');
+  });
+});
