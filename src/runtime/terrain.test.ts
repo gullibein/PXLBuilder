@@ -456,3 +456,48 @@ describe('a low ceiling over the way to a step: the checker knows the head hits 
     expect(r.status === 'ok' && r.unreachable.things).toEqual([]);
   });
 });
+
+describe('spikes on the floor are jumped over, as far as the jump really clears them (a low ceiling caps it)', () => {
+  /** Floor (top y=32) with `n` spikes from x=0; a coin past them; a ceiling `room` rows over the floor (0: none). The player runs and jumps a step before them. */
+  function spikes(n: number, room: number) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let c = -12; c < n + 10; c++) {
+        place('Platform', { x: c * 32 + 16, y: 48 });
+        if (room) place('Platform', { x: c * 32 + 16, y: 16 - room * 32 });
+      }
+      for (let i = 0; i < n; i++) place('Hazard', { x: i * 32 + 16, y: 24 });
+      place('Coin', { x: (n + 6) * 32 + 16, y: 16 });
+      place('Player', { x: -300, y: 16 });
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    input.press('right');
+    let jumped = false;
+    let hurt = false;
+    for (let t = 0; t < 4; t += 1 / 60) {
+      if (!jumped && rt.find('Player')!.x + 14 >= -14) {
+        input.press('jump');
+        jumped = true;
+      }
+      rt.update(1 / 60, input);
+      if (rt.eventLog.some((e) => e.type === 'damaged')) hurt = true;
+      if (rt.find('Player')!.x > n * 32 + 40) break;
+    }
+    const r = levelReachability(project, sceneId, registry);
+    return { hurt, checker: r.status === 'ok' && r.unreachable.things.length === 0 };
+  }
+
+  it('two spikes: cleared, and counted; three (the jump table says two): hurt, and the coin past them is reported', () => {
+    expect(spikes(2, 0)).toEqual({ hurt: false, checker: true });
+    expect(spikes(3, 0)).toEqual({ hurt: true, checker: false });
+  });
+
+  it('under a ceiling two rows over the floor even two spikes hurt, and the checker says so; three rows of room is enough', () => {
+    expect(spikes(2, 2)).toEqual({ hurt: true, checker: false });
+    expect(spikes(2, 3)).toEqual({ hurt: false, checker: true });
+  });
+});

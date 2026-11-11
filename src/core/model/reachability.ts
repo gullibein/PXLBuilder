@@ -183,6 +183,28 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     } else spans.push({ ...t, ids: [...t.ids] });
   }
 
+  // Spikes and other things that stay put and hurt the player: the floor under them is no floor to walk on. They
+  // cut it in two, jumped over (canJump) as far as the jump keeps the whole body above them.
+  const meRef = { id: player.id, definitionId: player.definitionId, tags: player.tags };
+  const hazards = all
+    .filter((r) => r !== player && !r.tags.some((t) => /^(enemy|enemies|monster|guard)$/i.test(t)) && !r.components.Patrol && r.components.PhysicsBody?.bodyType !== 'dynamic' && !r.components.MovingPlatform && !r.scripts.some(changesMovement))
+    .filter((r) => hurtsOnTouch(r.scripts, player.tags) || scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, { id: r.id, definitionId: r.definitionId, tags: r.tags }) && refMatches(rel.target, meRef)))
+    .map(boxOf);
+  for (let i = 0; i < spans.length; i++) {
+    const sp = spans[i];
+    const on = hazards.filter((h) => h.bottom >= sp.top - 16 && h.bottom <= sp.top + 2 && h.left < sp.right && h.right > sp.left).sort((a, b) => a.left - b.left);
+    if (!on.length) continue;
+    const pieces: Span[] = [];
+    let x = sp.left;
+    for (const h of on) {
+      if (h.left - x >= 1) pieces.push({ left: x, right: h.left, top: sp.top, ids: sp.ids });
+      x = Math.max(x, h.right);
+    }
+    if (sp.right - x >= 1) pieces.push({ left: x, right: sp.right, top: sp.top, ids: sp.ids });
+    spans.splice(i, 1, ...pieces);
+    i += pieces.length - 1;
+  }
+
   // Ramps: walked up and down, from the ground at the foot to the ground at the top (whatever the jump).
   const rampLinks: [number, number][] = [];
   for (const r of solids) {
@@ -287,7 +309,26 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     }
     return false;
   };
+  /**
+   * Across hazards lying between two stretches of the same floor: the jump must keep the whole body above them, for
+   * as long as it takes to pass (the jump table's spike rule), and a ceiling over them caps how high it gets.
+   */
+  const overHazards = (from: Span, to: { left: number; right: number; top: number }) => {
+    if (Math.abs(from.top - to.top) > EDGE) return true;
+    const gl = Math.min(from.right, to.right);
+    const gr = Math.max(from.left, to.left);
+    const between = hazards.filter((h) => h.left < gr && h.right > gl && h.bottom >= from.top - 16 && h.bottom <= from.top + 2);
+    if (!between.length) return true;
+    const tall = from.top - Math.min(...between.map((h) => h.top));
+    const over = ceilings.filter((c) => c.left < gr + pHalf && c.right > gl - pHalf && c.bottom <= from.top - pHeight + 1);
+    const clear = over.length ? from.top - Math.max(...over.map((c) => c.bottom)) : Infinity;
+    const apex = Math.min(reach.height * MARGIN, clear - pHeight);
+    if (apex <= tall) return false;
+    const t = 2 * Math.sqrt((2 * (apex - tall)) / reach.gravity);
+    return gr - gl <= reach.speed * t * MARGIN - pHalf * 2;
+  };
   const canJump = (from: Span, to: { left: number; right: number; top: number }) => {
+    if (!overHazards(from, to)) return false;
     const jump = (up: number) => {
       const rise = from.top - up - to.top;
       if (rise > reach.height * MARGIN + grab) return false;
