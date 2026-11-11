@@ -361,7 +361,7 @@ describe('the jump table the AI builds by is what the player really does', () =>
   });
 });
 
-describe('a double jump counts as much as a player times it comfortably, not a perfectly timed one', () => {
+describe('a double jump counts (almost) twice as high, as a player who knows it times it', () => {
   /** Lower floor (top y=32), a crate or not under a two-cell gap in a floor `rows` rows up; the player double-jumps (second press at `second` s) and moves right. */
   function tryIt(rows: number, crate: boolean, second: number) {
     let project = createProject(registry);
@@ -390,18 +390,69 @@ describe('a double jump counts as much as a player times it comfortably, not a p
       if (pl.grounded && pl.y < 48 - rows * 32) landed = true;
     }
     const r = levelReachability(project, sceneId, registry);
-    return { landed, checker: r.status === 'ok' && r.unreachable.things.length === 0 };
+    // (The upper floor: whether the checker counts it reached.)
+    const top = 32 - rows * 32;
+    return { landed, checker: r.status === 'ok' && r.surfaces.some((s) => Math.abs(s.top - top) < 2 && s.left >= 0 && s.reached) };
   }
 
-  it('what the table allows is reached with the second jump pressed early (0.15 s); a floor three rows over a crate needs split-second timing and is reported', () => {
+  it('the most rows up the table allows is reached with the second jump at the top of the first; a floor three rows over a crate (through a gap) counts as reachable, and is', () => {
     const p = createProject(registry);
     const comps = { ...p.definitions.find((d) => d.name === 'Player')!.components, DoubleJump: { extraJumps: 1 } };
     const rows = jumpTable(comps as never, 980)!.maxRiseRows;
-    expect(rows).toBe(2);
-    expect(tryIt(rows, false, 0.15)).toEqual({ landed: true, checker: true });
-    // Four rows up, from a crate (three over its top): only a well-timed second jump gets there; pressed early, it doesn't.
-    expect(tryIt(4, true, 0.1).landed).toBe(false);
-    expect(tryIt(4, true, 0.35).landed).toBe(true);
-    expect(tryIt(4, true, 0.35).checker).toBe(false);
+    expect(rows).toBe(3);
+    expect(tryIt(rows, false, 0.35)).toEqual({ landed: true, checker: true });
+    expect(tryIt(4, true, 0.35)).toEqual({ landed: true, checker: true });
+    // Four rows up without the crate is out of reach, and the checker says so.
+    expect(tryIt(4, false, 0.35)).toEqual({ landed: false, checker: false });
+  });
+});
+
+describe('a low ceiling over the way to a step: the checker knows the head hits it', () => {
+  /** Floor (top y=32); a platform `up` rows over the floor (cols 4-6); a one-row step right after it (cols 7-8); a coin behind the step; a wall. */
+  function room(up: number) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let c = -8; c <= 12; c++) place('Platform', { x: c * 32 + 16, y: 48 });
+      for (let r = 0; r < 6; r++) place('Platform', { x: 12 * 32 + 16, y: 16 - r * 32 });
+      for (const c of [4, 5, 6]) place('Platform', { x: c * 32 + 16, y: 48 - (up + 1) * 32 });
+      for (const c of [7, 8]) place('Platform', { x: c * 32 + 16, y: 16 });
+      place('Coin', { x: 10 * 32 + 16, y: 16 });
+      place('Player', { x: -100, y: 16 });
+    });
+    return { project, sceneId };
+  }
+  /** Runs right and jumps from `at` (x); true when it gets past the step. */
+  function attempt(project: Project, sceneId: string, at: number) {
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    input.press('right');
+    let jumped = false;
+    for (let t = 0; t < 4; t += 1 / 60) {
+      const p = rt.find('Player')!;
+      if (!jumped && p.x >= at) {
+        input.press('jump');
+        jumped = true;
+      }
+      rt.update(1 / 60, input);
+      if (rt.find('Player')!.x > 9 * 32) return true;
+    }
+    return false;
+  }
+
+  it('with one row of room under the platform, no jump gets onto the step (in play), and the checker says the coin is out of reach', () => {
+    const { project, sceneId } = room(1);
+    for (let at = 0; at <= 7 * 32; at += 8) expect(attempt(project, sceneId, at), `jump at ${at}`).toBe(false);
+    const r = levelReachability(project, sceneId, registry);
+    expect(r.status === 'ok' && r.unreachable.things.map((t) => t.name)).toEqual(['Coin']);
+  });
+
+  it('with two rows of room it is easy, and the checker agrees', () => {
+    const { project, sceneId } = room(2);
+    expect([0, 64, 128, 160, 192].some((at) => attempt(project, sceneId, at))).toBe(true);
+    const r = levelReachability(project, sceneId, registry);
+    expect(r.status === 'ok' && r.unreachable.things).toEqual([]);
   });
 });

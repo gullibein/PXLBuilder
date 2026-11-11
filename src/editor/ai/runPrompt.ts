@@ -32,7 +32,7 @@ import { componentRegistry } from '../../core/components/builtin';
 import { isTopDownScene } from '../../core/model/topDown';
 import { produce } from 'immer';
 import { levelMap, type LevelMap } from '../../core/model/levelMap';
-import { reachabilityProblems } from '../../core/model/reachability';
+import { reachabilityProblems, winProblems } from '../../core/model/reachability';
 import { useEditor } from '../store';
 import { parseQuickCommand, QUICK_COMMAND_HELP, type QuickCommand } from '../../core/commands/quickCommands';
 import { runQuickCommand } from '../quickCommands';
@@ -395,6 +395,29 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
             merged = [...ops.slice(0, firstAt).filter((_, i) => !at.has(i)), ...fixed, ...ops.slice(firstAt).filter((_, i) => !at.has(i + firstAt))];
           }
           response = { ...firstAnswer, kind: 'preview', operations: merged };
+          // The parts put right, the level it makes may still not work (a map written again without its door or goal):
+          // that goes back once more, for just the operations that fix it (added to the answer).
+          const left = playability(ctx.sceneId, merged);
+          if (left) {
+            trace?.('check', `Didn't check out: ${left.text}`);
+            trace?.('retry', 'Sent back once more for just what fixes that');
+            stage('Fixing the level');
+            const more = await ask(
+              {
+                ...body,
+                history: [...body.history, { request, reply: first }],
+                request: `${request}\n\n[Your answer is kept (with your corrections), but the level it makes has this problem: ${left.text} Send ONLY the operations that fix it, added after your answer (kind "preview", message "" and changes []): e.g. place what is missing with place_instance (and connect it), or draw_map the whole level again with clear true.${mapText(left.map)}]`,
+              },
+              signal,
+              trace,
+            ).catch((e: Error) => {
+              if (e.name === 'AbortError') throw e;
+              trace?.('note', `The level fix couldn't be used (${e.message})`);
+              return null;
+            });
+            const extra = more?.operations.filter((o) => !isEditorOperation(o)) ?? [];
+            if (extra.length) response = { ...response, operations: [...merged, ...extra] };
+          }
         } catch (e) {
           if ((e as Error).name === 'AbortError') throw e;
           // (The corrections were lost: what applies is kept, below.)
@@ -729,7 +752,8 @@ export function applyAIOperations(request: string, message: string, changes: str
  */
 function playability(sceneId: Id, operations: Operation[]): { text: string; map: LevelMap | null } | null {
   const project = useEditor.getState().project;
-  const before = new Set(reachabilityProblems(project, sceneId, componentRegistry).map((p) => p.key));
+  const problems = (pr: Project, id: Id) => [...reachabilityProblems(pr, id, componentRegistry), ...winProblems(pr, id, componentRegistry)];
+  const before = new Set(problems(project, sceneId).map((p) => p.key));
   let after: Project;
   let created: Id[] = [];
   try {
@@ -739,14 +763,14 @@ function playability(sceneId: Id, operations: Operation[]): { text: string; map:
   } catch {
     return null;
   }
-  const added = reachabilityProblems(after, sceneId, componentRegistry).filter((p) => !before.has(p.key));
+  const added = problems(after, sceneId).filter((p) => !before.has(p.key));
   // The level as the answer would leave it, so the AI can see what went wrong.
   if (added.length) return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry) };
   // New levels made in the same answer are checked too (everything in them is new).
   for (const id of created) {
-    const problems = reachabilityProblems(after, id, componentRegistry);
+    const found = problems(after, id);
     const scene = after.scenes.find((s) => s.id === id);
-    if (problems.length && scene) return { text: `In the new level "${scene.name}": ${problems.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry) };
+    if (found.length && scene) return { text: `In the new level "${scene.name}": ${found.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry) };
   }
   return null;
 }

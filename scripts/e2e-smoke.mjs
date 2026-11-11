@@ -251,10 +251,11 @@ function stubModel(body) {
     return {
       kind: 'preview',
       message: `Built it on the ${body.context.newGame?.current} starter.`,
-      changes: ['A player and a wall'],
+      changes: ['A player, a wall and the goal'],
       operations: [
         { op: 'place_instance', sceneId, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null },
         { op: 'place_instance', sceneId, definitionRef: lib('Wall'), x: 48, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId, definitionRef: lib('Goal'), x: 112, y: 16, name: null, ref: null },
       ],
     };
   }
@@ -3664,7 +3665,7 @@ try {
   await page.screenshot({ path: `${OUT}/00b-building.png` });
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
-  await check(async () => (await canvas.getAttribute('data-entities')) === '2', '(what it built is on the level)');
+  await check(async () => (await canvas.getAttribute('data-entities')) === '3', '(what it built is on the level)');
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Wall').count()) === 1 && (await page.getByTestId('definition-Ladder').count()) === 0, 'the game has the top-down objects');
   await page.keyboard.press('Escape');

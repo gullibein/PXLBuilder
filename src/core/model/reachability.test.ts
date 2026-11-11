@@ -4,7 +4,8 @@ import { createBuiltinRegistry } from '../components/builtin';
 import * as logic from '../logic/mutations';
 import { createDefinition, createProject, instantiateDefinition } from './factory';
 import * as m from './mutations';
-import { levelReachability, reachabilityProblems } from './reachability';
+import { levelReachability, reachabilityProblems, winProblems } from './reachability';
+import { applyOperations, type Operation } from '../commands/operations';
 import type { Id, Project } from '../types';
 
 const registry = createBuiltinRegistry();
@@ -158,5 +159,46 @@ describe('can the player get there?', () => {
     expect(texts.some((x) => /^Hazard floats in mid-air/.test(x))).toBe(true);
     expect(texts.some((x) => /^Key is inside something that hurts the player/.test(x))).toBe(true);
     expect(texts.some((x) => /^The "Key" here is really a Coin \(renamed\), not the Key object/.test(x))).toBe(true);
+  });
+});
+
+describe('can the level be won at all?', () => {
+  // A level an AI wrote again without its door and its goal (a key that opens nothing, nothing to finish).
+  const ROWS = ['##########', '#........#', '#.P...k..#', '##########'];
+  const build = (rows: string[], extra: (d: Project, sceneId: Id) => void = () => {}) => {
+    const p0 = createProject(registry);
+    const sceneId = p0.scenes[0].id;
+    const id = (n: string) => p0.definitions.find((d) => d.name === n)!.id;
+    const legend = [['#', 'Platform'], ['P', 'Player'], ['k', 'Key'], ['D', 'Door'], ['G', 'Goal']].map(([char, n]) => ({ char, object: id(n) }));
+    const p = produce(p0, (d) => {
+      applyOperations(d, [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows, clear: true } as unknown as Operation], registry);
+      extra(d, sceneId);
+    });
+    return winProblems(p, sceneId, registry).map((x) => x.text);
+  };
+
+  it('the starter level can be won', () => {
+    const p = createProject(registry);
+    expect(winProblems(p, p.scenes[0].id, registry)).toEqual([]);
+  });
+
+  it('no goal and a key with no door: both said', () => {
+    const t = build(ROWS);
+    expect(t[0]).toMatch(/can't be won: there is no Goal/);
+    expect(t[1]).toMatch(/Key opens nothing: no door in this level needs it/);
+  });
+
+  it('with the goal, and a door that requires the key, nothing is said; a rule that completes the level counts as a way to finish', () => {
+    const withDoor = build(['##########', '#........#', '#.P.k.D.G#', '##########'], (d, sceneId) => {
+      const s = d.scenes[0];
+      const door = s.entities.find((e) => e.name === 'Door')!;
+      const key = s.entities.find((e) => e.name === 'Key')!;
+      logic.addRelationship(d, sceneId, { type: 'requires', source: { kind: 'entity', id: door.id }, target: { kind: 'object', id: key.definitionId! }, params: {}, conditions: [] });
+    });
+    expect(withDoor).toEqual([]);
+    const rule = build(['##########', '#........#', '#.P......#', '##########'], (d) => {
+      d.scenes[0].rules.push({ id: 'r1', name: 'Win', enabled: true, trigger: { type: 'level_started' }, conditions: [], actions: [{ type: 'complete_level' }] } as never);
+    });
+    expect(rule).toEqual([]);
   });
 });

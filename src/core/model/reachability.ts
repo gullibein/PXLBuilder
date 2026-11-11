@@ -109,11 +109,10 @@ export function changesMovement(script: unknown): boolean {
 }
 
 /**
- * A double (triple…) jump. Each extra jump at the very top of the one before adds a whole jump's height, but that
- * takes split-second timing: pressed a little early (as players do) it adds about two thirds of one. What a level
- * asks of the player should be what it manages comfortably, so that is what counts.
+ * A double (triple…) jump: each extra jump pressed at the top of the one before adds a whole jump's height, which a
+ * player who knows about it does easily. Counted a little under that (it still takes timing).
  */
-const EXTRA_JUMP = 0.65;
+const EXTRA_JUMP = 0.95;
 function withExtraJumps(base: Reach, extra: number): Reach {
   if (!(extra > 0)) return base;
   const k = 1 + EXTRA_JUMP * extra;
@@ -262,12 +261,41 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     const on = spans.find((s) => Math.abs(s.top - b.bottom) <= 4 && cx >= s.left && cx <= s.right);
     if (on) lift.set(on, Math.max(lift.get(on) ?? 0, b.bottom - b.top));
   }
+  // What the head hits jumping up: solids that block from below (not jump-through platforms or ramps; doors count
+  // as open: getting what opens them is checked on its own).
+  const ceilings = boxes.filter(({ r }) => !r.components.Openable && r.components.Collider?.oneWay !== true && r.components.Collider?.shape !== 'slopeRight' && r.components.Collider?.shape !== 'slopeLeft').map(({ b }) => b);
+  const blocked = (left: number, right: number, top: number, bottom: number) => left < right && top < bottom && ceilings.some((c) => c.left < right && c.right > left && c.top < bottom && c.bottom > top);
+  /**
+   * Jumping UP (or across, level) onto a surface takes room: somewhere on the floor to jump from with nothing just over the player's
+   * head (up to where its feet reach the landing's height), and nothing in the way between there and the landing at
+   * that height (a low ceiling over the way to a step leaves the step out of reach). Tried along the floor a few
+   * pixels apart.
+   */
+  const roomToJump = (from: Span, floor: number, to: { left: number; right: number; top: number }, reachX: number) => {
+    const headAtLanding = to.top - pHeight;
+    for (let x = from.left; x <= from.right; x += 8) {
+      const body = { left: x - pHalf, right: x + pHalf };
+      const away = gapBetween(body, to);
+      if (away > reachX) continue;
+      // Straight up from here, head and all, to the landing's height.
+      if (blocked(body.left + 2, body.right - 2, headAtLanding, floor - 1)) continue;
+      // Across to the landing, at its height.
+      const l = x < to.left ? body.right - 2 : to.right;
+      const r = x < to.left ? to.left : body.left + 2;
+      if (away > 0 && blocked(l, r, headAtLanding, to.top - 2)) continue;
+      return true;
+    }
+    return false;
+  };
   const canJump = (from: Span, to: { left: number; right: number; top: number }) => {
     const jump = (up: number) => {
       const rise = from.top - up - to.top;
       if (rise > reach.height * MARGIN + grab) return false;
       const d = jumpDistance(reach, Math.max(-4000, Math.min(rise, reach.height * MARGIN)));
-      return gapBetween(from, to) <= Math.max(0, d * MARGIN) + pHalf;
+      const reachX = Math.max(0, d * MARGIN);
+      if (gapBetween(from, to) > reachX + pHalf) return false;
+      // (Down: not checked; the jump arcs over what is lower than where it starts.)
+      return rise < -EDGE || roomToJump(from, from.top - up, to, reachX);
     };
     return jump(0) || ((lift.get(from) ?? 0) > 0 && jump(lift.get(from)!));
   };
@@ -630,4 +658,41 @@ export function jumpTable(components: ResolvedEntity['components'], gravityY: nu
     crateRows: 1,
     spikeCells: { halfCellTall: over(CELL / 2), cellTall: over(CELL) },
   };
+}
+
+/**
+ * Can the level be won at all, whatever the player reaches? Nothing to finish it (no Goal, no rule or script that
+ * completes the level or goes on to another), or a key that opens nothing in it (its door was left out). Checked on
+ * what the AI builds: the answer goes back when it would leave the level like this.
+ */
+export function winProblems(project: Project, sceneId: Id, registry: ComponentRegistry): { key: string; text: string; entityIds: Id[] }[] {
+  const scene = project.scenes.find((s) => s.id === sceneId);
+  if (!scene) return [];
+  const placed = scene.entities.map((e) => ({ e, r: resolveEntity(project, e, registry) }));
+  if (!placed.some(({ r }) => r.components.CharacterController)) return [];
+  const out: { key: string; text: string; entityIds: Id[] }[] = [];
+  const scriptText = [...project.definitions.flatMap((d) => d.scripts ?? []), ...scene.entities.flatMap((e) => e.scripts ?? [])].map((s) => JSON.stringify(s?.handlers ?? s)).join('\n');
+  const ruleText = JSON.stringify(scene.rules ?? []);
+  const finishes =
+    placed.some(({ r }) => r.components.Goal || r.tags.some((t) => /^(goal|exit|finish)$/i.test(t))) ||
+    /"(complete_level|go_to_level|visit_level)"/.test(ruleText) ||
+    /"(complete_level|go_to_level|visit_level)"/.test(scriptText);
+  if (!finishes) out.push({ key: 'win-no-goal', text: "The level can't be won: there is no Goal (or other way to finish it: a rule or script that completes the level). Place the Goal (or what stands for it) where the player gets to last.", entityIds: [] });
+
+  // Keys: an item named or tagged a key that no door here asks for, and that no rule or script uses.
+  const keys = placed.filter(({ r }) => r.components.Collectible && (r.tags.some((t) => /key/i.test(t)) || /key/i.test(String(r.components.Collectible.itemId ?? '')) || /\bkey\b/i.test(r.name)));
+  const unused = keys.filter(({ e, r }) => {
+    const me = { id: e.id, definitionId: e.definitionId, tags: r.tags };
+    const item = String(r.components.Collectible.itemId || r.name.toLowerCase());
+    const door = scene.relationships.some(
+      (rel) => rel.type === 'requires' && refMatches(rel.target, me) && placed.some(({ e: o, r: or }) => o.id !== e.id && refMatches(rel.source, { id: o.id, definitionId: o.definitionId, tags: or.tags })),
+    );
+    const mentioned = [scriptText, ruleText].some((t) => t.includes(`"${item}"`) || t.includes(`'${item}'`) || t.includes(e.definitionId ?? '\0') || t.includes(e.id));
+    return !door && !mentioned;
+  });
+  if (unused.length) {
+    const names = [...new Set(unused.map(({ e }) => e.name))];
+    out.push({ key: `win-key-opens-nothing:${unused.map(({ e }) => e.id).sort().join(',')}`, text: `${names.join(', ')} ${unused.length === 1 ? 'opens' : 'open'} nothing: no door in this level needs ${unused.length === 1 ? 'it' : 'them'} (a door "requires" it). Place the door it opens, connected with requires, or leave the key out.`, entityIds: unused.map(({ e }) => e.id) });
+  }
+  return out;
 }
