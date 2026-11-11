@@ -1694,6 +1694,10 @@ try {
   await check(async () => (await bgPanel.getByTestId('background-prompt').isVisible()) && (await bgPanel.locator('.swatch-btn').count()) === 0 && (await bgPanel.getByTestId('bg-generate').count()) === 0, 'it shows only the AI prompt and an Advanced button');
   await bgPanel.getByTestId('bg-advanced').click();
   await check(async () => (await bgPanel.locator('.swatch-btn').count()) > 0 && (await bgPanel.getByTestId('bg-generate').isVisible()) && (await bgPanel.getByTestId('bg-upload').isVisible()), 'Advanced opens the color, the image upload and the image generator');
+  await bgPanel.getByTestId('bg-made-bricks').click();
+  await check(async () => (await bgPanel.locator('.bg-image img').count()) === 1 && (await page.getByTestId('undo').getAttribute('title')).includes('Background: bricks') && (await bgPanel.getByTestId('bg-made-bricks').getAttribute('class')).includes('on'), 'Ready-made: a brick wall drawn by the engine becomes the background (one undo step)');
+  await page.getByTestId('undo').click();
+  await check(async () => (await bgPanel.getByTestId('bg-upload').isVisible()), '(undo takes it away again)');
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Dark (default)' }).getAttribute('aria-checked')) === 'true', 'a new project starts with the dark background');
   await bgPanel.getByRole('radio', { name: 'Sunset' }).click();
   await check(async () => (await bgPanel.getByRole('radio', { name: 'Sunset' }).getAttribute('aria-checked')) === 'true', 'choosing a swatch sets the background color');

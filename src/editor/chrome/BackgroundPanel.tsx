@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import type { StarField } from '../../core/types';
 import { createImageAsset } from '../../core/model/factory';
-import { addAsset, setBackground, setWorldSettings } from '../../core/model/mutations';
+import { addAsset, applyMadeBackground, madeBackgroundOf, setBackground, setWorldSettings } from '../../core/model/mutations';
+import { BACKGROUND_KINDS, type BackgroundKind } from '../../core/model/backgroundArt';
+import type { AssetRecord, StarField } from '../../core/types';
 import { baseName, readImageFile } from '../imageFiles';
 import { offerFile, slugify } from '../persistence';
 import { DEFAULT_IMAGE_WORKER, imageWorkerUrl, setImageWorkerUrl, validWorkerUrl } from '../imageWorker';
@@ -181,6 +182,8 @@ export function BackgroundPanel() {
         />
       </div>
 
+      <MadeBackgrounds sceneId={sid} current={asset} />
+
       <GenerateBackground sceneId={sid} />
 
       {asset && (
@@ -259,6 +262,43 @@ export function BackgroundPanel() {
       )}
 
     </section>
+  );
+}
+
+/**
+ * Backgrounds the engine draws itself (skies, hills, a city; bricks, stone, checks…), at the game's pixel size, in
+ * a click: the same kind again makes another of it (other clouds, other blocks), in the same colors. The AI picks
+ * colors to fit the game (make_background); these start with the kind's own.
+ */
+function MadeBackgrounds({ sceneId, current }: { sceneId: string; current: AssetRecord | undefined }) {
+  const made = madeBackgroundOf(current);
+  const pick = (kind: BackgroundKind) => {
+    const again = made?.background === kind;
+    const fit = BACKGROUND_KINDS[kind].fit;
+    useEditor
+      .getState()
+      .edit(`Background: ${kind}`, (p) => applyMadeBackground(p, sceneId, kind, again ? made!.colors : [], again ? made!.variant + 1 : 1, fit === 'cover' ? 0.3 : 1));
+  };
+  return (
+    <div className="bg-section" data-testid="bg-made">
+      <span className="bg-label" title="Drawn by the engine at the game's pixel size; click again for another one">
+        Ready-made
+      </span>
+      <div className="bg-made">
+        {(Object.keys(BACKGROUND_KINDS) as BackgroundKind[]).map((k) => (
+          <button
+            key={k}
+            className={`chip-btn small${made?.background === k ? ' on' : ''}`}
+            title={`${BACKGROUND_KINDS[k].what}${made?.background === k ? ' (again: another one)' : ''}`}
+            data-testid={`bg-made-${k}`}
+            onClick={() => pick(k)}
+          >
+            <span className="bg-made-swatch" style={{ background: `linear-gradient(${BACKGROUND_KINDS[k].defaults.slice(0, 2).join(', ')})` }} />
+            {k}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

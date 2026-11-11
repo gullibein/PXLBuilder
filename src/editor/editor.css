@@ -407,6 +407,9 @@ button.link { background: none; border: none; padding: 0; color: var(--accent-hi
 input[type='range'] { width: 100%; accent-color: var(--accent); padding: 0; border: none; background: none; }
 .bg-hint { font-size: 11.5px; color: var(--muted); }
 .bg-prompt .prompt { box-shadow: none; }
+.bg-made { display: flex; flex-wrap: wrap; gap: 4px; }
+.bg-made .chip-btn { display: inline-flex; align-items: center; gap: 4px; }
+.bg-made-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .background-panel .bg-advanced { justify-self: start; font-size: 12px; }
 
 /* ---------------------------------------------------------------- object context menu */

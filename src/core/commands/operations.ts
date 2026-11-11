@@ -32,6 +32,7 @@ import * as m from '../model/mutations';
 import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
 import { isTopDownScene } from '../model/topDown';
+import { BACKGROUND_KINDS, type BackgroundKind } from '../model/backgroundArt';
 import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -90,6 +91,14 @@ export const operationSchema = z.union([
       .nullable()
       .optional()
       .describe('How the level is seen: "flat" (straight on) or "iso" (isometric: from above at an angle; the level plays as seen from above, gravity 0, and is drawn as diamonds with things standing upright)'),
+  }),
+  z.object({
+    op: z.literal('make_background'),
+    sceneId: z.string(),
+    kind: z.enum(Object.keys(BACKGROUND_KINDS) as [BackgroundKind, ...BackgroundKind[]]).describe(`A background the engine draws itself, at the game's pixel size: ${Object.entries(BACKGROUND_KINDS).map(([k, v]) => `${k} (${v.what}; colors: ${v.colors.join(', ')})`).join('; ')}`),
+    colors: z.array(z.string()).describe('Its colors, "#rrggbb", in the order the kind lists them (fewer: the rest are its own); pick them to fit the game'),
+    variant: z.number().int().describe('1, 2, 3…: another one of the same kind (other clouds, other blocks)'),
+    parallax: z.number().describe('How much it moves with the level: scenery far away 0.1-0.4; a wall right behind the level 1'),
   }),
   z.object({
     op: z.literal('paint_background'),
@@ -983,6 +992,10 @@ export function applyOperations(
         const song = findSong(project, op.music);
         if (!song) throw new m.ModelError(`There is no song "${op.music}" (make one with make_song first)`);
         music.setLevelMusic(project, op.sceneId, song.id);
+        break;
+      }
+      case 'make_background': {
+        result.createdAssetIds.push(m.applyMadeBackground(project, op.sceneId, op.kind, op.colors, op.variant, op.parallax));
         break;
       }
       case 'paint_background': {

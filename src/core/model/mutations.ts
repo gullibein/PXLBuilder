@@ -13,7 +13,7 @@ import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDo
 import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import { createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
+import { createImageAsset, createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
 import { applyEdgeStrip, DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, solidTile, type AutotileEdge, type AutotileStyle } from './autotile';
 import { getEntitySize } from './geometry';
@@ -21,6 +21,7 @@ import { gridFor } from './spriteResolution';
 import { validateGrid } from './spriteGrid';
 import type { AssetRecord, BackgroundSettings, EntityInstance, SpriteGrid, Id, ObjectDefinition, Project, Scene, Transform, Vec2, WorldSettings } from '../types';
 import { findDefinition, resolveEntity } from './resolve';
+import { makeBackground, type BackgroundKind } from './backgroundArt';
 import { pruneLogic } from '../logic/refs';
 
 export class ModelError extends Error {
@@ -999,4 +1000,29 @@ export function setAutotileEdge(project: Project, definitionId: Id, edge: Autoti
   const next = applyEdgeStrip(frames, edge, strip);
   const inUse = new Set(next.flat().join(''));
   updatePixelArtAsset(project, sheet.id, palette.filter((p) => inUse.has(p.key)), next, 8);
+}
+
+/**
+ * A background the engine draws itself (backgroundArt.ts) becomes the level's background: the picture is added
+ * (with what it was made from, to make another of it) and set to fill the screen (scenery) or repeat (walls and
+ * patterns). Returns the picture's id.
+ */
+export function applyMadeBackground(project: Project, sceneId: Id, kind: BackgroundKind, colors: readonly string[], variant: number, parallax: number): Id {
+  const made = makeBackground(kind, colors, project.settings.spriteResolution ?? 32, Math.max(1, Math.round(variant)));
+  const asset = createImageAsset(`${kind[0].toUpperCase()}${kind.slice(1)} background`, made.data, made.width, made.height, 'svg');
+  asset.description = JSON.stringify({ background: kind, colors, variant });
+  addAsset(project, asset);
+  const p = Math.max(0, Math.min(1, parallax));
+  setBackground(project, sceneId, { imageAssetId: asset.id, fit: made.fit, parallax: p, parallaxY: made.fit === 'cover' ? null : p, rect: null });
+  return asset.id;
+}
+
+/** What a background picture was made from by the engine (null: an image of its own). */
+export function madeBackgroundOf(asset: AssetRecord | undefined): { background: BackgroundKind; colors: string[]; variant: number } | null {
+  try {
+    const v = asset?.description ? (JSON.parse(asset.description) as { background?: BackgroundKind; colors?: string[]; variant?: number }) : null;
+    return v?.background ? { background: v.background, colors: v.colors ?? [], variant: v.variant ?? 1 } : null;
+  } catch {
+    return null;
+  }
 }
