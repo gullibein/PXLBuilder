@@ -75,3 +75,26 @@ export const SCRIPT_EXAMPLES: { title: string; json: string }[] = [
  {"when":{"on":"tick"},"state":null,"if":"lock > 0","do":[{"do":"set","var":"lock","value":"pick(self.grounded, 0, lock - dt)"},{"do":"if","cond":"lock <= 0","then":[{"do":"set_field","component":"CharacterController","field":"airControl","value":"control","on":null}],"else":[]}]}]}`,
   },
 ];
+
+/**
+ * Which examples go with every request (the short, general ones) and which only with requests about them (by
+ * words; each is a topic of its own, "example_<key>"); the water and swimming ones are no longer sent (the Liquid
+ * component does both), only kept for the tests.
+ */
+export const EXAMPLE_ROUTING: { key: string; title: string; words?: RegExp; retired?: boolean }[] = [
+  { key: 'charger', title: 'an enemy that walks, charges' },
+  { key: 'jetpack', title: 'the player gets a jetpack', words: /jetpack|jet pack|fuel|hover|\bfly\b|flying|rocket/i },
+  { key: 'crumbling', title: 'a platform that crumbles' },
+  { key: 'water', title: 'water (tag it', retired: true },
+  { key: 'swim', title: 'the player swims', retired: true },
+  { key: 'pause_menu', title: 'a pause menu', words: /pause|\bmenu|options|title screen|settings/i },
+  { key: 'score', title: 'a score shown' },
+  { key: 'hearts', title: 'hearts in the top left', words: /heart|health|\bhp\b|\blives\b|\blife\b/i },
+  { key: 'health_bar', title: 'a health bar', words: /health|\bbar\b|\bhp\b|energy|stamina/i },
+  { key: 'wall_jump', title: 'a wall jump', words: /wall.?(jump|slide|climb|kick)|abilit|\bdash|double jump|glide|ground pound/i },
+];
+
+/** The routing of an example (by the start of its title). */
+export function exampleRoute(title: string): (typeof EXAMPLE_ROUTING)[number] | undefined {
+  return EXAMPLE_ROUTING.find((r) => title.startsWith(r.title));
+}

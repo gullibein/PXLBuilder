@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { aiResponseSchema, type AIRequestBody } from './protocol';
+import { compactReplyFormat } from './replyFormat';
 
 let jsonInstructions: string | null = null;
 
@@ -17,8 +18,8 @@ export function systemPromptWithReplyFormat(): string {
   jsonInstructions ??= `${buildSystemPrompt(componentRegistry)}
 
 REPLY FORMAT
-Reply with only one JSON object matching this JSON Schema (no other text). Every operation must have all of its fields; use null where a field allows it. You have no tools here: never write tool or function calls (no <invoke>, <function_calls> or other tags); every change goes in the JSON's operations.
-${JSON.stringify(z.toJSONSchema(aiResponseSchema))}`;
+Reply with only the JSON object (no other text before or after it). You have no tools here: never write tool or function calls (no <invoke>, <function_calls> or other tags); every change goes in the JSON's operations.
+${compactReplyFormat(z.toJSONSchema(aiResponseSchema) as never)}`;
   return jsonInstructions;
 }
 

@@ -9,6 +9,11 @@ import { ENEMY_SCRIPTS } from '../script/enemies';
 
 const SWOOPER_SETTINGS = SWOOPER_SCRIPT.vars.filter((v) => v.setting).map((v) => `${v.name} ${JSON.stringify(v.value)}`).join(', ');
 import type { AIContext } from './context';
+import { EXAMPLE_ROUTING, SCRIPT_EXAMPLES } from '../script/examples';
+import { SCRIPT_TOPICS, scriptDocsFor } from '../script/language';
+import { COMPONENT_TOPICS, componentDocsFor, enginepartsGuide } from './capabilities';
+import { componentRegistry } from '../components/builtin';
+import { NEW_GAME_GUIDE, CAMERA_GUIDE, DEBUGGING_GUIDE, DRAWING_GUIDE, EDITOR_GUIDE, LEVELS_GUIDE, TOPDOWN_GUIDE } from './guideSections';
 
 /** Each ready-made enemy behavior with its settings and defaults, for the enemies topic. */
 const ENEMY_LIST = Object.entries(ENEMY_SCRIPTS)
@@ -22,9 +27,65 @@ export interface Topic {
   /** Words in a request that bring it. */
   words: RegExp;
   text: string;
+  /** Goes with every new game too. */
+  newGame?: boolean;
+  /** Goes with every request about a level seen from above. */
+  topDown?: boolean;
 }
 
 export const TOPICS: Record<string, Topic> = {
+  new_game: {
+    title: 'Building a whole new game',
+    scopes: [],
+    newGame: true,
+    words: /$^/,
+    text: NEW_GAME_GUIDE,
+  },
+  engine_parts: {
+    title: 'Engine parts turned into scripts',
+    scopes: [],
+    words: /jump|climb|ledge|patrol|wander|momentum|accelerat|inertia|slid(e|ing)|slippery|float|feel|turn(s|ing)? around|physics|controls?\b|engine|respawn|falls? off|pick(ed|s)? up/i,
+    text: enginepartsGuide(),
+  },
+  levels: {
+    title: 'Building and changing levels',
+    scopes: [],
+    newGame: true,
+    words: /\blevels?\b|\bmaps?\b|layout|\bstage|\brooms?\b|platforms?\b|ladders?|\bpit|tower|\bcave|maze|spikes?|\bgaps?\b|harder|easier|puzzle|crate|bridge|ramp|teleport|\breach|can'?t get|cannot get|get to|jump (to|over|up)|\bplace|\bput (a|an|some|the|more)|\badd (a|an|some|more)\b|\bmove (the|it|this)|floor|\bwalls?\b|ceiling|\bpool|lava/i,
+    text: LEVELS_GUIDE,
+  },
+  drawing: {
+    title: 'Drawing sprites',
+    scopes: [],
+    newGame: true,
+    words: /draw|sprite|\blooks?\b|\bart\b|picture|colou?r|redraw|pixel|anim|frames?\b|style|cute|scary|appearance|graphic|skin|outfit|\bhat\b|face|eyes|shin(e|y)|glow|detail|\b(red|blue|green|yellow|pink|purple|orange|black|white|gold|golden|silver|brown|gr[ae]y)\b/i,
+    text: DRAWING_GUIDE,
+  },
+  topdown: {
+    title: 'Top-down and isometric games',
+    scopes: [],
+    topDown: true,
+    words: /top.?down|zelda|rogue|pac.?man|isometric|from above|bird'?s.?eye|twin.?stick|2\.5d|diablo/i,
+    text: TOPDOWN_GUIDE,
+  },
+  debugging: {
+    title: 'Debugging: why, and fixing it',
+    scopes: [],
+    words: /\bwhy\b|doesn'?t|does not|didn'?t|did not|not work|isn'?t|won'?t|broken|\bbugs?\b|\bfix|can'?t|cannot|stuck|wrong|problem|issue|glitch|weird|strange|\bdie[sd]?\b|\bdying\b/i,
+    text: DEBUGGING_GUIDE,
+  },
+  editor: {
+    title: 'Changing the editor',
+    scopes: ['editor'],
+    words: /\beditor\b|toolbar|\bdock|interface|\bui\b|play button|details panel|dark mode|light mode|overlay/i,
+    text: EDITOR_GUIDE,
+  },
+  camera: {
+    title: 'The camera',
+    scopes: [],
+    words: /camera|zoom|screen|scroll|follow|shake|flash|\bview\b|look.?ahead|\bfit\b|frame (the|this)/i,
+    text: CAMERA_GUIDE,
+  },
   random: {
     title: 'Random levels and roguelikes',
     scopes: [],
@@ -130,7 +191,7 @@ export const TOPICS: Record<string, Topic> = {
     title: "Autotiling: draw_autotile, 16 edge and corner pictures",
     scopes: ['autotile'],
     words: /autotil|edge|corner|seamless|join|connect(ed)? tiles|tileset/i,
-    text: `- AUTOTILING: an object laid out in a grid (ground, platforms, walls) can autotile: each tile is drawn with the one of 16 pictures (Sprite.autotileSheet) that fits the tiles of the same object above, right, below and left of it (ends, edges, corners). draw_autotile draws them (all 16 for a new look, or some to change; index = up 1 + right 2 + down 4 + left 8 for the joined sides; open sides get the edges, joined sides continue seamlessly) and turns autotiling on: "make the platforms autotile as stone bricks". Each picture has the object's pixel grid (its Sprite size times context.level.spriteResolution / 32, as for draw_sprite). The user can also make them in a style in the Autotile editor (Details → Autotile…). If the object already has them (Sprite.autotileSheet set), switching autotiling on or off is set_component_field Sprite.autotile true/false on the definition.`,
+    text: `- AUTOTILING: an object laid out in a grid (ground, platforms, walls) can autotile: each tile is drawn with the one of 16 pictures (Sprite.autotileSheet) that fits the tiles of the same object above, right, below and left of it (ends, edges, corners). FIRST CHOICE: make_autotile: the app makes all 16 from the object's own picture (draw_sprite the plain inside first), with an outline or none, a light or grass top, rounded corners: a few characters to write instead of 16 drawings. Only when the edges must look special (stone bricks, icicles hanging off) draw_autotile draws them by hand (all 16 for a new look, or some to change; index = up 1 + right 2 + down 4 + left 8 for the joined sides; open sides get the edges, joined sides continue seamlessly) and turns autotiling on: "make the platforms autotile as stone bricks". Each picture has the object's pixel grid (its Sprite size times context.level.spriteResolution / 32, as for draw_sprite). The user can also make them in a style in the Autotile editor (Details → Autotile…). If the object already has them (Sprite.autotileSheet set), switching autotiling on or off is set_component_field Sprite.autotile true/false on the definition.`,
   },
   rounded_corners: {
     title: "Rounded tile corners (Sprite.roundCorners)",
@@ -140,11 +201,33 @@ export const TOPICS: Record<string, Topic> = {
   },
 };
 
+// Topics that have script statements, functions and names of their own: their documentation goes with them.
+for (const key of Object.keys(SCRIPT_TOPICS)) if (TOPICS[key]) TOPICS[key] = { ...TOPICS[key], text: `${TOPICS[key].text}\n${scriptDocsFor(key)}` };
+
+// Topics with component fields of their own: their descriptions go with them.
+for (const key of Object.keys(COMPONENT_TOPICS)) if (TOPICS[key]) TOPICS[key] = { ...TOPICS[key], text: `${TOPICS[key].text}\n${componentDocsFor(componentRegistry, key)}` };
+
+// The worked examples that go only with requests about them: a topic each.
+for (const r of EXAMPLE_ROUTING) {
+  if (!r.words) continue;
+  const x = SCRIPT_EXAMPLES.find((e) => e.title.startsWith(r.title));
+  if (x) TOPICS[`example_${r.key}`] = { title: `Example: ${x.title}`, scopes: [], words: r.words, text: `Example: ${x.title}\n${x.json}` };
+}
+
 /** The topics a request needs: by the card it was asked on, and the words in it (or in what it follows up on). */
-export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = [], newGame = false): string[] {
+export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = [], newGame = false, topDown = false): string[] {
   const text = [request, ...history.slice(-2).map((h) => h.request)].join('\n');
   return Object.entries(TOPICS)
     // (A whole new game decides its enemies too.)
-    .filter(([k, t]) => t.scopes.includes(ctx.kind) || t.words.test(text) || (k === 'panels' && ctx.kind === 'object' && ctx.panel === true) || (k === 'enemies' && newGame))
+    .filter(
+      ([k, t]) =>
+        t.scopes.includes(ctx.kind) ||
+        t.words.test(text) ||
+        (k === 'panels' && ctx.kind === 'object' && ctx.panel === true) ||
+        ((k === 'enemies' || t.newGame) && newGame) ||
+        // (The camera card: about the camera.)
+        (k === 'camera' && ctx.kind === 'level' && !!ctx.camera) ||
+        (!!t.topDown && topDown),
+    )
     .map(([k]) => k);
 }

@@ -1080,6 +1080,44 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
 
 // ---------------------------------------------------------------- reference text for the AI
 
+/**
+ * Statements, functions and names only some kinds of game use: documented in that kind's topic (sent with the
+ * requests that need it), not in the instructions every request carries; those name them in one line.
+ */
+export const SCRIPT_TOPICS: Record<string, { statements: string[]; functions: string[]; names: string[] }> = {
+  turns: {
+    statements: ['kit_style', 'cursor', 'highlight', 'clear_highlight', 'walk_to', 'walk_rules', 'start_turns', 'give_turn', 'done', 'end_turn', 'turn_order', 'popup', 'visit_level', 'return_level'],
+    functions: ['highlighted', 'steps_to', 'next_step_x', 'next_step_y', 'nth'],
+    names: ['cursor_x', 'cursor_y', 'cursor_thing', 'turn_team', 'turns_over', 'turn_number', 'my_turn', 'turn_done', 'walking_path', 'visit_result'],
+  },
+  random: {
+    statements: ['set_generator', 'fog_radius', 'reveal'],
+    functions: ['room_count', 'room_x', 'room_y', 'room_w', 'room_h', 'sees_square', 'explored_square'],
+    names: ['dungeon_seed', 'fog_radius'],
+  },
+  falling_blocks: { statements: ['move_group', 'turn_group'], functions: ['fits', 'fits_turned', 'count_in'], names: [] },
+  enemies: { statements: ['crawl'], functions: [], names: [] },
+  levels: { statements: ['flip_level'], functions: [], names: ['level_flipping', 'level_flipped'] },
+};
+
+const inTopic = (kind: 'statements' | 'functions' | 'names', name: string) => Object.values(SCRIPT_TOPICS).some((t) => t[kind].includes(name));
+
+/** The documentation of a topic's own statements, functions and names (for that topic's guidance). */
+export function scriptDocsFor(topic: string): string {
+  const t = SCRIPT_TOPICS[topic];
+  if (!t) return '';
+  const st = t.statements.filter((k) => k in STATEMENTS).map((k) => `  ${k}: ${STATEMENTS[k as Stmt['do']].doc}. ${STATEMENTS[k as Stmt['do']].example}`);
+  const fn = t.functions.filter((k) => k in FUNCTIONS).map((k) => `  ${k}(${FUNCTIONS[k].args}): ${FUNCTIONS[k].doc}`);
+  const nm = t.names.filter((k) => k in BUILTIN_NAMES).map((k) => `  ${k}: ${BUILTIN_NAMES[k]}`);
+  return [
+    st.length ? `Script statements for this:\n${st.join('\n')}` : '',
+    fn.length ? `Script functions for this:\n${fn.join('\n')}` : '',
+    nm.length ? `Script names for this:\n${nm.join('\n')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function describeScriptLanguage(): string {
   const list = (o: Record<string, string>) =>
     Object.entries(o)
@@ -1097,18 +1135,24 @@ ${Object.entries(TRIGGERS)
 Statements ("do"); every value is an expression given as a JSON string ("90", "self.vx * -1", "\\"left\\"")
 Movement and look statements (velocity, push, glide_to, position, jump, face, climb, gravity, speed_factor, alpha) act on this entity, or on another one given by "on" (an expression: "other", "it", "player", nearest("enemy")). A zone that affects what enters it (water, wind, a trampoline, a conveyor belt) does it with "on": "other" in its touch handlers, or "on": "it" inside "each" with overlaps(it).
 ${Object.entries(STATEMENTS)
+  .filter(([k]) => !inTopic('statements', k))
   .map(([k, s]) => `  ${k}: ${s.doc}. ${s.example}`)
   .join('\n')}
+  Also, documented in their topics (ask with need_code "topic:<name>" when you need one and it isn't attached): ${Object.entries(SCRIPT_TOPICS)
+    .map(([t, x]) => `${x.statements.join(', ')} (topic "${t}")`)
+    .join('; ')}.
 
 Expressions: numbers, "text" or 'text', true/false/null, + - * / %, < <= > >= == !=, and/or/not (or && || !), cond ? a : b, parentheses.
 Names:
-${list(BUILTIN_NAMES)}
+${list(Object.fromEntries(Object.entries(BUILTIN_NAMES).filter(([k]) => !inTopic('names', k))))}
 ${list(CONTEXT_NAMES)}
   <your variables>
 Properties of an entity (self.x, player.health, other.vy):
 ${list(MEMBERS)}
 Functions:
 ${Object.entries(FUNCTIONS)
+  .filter(([k]) => !inTopic('functions', k))
   .map(([k, f]) => `  ${k}(${f.args}): ${f.doc}`)
-  .join('\n')}`;
+  .join('\n')}
+  (More functions and names in the topics "turns", "random" and "falling_blocks".)`;
 }

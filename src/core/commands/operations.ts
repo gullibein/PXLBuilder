@@ -175,6 +175,13 @@ export const operationSchema = z.union([
     onTop: z.boolean().nullable().describe('Where other objects already are: null/false replaces them (deletes what it covers, as placing in the editor does); true puts it on top and keeps them, only when both must really share the square'),
   }),
   z.object({
+    op: z.literal('make_autotile'),
+    id: z.string().describe('The library object (definition id or ref): its 16 autotile pictures are made by the app from its own picture (draw_sprite it first, as the plain inside of the ground)'),
+    edge: z.enum(['outline', 'none']).describe('The open sides: a darker border, or none'),
+    top: z.enum(['light', 'grass', 'none']).describe('The open top: a lighter band, grass, or as the rest'),
+    round: z.boolean().describe('Round off the outer corners'),
+  }),
+  z.object({
     op: z.literal('draw_autotile'),
     id: z.string().describe('The library object (definition id) whose autotile pictures these are'),
     palette: z.array(z.object({ key: z.string().describe('One letter or digit'), color: z.string().describe('"#rrggbb"') })).describe('Colors of the tiles sent ("." is transparent and is not listed)'),
@@ -1001,6 +1008,11 @@ export function applyOperations(
         const cs = op.customSize;
         if (op.size === 'custom' && !(cs && cs.width >= 8 && cs.width <= 2048 && cs.height >= 8 && cs.height <= 2048)) throw new m.ModelError('generate_background size "custom" needs customSize: width and height (8-2048 game pixels)');
         (result.backgroundRequests ??= []).push({ sceneId: op.sceneId, prompt: op.prompt, size: op.size ?? null, parallax: op.parallax ?? null, ...(op.size === 'custom' && cs ? { width: Math.round(cs.width), height: Math.round(cs.height) } : {}) });
+        break;
+      }
+      case 'make_autotile': {
+        const id = refs.get(op.id) ?? op.id;
+        m.makeAutotile(project, id, { edge: op.edge, top: op.top, round: op.round }, registry);
         break;
       }
       case 'draw_autotile': {

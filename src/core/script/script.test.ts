@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
 import { checkExpr, formatExpr, parseExpr } from './expr';
-import { checkScript, describeScriptLanguage, FUNCTIONS, MEMBERS, STATEMENTS, usesMenuKey } from './language';
+import { checkScript, describeScriptLanguage, SCRIPT_TOPICS, scriptDocsFor, FUNCTIONS, MEMBERS, STATEMENTS, usesMenuKey } from './language';
 import { produce } from 'immer';
 
 const project = createProject(createBuiltinRegistry());
@@ -108,10 +108,11 @@ describe('scripts', () => {
     expect(broken((s) => ((s.handlers[0].do = [deep(9) as never]), s))).toMatch(/nested too deeply/);
   });
 
-  it('the AI reference lists every statement, function and property', () => {
+  it('the AI reference documents every statement, function and property: in the instructions, or in its topic (named there)', () => {
     const text = describeScriptLanguage();
-    for (const k of Object.keys(STATEMENTS)) expect(text).toContain(`  ${k}:`);
-    for (const k of Object.keys(FUNCTIONS)) expect(text).toContain(`  ${k}(`);
+    const topics = Object.keys(SCRIPT_TOPICS).map((t) => scriptDocsFor(t)).join('\n');
+    for (const k of Object.keys(STATEMENTS)) expect(text.includes(`  ${k}:`) || (topics.includes(`  ${k}:`) && text.includes(k)), k).toBe(true);
+    for (const k of Object.keys(FUNCTIONS)) expect(text.includes(`  ${k}(`) || topics.includes(`  ${k}(`), k).toBe(true);
     for (const k of Object.keys(MEMBERS)) expect(text).toContain(`  ${k}:`);
   });
 });

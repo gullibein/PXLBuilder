@@ -7,6 +7,13 @@
 import { ModelError } from '../model/mutations';
 import { SWOOPER_SCRIPT } from './swooper';
 import { ENEMY_SCRIPTS } from './enemies';
+import { hurtsScript, stompScript } from '../model/ruleScripts';
+
+/** A rule script as a ready-made one (no id of its own: each use gets one). */
+const ready = (s: { id?: string } & Record<string, unknown>) => {
+  const { id: _id, ...rest } = s;
+  return rest;
+};
 import { TACTICS_ENEMY_SCRIPT, TACTICS_UNIT_SCRIPT } from './tactics';
 import { GOLD_PICKUP_SCRIPT, HEALING_PICKUP_SCRIPT, ROGUELIKE_HERO_SCRIPT, ROGUELIKE_MONSTER_SCRIPT, STAIRS_DOWN_SCRIPT } from './roguelike';
 import { RPG_ENCOUNTER_SCRIPT, RPG_HERO_SCRIPT, RPG_MONSTER_SCRIPT, RPG_SHOP_SCRIPT } from './rpg';
@@ -24,6 +31,9 @@ export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT a
   'Gold pickup': GOLD_PICKUP_SCRIPT as Script,
   'Healing pickup': HEALING_PICKUP_SCRIPT as Script,
   ...(ENEMY_SCRIPTS as Record<string, Script>),
+  // The side-view rules: landing on it defeats it (or takes hits), touching it hurts the player.
+  Stomp: ready(stompScript({ by: ['player'], bounce: 320, hits: 0 }) as never) as Script,
+  'Hurts on touch': ready(hurtsScript({ amount: 1, who: ['player'] }) as never) as Script,
 };
 
 /** The script a set_script stands for: a ready-made one by name (its settings given), or the script as written. */

@@ -29,6 +29,7 @@ import { applyOperations, checkOperations, failedOperations, isEditorOperation, 
 import { checkEditorSetting, editorReference, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
+import { isTopDownScene } from '../../core/model/topDown';
 import { produce } from 'immer';
 import { levelMap, type LevelMap } from '../../core/model/levelMap';
 import { reachabilityProblems } from '../../core/model/reachability';
@@ -186,7 +187,15 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     trace?.('note', `Sent along: the pictures of ${looks.map((c) => c.name.replace(/^the pictures of /, '')).join(', ')}`);
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
-  const topics = topicsFor(ctx, request, body.history, !!options.newGame || (ctx.kind === 'project' && makesAGame(request)));
+  const topicScene = state.project.scenes.find((sc) => sc.id === ctx.sceneId);
+  const topics = topicsFor(ctx, request, body.history, !!options.newGame || (ctx.kind === 'project' && makesAGame(request)), !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
+  // The level design idea goes only with requests about levels (with the level guidance), and the ideas for new
+  // levels only with requests for new ones: the rest of the time they are text the AI reads for nothing.
+  const level = body.context.level as { design?: { forNewLevels?: unknown[] } } | undefined;
+  if (level?.design) {
+    if (!topics.includes('levels')) delete level.design;
+    else if (!/\b(new|next|more|another|other|extra|second|third|fourth|fifth|\d+)\s+(\w+\s+)?levels?\b|\blevels\b/i.test(request) && !options.newGame) level.design.forNewLevels = [];
+  }
   // About the background (its card, or the words): the image generator's state and size go along.
   if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {
     const t = generatorTarget(ctx.sceneId);

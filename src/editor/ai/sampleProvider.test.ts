@@ -20,7 +20,7 @@ describe('Claude through claude.ai (sample)', () => {
     );
     expect(await provider.respond(body)).toEqual(answer);
     expect(seen!.input).toContain('REPLY FORMAT');
-    expect(seen!.input).toContain('"set_component_field"');
+    expect(seen!.input).toContain('- set_component_field: {');
     expect(seen!.input.endsWith('REQUEST\nMake gravity weaker')).toBe(true);
     expect(seen!.options).toMatchObject({ cache: false });
   });
