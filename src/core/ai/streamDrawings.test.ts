@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DrawingScanner, type StreamedDrawing } from './streamDrawings';
+import { DrawingScanner, levelSketch, type StreamedDrawing } from './streamDrawings';
 
 const sprite = (name: string, extra: Record<string, unknown> = {}) => ({ op: 'draw_sprite', target: { object: name }, name, palette: [{ key: 'a', color: '#ff0000' }, { key: 'b', color: '#00ff00' }], rows: ['ab', 'ba'], ...extra });
 
@@ -44,5 +44,34 @@ describe("the AI's drawings, read while its answer is still being written", () =
     const found: string[] = [];
     new DrawingScanner((d) => found.push(d.name)).feed('Here it is:\n```json\n' + answer.slice(0, -40));
     expect(found).toEqual(['Player']);
+  });
+});
+
+describe('the level map the AI is writing, read while it is written', () => {
+  const answer = JSON.stringify({
+    kind: 'preview',
+    message: 'A cave.',
+    operations: [
+      { op: 'create_definition', ref: 'rock', name: 'Cave rock', components: [] },
+      { op: 'draw_map', sceneId: 's', col: 0, row: 0, legend: [{ char: '#', object: 'rock' }, { char: ']', object: 'Ladder' }], rows: ['#####', '#.].#', '#P.G#', '#####'], clear: true },
+      { op: 'place_instance', sceneId: 's', definitionRef: 'Teleporter', x: 0, y: 0 },
+    ],
+  });
+
+  it('gives the rows written so far (never one still being written), its legend, and the names of objects made', () => {
+    expect(levelSketch(answer.slice(0, answer.indexOf('"rows"')))).toBeNull();
+    const cut = answer.indexOf('#P.G#') + 3;
+    const half = levelSketch(answer.slice(0, cut))!;
+    expect(half.rows).toEqual(['#####', '#.].#']);
+    expect(half.legend).toEqual([{ char: '#', object: 'rock' }, { char: ']', object: 'Ladder' }]);
+    expect(half.names).toEqual({ rock: 'Cave rock' });
+    expect(levelSketch(answer)!.rows).toEqual(['#####', '#.].#', '#P.G#', '#####']);
+    // (Bit by bit, the rows only ever grow.)
+    let last = 0;
+    for (let n = 1; n <= answer.length; n += 5) {
+      const rows = levelSketch(answer.slice(0, n))?.rows.length ?? 0;
+      expect(rows).toBeGreaterThanOrEqual(last);
+      last = rows;
+    }
   });
 });

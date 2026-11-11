@@ -80,3 +80,51 @@ describe('draw_map: a whole level drawn as text', () => {
     expect(() => produce(project, (d) => void applyOperations(d, [op], registry))).toThrow(/"\?"/);
   });
 });
+
+describe('terrain the AI makes stays on the grid', () => {
+  it('a block and a ladder it made, placed by pixel at the edge of a cell, land on the cell (never half a cell off)', () => {
+    const { project, sceneId } = start();
+    const ops = [
+      { op: 'create_definition', ref: 'dirt', name: 'Dirt', category: 'Platforms', tags: ['ground'], description: 'Ground', components: [{ component: 'Sprite', propsJson: '{"width":32,"height":32}' }, { component: 'Collider', propsJson: '{}' }] },
+      { op: 'create_definition', ref: 'vine', name: 'Vine', category: 'Environment', tags: ['ladder'], description: 'A vine to climb', components: [{ component: 'Sprite', propsJson: '{"width":32,"height":32}' }, { component: 'Collider', propsJson: '{"isTrigger":true}' }, { component: 'Climbable', propsJson: '{}' }] },
+      { op: 'place_instance', sceneId, definitionRef: 'dirt', x: 320, y: 64, name: null, ref: null, onTop: null },
+      { op: 'place_instance', sceneId, definitionRef: 'vine', x: 352, y: 96, name: null, ref: null, onTop: null },
+      { op: 'place_instance', sceneId, definitionRef: 'vine', x: 360, y: 130, name: null, ref: null, onTop: null },
+    ] as unknown as Operation[];
+    const after = produce(project, (d) => void applyOperations(d, ops, registry));
+    const at = (name: string) => after.scenes[0].entities.filter((e) => e.name === name).map((e) => e.transform.position);
+    expect(after.definitions.find((d) => d.name === 'Dirt')!.metadata.placement).toBe('tile');
+    expect(at('Dirt')).toEqual([{ x: 336, y: 80 }]);
+    // The two vine pieces one above the other, in one column.
+    expect(at('Vine')).toEqual([{ x: 368, y: 112 }, { x: 368, y: 144 }]);
+  });
+});
+
+describe('crates in the level checker', () => {
+  it('a ledge too high to jump to is reachable with a crate on the floor below it (pushed under it), not without', () => {
+    const level = (crate: boolean) => {
+      const { project, sceneId } = start();
+      const rows = [
+        '##############',
+        '#............#',
+        '#............#',
+        '#............#',
+        '#.........G..#',
+        '#.......######',
+        `#P..${crate ? 'B' : '.'}........#`,
+        '##############',
+      ];
+      const legend = [{ char: '#', object: 'Platform' }, { char: 'B', object: 'Crate' }, { char: 'G', object: 'Goal' }, { char: 'P', object: 'Player' }];
+      return produce(project, (d) => void applyOperations(d, [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows, clear: true } as Operation], registry));
+    };
+    // The ledge (its top at y=160, the floor's at 224: two rows, more than a jump).
+    const ledge = (p: Project) => {
+      const r = levelReachability(p, p.scenes[0].id, registry);
+      return r.status === 'ok' ? r.surfaces.find((x) => Math.round(x.top) === 160)?.reached : undefined;
+    };
+    const withCrate = level(true);
+    expect(ledge(withCrate)).toBe(true);
+    expect(levelMap(withCrate, withCrate.scenes[0].id, registry)!.legend.B).toMatch(/crate/);
+    expect(ledge(level(false))).toBe(false);
+  });
+});

@@ -4,7 +4,7 @@ import { createBuiltinRegistry } from '../components/builtin';
 import { createProject, createScene, instantiateDefinition } from '../model/factory';
 import * as m from '../model/mutations';
 import { buildAIPayload } from './context';
-import { levelDesignIdea, levelShape } from './levelIdeas';
+import { LEVEL_PUZZLES, PLATFORMER_STYLES, levelDesignIdea, levelShape } from './levelIdeas';
 
 const registry = createBuiltinRegistry();
 
@@ -52,5 +52,16 @@ describe('variety for generated levels', () => {
     expect(level.level.design?.layout.name).toBeTruthy();
     const thing = buildAIPayload(p, { kind: 'entity', sceneId: p.scenes[0].id, entityIds: [p.scenes[0].entities[0].id] } as never, registry, undefined, null, () => 0.5);
     expect(thing.level.design).toBeUndefined();
+  });
+
+  it('platformer levels come with puzzles that fit the kind of platformer, each one with how', () => {
+    for (const st of PLATFORMER_STYLES) for (const p of st.puzzles) expect(LEVEL_PUZZLES[p], `${st.name}: ${p}`).toBeTruthy();
+    const p = createProject(registry);
+    let n = 0;
+    const idea = levelDesignIdea(p, p.scenes[0], registry, () => ((n = (n * 9301 + 49297) % 233280), n / 233280));
+    expect(idea.style).toBeTruthy();
+    expect(idea.puzzles!.length).toBeGreaterThanOrEqual(2);
+    const style = PLATFORMER_STYLES.find((s) => s.name === idea.style!.name)!;
+    expect(idea.puzzles!.every((x) => style.puzzles.includes(x.split(':')[0]))).toBe(true);
   });
 });

@@ -726,17 +726,17 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
     createDefinition(
       'Water',
       {
-        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.water.id, layer: -1 }),
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.water.id, layer: 1, opacity: 0.6 }),
         Collider: c('Collider', { isTrigger: true }),
         Liquid: c('Liquid'),
       },
       ['water', 'liquid'],
-      'The surface of water, its waves moving: the player swims in it (Jump strokes up) and jumps out at the top. The top row of a pool; Deep water under it.',
+      'The surface of water, its waves moving, drawn see-through in front of whoever swims in it: the player swims in it (Jump strokes up) and jumps out at the top. The top row of a pool; Deep water under it.',
     ),
     createDefinition(
       'Deep water',
       {
-        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.deepWater.id, layer: -1 }),
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#2f7fc4', assetId: assets.deepWater.id, layer: 1, opacity: 0.6 }),
         Collider: c('Collider', { isTrigger: true }),
         Liquid: c('Liquid'),
       },

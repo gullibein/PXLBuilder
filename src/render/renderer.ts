@@ -840,7 +840,9 @@ export function drawEntities(
         drawGlow(ctx, position, entity.components.Glow, Math.max(size.x * Math.abs(scale.x), size.y * Math.abs(scale.y)), baseAlpha * (entity.alpha ?? 1), clock, px);
       }
     }
-    ctx.globalAlpha = entity.alpha !== undefined || invisible ? baseAlpha * (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1) : baseAlpha;
+    // (Its own see-through setting: water in front of a swimmer, glass.)
+    const opacity = typeof sprite.opacity === 'number' ? Math.max(0, Math.min(1, sprite.opacity)) : 1;
+    ctx.globalAlpha = (entity.alpha !== undefined || invisible ? baseAlpha * (entity.alpha ?? 1) * (invisible ? invisibleAlpha : 1) : baseAlpha) * opacity;
     // (Placed from the level's own transform: `base`, not whatever the thing before left.)
     placeOnScreen(ctx, base, position, rotation, scale, size);
     ctx.fillStyle = color;

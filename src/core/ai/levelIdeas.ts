@@ -20,6 +20,8 @@ export interface LevelDesignIdea {
   size?: string;
   /** Side levels in a game that has no look of its own yet: the kind of platformer to make (with its rules). */
   style?: { name: string; rules: string };
+  /** Side levels: the puzzles to build this level around (fitting the kind of platformer), each with how. */
+  puzzles?: string[];
   /** Where things go this time. */
   start: string;
   goal: string;
@@ -82,26 +84,50 @@ const SIDE_SIZES = ['one screen (about 30 by 17 cells)', 'one screen (about 30 b
  * Kinds of platformer, each with its own look and pieces: a game is one kind throughout (the user's words decide;
  * without any, the one suggested here), and each kind has its own rules (what is in it and what never is).
  */
-export const PLATFORMER_STYLES: { name: string; rules: string }[] = [
+/**
+ * Puzzles a level is built around, with the pieces each needs (by the starter objects' names; a game's own look of
+ * them, made with create_definition, is as good). Each kind of platformer has its own (PLATFORMER_STYLES[].puzzles).
+ */
+export const LEVEL_PUZZLES: Record<string, string> = {
+  'crate step': 'A ledge one or two blocks higher than a jump, with a Crate on the floor below it a few cells away: the player pushes the crate under the ledge and climbs on it (there is no other way up).',
+  'crate stack': 'Two Crates to push one beside the other into a step, or a crate pushed off a ledge into a pit to make a step out of it.',
+  'teleporter shortcut': 'A pair of Teleporters (place_instance each with a ref, then teleports_to both ways): one in a sealed room (the key or a switch inside), the other on the main way; or a quick way back from the far end to the start.',
+  'drop-through': 'A key or switch under a jump-through floor (Bridge): seen from above, reached by Down + Jump through it; and jump-through ledges up a shaft as the way up.',
+  'bridge over the gap': 'A pit or a pool too wide to jump, crossed by a row of Bridge; enemies walking on it, or coins under it in the pit.',
+  'swim for it': 'A pool (Water on top, Deep water under it) to dive into: the key or gems at the bottom, or an underwater tunnel through a wall to the next room.',
+  'hill': 'A hill of ground with a Ramp up one side and Ramp left down the other (or ramps between two floors instead of a ladder); an enemy walking over it, coins on the top.',
+  'switch and door': 'A Switch on one floor opens a Door (controls/opens connection) somewhere else: the player sees the shut door first, then finds the switch.',
+  'key and door': 'The Goal behind a Door that requires the Key, the key at the far end of another branch.',
+  'moving platform': 'A wide gap or shaft crossed on a moving platform (an object with MovingPlatform, made with create_definition), with coins along its path.',
+  'hidden ladder': 'A ladder whose pieces start hidden (StartsHidden) and appear when every coin is collected (a rule), leading up to the goal.',
+  'lava pit': 'A pit of lava (Liquid swim false with a Hurts on touch script, glowing) to jump over, with ledges or a moving platform across it.',
+};
+
+export const PLATFORMER_STYLES: { name: string; rules: string; puzzles: string[] }[] = [
   {
     name: 'Classic blocks',
     rules: 'Bright sky, chunky solid blocks and bricks, floating block rows, pipes, pits; a block-built ground with a grassy top. Every platform is solid (no jump-through platforms, no ramps); coins in the air; walking enemies (Walker).',
+    puzzles: ['crate step', 'teleporter shortcut', 'switch and door', 'key and door', 'moving platform', 'hidden ladder'],
   },
   {
     name: 'Cave explorer',
     rules: 'An enclosed cave: thick rock all round (autotiled), floors stacked inside it, a dark back wall, stalactites and vines hanging from the ceilings, glowing mushrooms; ladders, thin jump-through ledges and bridges, ramps where floors meet; pools of water (or acid); gems to collect; crates and barrels.',
+    puzzles: ['crate step', 'drop-through', 'bridge over the gap', 'swim for it', 'hill', 'key and door', 'teleporter shortcut', 'crate stack'],
   },
   {
     name: 'Hills and islands',
     rules: 'Outdoors: grassy hills of earth with 45 degree ramps up and down, floating islands, mushroom caps or clouds as jump-through platforms (on stems or nothing), vines to climb, trees, flowers and rocks as decoration, water below; a cottage or sign by the start.',
+    puzzles: ['hill', 'bridge over the gap', 'swim for it', 'drop-through', 'crate step', 'teleporter shortcut', 'key and door'],
   },
   {
     name: 'Indoor rooms',
     rules: 'A building or lab: rooms with solid walls and floors, a patterned back wall, thin metal bars and plank shelves as jump-through platforms, crates and hazard boxes stacked, buttons and doors between rooms, elevators (moving platforms); no ramps.',
+    puzzles: ['crate step', 'crate stack', 'switch and door', 'drop-through', 'teleporter shortcut', 'moving platform', 'key and door'],
   },
   {
     name: 'Ruined temple',
     rules: 'Ancient stone blocks with cracks, overgrown with moss and grass, spikes on floors and ceilings, fire or lava pits, moving platforms on chains, stone ledges; a timer or a score in the corner; few ramps, no water.',
+    puzzles: ['lava pit', 'moving platform', 'crate step', 'switch and door', 'hidden ladder', 'key and door', 'teleporter shortcut'],
   },
 ];
 
@@ -145,6 +171,13 @@ export function levelShape(project: Project, scene: Scene, registry: ComponentRe
   return [player ? `starts ${where(player.x, player.y)}` : 'no player', goal ? `goal ${where(goal.x, goal.y)}` : 'no goal', size].join(', ');
 }
 
+/** The kind of platformer, and two or three of its puzzles (at random) for this level. */
+function styleAndPuzzles(style: (typeof PLATFORMER_STYLES)[number], random: () => number): { style: { name: string; rules: string }; puzzles: string[] } {
+  const order = style.puzzles.map((p) => ({ p, k: random() })).sort((a, b) => a.k - b.k).map((x) => x.p);
+  const n = 2 + (random() < 0.5 ? 1 : 0);
+  return { style: { name: style.name, rules: style.rules }, puzzles: order.slice(0, n).map((p) => `${p}: ${LEVEL_PUZZLES[p]}`) };
+}
+
 /** This request's idea for a level (`random` in [0,1), e.g. Math.random). */
 export function levelDesignIdea(project: Project, scene: Scene, registry: ComponentRegistry, random: () => number): LevelDesignIdea {
   const topDown = isTopDownScene(project, scene, registry);
@@ -165,7 +198,7 @@ export function levelDesignIdea(project: Project, scene: Scene, registry: Compon
   const first = idea(0);
   return {
     ...first,
-    ...(topDown ? {} : { style: pick(PLATFORMER_STYLES) }),
+    ...(topDown ? {} : styleAndPuzzles(pick(PLATFORMER_STYLES), random)),
     forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => idea(i + 1)),
     otherLevels: project.scenes.filter((s) => s.id !== scene.id).flatMap((s) => {
       const shape = levelShape(project, s, registry);

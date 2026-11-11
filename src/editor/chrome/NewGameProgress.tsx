@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AssetRecord, Project } from '../../core/types';
 import { stopJob, useJobs } from '../ai/jobs';
 import { SpriteImage } from '../SpriteImage';
+import { LevelSketchView } from './LevelSketchView';
 import { normalizePixelArt, pixelArtToSvg } from '../../core/model/pixelArt';
 import { useEditor } from '../store';
 
@@ -169,6 +170,8 @@ export function NewGameProgress() {
             </div>
           )}
           <p className="chat-you">{job.again?.asked ?? job.request}</p>
+          {/* The level as the AI draws it, row by row (once it has begun the map). */}
+          {job.sketch && <LevelSketchView sketch={job.sketch} drawings={job.drawings ?? []} project={project} />}
           {piece ? (
             // (One piece after another; key: each comes in with its own little animation.)
             <figure className="ngp-show" key={piece.key} data-testid="new-game-piece" data-source={engine ? 'engine' : 'ai'}>

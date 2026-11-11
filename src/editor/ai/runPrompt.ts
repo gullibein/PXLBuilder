@@ -4,7 +4,7 @@
  * The AI only ever proposes operations. They are applied all-or-nothing as
  * one undoable transaction through the same mutation layer the inspector uses.
  */
-import { DrawingScanner } from '../../core/ai/streamDrawings';
+import { DrawingScanner, levelSketch, type LevelSketch } from '../../core/ai/streamDrawings';
 import { setJobNote } from './jobs';
 import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
@@ -142,7 +142,9 @@ export interface PromptOptions {
   /** What it is doing now, in a few words (the New game window shows it while the game is built). */
   onStage?: (stage: string) => void;
   /** The sprites an answer drew (its pixels), as soon as it comes back: shown while the game is built. */
-  onDrawings?: (drawn: { name: string; palette: { key: string; color: string }[]; rows: string[] }[]) => void;
+  onDrawings?: (drawn: { id?: string; name: string; palette: { key: string; color: string }[]; rows: string[] }[]) => void;
+  /** The level map the AI is writing (draw_map), as far as it has come: for the building window. */
+  onSketch?: (sketch: LevelSketch) => void;
 }
 
 /** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
@@ -224,11 +226,25 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // each as soon as it is finished, read from the answer while it is still being written (where it comes in bit by bit).
     const ask: typeof provider.respond = async (b, sig, tr) => {
       const scanners = new Map<string, DrawingScanner>();
-      const draft = options.onDrawings
+      // (The level map is read again at most a few times a second: it is looked for in all of the answer so far.)
+      let sketchAt = 0;
+      let sketchSeen = '';
+      const draft = options.onDrawings || options.onSketch
         ? (soFar: string, channel = 'text') => {
             let s = scanners.get(channel);
             if (!s) scanners.set(channel, (s = new DrawingScanner((d) => options.onDrawings?.([d]))));
             s.feed(soFar);
+            const now = Date.now();
+            if (options.onSketch && now - sketchAt > 250 && soFar.includes('draw_map')) {
+              sketchAt = now;
+              const sketch = levelSketch(soFar);
+              // (Changed: more rows, or another map: the next level's.)
+              const seen = sketch ? `${sketch.rows.length}:${sketch.rows[0]}:${sketch.legend.length}` : '';
+              if (sketch && seen !== sketchSeen) {
+                sketchSeen = seen;
+                options.onSketch(sketch);
+              }
+            }
           }
         : undefined;
       const r = await provider.respond(b, sig, tr, draft);

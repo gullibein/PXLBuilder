@@ -206,11 +206,24 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     if (a !== undefined && b !== undefined) teleports.push([a, b]);
   }
 
+  // Crates (things to push) standing on a floor: pushed along it under a ledge, the player jumps from on top of
+  // one (the highest crate there) instead of from the floor.
+  const lift = new Map<Span, number>();
+  for (const r of all) {
+    if (!r.components.Pushable || r === player) continue;
+    const b = boxOf(r);
+    const cx = (b.left + b.right) / 2;
+    const on = spans.find((s) => Math.abs(s.top - b.bottom) <= 4 && cx >= s.left && cx <= s.right);
+    if (on) lift.set(on, Math.max(lift.get(on) ?? 0, b.bottom - b.top));
+  }
   const canJump = (from: Span, to: { left: number; right: number; top: number }) => {
-    const rise = from.top - to.top;
-    if (rise > reach.height * MARGIN + grab) return false;
-    const d = jumpDistance(reach, Math.max(-4000, Math.min(rise, reach.height * MARGIN)));
-    return gapBetween(from, to) <= Math.max(0, d * MARGIN) + pHalf;
+    const jump = (up: number) => {
+      const rise = from.top - up - to.top;
+      if (rise > reach.height * MARGIN + grab) return false;
+      const d = jumpDistance(reach, Math.max(-4000, Math.min(rise, reach.height * MARGIN)));
+      return gapBetween(from, to) <= Math.max(0, d * MARGIN) + pHalf;
+    };
+    return jump(0) || ((lift.get(from) ?? 0) > 0 && jump(lift.get(from)!));
   };
 
   // Search: spans and ladders.
@@ -518,4 +531,57 @@ export function reachabilityProblems(project: Project, sceneId: Id, registry: Co
     });
   }
   return out;
+}
+
+/**
+ * What the level checker counts as within the player's reach, in cells, so whoever builds a level knows exactly
+ * (the same numbers the checker uses): for each height of the landing compared with where it jumps from (rows; +
+ * higher), the widest gap of empty cells it clears; how high a ladder's lowest piece may hang over a floor and still
+ * be caught; how much a crate to stand on adds.
+ */
+export interface JumpTable {
+  /** For each rise in rows (1: the landing one row higher, 0 level, -3 three rows lower): the widest gap of empty cells between the two floors it still jumps. Rises not listed are too high. */
+  gaps: { rise: number; cells: number }[];
+  /** The most rows higher a floor it can jump up onto may be. */
+  maxRiseRows: number;
+  /** Empty rows there may be between a floor and the lowest piece of a ladder over it, for the player to jump and catch it. */
+  ladderGapRows: number;
+  /** Rows a one-cell crate (pushed under a ledge) adds to how high it gets. */
+  crateRows: number;
+  /** The widest row of floor hazards it jumps over from the same floor (cells): half a cell tall (spikes), a whole cell tall. */
+  spikeCells: { halfCellTall: number; cellTall: number };
+}
+
+export function jumpTable(components: ResolvedEntity['components'], gravityY: number): JumpTable | null {
+  const base = characterReach(components, gravityY);
+  if (!base) return null;
+  const extra = Number(components.DoubleJump?.extraJumps ?? 0);
+  const reach: Reach = extra > 0 ? { ...base, height: base.height * (1 + extra), distance: base.distance * (1 + extra), jumpForce: base.jumpForce * Math.sqrt(1 + extra) } : base;
+  const col = components.Collider as { size?: { x?: number; y?: number } } | undefined;
+  const sprite = components.Sprite as { width?: number; height?: number } | undefined;
+  const pW = Number(col?.size?.x ?? sprite?.width ?? 32);
+  const pH = Number(col?.size?.y ?? sprite?.height ?? 32);
+  const grab = components.LedgeGrab ? pH * 0.6 : 0;
+  const CELL = 32;
+  const maxRise = reach.height * MARGIN + grab;
+  const gaps: JumpTable['gaps'] = [];
+  for (let rows = Math.floor(maxRise / CELL); rows >= -6; rows--) {
+    const d = jumpDistance(reach, Math.max(-4000, Math.min(rows * CELL, reach.height * MARGIN)));
+    if (d < 0) continue;
+    // (Landing with its whole body on the far floor, not on its corner: what a player can count on.)
+    gaps.push({ rise: rows, cells: Math.max(0, Math.floor((d * MARGIN) / CELL + 1e-9)) });
+  }
+  // Over hazards its whole body stays above them all the way: the time its feet are higher than their tops.
+  const over = (tall: number) => {
+    if (reach.height * MARGIN <= tall) return 0;
+    const t = 2 * Math.sqrt((2 * (reach.height * MARGIN - tall)) / reach.gravity);
+    return Math.max(0, Math.floor((reach.speed * t * MARGIN - pW) / CELL + 1e-9));
+  };
+  return {
+    gaps,
+    maxRiseRows: Math.max(0, Math.floor(maxRise / CELL)),
+    ladderGapRows: Math.max(0, Math.floor((reach.height * MARGIN + pH) / CELL + 1e-9) - 1),
+    crateRows: 1,
+    spikeCells: { halfCellTall: over(CELL / 2), cellTall: over(CELL) },
+  };
 }

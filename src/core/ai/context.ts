@@ -31,6 +31,7 @@ import { gridFor } from '../model/spriteResolution';
 import { isoShapesOf } from '../model/isoShapes';
 import { getDefinitionSprites } from '../model/mutations';
 import { resolveEntity } from '../model/resolve';
+import { jumpTable, type JumpTable } from '../model/reachability';
 import type { BehaviorScript, Condition, EntityRef, Id, Project, Relationship, Rule, RuleAction, Scene, Vec2 } from '../types';
 
 export type AIContext =
@@ -232,7 +233,7 @@ export interface AIPayload {
      */
     design?: LevelDesignIdea;
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
-    playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number } | null;
+    playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number; cells?: Omit<JumpTable, 'gaps'> & { gaps: string } } | null;
   };
   /** The selected/target entities, in full. */
   targets: EntityDetail[];
@@ -368,7 +369,11 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
   const t = (px: number) => Math.round((px / LEVEL_CELL) * 10) / 10;
   // Heights round down: 62.5 px is "1.9 tiles", never "2" (two rows up is out of reach).
   const down = (px: number) => Math.floor((px / LEVEL_CELL) * 10) / 10;
-  return { character: placed?.name ?? def!.name, jumpHeightPx: Math.floor(r.height), jumpHeightTiles: down(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed };
+  // (In cells, exactly as the level checker counts: what the AI builds is judged by the same numbers.)
+  const table = jumpTable(components, scene.world.gravity.y);
+  // ("rise:cells" pairs, short: "+1:3 0:4 -1:4".)
+  const cells = table ? { ...table, gaps: table.gaps.filter((g) => g.rise >= -4).map((g) => `${g.rise > 0 ? '+' : ''}${g.rise}:${g.cells}`).join(' ') } : undefined;
+  return { character: placed?.name ?? def!.name, jumpHeightPx: Math.floor(r.height), jumpHeightTiles: down(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed, ...(cells ? { cells } : {}) };
 }
 
 export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null, random?: () => number): AIPayload {

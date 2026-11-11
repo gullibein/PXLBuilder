@@ -602,8 +602,26 @@ class CoverIndex {
   }
 }
 
+/**
+ * Pieces of the level's terrain (ground blocks, ramps, jump-through platforms, ladders, water), whole cells in size:
+ * they belong on the grid, as the built-in tiles do, wherever they are put (by cell or by pixel).
+ */
+export function terrainLike(components: Record<string, Record<string, unknown>>): boolean {
+  const c = components;
+  if (c.CharacterController || c.Patrol || c.Wander || c.MovingPlatform || c.Collectible || c.Openable || c.Switch || c.Goal || c.Pushable || c.Shooter) return false;
+  const s = c.Sprite as { width?: unknown; height?: unknown } | undefined;
+  const w = Number(s?.width) || 0;
+  const h = Number(s?.height) || 0;
+  const whole = (v: number) => v >= LEVEL_CELL && Math.abs(v / LEVEL_CELL - Math.round(v / LEVEL_CELL)) < 0.01;
+  if (!whole(w) || !whole(h)) return false;
+  const body = (c.PhysicsBody as { bodyType?: unknown } | undefined)?.bodyType;
+  if (body === 'dynamic' || body === 'kinematic') return false;
+  const col = c.Collider as { isTrigger?: unknown } | undefined;
+  return !!c.Climbable || !!c.Liquid || (!!col && col.isTrigger !== true);
+}
+
 function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
-  if (def.metadata.placement !== 'tile') return p;
+  if (def.metadata.placement !== 'tile' && !terrainLike(def.components as Record<string, Record<string, unknown>>)) return p;
   const size = (def.components.Sprite as { width?: number; height?: number } | undefined) ?? {};
   const cell = cellSize({ x: Number(size.width) || LEVEL_CELL, y: Number(size.height) || LEVEL_CELL }, LEVEL_CELL);
   const near = (v: number, c: number) => Math.round((v - c / 2) / c) * c + c / 2;
@@ -791,6 +809,8 @@ export function applyOperations(
         }
         const def = createDefinition(op.name, components, op.tags, op.description);
         def.metadata.category = op.category;
+        // Ground, ramps, ladders, water: tiles, on the grid (as the built-in ones are), placed by hand or by the AI.
+        if (terrainLike(components)) def.metadata.placement = 'tile';
         m.addDefinition(project, def, registry);
         refs.set(op.ref, def.id);
         result.createdDefinitionIds.push(def.id);

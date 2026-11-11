@@ -164,6 +164,9 @@
 .style-dialog { width: min(560px, calc(100% - 32px)); }
 .game-dialog { width: min(640px, calc(100% - 32px)); }
 .new-game-progress { width: min(460px, calc(100% - 32px)); }
+.ngp-sketch { margin: 4px 0; display: grid; justify-items: center; gap: 6px; animation: ngp-in 360ms ease-out; }
+.ngp-sketch canvas { image-rendering: pixelated; max-width: 100%; border-radius: 6px; background: #12151f; }
+.ngp-sketch figcaption { font-size: 12px; color: var(--muted, #8a90a8); }
 .ngp-body { display: grid; gap: 10px; padding: 12px 16px; }
 .ngp-pictures { display: flex; gap: 6px; flex-wrap: wrap; }
 .ngp-pictures img { max-height: 96px; max-width: 160px; border-radius: 6px; border: 1px solid var(--line); image-rendering: pixelated; object-fit: contain; }

@@ -14,6 +14,7 @@ import { runPrompt, withPictureNote, type PromptOptions, type PromptOutcome } fr
 import { contextName, conversationKey, logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
+import type { LevelSketch } from '../../core/ai/streamDrawings';
 import { useEditor } from '../store';
 
 export interface PromptJob {
@@ -33,7 +34,9 @@ export interface PromptJob {
   /** When it started (ms, Date.now). */
   started?: number;
   /** The sprites the AI has drawn so far (pixels), from the answers that came back. */
-  drawings?: { name: string; palette: { key: string; color: string }[]; rows: string[] }[];
+  drawings?: { id?: string; name: string; palette: { key: string; color: string }[]; rows: string[] }[];
+  /** The level map the AI is writing, as far as it has come (draw_map). */
+  sketch?: LevelSketch;
 }
 
 interface JobState {
@@ -87,6 +90,10 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     for (const d of drawn) byName.set(d.name, d);
     put(key, { ...job, drawings: [...byName.values()] });
   };
+  const onSketch = (sketch: LevelSketch) => {
+    const job = useJobs.getState().jobs[key];
+    if (job?.phase === 'working' && controllers.get(key) === controller) put(key, { ...job, sketch });
+  };
   // What happens under the hood (AI History → Details).
   const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
@@ -114,7 +121,7 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId, again });
   };
-  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage, onDrawings }).then(
+  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage, onDrawings, onSketch }).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });

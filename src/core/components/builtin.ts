@@ -41,6 +41,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
           'For objects laid out in a grid (ground, platforms, walls): each tile is drawn with the one of its 16 autotile pictures (autotileSheet) that fits the tiles of the same object around it: ends, edges and corners where nothing is next to it. Worked out by the engine as tiles are placed and removed (also in play). Set up in the Autotile editor (Details → Autotile…)',
       },
       autotileSheet: { kind: 'assetRef', assetKind: 'image', default: null, description: "The autotile's 16 pictures (one per combination of neighbours above, right, below and left), made in the Autotile editor" },
+      opacity: { kind: 'number', default: 1, min: 0, max: 1, step: 0.05, description: 'How solid it looks: 1 fully, less is see-through (water in front of a swimmer 0.6, glass, a ghost)' },
       layer: { kind: 'number', default: 0, min: -10, max: 10, step: 1, integer: true, description: 'Drawing order: lower layers are drawn first, under higher ones (floors -1 under everything at 0, a roof or foliage 1 over the player); things on the same layer are drawn in the order they were placed' },
       isoLook: {
         kind: 'enum',

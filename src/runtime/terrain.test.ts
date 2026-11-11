@@ -4,7 +4,7 @@ import { createBuiltinRegistry } from '../core/components/builtin';
 import { createDefinition, createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { levelMap } from '../core/model/levelMap';
-import { levelReachability } from '../core/model/reachability';
+import { jumpTable, levelReachability } from '../core/model/reachability';
 import type { Project, Vec2 } from '../core/types';
 import { InputState } from './input';
 import { Runtime } from './runtime';
@@ -300,5 +300,63 @@ describe('the level checker knows swimming', () => {
     const dry = level(false);
     const r2 = levelReachability(dry.project, dry.sceneId, registry);
     expect(r2.status === 'ok' && r2.unreachable.things.map((t) => t.name)).toEqual(['Goal']);
+  });
+});
+
+describe('the jump table the AI builds by is what the player really does', () => {
+  const table = () => {
+    const p = createProject(registry);
+    return jumpTable(p.definitions.find((d) => d.name === 'Player')!.components as never, 980)!;
+  };
+  /** A floor ending at x=0 (its top at y=32), a gap of `gap` empty cells, then a floor `rise` rows higher; the player runs and jumps at the edge. */
+  function attempt(gap: number, rise: number, spikes = 0): { landed: boolean; hurt: boolean } {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let x = -400; x < 0; x += 32) place('Platform', { x: x + 16, y: 48 });
+      if (spikes) {
+        // The floor goes on under the spikes (Hazard: half a cell tall), then more floor.
+        for (let i = 0; i < spikes + 12; i++) place('Platform', { x: i * 32 + 16, y: 48 });
+        for (let i = 0; i < spikes; i++) place('Hazard', { x: i * 32 + 16, y: 24 });
+      } else for (let i = 0; i < 10; i++) place('Platform', { x: (gap + i) * 32 + 16, y: 48 - rise * 32 });
+      place('Player', { x: -360, y: 16 });
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    input.press('right');
+    let jumped = false;
+    let hurt = false;
+    let landed = false;
+    for (let t = 0; t < 4; t += 1 / 60) {
+      const pl = rt.find('Player')!;
+      // Jump as its front reaches the edge of the floor, or a step before spikes (as a player does).
+      if (!jumped && pl.x + 14 >= (spikes ? -14 : -2)) {
+        input.press('jump');
+        jumped = true;
+      }
+      rt.update(1 / 60, input);
+      if (rt.eventLog.some((e) => e.type === 'damaged')) hurt = true;
+      const after = rt.find('Player')!;
+      if (after.grounded && after.x > (spikes ? spikes * 32 : gap * 32) + 4) landed = true;
+      if (after.y > 400) break;
+    }
+    return { landed, hurt };
+  }
+
+  it('every gap in the table is cleared, and one two cells wider is not', () => {
+    const t = table();
+    for (const { rise, cells } of t.gaps.filter((g) => g.rise >= -2)) {
+      expect(attempt(cells, rise).landed, `rise ${rise}, ${cells} cells`).toBe(true);
+      expect(attempt(cells + 2, rise).landed, `rise ${rise}, ${cells + 2} cells`).toBe(false);
+    }
+    // One row higher than the table's most is out of reach whatever the gap.
+    expect(attempt(1, t.maxRiseRows + 1).landed).toBe(false);
+  });
+
+  it('a row of spikes as wide as the table says is jumped over unhurt; two more is not', () => {
+    const t = table();
+    expect(attempt(0, 0, t.spikeCells.halfCellTall)).toEqual({ landed: true, hurt: false });
+    expect(attempt(0, 0, t.spikeCells.halfCellTall + 2).hurt).toBe(true);
   });
 });
