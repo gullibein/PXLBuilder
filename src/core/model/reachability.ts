@@ -76,6 +76,50 @@ function boxOf(r: ResolvedEntity): Box {
   return { left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2 };
 }
 
+/**
+ * Statements that leave how things move alone (sounds, lives, items, messages, events…). A script with only these
+ * (and conditions and loops around them) doesn't stop the level being judged: one with anything else (velocity,
+ * jump, gravity, a teleport, a field changed…) might, so the level is then left unjudged.
+ */
+const KEEPS_MOVEMENT = new Set([
+  'set', 'if', 'each', 'repeat', 'face', 'shoot', 'spawn', 'damage', 'kill', 'heal', 'give_item', 'take_item', 'set_switch', 'set_health',
+  'invincible', 'respawn_after', 'defeated', 'state', 'signal', 'emit', 'message', 'alpha', 'tag', 'draw', 'erase', 'builtin_display',
+  'go_to_level', 'play_sound', 'play_music', 'stop_music', 'respawn', 'restart_level', 'restart_game', 'pause', 'resume', 'set_sound',
+  'set_music', 'complete_level', 'camera_shake',
+]);
+
+export function changesMovement(script: unknown): boolean {
+  const sc = script as { enabled?: boolean; takesOver?: string; handlers?: unknown } | null;
+  if (sc?.enabled === false) return false;
+  // (One that does part of the engine's own work, its movement say, instead of the engine.)
+  if (sc?.takesOver) return true;
+  let moves = false;
+  const walk = (v: unknown): void => {
+    if (moves || !v || typeof v !== 'object') return;
+    if (Array.isArray(v)) return v.forEach(walk);
+    const o = v as Record<string, unknown>;
+    if (typeof o.do === 'string' && !KEEPS_MOVEMENT.has(o.do)) {
+      moves = true;
+      return;
+    }
+    Object.values(o).forEach(walk);
+  };
+  walk(sc?.handlers ?? script);
+  return moves;
+}
+
+/**
+ * A double (triple…) jump. Each extra jump at the very top of the one before adds a whole jump's height, but that
+ * takes split-second timing: pressed a little early (as players do) it adds about two thirds of one. What a level
+ * asks of the player should be what it manages comfortably, so that is what counts.
+ */
+const EXTRA_JUMP = 0.65;
+function withExtraJumps(base: Reach, extra: number): Reach {
+  if (!(extra > 0)) return base;
+  const k = 1 + EXTRA_JUMP * extra;
+  return { ...base, height: base.height * k, distance: base.distance * k, jumpForce: base.jumpForce * Math.sqrt(k) };
+}
+
 const gapBetween = (a: { left: number; right: number }, b: { left: number; right: number }) => Math.max(0, b.left - a.right, a.left - b.right);
 
 /** Horizontal distance a full jump covers before coming down to `rise` above where it started (rise < 0: lower). */
@@ -102,18 +146,20 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     if (r.components.Openable?.startsOpen === true) return false;
     return true;
   };
-  const solids = all.filter((r) => r !== player && isSolid(r));
+  // (Enemies are no floors to count on, however they move.)
+  const enemy = (r: ResolvedEntity) => r.tags.some((t) => /^(enemy|enemies|monster|guard)$/i.test(t)) || !!r.components.Patrol || hurtsOnTouch(r.scripts, player.tags);
+  const solids = all.filter((r) => r !== player && isSolid(r) && !enemy(r));
 
   // Things that move solids or change how the player moves can't be judged statically.
-  if (solids.some((r) => r.components.MovingPlatform || r.scripts.length)) return { status: 'uncertain', why: 'moving or scripted platforms' };
-  if (player.scripts.length) return { status: 'uncertain', why: 'the player runs scripts' };
+  if (solids.some((r) => r.components.MovingPlatform || r.scripts.some(changesMovement))) return { status: 'uncertain', why: 'moving or scripted platforms' };
+  if (player.scripts.some(changesMovement)) return { status: 'uncertain', why: 'the player runs scripts that change how it moves' };
   if (scene.relationships.some((r) => r.type === 'controls' && (r.params.action === 'move' || r.params.action === 'disappear'))) return { status: 'uncertain', why: 'switches move platforms' };
 
   const base = characterReach(player.components, scene.world.gravity.y);
   if (!base) return { status: 'uncertain', why: 'the player has no jump' };
   const extra = Number(player.components.DoubleJump?.extraJumps ?? 0);
   // Double jump: each extra jump adds about another full jump in height and air time.
-  const reach: Reach = extra > 0 ? { ...base, height: base.height * (1 + extra), distance: base.distance * (1 + extra), jumpForce: base.jumpForce * Math.sqrt(1 + extra) } : base;
+  const reach: Reach = withExtraJumps(base, extra);
   const pBox = boxOf(player);
   const pHeight = pBox.bottom - pBox.top;
   const pHalf = (pBox.right - pBox.left) / 2;
@@ -556,7 +602,7 @@ export function jumpTable(components: ResolvedEntity['components'], gravityY: nu
   const base = characterReach(components, gravityY);
   if (!base) return null;
   const extra = Number(components.DoubleJump?.extraJumps ?? 0);
-  const reach: Reach = extra > 0 ? { ...base, height: base.height * (1 + extra), distance: base.distance * (1 + extra), jumpForce: base.jumpForce * Math.sqrt(1 + extra) } : base;
+  const reach: Reach = withExtraJumps(base, extra);
   const col = components.Collider as { size?: { x?: number; y?: number } } | undefined;
   const sprite = components.Sprite as { width?: number; height?: number } | undefined;
   const pW = Number(col?.size?.x ?? sprite?.width ?? 32);

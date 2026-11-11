@@ -360,3 +360,48 @@ describe('the jump table the AI builds by is what the player really does', () =>
     expect(attempt(0, 0, t.spikeCells.halfCellTall + 2).hurt).toBe(true);
   });
 });
+
+describe('a double jump counts as much as a player times it comfortably, not a perfectly timed one', () => {
+  /** Lower floor (top y=32), a crate or not under a two-cell gap in a floor `rows` rows up; the player double-jumps (second press at `second` s) and moves right. */
+  function tryIt(rows: number, crate: boolean, second: number) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      d.definitions.find((x) => x.name === 'Player')!.components.DoubleJump = registry.createDefault('DoubleJump', { extraJumps: 1 }) as never;
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let x = -320; x < 320; x += 32) place('Platform', { x: x + 16, y: 48 });
+      for (let x = -320; x < 320; x += 32) if (x < 0 || x >= 64) place('Platform', { x: x + 16, y: 48 - rows * 32 });
+      if (crate) place('Crate', { x: 32, y: 16 });
+      place('Player', { x: 32, y: crate ? -16 : 16 });
+      place('Goal', { x: 200, y: 16 - rows * 32 });
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    for (let t = 0; t < 0.5; t += 1 / 60) rt.update(1 / 60, input);
+    input.press('jump');
+    let landed = false;
+    for (let t = 0; t < 2; t += 1 / 60) {
+      if (Math.abs(t - (second - 0.02)) < 1 / 120) input.release('jump');
+      else if (t > second) input.press('jump');
+      if (t > 0.3) input.press('right');
+      rt.update(1 / 60, input);
+      const pl = rt.find('Player')!;
+      if (pl.grounded && pl.y < 48 - rows * 32) landed = true;
+    }
+    const r = levelReachability(project, sceneId, registry);
+    return { landed, checker: r.status === 'ok' && r.unreachable.things.length === 0 };
+  }
+
+  it('what the table allows is reached with the second jump pressed early (0.15 s); a floor three rows over a crate needs split-second timing and is reported', () => {
+    const p = createProject(registry);
+    const comps = { ...p.definitions.find((d) => d.name === 'Player')!.components, DoubleJump: { extraJumps: 1 } };
+    const rows = jumpTable(comps as never, 980)!.maxRiseRows;
+    expect(rows).toBe(2);
+    expect(tryIt(rows, false, 0.15)).toEqual({ landed: true, checker: true });
+    // Four rows up, from a crate (three over its top): only a well-timed second jump gets there; pressed early, it doesn't.
+    expect(tryIt(4, true, 0.1).landed).toBe(false);
+    expect(tryIt(4, true, 0.35).landed).toBe(true);
+    expect(tryIt(4, true, 0.35).checker).toBe(false);
+  });
+});

@@ -94,6 +94,33 @@ describe('can the player get there?', () => {
     expect(l.problems()).toEqual([]);
   });
 
+  it("a player with scripts that don't change how it moves (sounds, lives, a message) is still judged: a floor above through a gap, too high even from a crate, is reported", () => {
+    // The floor above has a two-tile gap; under it a crate. Its top is three rows over the crate's: out of reach.
+    const build = (stmt: Record<string, unknown>) =>
+      level((place, d) => {
+        for (const x of [-144, -112, -80, -48, 48, 80, 112, 144]) place('Platform', x, -80);
+        place('Crate', 0, 16);
+        place('Goal', 112, -112);
+        const p = d.scenes[0].entities.find((e) => e.name === 'Player')!;
+        p.transform.position = { x: -96, y: 16 };
+        p.scripts = [{ id: 'scr_p', name: 'Lives', description: '', enabled: true, vars: [], states: [], handlers: [{ when: { on: 'hurt' }, if: null, in: null, do: [{ do: 'if', cond: 'true', then: [stmt], else: [] }] }] } as never];
+      });
+    const sound = build({ do: 'play_sound', sound: 'ouch', volume: '1', pitch: '1' });
+    expect(unreachable(sound.check())!.things.map((t) => t.name)).toEqual(['Goal']);
+    // One that changes its jump or speed leaves the level unjudged (no false alarm).
+    expect(build({ do: 'jump', force: '900', on: null }).check().status).toBe('uncertain');
+    expect(build({ do: 'set_field', component: 'CharacterController', field: 'jumpForce', value: '900', on: null }).check().status).toBe('uncertain');
+    // An enemy walking by script (a kinematic body, solid) is no moving platform: the level is still judged.
+    const walker = level((place, d, sceneId) => {
+      for (const x of [96, 128]) place('Platform', x, -48);
+      place('Coin', 112, -80);
+      const id = place('Enemy', -96, 16);
+      m.setEntityComponentField(d, sceneId, id, 'PhysicsBody', 'bodyType', 'kinematic', registry);
+      d.scenes[0].entities.find((e) => e.id === id)!.scripts = [{ id: 'scr_w', name: 'Walker', description: '', enabled: true, vars: [], states: [], handlers: [{ when: { on: 'tick' }, if: null, in: null, do: [{ do: 'velocity', x: '50', y: null, on: null }] }] } as never];
+    });
+    expect(unreachable(walker.check())!.things.map((t) => t.name)).toEqual(['Coin']);
+  });
+
   it('double jump reaches higher', () => {
     const l = level((place, d) => {
       for (const x of [96, 128]) place('Platform', x, -16); // two tiles up
