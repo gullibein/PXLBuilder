@@ -6,6 +6,7 @@
  */
 import { DrawingScanner, levelSketch, type LevelSketch } from '../../core/ai/streamDrawings';
 import { answerPreview, narrateOperation } from '../../core/ai/narrate';
+import { levelStats, statsLine } from '../../core/ai/levelIdeas';
 import { setJobNote } from './jobs';
 import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
@@ -220,6 +221,19 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       ? `${request}\n\n[Puzzles for the new levels (the app picked them so games differ; each needed to get through; context.level.design.forNewLevels says how; a key and door may come too, never instead): ${more.map((l, i) => `new level ${i + 1}: ${names(l.puzzles!)}`).join('; ')}.]`
       : `${request}\n\n[Puzzles to build this level around (the app picked them so games differ; each needed to get through; context.level.design.puzzles says how; a key and door may come too, never instead): ${names(design.puzzles)}.${more.length ? ` Each new level you create gets its own, in context.level.design.forNewLevels (${more.map((l, i) => `${i + 2}: ${names(l.puzzles!)}`).join('; ')}).` : ''} Unless the user asked for something else.]`;
     trace?.('note', `Puzzles for this level: ${names(design.puzzles)}`);
+  }
+  // "Harder than level 2", "a more complex level", more levels: the level to beat, counted, goes in the request with
+  // what beating it means (left to itself the AI often built a simpler one).
+  const harder = /\b(harder|tougher|trickier|bigger|larger|longer|more (complex|complicated|difficult|challenging|intricate|advanced)|even more|step up)\b/i.test(request);
+  if (buildsLevels && (harder || options.moreLevels)) {
+    const named = /\blevel\s*(\d+)\b/i.exec(request);
+    const levels = state.project.scenes.filter((sc) => sc.entities.length);
+    const ref = (named ? state.project.scenes[Number(named[1]) - 1] : undefined) ?? state.project.scenes.find((sc) => sc.name.toLowerCase() !== '' && request.toLowerCase().includes(sc.name.toLowerCase()) && sc.id !== ctx.sceneId) ?? levels.at(-1);
+    const st = ref ? levelStats(state.project, ref, componentRegistry) : null;
+    if (ref && st) {
+      body.request += `\n\n[The level to beat: ${ref.name} (${statsLine(st)}). ${options.moreLevels ? 'Each new level' : 'This one'} must be clearly MORE than ${options.moreLevels ? 'the one before it' : 'that'}: bigger (at least ${Math.ceil(st.w * 1.2)}x${Math.max(st.h, 17)} cells), more floor rows (${st.floors + 1}+), more enemies (${st.enemies + 1}+) and hazards (${st.hazards + 2}+), and more kinds of pieces (${st.pieces.length + 1}+ kinds; new ones too, not only these), with puzzles that take more steps (a key behind a switch behind a crate…). Never fewer.]`;
+      trace?.('note', `The level to beat: ${ref.name} (${statsLine(st)})`);
+    }
   }
   // About the background (its card, or the words): the image generator's state and size go along.
   if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {

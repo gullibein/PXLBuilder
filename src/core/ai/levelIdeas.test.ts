@@ -36,7 +36,7 @@ describe('variety for generated levels', () => {
     for (let i = 0; i < 40; i++) names.add(levelDesignIdea(p, p.scenes[1], registry, random).layout.name);
     expect(names.size).toBeGreaterThan(6);
     const idea = levelDesignIdea(p, p.scenes[1], registry, () => 0.1);
-    expect(idea.otherLevels).toEqual(['Level 1: starts bottom left, goal top right, about 20 by 10 cells']);
+    expect(idea.otherLevels).toEqual(['Level 1: starts bottom left, goal top right, about 20 by 10 cells; 1 floor rows, 0 enemies, 0 hazards; pieces: none']);
   });
 
   it('top-down levels get top-down layouts', () => {

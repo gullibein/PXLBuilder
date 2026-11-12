@@ -18,6 +18,7 @@ import { getEntitySize } from './geometry';
 import { characterReach, type Reach } from './reach';
 import { resolveEntity, type ResolvedEntity } from './resolve';
 import { LEVEL_CELL } from './placement';
+import { moverPath } from './movingPath';
 import { isTopDownScene } from './topDown';
 
 interface Box {
@@ -596,6 +597,39 @@ export function layoutProblems(project: Project, sceneId: Id, registry: Componen
         key: `trapped:${trapped.map((x) => x.e.id).sort().join(',')}`,
         text: `${names(trapped)} ${trapped.length === 1 ? 'is' : 'are'} inside something that hurts the player, so picking ${trapped.length === 1 ? 'it' : 'them'} up costs health: move ${trapped.length === 1 ? 'it' : 'them'} clear of hazards.`,
         entityIds: trapped.map((x) => x.e.id),
+      });
+    }
+    // Moving platforms whose rider touches something that hurts along the way (a platform moving along the top of
+    // the lava: whoever stands on it has its feet in it).
+    const pH = player.b.bottom - player.b.top;
+    const burning: typeof placed = [];
+    const what = new Set<string>();
+    for (const x of placed) {
+      const mv = x.r.components.MovingPlatform;
+      if (!mv || !solid(x.r)) continue;
+      const path = moverPath(mv);
+      // (Along every stretch, every few pixels: where the rider's body is, standing on top of it.)
+      const steps: Vec2[] = [];
+      for (let i = 0; i + 1 < path.length + (mv.loop === true ? 1 : 0); i++) {
+        const a = path[i];
+        const b = path[(i + 1) % path.length];
+        const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 8));
+        for (let k = 0; k <= n; k++) steps.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+      }
+      const hit = hurts.filter((h) => h.e.id !== x.e.id && !h.r.components.MovingPlatform && steps.some((d) => {
+        const rider = { left: x.b.left + d.x + 4, right: x.b.right + d.x - 4, top: x.b.top + d.y - pH, bottom: x.b.top + d.y + 1 };
+        return overlapX(rider, h.b) > 0 && overlapY(rider, h.b) > 0;
+      }));
+      if (hit.length) {
+        burning.push(x);
+        for (const h of hit) what.add(h.e.name);
+      }
+    }
+    if (burning.length) {
+      out.push({
+        key: `rider-hurt:${burning.map((x) => x.e.id).sort().join(',')}`,
+        text: `Standing on ${names(burning)}, the player touches ${[...what].join(', ')} along the way, so it gets hurt riding it: move the platform (its start and its path) up so its top is a whole cell above what hurts (a platform over lava rides in the row above the lava's top, the lava filling the pit under it), or move what hurts away from its path.`,
+        entityIds: burning.map((x) => x.e.id),
       });
     }
   }

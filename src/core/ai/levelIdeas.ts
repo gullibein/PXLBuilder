@@ -9,7 +9,7 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import { getEntitySize } from '../model/geometry';
-import { resolveEntity } from '../model/resolve';
+import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import { isTopDownScene } from '../model/topDown';
 import type { Project, Scene } from '../types';
 
@@ -99,9 +99,9 @@ export const LEVEL_PUZZLES: Record<string, string> = {
   'spring up': 'A ledge too high for any jump (springRows rows over the floor, playerReach.cells), with a Spring (or the game\'s own bouncy thing) on the floor under it: holding Jump on the spring launches the player up there; the key or the way on is up top.',
   'switch and door': 'A Switch on one floor opens a Door (controls/opens connection) somewhere else: the player sees the shut door first, then finds the switch.',
   'key and door': 'The Goal behind a Door that requires the Key, the key at the far end of another branch.',
-  'moving platform': 'A wide gap or shaft crossed on a moving platform (an object with MovingPlatform, made with create_definition), with coins along its path.',
+  'moving platform': 'A wide gap or shaft crossed on a moving platform (an object with MovingPlatform, made with create_definition; its path through points, back and forth or a loop), with coins along its path.',
   'hidden ladder': 'A ladder whose pieces start hidden (StartsHidden) and appear when every coin is collected (a rule), leading up to the goal.',
-  'lava pit': 'A pit of lava (Liquid swim false with a Hurts on touch script, glowing) to jump over, with ledges or a moving platform across it.',
+  'lava pit': 'A pit of lava (Liquid swim false with a Hurts on touch script, glowing) to jump over, with ledges or a moving platform across it: the lava fills the WHOLE pit in the map (every cell, the platform\'s too), the platform goes in after the map with place_instance, riding in the row ABOVE the lava\'s top (its top a cell above the lava: whoever rides it never touches the lava).',
 };
 
 export const PLATFORMER_STYLES: { name: string; rules: string; puzzles: string[] }[] = [
@@ -172,6 +172,74 @@ export function levelShape(project: Project, scene: Scene, registry: ComponentRe
   return [player ? `starts ${where(player.x, player.y)}` : 'no player', goal ? `goal ${where(goal.x, goal.y)}` : 'no goal', size].join(', ');
 }
 
+/** What a level is made of, counted: to compare a new level with the others ("harder than level 2"). */
+export interface LevelStats {
+  /** Its size in cells (across, down). */
+  w: number;
+  h: number;
+  /** Rows with ground to stand on (2+ cells wide). */
+  floors: number;
+  enemies: number;
+  hazards: number;
+  /** The kinds of puzzle pieces in it (ramps, water, crates…). */
+  pieces: string[];
+}
+
+export function levelStats(project: Project, scene: Scene, registry: ComponentRegistry): LevelStats | null {
+  if (!scene.entities.length) return null;
+  const all = scene.entities.map((e) => resolveEntity(project, e, registry));
+  const C = 32;
+  const box = all.map((r) => {
+    const sz = getEntitySize(r);
+    return { r, l: r.transform.position.x - sz.x / 2, t: r.transform.position.y - sz.y / 2, w: sz.x, h: sz.y };
+  });
+  const left = Math.min(...box.map((b) => b.l));
+  const right = Math.max(...box.map((b) => b.l + b.w));
+  const top = Math.min(...box.map((b) => b.t));
+  const bottom = Math.max(...box.map((b) => b.t + b.h));
+  // Standable rows: solid cells with an empty cell above, in runs of 2+ in a row.
+  const solidAt = new Set<string>();
+  for (const b of box) {
+    const col = b.r.components.Collider;
+    if (!col || col.isTrigger === true || b.r.components.PhysicsBody?.bodyType === 'dynamic' || b.r.components.CharacterController) continue;
+    for (let x = Math.floor((b.l + 1) / C); x <= Math.floor((b.l + b.w - 1) / C); x++) for (let y = Math.floor((b.t + 1) / C); y <= Math.floor((b.t + b.h - 1) / C); y++) solidAt.add(`${x},${y}`);
+  }
+  const floorRows = new Set<number>();
+  for (const k of solidAt) {
+    const [x, y] = k.split(',').map(Number);
+    if (!solidAt.has(`${x},${y - 1}`) && solidAt.has(`${x + 1},${y}`) && !solidAt.has(`${x + 1},${y - 1}`)) floorRows.add(y);
+  }
+  const has = (f: (r: ResolvedEntity) => unknown) => all.some(f);
+  const hurts = (r: ResolvedEntity) => r.scripts.some((sc) => JSON.stringify(sc.handlers).includes('"damage"') && sc.handlers.some((h) => h.when.on === 'contact'));
+  const pieces: [string, boolean][] = [
+    ['ladders', has((r) => r.components.Climbable)],
+    ['ramps', has((r) => r.components.Collider?.shape === 'slopeRight' || r.components.Collider?.shape === 'slopeLeft')],
+    ['jump-through platforms', has((r) => r.components.Collider?.oneWay === true)],
+    ['water to swim', has((r) => r.components.Liquid && r.components.Liquid.swim !== false)],
+    ['lava', has((r) => r.components.Liquid && r.components.Liquid.swim === false)],
+    ['crates', has((r) => r.components.Pushable)],
+    ['springs', has((r) => r.scripts.some((sc) => sc.name === 'Spring'))],
+    ['moving platforms', has((r) => r.components.MovingPlatform)],
+    ['teleporters', scene.relationships.some((rel) => rel.type === 'teleports_to')],
+    ['switches', has((r) => r.components.Switch)],
+    ['locked doors', scene.relationships.some((rel) => rel.type === 'requires')],
+    ['hidden things', has((r) => r.components.StartsHidden)],
+  ];
+  return {
+    w: Math.round((right - left) / C),
+    h: Math.round((bottom - top) / C),
+    floors: floorRows.size,
+    enemies: all.filter((r) => r.tags.some((t) => /^enem/i.test(t)) || r.components.Patrol).length,
+    hazards: all.filter((r) => !r.tags.some((t) => /^enem/i.test(t)) && !r.components.Patrol && !r.components.CharacterController && hurts(r)).length,
+    pieces: pieces.filter(([, y]) => y).map(([n]) => n),
+  };
+}
+
+/** A level's stats in a few words. */
+export function statsLine(s: LevelStats, size = true): string {
+  return `${size ? `${s.w}x${s.h} cells, ` : ''}${s.floors} floor rows, ${s.enemies} enemies, ${s.hazards} hazards; pieces: ${s.pieces.join(', ') || 'none'}`;
+}
+
 /** The kind of platformer, and two or three of its puzzles (at random) for this level. */
 function styleAndPuzzles(style: (typeof PLATFORMER_STYLES)[number], random: () => number): { style: { name: string; rules: string }; puzzles: string[] } {
   const order = style.puzzles.map((p) => ({ p, k: random() })).sort((a, b) => a.k - b.k).map((x) => x.p);
@@ -205,7 +273,8 @@ export function levelDesignIdea(project: Project, scene: Scene, registry: Compon
     forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => ({ ...idea(i + 1), ...(topDown ? {} : { puzzles: styleAndPuzzles(gameStyle, random).puzzles }) })),
     otherLevels: project.scenes.filter((s) => s.id !== scene.id).flatMap((s) => {
       const shape = levelShape(project, s, registry);
-      return shape ? [`${s.name}: ${shape}`] : [];
+      const stats = levelStats(project, s, registry);
+      return shape ? [`${s.name}: ${shape}${stats ? `; ${statsLine(stats, false)}` : ''}`] : [];
     }),
   };
 }

@@ -7,6 +7,7 @@
  * separate demo logic. Rendering uses the shared renderer.
  */
 import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
+import { moverPath } from '../core/model/movingPath';
 import { Fog } from './fog';
 import { buildLevel, newSeed, type Dungeon } from '../core/model/dungeon';
 import { patchGenerator } from '../core/model/mutations';
@@ -325,14 +326,9 @@ export interface Behaviors {
   wander: { speed: number; interval: number; pauses: boolean; dx: number; dy: number; t: number } | null;
 }
 
-const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+export { moverPath };
 
-/** A moving platform's path, relative to its start: the start, its points, the end (offset). */
-export function moverPath(mv: Record<string, unknown>): Vec2[] {
-  const pts = Array.isArray(mv.points) ? (mv.points as Vec2[]).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
-  const end = (mv.offset as Vec2) ?? { x: 96, y: 0 };
-  return [{ x: 0, y: 0 }, ...pts.map((p) => ({ x: p.x, y: p.y })), { x: end.x, y: end.y }];
-}
+const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Behaviors {
   const p = c.Patrol;

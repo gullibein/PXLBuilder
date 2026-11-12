@@ -7,6 +7,7 @@
 import type { ResolvedEntity } from '../../core/model/resolve';
 import { getWorldBounds } from '../../core/model/geometry';
 import type { Id, Vec2 } from '../../core/types';
+import { moverPath } from '../../core/model/movingPath';
 
 export interface PlatformPath {
   id: Id;
@@ -24,18 +25,11 @@ export function platformPaths(entities: ResolvedEntity[]): PlatformPath[] {
     const mv = e.components.MovingPlatform;
     if (!mv) continue;
     const at = e.transform.position;
-    const rel = relativePath(mv);
+    const rel = moverPath(mv);
     const b = getWorldBounds(e);
     out.push({ id: e.id, points: rel.map((p) => ({ x: at.x + p.x, y: at.y + p.y })), loop: mv.loop === true, w: b.maxX - b.minX, h: b.maxY - b.minY });
   }
   return out;
-}
-
-/** The path relative to the start: the start (0, 0), the points, the end (offset). */
-export function relativePath(mv: Record<string, unknown>): Vec2[] {
-  const pts = Array.isArray(mv.points) ? (mv.points as Vec2[]) : [];
-  const end = (mv.offset as Vec2 | undefined) ?? { x: 96, y: 0 };
-  return [{ x: 0, y: 0 }, ...pts.map((p) => ({ x: p.x, y: p.y })), { x: end.x, y: end.y }];
 }
 
 export type PathHandle = { id: Id; kind: 'point'; index: number } | { id: Id; kind: 'add'; after: number; at: Vec2 };
