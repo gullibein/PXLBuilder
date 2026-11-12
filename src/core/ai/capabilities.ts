@@ -24,6 +24,10 @@ function describeField(name: string, f: FieldSchema): string {
     type = 'hex color "#rrggbb"';
   } else if (f.kind === 'stringList') {
     type = 'string[]';
+  } else if (f.kind === 'pointList') {
+    type = '[{x, y}, ...]';
+  } else if (f.kind === 'boxList') {
+    type = '[{x, y, w, h}, ...]';
   } else if (f.kind === 'assetRef') {
     type = 'asset id or null';
   }

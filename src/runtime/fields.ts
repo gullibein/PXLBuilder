@@ -78,6 +78,9 @@ function coerce(schema: FieldSchema | null, axis: 'x' | 'y' | null, value: Value
       };
     case 'vec2':
       return { error: 'has two numbers: set ".x" and ".y" separately' };
+    case 'pointList':
+    case 'boxList':
+      return { error: 'is a list (points or boxes): set in the editor, not while playing' };
   }
 }
 
@@ -218,7 +221,7 @@ function rederiveBehaviors(e: RuntimeEntity): void {
     patrol: now.patrol && (old.patrol ? { ...now.patrol, originX: old.patrol.originX, originY: old.patrol.originY, dir: old.patrol.dir } : now.patrol),
     jumper: now.jumper && (old.jumper ? { ...now.jumper, t: old.jumper.t } : now.jumper),
     shooter: now.shooter && (old.shooter ? { ...now.shooter, t: old.shooter.t, need: old.shooter.need } : now.shooter),
-    mover: now.mover && (old.mover ? { ...now.mover, originX: old.mover.originX, originY: old.mover.originY, toEnd: old.mover.toEnd, wait: old.mover.wait } : now.mover),
+    mover: now.mover && (old.mover ? { ...now.mover, originX: old.mover.originX, originY: old.mover.originY, next: Math.min(old.mover.next, now.mover.path.length - 1), dir: old.mover.dir, wait: old.mover.wait } : now.mover),
     timer: now.timer && (old.timer ? { ...now.timer, t: old.timer.t, done: old.timer.done } : now.timer),
     doubleJump: now.doubleJump && (old.doubleJump ? { ...now.doubleJump, left: Math.min(old.doubleJump.left, now.doubleJump.extra) } : now.doubleJump),
     ledgeGrab: now.ledgeGrab,

@@ -316,7 +316,8 @@ export interface Behaviors {
   jumper: { interval: number; jumpForce: number; t: number } | null;
   /** need: the wait before the next shot (drawn from the shooter's own random rhythm; -1 until it first ticks). */
   shooter: { trigger: 'auto' | 'key'; interval: number; variation: number; direction: string; targetTag: string; speed: number; damage: number; range: number; projectile: string; shotColor: string; shotSize: number; turnShots: boolean; t: number; need: number } | null;
-  mover: { offset: Vec2; speed: number; pause: number; originX: number; originY: number; toEnd: boolean; wait: number } | null;
+  /** A moving platform: its path (relative to its start: the start, its points, the end), where it heads next and which way. */
+  mover: { path: Vec2[]; loop: boolean; speed: number; pause: number; originX: number; originY: number; next: number; dir: 1 | -1; wait: number } | null;
   timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
   doubleJump: { extra: number; left: number } | null;
   ledgeGrab: boolean;
@@ -325,6 +326,13 @@ export interface Behaviors {
 }
 
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** A moving platform's path, relative to its start: the start, its points, the end (offset). */
+export function moverPath(mv: Record<string, unknown>): Vec2[] {
+  const pts = Array.isArray(mv.points) ? (mv.points as Vec2[]).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
+  const end = (mv.offset as Vec2) ?? { x: 96, y: 0 };
+  return [{ x: 0, y: 0 }, ...pts.map((p) => ({ x: p.x, y: p.y })), { x: end.x, y: end.y }];
+}
 
 export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Vec2): Behaviors {
   const p = c.Patrol;
@@ -372,7 +380,7 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
           need: -1,
         }
       : null,
-    mover: mv ? { offset: (mv.offset as Vec2) ?? { x: 96, y: 0 }, speed: num(mv.speed, 64), pause: num(mv.pause, 0.5), originX: at.x, originY: at.y, toEnd: true, wait: 0 } : null,
+    mover: mv ? { path: moverPath(mv), loop: mv.loop === true, speed: num(mv.speed, 64), pause: num(mv.pause, 0.5), originX: at.x, originY: at.y, next: 1, dir: 1, wait: 0 } : null,
     timer: t ? { interval: num(t.interval, 2), repeat: t.repeat !== false, t: 0, done: false } : null,
     doubleJump: c.DoubleJump ? { extra: num(c.DoubleJump.extraJumps, 1), left: num(c.DoubleJump.extraJumps, 1) } : null,
     ledgeGrab: !!c.LedgeGrab,
@@ -1214,7 +1222,7 @@ export class Runtime {
       if (mv) {
         if (up) mv.originY = it.fy + it.ty - mv.originY;
         else mv.originX = it.fx + it.tx - mv.originX;
-        mv.offset = up ? { x: mv.offset.x, y: -mv.offset.y } : { x: -mv.offset.x, y: mv.offset.y };
+        mv.path = mv.path.map((p) => (up ? { x: p.x, y: -p.y } : { x: -p.x, y: p.y }));
       }
       // (A character falling already keeps falling; anything else stands still.)
       if (!it.arrived) {

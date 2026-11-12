@@ -4796,6 +4796,55 @@ try {
   await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', 'overlays are only drawn while editing');
   await gc.close();
 
+  step = 'moving platform path';
+  {
+    const mc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const mp = await mc.newPage();
+    mp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await mp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      const lib = (n) => body.context.library.find((d) => d.name === n).id;
+      const sceneId = body.context.level.id;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'apply', message: 'A moving platform.', changes: ['A moving platform'], operations: [
+        { op: 'place_instance', sceneId, definitionRef: lib('Stone'), x: 208, y: -112, name: 'Lift', ref: 'lift', onTop: null },
+        { op: 'add_component', target: 'instance', id: 'lift', component: 'MovingPlatform', propsJson: '{"offset":{"x":128,"y":0}}' },
+      ] }) });
+    });
+    await mp.goto(URL);
+    await startPlatformer(mp);
+    await mp.getByTestId('global-prompt-toggle').click();
+    await mp.getByTestId('prompt-input').fill('add a moving platform');
+    await mp.getByTestId('prompt-input').press('Enter');
+    const mCanvas = mp.getByTestId('viewport-canvas');
+    await check(async () => ((await mCanvas.getAttribute('data-paths')) ?? '').includes('208,-112 336,-112'), "a moving platform's path is drawn on the level (from where it starts to its end)");
+    await mp.keyboard.press('Escape');
+    const mBox = await mCanvas.boundingBox();
+    const at = async (x, y) => {
+      const [cx, cy, z] = (await mCanvas.getAttribute('data-camera')).split(',').map(Number);
+      return { x: mBox.x + (x - cx) * z + mBox.width / 2, y: mBox.y + (y - cy) * z + mBox.height / 2 };
+    };
+    const dragFrom = async (a, b) => {
+      const p = await at(...a);
+      const q = await at(...b);
+      await mp.mouse.move(p.x, p.y);
+      await mp.mouse.down();
+      await mp.mouse.move(q.x, q.y, { steps: 6 });
+      await mp.mouse.up();
+    };
+    const lift = await at(208, -112);
+    await mp.mouse.click(lift.x, lift.y);
+    await dragFrom([336, -112], [336, -208]);
+    await check(async () => ((await mCanvas.getAttribute('data-paths')) ?? '').includes('208,-112 336,-208'), 'selected, the end of its path is dragged somewhere else');
+    await dragFrom([272, -160], [336, -112]);
+    await check(async () => ((await mCanvas.getAttribute('data-paths')) ?? '').includes('208,-112 336,-112 336,-208'), 'the "+" halfway along adds a point, dragged into place (an L-shaped path)');
+    const corner = await at(336, -112);
+    await mp.mouse.dblclick(corner.x, corner.y);
+    await check(async () => ((await mCanvas.getAttribute('data-paths')) ?? '').includes('208,-112 336,-208') && !((await mCanvas.getAttribute('data-paths')) ?? '').includes('336,-112'), 'a double-click on a point takes it away');
+    await mp.getByTestId('undo').click();
+    await check(async () => ((await mCanvas.getAttribute('data-paths')) ?? '').includes('208,-112 336,-112 336,-208'), '(Undo brings it back)');
+    await mc.close();
+  }
+
   step = 'debugging';
   {
     const dc = await browser.newContext({ viewport: { width: 1400, height: 860 } });

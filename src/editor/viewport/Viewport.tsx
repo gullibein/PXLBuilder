@@ -6,7 +6,7 @@ import { ZoomBar } from './ZoomBar';
 import { useEffect, useRef, useState } from 'react';
 import { containsPoint, getEntitySize, getWorldBounds, rectsIntersect, type Rect } from '../../core/model/geometry';
 import { instantiateDefinition } from '../../core/model/factory';
-import { addEntity, moveEntities, removeEntities, setBackground } from '../../core/model/mutations';
+import { addEntity, moveEntities, removeEntities, setBackground, setPlatformPath } from '../../core/model/mutations';
 import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
 import { generateDungeon } from '../../core/model/dungeon';
@@ -30,6 +30,7 @@ import { contextKey } from '../../core/ai/context';
 import { theme } from '../theme';
 import { jobMarks, useJobs } from '../ai/jobs';
 import { cameraFrame, drawCameraFrame, outlineAt, type CameraOutline } from '../overlays/cameraFrame';
+import { drawPlatformPaths, movedPath, pathHandleAt, platformPaths, withPointAdded, withPointRemoved } from '../overlays/platformPath';
 import { drawInfoPanels, drawJumpArcs } from '../overlays/drawOverlays';
 import { createWheelInterpreter } from './wheel';
 
@@ -51,6 +52,8 @@ type Drag =
   | { kind: 'extend'; selection: Id[]; ids: Id[]; step: number; box: Rect; dir: Handle['dir']; count: number; layers: { ids: Id[]; thickness: number }[] }
   /** Dragging a corner point of one object's box: its new size (`rect`, in the level). */
   | { kind: 'resize'; id: Id; box: Rect; dir: Handle['dir']; rect: Rect }
+  /** A point of a moving platform's path, dragged (changed as it goes: one Undo step). */
+  | { kind: 'path'; id: Id; index: number; key: string }
   /** Dragging from a switch's red connector onto another object. */
   | { kind: 'connect'; fromId: Id; from: Vec2; current: Vec2; targetId: Id | null }
   /** The placed background picture (its card open): moved (`dir` null) or resized from a corner or side; one Undo step. */
@@ -141,6 +144,7 @@ export function Viewport() {
   const [menu, setMenu] = useState<{ x: number; y: number; entityId: Id | null; definitionId: Id | null; world: Vec2 } | null>(null);
   const viewRef = useRef<ViewSize>({ width: 1, height: 1 });
   const dragRef = useRef<Drag | null>(null);
+  const lastPathPressRef = useRef<{ id: Id; index: number; at: number } | null>(null);
   /**
    * Fingers on the screen. One finger works like the mouse; a second one turns
    * it into a two-finger gesture (pan with both, pinch to zoom) and cancels
@@ -401,6 +405,11 @@ export function Viewport() {
       }
       const hoverLinkAttr = links.find((l) => l.hovered)?.relId ?? '';
       if ((canvas.dataset.hoverLink ?? '') !== hoverLinkAttr) canvas.dataset.hoverLink = hoverLinkAttr;
+      // Moving platforms' paths (the selected one's points can be dragged).
+      const paths = platformPaths(entities);
+      drawPlatformPaths(ctx, paths, state.selectedEntityIds, state.camera.zoom);
+      const pathsAttr = paths.map((pp) => pp.points.map((q) => `${Math.round(q.x)},${Math.round(q.y)}`).join(' ')).join('|');
+      if ((canvas.dataset.paths ?? '') !== pathsAttr) canvas.dataset.paths = pathsAttr;
       const connector = connectorsFor(state.selectedEntityIds, entities, state.camera.zoom);
       for (const c of connector) drawConnector(ctx, c.point, state.camera.zoom);
       if (drag?.kind === 'connect') {
@@ -728,6 +737,33 @@ export function Viewport() {
           return;
         }
       }
+      // A moving platform's path (it selected): drag a point, "+" adds one, a double-click on a point takes it away.
+      const paths = platformPaths(entities);
+      const ph = pathHandleAt(paths, state.selectedEntityIds, world, state.camera.zoom, ev.pointerType === 'touch' ? 18 : 9);
+      if (ph) {
+        const path = paths.find((pp) => pp.id === ph.id)!;
+        const key = `${ph.id}.path.${ev.timeStamp}`;
+        // (A second press on the same point soon after: a double-click. Pointer events don't count clicks.)
+        const last = lastPathPressRef.current;
+        const again = ph.kind === 'point' && !!last && last.id === ph.id && last.index === ph.index && ev.timeStamp - last.at < 400;
+        lastPathPressRef.current = ph.kind === 'point' ? { id: ph.id, index: ph.index, at: ev.timeStamp } : null;
+        if (again) {
+          lastPathPressRef.current = null;
+          const gone = withPointRemoved(path, (ph as { index: number }).index);
+          if (gone) state.edit('Remove a point of the path', (pr) => setPlatformPath(pr, state.activeSceneId, ph.id, gone, componentRegistry));
+          return;
+        }
+        let index = ph.kind === 'point' ? ph.index : -1;
+        if (ph.kind === 'add') {
+          const added = withPointAdded(path, ph.after, ph.at);
+          index = added.index;
+          state.edit('Change the path', (pr) => setPlatformPath(pr, state.activeSceneId, ph.id, added, componentRegistry), { coalesceKey: key });
+        }
+        dragRef.current = { kind: 'path', id: ph.id, index, key };
+        state.setObjectDrag(true);
+        capture(canvas, ev.pointerId);
+        return;
+      }
       const handle = connectorAt(state.selectedEntityIds, entities, world, state.camera.zoom);
       if (handle) {
         dragRef.current = { kind: 'connect', fromId: handle.entityId, from: handle.point, current: world, targetId: null };
@@ -914,6 +950,19 @@ export function Viewport() {
       }
       // Shown as it goes (stretched while resizing; drawn again at its new size when let go), all one Undo step.
       state.edit('Move background', (pr) => setBackground(pr, drag.sceneId, { rect: rectOf(drag.rect) }), { coalesceKey: drag.key });
+      return;
+    }
+    if (drag.kind === 'path') {
+      const path = platformPaths(resolveSceneEntities(state.project, state.activeSceneId)).find((pp) => pp.id === drag.id);
+      if (!path) return;
+      // (Snapped to half cells from where it starts, so it lines up with the level.)
+      const w = toWorld(ev);
+      const k = state.layout.snapToGrid ? state.project.settings.gridSize / 2 : 1;
+      const start = path.points[0];
+      const to = { x: start.x + Math.round((w.x - start.x) / k) * k, y: start.y + Math.round((w.y - start.y) / k) * k };
+      const now = path.points[drag.index];
+      if (now && now.x === to.x && now.y === to.y) return;
+      state.edit('Change the path', (pr) => setPlatformPath(pr, state.activeSceneId, drag.id, movedPath(path, drag.index, to), componentRegistry), { coalesceKey: drag.key });
       return;
     }
     if (drag.kind === 'resize') {

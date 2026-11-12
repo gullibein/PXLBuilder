@@ -339,12 +339,14 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   {
     type: 'MovingPlatform',
     label: 'Moving Platform',
-    description: 'Moves back and forth between where it starts and `offset` from there, carrying whatever stands on it.',
+    description: 'Moves along a path, carrying whatever stands on it: from where it starts, through `points` (if any), to `offset`; then back the same way, or (loop) straight back to the start and round again. The path is drawn on the level, its points dragged there.',
     category: 'Behavior',
     fields: {
-      offset: { kind: 'vec2', default: { x: 96, y: 0 }, description: 'Where it moves to, relative to its start, in pixels (32 = one tile; negative y is up)' },
+      offset: { kind: 'vec2', default: { x: 96, y: 0 }, description: 'Where its path ends, relative to its start, in pixels (32 = one tile; negative y is up)' },
+      points: { kind: 'pointList', default: [], description: 'Points it passes on the way, in order, relative to its start (pixels); none: a straight line to offset' },
+      loop: { kind: 'boolean', default: false, description: 'Round and round (from the end straight back to the start) instead of back and forth' },
       speed: { kind: 'number', default: 64, min: 1, step: 8, description: 'Pixels per second' },
-      pause: { kind: 'number', default: 0.5, min: 0, step: 0.1, description: 'Seconds it waits at each end' },
+      pause: { kind: 'number', default: 0.5, min: 0, step: 0.1, description: 'Seconds it waits at each end (with loop: at the start)' },
     },
   },
   {

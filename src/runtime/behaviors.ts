@@ -247,7 +247,10 @@ export class BehaviorSystem {
     e.heading = { x: 0, y: p.dir };
   }
 
-  /** Moving platform: glides to origin + offset and back, waiting `pause` at each end, carrying what stands on it. */
+  /**
+   * Moving platform: glides along its path (start, points, end) and back the same way, or round in a loop; waits
+   * `pause` at each end (with a loop: at the start), carrying what stands on it.
+   */
   private moveOnPath(e: RuntimeEntity, dt: number): void {
     const m = e.beh.mover!;
     e.vx = 0;
@@ -256,23 +259,42 @@ export class BehaviorSystem {
       m.wait -= dt;
       return;
     }
-    const tx = m.originX + (m.toEnd ? m.offset.x : 0);
-    const ty = m.originY + (m.toEnd ? m.offset.y : 0);
-    const dx = tx - e.x;
-    const dy = ty - e.y;
-    const dist = Math.hypot(dx, dy);
-    const stepLen = m.speed * dt;
-    let mx: number;
-    let my: number;
-    if (dist <= stepLen || m.speed <= 0) {
-      mx = dx;
-      my = dy;
-      m.toEnd = !m.toEnd;
-      m.wait = m.pause;
-    } else {
-      mx = (dx / dist) * stepLen;
-      my = (dy / dist) * stepLen;
+    let budget = m.speed * dt;
+    let mx = 0;
+    let my = 0;
+    // (Fast enough to pass a point within one step: on to the next with what is left of the step.)
+    for (let guard = 0; guard < 8 && budget > 1e-9 && m.speed > 0; guard++) {
+      const target = m.path[m.next] ?? m.path[0];
+      const dx = m.originX + target.x - (e.x + mx);
+      const dy = m.originY + target.y - (e.y + my);
+      const dist = Math.hypot(dx, dy);
+      if (dist > budget) {
+        mx += (dx / dist) * budget;
+        my += (dy / dist) * budget;
+        break;
+      }
+      mx += dx;
+      my += dy;
+      budget -= dist;
+      const last = m.path.length - 1;
+      if (m.loop) {
+        m.next = (m.next + 1) % m.path.length;
+        if (m.next === 1 || m.path.length < 2) {
+          // (Back at the start: a pause.)
+          m.wait = m.pause;
+          break;
+        }
+      } else {
+        if ((m.dir === 1 && m.next >= last) || (m.dir === -1 && m.next <= 0)) {
+          m.dir = m.dir === 1 ? -1 : 1;
+          m.wait = m.pause;
+          m.next = Math.max(0, Math.min(last, m.next + m.dir));
+          break;
+        }
+        m.next += m.dir;
+      }
     }
+    if (mx === 0 && my === 0) return;
     // Moved by the kinematic step this frame: velocity × dt = (mx, my).
     e.vx = mx / dt;
     e.vy = my / dt;

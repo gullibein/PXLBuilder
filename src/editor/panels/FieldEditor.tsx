@@ -105,6 +105,17 @@ export function FieldEditor(props: { schema: FieldSchema; value: unknown; onComm
       return <AssetName id={typeof value === 'string' ? value : null} />;
     case 'stringList':
       return <ListInput value={Array.isArray(value) ? (value as string[]) : []} testId={testId} onCommit={onCommit} />;
+    case 'pointList':
+    case 'boxList': {
+      // (Drawn where they belong: a path's points on the level, a collider's boxes in the sprite editor.)
+      const n = Array.isArray(value) ? value.length : 0;
+      const what = schema.kind === 'pointList' ? (n === 1 ? 'point' : 'points') : n === 1 ? 'box' : 'boxes';
+      return (
+        <span className="muted small" data-testid={testId}>
+          {n} {what} · {schema.kind === 'pointList' ? 'drag them on the level' : 'draw them in the sprite editor'}
+        </span>
+      );
+    }
   }
 }
 

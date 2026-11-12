@@ -1026,3 +1026,12 @@ export function madeBackgroundOf(asset: AssetRecord | undefined): { background: 
     return null;
   }
 }
+
+/**
+ * A moving platform's path, for this one platform: its points and its end (relative to where it starts). Set on the
+ * entity (its own path), whether the component is its object's or its own.
+ */
+export function setPlatformPath(project: Project, sceneId: Id, entityId: Id, path: { points: Vec2[]; offset: Vec2 }, registry: ComponentRegistry): void {
+  setEntityComponentField(project, sceneId, entityId, 'MovingPlatform', 'points', path.points.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })), registry);
+  setEntityComponentField(project, sceneId, entityId, 'MovingPlatform', 'offset', { x: Math.round(path.offset.x), y: Math.round(path.offset.y) }, registry);
+}
