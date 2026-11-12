@@ -287,3 +287,32 @@ export function applyEdgeStrip(frames: string[][], edge: AutotileEdge, strip: st
   }
   return out;
 }
+
+/**
+ * A ramp in the ground's own look (from its 16 autotile pictures): under the slope, the ground's inside picture; along
+ * the slope, its top edge (the grass, the outline: the rows its "open above" picture has that its inside doesn't),
+ * slanted to follow the slope column by column. `dir` 1: rising to the right (◢), -1: rising to the left (◣).
+ * Also the band's thickness in pixels (how far the top edge reaches down): carried on into the ground under its low end.
+ */
+export function rampFromAutotile(frames: readonly (readonly string[])[], dir: 1 | -1): { rows: string[]; band: number } {
+  const inside = frames[15];
+  const top = frames[14];
+  const h = inside.length;
+  const w = inside[0].length;
+  let band = 0;
+  while (band < Math.ceil(h / 2) && top[band] !== inside[band]) band++;
+  const rows: string[] = [];
+  for (let r = 0; r < h; r++) {
+    let row = '';
+    for (let i = 0; i < w; i++) {
+      // The surface in this column: the bottom row at the low end, the top row at the high end.
+      const col = Math.round((i * (h - 1)) / Math.max(1, w - 1));
+      const surface = dir === 1 ? h - 1 - col : col;
+      if (r < surface) row += '.';
+      else if (r - surface < band) row += top[r - surface][i] ?? '.';
+      else row += inside[r][i] ?? '.';
+    }
+    rows.push(row);
+  }
+  return { rows, band };
+}

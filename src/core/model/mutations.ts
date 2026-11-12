@@ -13,9 +13,9 @@ import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDo
 import { checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
-import { createImageAsset, createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
+import { createImageAsset, createPixelArtAsset, createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
-import { applyEdgeStrip, DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, solidTile, type AutotileEdge, type AutotileStyle } from './autotile';
+import { applyEdgeStrip, DEFAULT_AUTOTILE_STYLE, makeAutotileFrames, rampFromAutotile, solidTile, type AutotileEdge, type AutotileStyle } from './autotile';
 import { getEntitySize } from './geometry';
 import { gridFor } from './spriteResolution';
 import { validateGrid } from './spriteGrid';
@@ -917,7 +917,37 @@ export function makeAutotile(project: Project, definitionId: Id, style: Autotile
   }
   sprite.autotile = true;
   sprite.autotileSheet = id;
+  rampsLikeGround(project, definitionId);
   return id;
+}
+
+/**
+ * The game's ramps take the look of this ground (its autotile pictures): its earth under the slope, its top edge
+ * (grass) along it. Only ramps with the starter picture or one made like this before: a ramp drawn for the game keeps
+ * its own picture.
+ */
+export function rampsLikeGround(project: Project, groundId: Id): void {
+  const ground = project.definitions.find((d) => d.id === groundId);
+  const sheet = typeof ground?.components.Sprite?.autotileSheet === 'string' ? project.assets.find((a) => a.id === ground.components.Sprite!.autotileSheet && a.autotile) : undefined;
+  const frames = sheet?.pixelArt?.frames;
+  if (!ground || !sheet || !frames || frames.length !== 16) return;
+  for (const d of project.definitions) {
+    const shape = d.components.Collider?.shape;
+    const sprite = d.components.Sprite;
+    if ((shape !== 'slopeRight' && shape !== 'slopeLeft') || !sprite) continue;
+    const now = typeof sprite.assetId === 'string' ? project.assets.find((a) => a.id === sprite.assetId) : undefined;
+    const ours = !now || (now.description ?? '').startsWith('{"rampOf"') || ((now.name === 'Ramp' || now.name === 'Ramp left') && !now.description);
+    if (!ours) continue;
+    const { rows, band } = rampFromAutotile(frames, shape === 'slopeRight' ? 1 : -1);
+    const used = new Set(rows.join(''));
+    const asset = createPixelArtAsset(`${d.name} (like ${ground.name})`, { palette: sheet.pixelArt!.palette.filter((p) => used.has(p.key)), rows });
+    asset.description = JSON.stringify({ rampOf: groundId });
+    addAsset(project, asset);
+    sprite.assetId = asset.id;
+    sprite.rampBand = band;
+    // (The old one goes if nothing else uses it.)
+    if (now && (now.description ?? '').startsWith('{"rampOf"')) removeUnusedPictures(project, [now.id]);
+  }
 }
 
 /** Turns an object's autotiling on or off (its pictures stay, to turn it on again). */
@@ -985,6 +1015,7 @@ export function drawAutotileTiles(project: Project, definitionId: Id, palette: P
   const inUse = new Set(frames.flat().join(''));
   updatePixelArtAsset(project, sheet.id, merged.filter((p) => inUse.has(p.key)), frames, 8);
   def.components.Sprite.autotile = true;
+  rampsLikeGround(project, definitionId);
 }
 
 /** Draws one edge (the top or bottom of every picture with that side open) of an object's autotile, in its palette. */
@@ -1000,6 +1031,7 @@ export function setAutotileEdge(project: Project, definitionId: Id, edge: Autoti
   const next = applyEdgeStrip(frames, edge, strip);
   const inUse = new Set(next.flat().join(''));
   updatePixelArtAsset(project, sheet.id, palette.filter((p) => inUse.has(p.key)), next, 8);
+  rampsLikeGround(project, definitionId);
 }
 
 /**

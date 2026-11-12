@@ -12,6 +12,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     description: 'Visual representation. Draws the referenced image asset, or a solid rectangle in `color` if no asset is set.',
     category: 'Rendering',
     fields: {
+      rampBand: { kind: 'number', default: 0, min: 0, step: 1, integer: true, description: 'A ramp: how many pixels of its surface (the grass along its slope) carry on into the ground under its low end, so the slope runs on unbroken onto the next ramp or the flat ground (0: none). Set when the ramp takes the ground\'s look' },
       assetId: { kind: 'assetRef', assetKind: 'image', default: null, description: 'Image or sprite sheet to draw, stretched to width x height' },
       frame: { kind: 'number', default: 1, min: 1, step: 1, integer: true, description: 'Cell number when the image is a sprite sheet (1 = top-left, counting across rows)' },
       width: { kind: 'number', default: 32, min: 0, step: 1, description: 'Width in pixels' },

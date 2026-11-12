@@ -835,6 +835,10 @@ export function drawEntities(
     }
   }
 
+  // Ramps' surfaces carried on into the ground under their low ends: drawn after everything, over it.
+  const tileSpots = new Set<string>();
+  for (const e of near) if (e.tile || autotiled(e)) tileSpots.add(`${Math.round(e.transform.position.x)}|${Math.round(e.transform.position.y)}`);
+  const rampBands: (() => void)[] = [];
   for (const entity of iso ? isoOrder(near) : byLayer(near)) {
     const sprite = entity.components.Sprite;
     const invisible = sprite?.visible === false;
@@ -977,6 +981,35 @@ export function drawEntities(
     }
     if (img) {
       paint(0);
+      const band = Math.round(Number(sprite.rampBand) || 0);
+      const shape = entity.components.Collider?.shape;
+      if (band > 0 && source && (shape === 'slopeRight' || shape === 'slopeLeft') && rotation % 360 === 0) {
+        const sz = imageSize(source);
+        const sw = cell?.w ?? sz.w;
+        const sh = cell?.h ?? sz.h;
+        const under = { x: position.x, y: position.y + size.y * Math.abs(scale.y) };
+        if (sw === sh && band < sh / 2 && tileSpots.has(`${Math.round(under.x)}|${Math.round(under.y)}`)) {
+          const sx0 = cell?.x ?? 0;
+          const sy0 = cell?.y ?? 0;
+          const alpha = ctx.globalAlpha;
+          const src = source;
+          rampBands.push(() => {
+            placeOnScreen(ctx, base, under, rotation, scale, size);
+            ctx.globalAlpha = alpha;
+            ctx.imageSmoothingEnabled = false;
+            const px = size.x / sw;
+            const py = size.y / sh;
+            // Column by column, the rows of its surface that fall below its square: copied from a column further up
+            // the slope where they are inside it (the surface is the same all along).
+            for (let i = 0; i < sw; i++) {
+              const n = shape === 'slopeLeft' ? i + band - sh : band - 1 - i;
+              if (n <= 0) continue;
+              const from = shape === 'slopeLeft' ? i - band : i + band;
+              ctx.drawImage(src, sx0 + from, sy0 + sh - band, 1, n, -size.x / 2 + i * px, -size.y / 2, px, n * py);
+            }
+          });
+        }
+      }
     } else if (entity.tile) {
       const w = size.x;
       const h = size.y;
@@ -1000,6 +1033,7 @@ export function drawEntities(
     }
     if (clipped) ctx.restore();
   }
+  for (const draw of rampBands) draw();
   ctx.setTransform(base.a, base.b, base.c, base.d, base.e, base.f);
   ctx.globalAlpha = baseAlpha;
   ctx.imageSmoothingEnabled = baseSmoothing;
