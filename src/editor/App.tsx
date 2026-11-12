@@ -19,6 +19,7 @@ import { deleteSelection, duplicateSelection, frameView, nudgeSelection, raiseSe
 import { AIConnection } from './chrome/AIConnection';
 import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
+import { MoreLevels } from './chrome/MoreLevels';
 import { NewGameProgress } from './chrome/NewGameProgress';
 import { ControlsDialog } from './chrome/ControlsDialog';
 import { DungeonPanel } from './chrome/DungeonPanel';
@@ -115,6 +116,7 @@ export function App() {
         <StylePicker />
         <GameChooser />
         <NewGameProgress />
+        <MoreLevels />
         {/* (Under the sprite editor: one of its pictures opens there, on top.) */}
         <AutotileEditor />
         <SpriteEditor />

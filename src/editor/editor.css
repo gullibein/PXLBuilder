@@ -1054,3 +1054,80 @@ body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-selec
 .bg-fade { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .bg-fade .bg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-right: 4px; }
 .bg-fade .swatch-btn { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line); padding: 0; cursor: pointer; }
+
+/* New game window: the AI's idea and plan, and what it is doing step by step. */
+.ngp-idea {
+  border-left: 3px solid var(--accent, #7aa2ff);
+  padding: 4px 10px;
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.ngp-idea p {
+  margin: 0 0 4px;
+}
+.ngp-idea ul {
+  margin: 0;
+  padding-left: 18px;
+  opacity: 0.85;
+  font-size: 12px;
+}
+.ngp-doing {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  font-size: 12px;
+  min-height: 4.8em;
+}
+.ngp-doing li {
+  opacity: 0.6;
+  animation: ngp-in 0.3s ease-out;
+}
+.ngp-doing li.now {
+  opacity: 1;
+  font-weight: 600;
+}
+.ngp-doing li::before {
+  content: '✓ ';
+  opacity: 0.7;
+}
+.ngp-doing li.now::before {
+  content: '› ';
+}
+@keyframes ngp-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* After a new game: the offer of more levels, then their progress while the user plays (top middle, small). */
+.more-levels {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel, #1e1f33);
+  border: 1px solid var(--accent-soft);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+.more-levels .ml-title {
+  font-weight: 600;
+}
+.more-levels .ml-line {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -21,7 +21,11 @@ export class DrawingScanner {
   private escaped = false;
   private seen = new Set<string>();
 
-  constructor(private readonly found: (drawing: StreamedDrawing) => void) {}
+  constructor(
+    private readonly found: (drawing: StreamedDrawing) => void,
+    /** Every operation as soon as it is complete (for saying what the AI is doing). */
+    private readonly operation?: (op: Record<string, unknown>) => void,
+  ) {}
 
   /** The whole answer so far (each time a bit longer). */
   feed(text: string): void {
@@ -53,8 +57,8 @@ export class DrawingScanner {
   }
 
   private closed(json: string): void {
-    // (Cheap test first: most objects are anything but a drawing.)
-    if (!json.includes('draw_sprite')) return;
+    // (Cheap test first: most objects are parts of operations, not operations.)
+    if (!json.includes('"op"')) return;
     let v: unknown;
     try {
       v = JSON.parse(json);
@@ -62,6 +66,7 @@ export class DrawingScanner {
       return;
     }
     const o = v as Record<string, unknown>;
+    if (typeof o?.op === 'string') this.operation?.(o);
     // A picture for a situation (running, hurt…) is not the object's own look.
     if (o?.op !== 'draw_sprite' || (typeof o.situation === 'string' && o.situation !== '') || typeof o.name !== 'string') return;
     if (!Array.isArray(o.rows) || !o.rows.length || !o.rows.every((r) => typeof r === 'string')) return;

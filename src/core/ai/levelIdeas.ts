@@ -27,8 +27,8 @@ export interface LevelDesignIdea {
   goal: string;
   /** The shapes of the game's other levels (don't build the same again). */
   otherLevels: string[];
-  /** For new levels made in the same answer (create_level): one different idea each, in order. */
-  forNewLevels: { layout: { name: string; how: string }; start: string; goal: string }[];
+  /** For new levels made in the same answer (create_level): one different idea each, in order (side levels: with puzzles of their own). */
+  forNewLevels: { layout: { name: string; how: string }; start: string; goal: string; puzzles?: string[] }[];
 }
 
 /** How many ideas for new levels each request carries. */
@@ -107,27 +107,27 @@ export const PLATFORMER_STYLES: { name: string; rules: string; puzzles: string[]
   {
     name: 'Classic blocks',
     rules: 'Bright sky, chunky solid blocks and bricks, floating block rows, pipes, pits; a block-built ground with a grassy top. Every platform is solid (no jump-through platforms, no ramps); coins in the air; walking enemies (Walker).',
-    puzzles: ['crate step', 'teleporter shortcut', 'switch and door', 'key and door', 'moving platform', 'hidden ladder'],
+    puzzles: ['crate step', 'teleporter shortcut', 'switch and door', 'moving platform', 'hidden ladder'],
   },
   {
     name: 'Cave explorer',
     rules: 'An enclosed cave: thick rock all round (autotiled), floors stacked inside it, a dark back wall, stalactites and vines hanging from the ceilings, glowing mushrooms; ladders, thin jump-through ledges and bridges, ramps where floors meet; pools of water (or acid); gems to collect; crates and barrels.',
-    puzzles: ['crate step', 'drop-through', 'bridge over the gap', 'swim for it', 'hill', 'key and door', 'teleporter shortcut', 'crate stack'],
+    puzzles: ['crate step', 'drop-through', 'bridge over the gap', 'swim for it', 'hill', 'teleporter shortcut', 'crate stack'],
   },
   {
     name: 'Hills and islands',
     rules: 'Outdoors: grassy hills of earth with 45 degree ramps up and down, floating islands, mushroom caps or clouds as jump-through platforms (on stems or nothing), vines to climb, trees, flowers and rocks as decoration, water below; a cottage or sign by the start.',
-    puzzles: ['hill', 'bridge over the gap', 'swim for it', 'drop-through', 'crate step', 'teleporter shortcut', 'key and door'],
+    puzzles: ['hill', 'bridge over the gap', 'swim for it', 'drop-through', 'crate step', 'teleporter shortcut'],
   },
   {
     name: 'Indoor rooms',
     rules: 'A building or lab: rooms with solid walls and floors, a patterned back wall, thin metal bars and plank shelves as jump-through platforms, crates and hazard boxes stacked, buttons and doors between rooms, elevators (moving platforms); no ramps.',
-    puzzles: ['crate step', 'crate stack', 'switch and door', 'drop-through', 'teleporter shortcut', 'moving platform', 'key and door'],
+    puzzles: ['crate step', 'crate stack', 'switch and door', 'drop-through', 'teleporter shortcut', 'moving platform'],
   },
   {
     name: 'Ruined temple',
     rules: 'Ancient stone blocks with cracks, overgrown with moss and grass, spikes on floors and ceilings, fire or lava pits, moving platforms on chains, stone ledges; a timer or a score in the corner; few ramps, no water.',
-    puzzles: ['lava pit', 'moving platform', 'crate step', 'switch and door', 'hidden ladder', 'key and door', 'teleporter shortcut'],
+    puzzles: ['lava pit', 'moving platform', 'crate step', 'switch and door', 'hidden ladder', 'teleporter shortcut'],
   },
 ];
 
@@ -196,10 +196,12 @@ export function levelDesignIdea(project: Project, scene: Scene, registry: Compon
     };
   };
   const first = idea(0);
+  const gameStyle = pick(PLATFORMER_STYLES);
   return {
     ...first,
-    ...(topDown ? {} : styleAndPuzzles(pick(PLATFORMER_STYLES), random)),
-    forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => idea(i + 1)),
+    ...(topDown ? {} : styleAndPuzzles(gameStyle, random)),
+    // (New levels: puzzles of their own, from the kind of platformer the game is; the AI keeps to its game's kind.)
+    forNewLevels: Array.from({ length: NEW_LEVEL_IDEAS }, (_, i) => ({ ...idea(i + 1), ...(topDown ? {} : { puzzles: styleAndPuzzles(gameStyle, random).puzzles }) })),
     otherLevels: project.scenes.filter((s) => s.id !== scene.id).flatMap((s) => {
       const shape = levelShape(project, s, registry);
       return shape ? [`${s.name}: ${shape}`] : [];

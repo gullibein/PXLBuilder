@@ -5,6 +5,7 @@
  * one undoable transaction through the same mutation layer the inspector uses.
  */
 import { DrawingScanner, levelSketch, type LevelSketch } from '../../core/ai/streamDrawings';
+import { answerPreview, narrateOperation } from '../../core/ai/narrate';
 import { setJobNote } from './jobs';
 import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
@@ -146,6 +147,16 @@ export interface PromptOptions {
   onDrawings?: (drawn: { id?: string; name: string; palette: { key: string; color: string }[]; rows: string[] }[]) => void;
   /** The level map the AI is writing (draw_map), as far as it has come: for the building window. */
   onSketch?: (sketch: LevelSketch) => void;
+  /** Building more levels for a game just made (offered after a new game): it runs while the user plays and edits. */
+  moreLevels?: boolean;
+  /** What the AI is doing, in words, as its answer is written: its idea, its plan, and a line per finished step. */
+  onNarration?: (n: Narration) => void;
+}
+
+export interface Narration {
+  idea: string;
+  plan: string[];
+  doing: string[];
 }
 
 /** The line a request with pictures carries in the chat (and so in the AI's memory of it, without the pictures). */
@@ -188,13 +199,27 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   }
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topicScene = state.project.scenes.find((sc) => sc.id === ctx.sceneId);
-  const topics = topicsFor(ctx, request, body.history, !!options.newGame || (ctx.kind === 'project' && makesAGame(request)), !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
+  const newGameAsked = !!options.newGame || (ctx.kind === 'project' && makesAGame(request));
+  const topics = topicsFor(ctx, request, body.history, newGameAsked, !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
   // The level design idea goes only with requests about levels (with the level guidance), and the ideas for new
   // levels only with requests for new ones: the rest of the time they are text the AI reads for nothing.
   const level = body.context.level as { design?: { forNewLevels?: unknown[] } } | undefined;
   if (level?.design) {
     if (!topics.includes('levels')) delete level.design;
     else if (!/\b(new|next|more|another|other|extra|second|third|fourth|fifth|\d+)\s+(\w+\s+)?levels?\b|\blevels\b/i.test(request) && !options.newGame) level.design.forNewLevels = [];
+  }
+  // Building a level (a new game, or a level asked for): the puzzles picked for it go in the request itself, where the
+  // AI can't miss them (in the context they were easily passed over for the easiest, a key and a door). Names only:
+  // how each is built is in context.level.design.
+  const design = (body.context.level as { design?: { puzzles?: string[]; forNewLevels?: { puzzles?: string[] }[] } } | undefined)?.design;
+  const buildsLevels = newGameAsked || /\b(build|make|create|generate|design|rebuild|redo|draw|add)\b[^.?!]*\blevels?\b/i.test(request);
+  if (design?.puzzles?.length && buildsLevels) {
+    const names = (list: string[]) => list.map((p) => p.split(':')[0]).join(', ');
+    const more = (design.forNewLevels ?? []).filter((l) => l.puzzles?.length);
+    body.request = options.moreLevels
+      ? `${request}\n\n[Puzzles for the new levels (the app picked them so games differ; each needed to get through; context.level.design.forNewLevels says how; a key and door may come too, never instead): ${more.map((l, i) => `new level ${i + 1}: ${names(l.puzzles!)}`).join('; ')}.]`
+      : `${request}\n\n[Puzzles to build this level around (the app picked them so games differ; each needed to get through; context.level.design.puzzles says how; a key and door may come too, never instead): ${names(design.puzzles)}.${more.length ? ` Each new level you create gets its own, in context.level.design.forNewLevels (${more.map((l, i) => `${i + 2}: ${names(l.puzzles!)}`).join('; ')}).` : ''} Unless the user asked for something else.]`;
+    trace?.('note', `Puzzles for this level: ${names(design.puzzles)}`);
   }
   // About the background (its card, or the words): the image generator's state and size go along.
   if (ctx.kind === 'background' || /\b(background|backdrop|scenery|sky|skyline|landscape|horizon)\b/i.test(request)) {
@@ -233,16 +258,48 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const stage = options.onStage ?? (() => {});
     // Every answer passes here: the sprites it drew go to whoever shows them while it works (the building window),
     // each as soon as it is finished, read from the answer while it is still being written (where it comes in bit by bit).
+    // What it is doing, in words (kept across its answers: a fix adds to it).
+    const names = new Map<string, string>([...state.project.definitions.map((d) => [d.id, d.name] as [string, string]), ...state.project.scenes.map((sc) => [sc.id, sc.name] as [string, string])]);
+    const narration: Narration = { idea: '', plan: [], doing: [] };
+    let toldAt = 0;
+    const tell = (force = false) => {
+      const now = Date.now();
+      if (!options.onNarration || (!force && now - toldAt < 200)) return;
+      toldAt = now;
+      options.onNarration({ idea: narration.idea, plan: [...narration.plan], doing: [...narration.doing] });
+    };
     const ask: typeof provider.respond = async (b, sig, tr) => {
       const scanners = new Map<string, DrawingScanner>();
       // (The level map is read again at most a few times a second: it is looked for in all of the answer so far.)
       let sketchAt = 0;
       let sketchSeen = '';
-      const draft = options.onDrawings || options.onSketch
+      const draft = options.onDrawings || options.onSketch || options.onNarration
         ? (soFar: string, channel = 'text') => {
             let s = scanners.get(channel);
-            if (!s) scanners.set(channel, (s = new DrawingScanner((d) => options.onDrawings?.([d]))));
+            if (!s)
+              scanners.set(
+                channel,
+                (s = new DrawingScanner(
+                  (d) => options.onDrawings?.([d]),
+                  options.onNarration
+                    ? (op) => {
+                        const line = narrateOperation(op, names);
+                        if (line && narration.doing.at(-1) !== line) {
+                          narration.doing.push(line);
+                          tell(true);
+                        }
+                      }
+                    : undefined,
+                )),
+              );
             s.feed(soFar);
+            if (options.onNarration) {
+              const { message, changes } = answerPreview(soFar);
+              // (A fix's answer has no message of its own: the first one's stays.)
+              if (message && message.length >= narration.idea.length) narration.idea = message;
+              if (changes.length > narration.plan.length) narration.plan = changes;
+              tell();
+            }
             const now = Date.now();
             if (options.onSketch && now - sketchAt > 250 && soFar.includes('draw_map')) {
               sketchAt = now;
@@ -331,7 +388,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       response = await ask(
         {
           ...body,
-          request: `${request}\n\n[Your previous answer only repeated this request (or said nothing), so the user got no answer. Answer it now: make the changes it asks for (operations), or, if the game already does what it asks (check the context: components, scripts, what the engine does), say so in your own words and what makes it so.]`,
+          request: `${body.request}\n\n[Your previous answer only repeated this request (or said nothing), so the user got no answer. Answer it now: make the changes it asks for (operations), or, if the game already does what it asks (check the context: components, scripts, what the engine does), say so in your own words and what makes it so.]`,
         },
         signal,
         trace,
@@ -379,7 +436,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
             {
               ...body,
               history: [...body.history, { request, reply: first }],
-              request: `${request}\n\n[Your previous answer is kept, except ${failed.length} operation(s) that could not be applied:\n${listed}\nSend ONLY the corrected replacements for these, in the same order (kind "preview", operations: just those; message "" and changes []). Do not send anything else again: the rest of your answer stays as it is.]`,
+              request: `${body.request}\n\n[Your previous answer is kept, except ${failed.length} operation(s) that could not be applied:\n${listed}\nSend ONLY the corrected replacements for these, in the same order (kind "preview", operations: just those; message "" and changes []). Do not send anything else again: the rest of your answer stays as it is.]`,
             },
             signal,
             trace,
@@ -406,7 +463,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
               {
                 ...body,
                 history: [...body.history, { request, reply: first }],
-                request: `${request}\n\n[Your answer is kept (with your corrections), but the level it makes has this problem: ${left.text} Send ONLY the operations that fix it, added after your answer (kind "preview", message "" and changes []): e.g. place what is missing with place_instance (and connect it), or draw_map the whole level again with clear true.${mapText(left.map)}]`,
+                request: `${body.request}\n\n[Your answer is kept (with your corrections), but the level it makes has this problem: ${left.text} Send ONLY the operations that fix it, added after your answer (kind "preview", message "" and changes []): e.g. place what is missing with place_instance (and connect it), or draw_map the whole level again with clear true.${mapText(left.map)}]`,
               },
               signal,
               trace,
@@ -429,7 +486,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
             {
               ...body,
               history: [...body.history, { request, reply: first }],
-              request: `${request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
+              request: `${body.request}\n\n[Your previous answer could not be applied: ${problem}. Fix that and send the complete corrected answer (it replaces the previous one; context.level.map shows the level without it). The user never saw the previous answer: write the message as your first answer, without mentioning an earlier attempt.${mapText(stuck?.map ?? null)}]`,
             },
             signal,
             trace,

@@ -85,7 +85,8 @@ export function NewGameProgress() {
     if (!job) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [job]);
+    // (Per job, not per update: updates come many times a second while the answer is written.)
+  }, [job?.key]);
   const finish = (key: string) => {
     if (useJobs.getState().jobs[key]) useEditor.getState().setGlobalPrompt(true, 'project');
   };
@@ -155,6 +156,8 @@ export function NewGameProgress() {
   const piece = fresh ?? (pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null);
   // Under the picture: a tip, a new one every few seconds.
   const tip = BUILD_TIPS[(tipStart.current + Math.floor(seconds / LINE_EACH)) % BUILD_TIPS.length];
+  const narration = job.narration;
+  const doing = narration?.doing ?? [];
   return (
     <div className="dialog-backdrop">
       <section className="dialog new-game-progress" role="dialog" aria-label="Building your game" data-testid="new-game-progress">
@@ -170,6 +173,19 @@ export function NewGameProgress() {
             </div>
           )}
           <p className="chat-you">{job.again?.asked ?? job.request}</p>
+          {/* The AI's idea and plan, as it writes them (before it builds anything). */}
+          {(narration?.idea || (narration?.plan.length ?? 0) > 0) && (
+            <div className="ngp-idea" data-testid="new-game-idea">
+              {narration?.idea && <p>{narration.idea}</p>}
+              {(narration?.plan.length ?? 0) > 0 && (
+                <ul data-testid="new-game-plan">
+                  {narration!.plan.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {/* The level as the AI draws it, row by row (once it has begun the map). */}
           {job.sketch && <LevelSketchView sketch={job.sketch} drawings={job.drawings ?? []} project={project} />}
           {piece ? (
@@ -188,9 +204,20 @@ export function NewGameProgress() {
               The AI&apos;s sprites show here as soon as it has drawn them.
             </p>
           )}
-          <p className="ngp-tip" key={`tip:${tip}`} data-testid="new-game-tip">
-            <span className="ngp-tip-label">Tip</span> {tip}
-          </p>
+          {doing.length > 0 ? (
+            // What it is doing, a line per step it has finished writing (the newest last, bold).
+            <ol className="ngp-doing" data-testid="new-game-doing">
+              {doing.slice(-4).map((line, i, shown) => (
+                <li key={`${doing.length - shown.length + i}`} className={i === shown.length - 1 ? 'now' : ''}>
+                  {line}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="ngp-tip" key={`tip:${tip}`} data-testid="new-game-tip">
+              <span className="ngp-tip-label">Tip</span> {tip}
+            </p>
+          )}
           <div className="prompt-progress" aria-label="Working" />
           {/* At the bottom: the steps done so far, then the one going on now. */}
           <ol className="ngp-steps" data-testid="new-game-steps">

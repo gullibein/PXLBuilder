@@ -3666,6 +3666,9 @@ try {
   await page.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
   await check(async () => /built it on the topdown starter/i.test(await page.getByTestId('global-prompt').innerText()), 'the AI chose the top-down starter for it and built the game on it');
   await check(async () => (await canvas.getAttribute('data-entities')) === '3', '(what it built is on the level)');
+  await check(async () => (await page.getByTestId('more-levels-offer').isVisible()) && /2 more levels/.test(await page.getByTestId('more-levels-offer').innerText()), 'a game of levels that can be won: the AI offers to build two more while you play this one');
+  await page.getByTestId('more-levels-no').click();
+  await check(async () => (await page.getByTestId('more-levels-offer').count()) === 0, '(No thanks takes the offer away)');
   await openLibrary();
   await check(async () => (await page.getByTestId('definition-Wall').count()) === 1 && (await page.getByTestId('definition-Ladder').count()) === 0, 'the game has the top-down objects');
   await page.keyboard.press('Escape');

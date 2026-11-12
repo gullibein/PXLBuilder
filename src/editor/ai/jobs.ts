@@ -10,7 +10,7 @@ import type { AIPicture } from '../../core/ai/protocol';
 import { create } from 'zustand';
 import { contextKey, type AIContext } from '../../core/ai/context';
 import type { Id } from '../../core/types';
-import { runPrompt, withPictureNote, type PromptOptions, type PromptOutcome } from './runPrompt';
+import { runPrompt, withPictureNote, type Narration, type PromptOptions, type PromptOutcome } from './runPrompt';
 import { contextName, conversationKey, logExchange, markUndoneSteps, newChat, updateExchange } from './aiLog';
 import { createTrace } from '../../core/ai/trace';
 import { revealCreated } from '../actions';
@@ -37,6 +37,8 @@ export interface PromptJob {
   drawings?: { id?: string; name: string; palette: { key: string; color: string }[]; rows: string[] }[];
   /** The level map the AI is writing, as far as it has come (draw_map). */
   sketch?: LevelSketch;
+  /** What the AI is doing, in words, while it writes its answer (its idea, plan and steps). */
+  narration?: Narration;
 }
 
 interface JobState {
@@ -94,6 +96,10 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     const job = useJobs.getState().jobs[key];
     if (job?.phase === 'working' && controllers.get(key) === controller) put(key, { ...job, sketch });
   };
+  const onNarration = (narration: Narration) => {
+    const job = useJobs.getState().jobs[key];
+    if (job?.phase === 'working' && controllers.get(key) === controller) put(key, { ...job, narration });
+  };
   // What happens under the hood (AI History → Details).
   const trace = createTrace();
   const done = (outcome: PromptOutcome) => {
@@ -121,7 +127,7 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     // Applied changes glow on the level instead; proposals, answers and errors wait to be looked at.
     put(key, { key, ctx, request, phase: 'done', outcome, seen: openCards.has(key) || outcome.status === 'applied', logId, again });
   };
-  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage, onDrawings, onSketch }).then(
+  runPrompt(ctx, asked, controller.signal, trace.add, { ...options, onStage, onDrawings, onSketch, onNarration }).then(
     (outcome) => !controller.signal.aborted && done(outcome),
     (e) => {
       if ((e as Error).name !== 'AbortError') done({ status: 'error', message: (e as Error).message });
