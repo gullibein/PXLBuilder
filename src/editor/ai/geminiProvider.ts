@@ -10,7 +10,7 @@
  * "send the exact problem back once" retry applies on top.
  */
 import type { TraceFn } from '../../core/ai/trace';
-import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { JSON_ONLY, parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 
@@ -94,7 +94,7 @@ export class GeminiProvider implements AIProvider {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}` }] },
           // (Pictures the user attached go with the request, before its words.)
-          contents: [{ role: 'user', parts: [...(body.images ?? []).map((p) => ({ inlineData: { mimeType: p.mediaType, data: p.data } })), { text: userMessage(body) }] }],
+          contents: [{ role: 'user', parts: [...(body.images ?? []).map((p) => ({ inlineData: { mimeType: p.mediaType, data: p.data } })), { text: userMessage(body) + JSON_ONLY }] }],
           generationConfig: {
             responseMimeType: 'application/json',
             maxOutputTokens: 32768,

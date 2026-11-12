@@ -78,7 +78,8 @@ const SIDE_LAYOUTS: { name: string; how: string }[] = [
 ];
 
 /** How big a side level is: one screen is about 30 by 17 cells (at the normal zoom). */
-const SIDE_SIZES = ['one screen (about 30 by 17 cells)', 'one screen (about 30 by 17 cells)', 'two screens tall (about 30 by 34 cells)', 'two screens wide (about 60 by 17 cells)', 'two by two screens (about 60 by 34 cells)'];
+// (One screen: quick to build and to read, and every part of it in view. Bigger only when the user asks.)
+const SIDE_SIZES = ['one screen (about 30 by 17 cells)'];
 
 /**
  * Kinds of platformer, each with its own look and pieces: a game is one kind throughout (the user's words decide;
@@ -100,7 +101,7 @@ export const LEVEL_PUZZLES: Record<string, string> = {
   'switch and door': 'A Switch on one floor opens a Door (controls/opens connection) somewhere else: the player sees the shut door first, then finds the switch.',
   'key and door': 'The Goal behind a Door that requires the Key, the key at the far end of another branch.',
   'moving platform': 'A wide gap or shaft crossed on a moving platform (an object with MovingPlatform, made with create_definition; its path through points, back and forth or a loop), with coins along its path.',
-  'hidden ladder': 'A ladder whose pieces start hidden (StartsHidden) and appear when every coin is collected (a rule), leading up to the goal.',
+  'hidden ladder': 'A ladder whose pieces start hidden (StartsHidden) and appear when every coin is collected (a rule; no message), leading up to the goal.',
   'lava pit': 'A pit of lava (Liquid swim false with a Hurts on touch script, glowing) to jump over, with ledges or a moving platform across it: the lava fills the WHOLE pit in the map (every cell, the platform\'s too), the platform goes in after the map with place_instance, riding in the row ABOVE the lava\'s top (its top a cell above the lava: whoever rides it never touches the lava).',
 };
 
@@ -246,8 +247,8 @@ const TERRAIN_PUZZLES = ['hill', 'swim for it'];
 /** The kind of platformer, and two or three of its puzzles (at random) for this level. */
 function styleAndPuzzles(style: (typeof PLATFORMER_STYLES)[number], random: () => number): { style: { name: string; rules: string }; puzzles: string[] } {
   const order = style.puzzles.map((p) => ({ p, k: random() })).sort((a, b) => a.k - b.k).map((x) => x.p);
-  const n = 2 + (random() < 0.5 ? 1 : 0);
-  const picked = order.slice(0, n);
+  // (Two: built well, rather than three crammed in.)
+  const picked = order.slice(0, 2);
   // (A kind with ramps or water always gets one of them: they shape a level more than anything.)
   const terrain = order.filter((p) => TERRAIN_PUZZLES.includes(p));
   if (terrain.length && !picked.some((p) => TERRAIN_PUZZLES.includes(p))) picked[picked.length - 1] = terrain[0];

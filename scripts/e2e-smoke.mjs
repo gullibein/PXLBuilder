@@ -4870,6 +4870,8 @@ try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'apply', message: 'A moving platform.', changes: ['A moving platform'], operations: [
         { op: 'place_instance', sceneId, definitionRef: lib('Stone'), x: 208, y: -112, name: 'Lift', ref: 'lift', onTop: null },
         { op: 'add_component', target: 'instance', id: 'lift', component: 'MovingPlatform', propsJson: '{"offset":{"x":128,"y":0}}' },
+        // (An editor setting in the same answer: applied after the game's changes, not a reason to drop them all.)
+        { op: 'set_editor_setting', key: 'playPixels', valueJson: '128' },
       ] }) });
     });
     await mp.goto(URL);

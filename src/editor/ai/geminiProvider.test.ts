@@ -1,3 +1,4 @@
+import { JSON_ONLY } from '../../core/ai/prompt';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AIRequestBody } from '../../core/ai/protocol';
 import { GeminiProvider, listGeminiModels, parseJsonReply, resetGeminiBusy } from './geminiProvider';
@@ -30,7 +31,7 @@ describe('Google Gemini', () => {
     expect((calls[0].init.headers as Record<string, string>)['x-goog-api-key']).toBe('AIza-key');
     const sent = JSON.parse(calls[0].init.body as string);
     expect(sent.systemInstruction.parts[0].text).toContain('REPLY FORMAT');
-    expect(sent.contents[0].parts[0].text.endsWith('REQUEST\nMake gravity weaker')).toBe(true);
+    expect(sent.contents[0].parts[0].text.endsWith('REQUEST\nMake gravity weaker' + JSON_ONLY)).toBe(true);
     expect(sent.generationConfig.responseMimeType).toBe('application/json');
     expect(sent.generationConfig.thinkingConfig).toBeUndefined(); // best quality: the model's own thinking
   });

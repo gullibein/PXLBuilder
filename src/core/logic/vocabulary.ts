@@ -279,7 +279,7 @@ export const ACTION_HELP: Record<string, string> = {
   complete_level: 'the level is won: play goes on to the next level, or the game is finished after the last one',
   show: 'bring target into play (something that Starts Hidden, or was hidden): a ladder that appears, a bridge, a secret door',
   hide: 'take target out of play until shown again',
-  show_message: 'show `text` on screen for `seconds`',
+  show_message: 'show `text` on screen for `seconds`: only when the user asks for a message (never to announce what the player can see happen: a ladder appearing, a door opening)',
   play_sound: 'play the sound `sound` (its name or id, from the sound list) at `volume` 0..1',
   camera_shake: 'shake the screen (`strength` px, fading out over `seconds`)',
   camera_flash: 'flash the screen in `color` ("#rrggbb"), fading over `seconds`',

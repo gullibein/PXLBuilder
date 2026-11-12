@@ -8,7 +8,7 @@
  * (from the same schema the server uses) and checked against it before any
  * operation is applied.
  */
-import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
+import { JSON_ONLY, parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
 import { AIUnavailableError, aiResponseSchema, type AIPicture, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
 import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
@@ -40,7 +40,7 @@ export function claudeSample(): Promise<SampleFn | null> {
 }
 
 function prompt(body: AIRequestBody): string {
-  return `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}\n\n${userMessage(body)}`;
+  return `${systemPromptWithReplyFormat()}${body.reference ? `\n\n${body.reference}` : ''}\n\n${userMessage(body)}${JSON_ONLY}`;
 }
 
 const MESSAGES: Record<string, string> = {

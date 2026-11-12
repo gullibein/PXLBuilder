@@ -442,7 +442,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
     doc: 'announce a game event with this entity as its subject (or "subject": another, e.g. "other" for "collected", whose subject is who picks it up) and "other" as its other party (or null), with an optional "detail" of named values ({"needs": "\'key\'"}) shown in the play log: rules, other scripts\' "event" handlers and the play log hear it, like the events the engine makes. E.g. "stomped" after a stomp, so whatever listens for stomps hears it',
   },
   signal: { example: '{"do":"signal","name":"alarm"}', doc: 'tell every script with a matching "signal" handler (they see this entity as "other")' },
-  message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in' },
+  message: { example: '{"do":"message","text":"Hits: {hits}","seconds":2}', doc: 'show text on screen; {expression} parts are filled in. Only when the user asks for one (never to announce what the player sees happen)' },
   alpha: { example: '{"do":"alpha","value":"0.5"}', doc: 'see-through amount (0 invisible … 1 solid look)' },
   set_field: {
     example: '{"do":"set_field","component":"Sprite","field":"width","value":"field(self, \\"Sprite.width\\") * 1.5","on":null}',

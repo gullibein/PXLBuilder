@@ -201,7 +201,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   // Guidance only some requests need (music, sound effects…), by what this one is about.
   const topicScene = state.project.scenes.find((sc) => sc.id === ctx.sceneId);
   const newGameAsked = !!options.newGame || (ctx.kind === 'project' && makesAGame(request));
-  const topics = topicsFor(ctx, request, body.history, newGameAsked, !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
+  // (More levels for a game just made: only the level guidance, and backgrounds; the game's look and objects are made.)
+  const topics = options.moreLevels ? ['levels', 'backgrounds'] : topicsFor(ctx, request, body.history, newGameAsked, !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
   // The level design idea goes only with requests about levels (with the level guidance), and the ideas for new
   // levels only with requests for new ones: the rest of the time they are text the AI reads for nothing.
   const level = body.context.level as { design?: { forNewLevels?: unknown[] } } | undefined;
@@ -231,7 +232,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const ref = (named ? state.project.scenes[Number(named[1]) - 1] : undefined) ?? state.project.scenes.find((sc) => sc.name.toLowerCase() !== '' && request.toLowerCase().includes(sc.name.toLowerCase()) && sc.id !== ctx.sceneId) ?? levels.at(-1);
     const st = ref ? levelStats(state.project, ref, componentRegistry) : null;
     if (ref && st) {
-      body.request += `\n\n[The level to beat: ${ref.name} (${statsLine(st)}). ${options.moreLevels ? 'Each new level' : 'This one'} must be clearly MORE than ${options.moreLevels ? 'the one before it' : 'that'}: bigger (at least ${Math.ceil(st.w * 1.2)}x${Math.max(st.h, 17)} cells), more floor rows (${st.floors + 1}+), more enemies (${st.enemies + 1}+) and hazards (${st.hazards + 2}+), and more kinds of pieces (${st.pieces.length + 1}+ kinds; new ones too, not only these), with puzzles that take more steps (a key behind a switch behind a crate…). Never fewer.]`;
+      body.request += `\n\n[The level to beat: ${ref.name} (${statsLine(st)}). ${options.moreLevels ? 'Each new level' : 'This one'} is harder than ${options.moreLevels ? 'the one before it' : 'that'} by its puzzles, not its size: one screen still (about 30 by 17 cells, unless the user asked for bigger), its puzzles taking more steps (one opening the way to the next: a key behind a switch behind a crate…), a few more hazards or enemies, a kind of piece it hasn't used.]`;
       trace?.('note', `The level to beat: ${ref.name} (${statsLine(st)})`);
     }
   }
@@ -266,6 +267,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   // (The sprite size chosen in the New game window goes along: the AI keeps it.)
   if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites, spriteSize: state.project.settings.spriteResolution ?? 32 };
   let response: AIResponse;
+  let editorAfter: Operation[] = [];
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
@@ -408,6 +410,13 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         trace,
       );
       if (echoed(response)) response = { ...response, kind: 'answer', operations: [], changes: [], message: "The AI didn't answer: it only repeated your request, twice, and nothing was changed. Try asking in other words, or start a new chat here (its earlier answers may be confusing it)." };
+    }
+    // Game changes and editor settings in one answer (a new game that also sets how big Play draws): the game's go
+    // through the checks below, the editor's are put back after them and applied after the game's (applyResponse).
+    if (response.operations.some(isEditorOperation) && response.operations.some((o) => !isEditorOperation(o))) {
+      editorAfter = response.operations.filter(isEditorOperation);
+      response = { ...response, operations: response.operations.filter((o) => !isEditorOperation(o)) };
+      trace?.('note', `Editor settings in the answer too (${editorAfter.map((o) => o.op).join(', ')}): applied after the game's changes`);
     }
     // A game change that wouldn't apply (a script with a typo, a wrong id), or a level the player can't get through,
     // goes back to the AI once, with the exact problem.
@@ -582,6 +591,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };
   }
+  // (The editor settings set aside for the checks: with the rest again, also when it waits for the user's yes.)
+  if (editorAfter.length) response = { ...response, operations: [...response.operations, ...editorAfter] };
   // Turning a part of the engine's own code into a script (or anything the AI asks about first) waits for a yes.
   const parts = enginePartsTakenOver(useEditor.getState().project, response.operations);
   if (response.kind === 'confirm' || parts.length) {
@@ -622,6 +633,14 @@ export function enginePartsTakenOver(project: Project, operations: AIResponse['o
 
 /** Applies an answer's changes (also one the user said yes to): to the object (with "a new object instead"), or as they are. */
 export function applyResponse(ctx: AIContext, request: string, response: AIResponse): PromptOutcome {
+  // Game changes and editor settings together: the game's first (as below), then the editor's.
+  const editorOps = response.operations.filter(isEditorOperation);
+  if (editorOps.length && editorOps.length < response.operations.length) {
+    const out = applyResponse(ctx, request, { ...response, operations: response.operations.filter((o) => !isEditorOperation(o)) });
+    if (out.status !== 'applied') return out;
+    const ed = applyEditorOperations('', [], editorOps);
+    return ed.status === 'applied' ? out : { ...out, changes: [...out.changes, `⚠ ${'message' in ed ? ed.message : "An editor setting couldn't be applied"}`] };
+  }
   // Asked on one thing's card about another ("make the enemy faster" on the player's): the exchange goes to that one's card.
   const elsewhere = aboutSomethingElse(useEditor.getState().project, ctx, response.operations);
   const moved = (out: PromptOutcome): PromptOutcome => (out.status === 'applied' && elsewhere ? { ...out, movedTo: elsewhere } : out);

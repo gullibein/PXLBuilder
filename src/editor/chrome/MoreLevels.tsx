@@ -10,7 +10,7 @@ import { useEditor } from '../store';
 const MORE = 2;
 
 /** The request that builds them (Whole game). */
-export const MORE_LEVELS_REQUEST = `Build ${MORE} more levels for this game, after the levels it has: each with its own layout and puzzles (context.level.design.forNewLevels), a little harder than the one before, in the same kind of game, with the same look and objects (new enemies or pieces only where a level needs them) and a background of its own that fits (make_background). Leave the existing levels exactly as they are.`;
+export const MORE_LEVELS_REQUEST = `Build ${MORE} more levels for this game, after the levels it has (context.level.design.forNewLevels), each a little harder than the one before, with the game's objects, and a make_background for each. Leave the existing levels as they are.`;
 
 /**
  * A game made of levels, with fewer than three, that can be won: one where more levels make sense (not a game with

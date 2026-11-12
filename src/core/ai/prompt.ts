@@ -60,6 +60,12 @@ export function userMessage(body: AIRequestBody): string {
 }
 
 /**
+ * The last words of a request answered in text (claude.ai, Gemini): the reply format's first rule again, where it is
+ * read last. (An answer written out in words first, then the JSON, took longer and was read the same.)
+ */
+export const JSON_ONLY = '\n\n(Answer with the JSON object only, starting with {: no words, headings or code fences around it. Then stop.)';
+
+/**
  * A finished reply of only words, no JSON at all ("No changes this time: the record shows…"): read as an answer that
  * changes nothing, rather than asked for again (a second request with the whole game costs as much as the first).
  * Null for anything with a brace in it, too short to be a sentence, or with markup in it (tool-call tags such as

@@ -1,3 +1,4 @@
+import { JSON_ONLY } from '../../core/ai/prompt';
 import { describe, expect, it } from 'vitest';
 import { AIUnavailableError, type AIRequestBody } from '../../core/ai/protocol';
 import { SampleAIProvider } from './sampleProvider';
@@ -21,7 +22,7 @@ describe('Claude through claude.ai (sample)', () => {
     expect(await provider.respond(body)).toEqual(answer);
     expect(seen!.input).toContain('REPLY FORMAT');
     expect(seen!.input).toContain('- set_component_field: {');
-    expect(seen!.input.endsWith('REQUEST\nMake gravity weaker')).toBe(true);
+    expect(seen!.input.endsWith('REQUEST\nMake gravity weaker' + JSON_ONLY)).toBe(true);
     expect(seen!.options).toMatchObject({ cache: false });
   });
 
