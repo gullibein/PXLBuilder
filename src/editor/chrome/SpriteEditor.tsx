@@ -32,6 +32,8 @@ import {
 } from '../../core/model/spriteDraft';
 import { whenImageReady } from '../images';
 import { SpriteImage } from '../SpriteImage';
+import { CollisionBar, CollisionOverlay } from './SpriteCollision';
+import { refreshPixelColliders } from '../../core/model/colliderBoxes';
 import { isoShapeNames, type IsoAuto } from '../../render/renderer';
 import type { AssetRecord } from '../../core/types';
 import { useEditor } from '../store';
@@ -192,6 +194,9 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
   const drag = useRef<{ mode: 'new'; from: { x: number; y: number } } | { mode: 'move'; from: { x: number; y: number }; base: SpriteDraft; rect: PixelRect; at: { x: number; y: number } } | null>(null);
   const [color, setColor] = useState('a');
   const [onion, setOnion] = useState(true);
+  // Collision mode (the object's own picture only: what it collides with is the object's).
+  const [collision, setCollision] = useState(false);
+  const collisionDef = def && def.components.Collider && (!editingId || editingId === def.components.Sprite?.assetId) ? def : null;
   const [name, setName] = useState(asset?.name ?? `${def?.name ?? 'Sprite'} sprite`);
   const [use, setUse] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -530,6 +535,8 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
     return useEditor.getState().edit(`Edit sprite ${title}`, (p) => {
       m.updatePixelArtAsset(p, id, palette.length ? palette : d.palette.slice(0, 1), d.frames, d.fps);
       p.assets.find((a) => a.id === id)!.name = title;
+      // (A pixel-perfect collider follows the picture.)
+      refreshPixelColliders(p);
     });
   };
 
@@ -552,6 +559,7 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
         m.setDefinitionComponentField(p, def.id, 'SpriteStates', use, made.id, componentRegistry);
         m.addDefinitionSprite(p, def.id, { assetId: made.id, frame: 1 });
       }
+      refreshPixelColliders(p);
     });
     return ok ? id : null;
   };
@@ -665,6 +673,7 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
               </div>
               <div className="se-canvas-col">
                 <div className="se-canvas-wrap">
+                  <div className="se-canvas-stack">
                   <canvas
                     ref={canvasRef}
                     className="se-canvas"
@@ -676,7 +685,18 @@ function SpriteEditorDialog({ definitionId, assetId, startFrame }: { definitionI
                     onPointerCancel={up}
                     style={{ cursor: alt || tool === 'pick' ? 'copy' : tool === 'select' ? (sel ? 'move' : 'cell') : 'crosshair' }}
                   />
+                  {/* Collision mode: the boxes it collides with, over the picture (drawn there instead of pixels). */}
+                  {collision && collisionDef && <CollisionOverlay def={collisionDef} draft={draft} />}
+                  </div>
                 </div>
+                {collisionDef && (
+                  <div className="se-collision-row">
+                    <button className={`chip-btn${collision ? ' on' : ''}`} data-testid="se-collision" aria-pressed={collision} onClick={() => setCollision(!collision)} title="What the object collides with: one box, several boxes, or exactly its pixels">
+                      {collision ? 'Done with collision' : 'Collision…'}
+                    </button>
+                    {collision && <CollisionBar def={collisionDef} draft={draft} frame={frame} />}
+                  </div>
+                )}
                 {tool === 'select' && (
                   <div className="se-sel-bar" data-testid="se-selection-bar">
                     {sel ? (

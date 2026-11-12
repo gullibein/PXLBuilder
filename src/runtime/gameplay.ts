@@ -18,6 +18,7 @@ import type { Condition, EntityRef, Project, Relationship, RuleAction, Scene } f
 import type { InputState } from './input';
 import { overlaps, type Box } from './physics';
 import type { Runtime, RuntimeEntity } from './runtime';
+import { partsTouch } from './parts';
 
 export interface GameEvent {
   type: string;
@@ -176,7 +177,7 @@ export class Gameplay {
       const now = new Set<string>();
       for (const o of grid.near(grown)) {
         if (o === e) continue;
-        if (overlaps(grown, this.rt.boxOf(o)!)) now.add(o.id);
+        if (overlaps(grown, this.rt.boxOf(o)!) && partsTouch(e, o, TOUCH_SLOP)) now.add(o.id);
       }
       for (const id of now) if (!e.touching.has(id)) this.emit('touch_started', e, this.rt.byId(id));
       for (const id of e.touching) if (!now.has(id)) this.emit('touch_ended', e, this.rt.byId(id));
@@ -398,7 +399,7 @@ export class Gameplay {
     const out = new Set<string>();
     if (!box) return out;
     const grown: Box = { ...box, hw: box.hw + TOUCH_SLOP, hh: box.hh + TOUCH_SLOP };
-    for (const o of this.rt.entities) if (o !== e && o.alive && o.collider && overlaps(grown, this.rt.boxOf(o)!)) out.add(o.id);
+    for (const o of this.rt.entities) if (o !== e && o.alive && o.collider && overlaps(grown, this.rt.boxOf(o)!) && partsTouch(e, o, TOUCH_SLOP)) out.add(o.id);
     return out;
   }
 

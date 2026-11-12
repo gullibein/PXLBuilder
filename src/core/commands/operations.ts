@@ -33,6 +33,7 @@ import { cellSize, LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
 import { isTopDownScene } from '../model/topDown';
 import { BACKGROUND_KINDS, type BackgroundKind } from '../model/backgroundArt';
+import { refreshPixelColliders } from '../model/colliderBoxes';
 import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -1349,6 +1350,8 @@ export function applyOperations(
     }
   });
   settleOnSurfaces(project, result.createdEntityIds, registry);
+  // (Pixel-perfect colliders follow pictures drawn anew.)
+  refreshPixelColliders(project);
   return result;
 }
 

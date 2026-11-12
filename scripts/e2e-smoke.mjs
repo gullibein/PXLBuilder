@@ -1490,6 +1490,34 @@ try {
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('Blinky') && !(await sp.locator('.sprite-choice.on').innerText()).includes('▶'), 'saving one frame makes it a still picture again');
   await page.getByTestId('undo').click();
   await check(async () => (await sp.locator('.sprite-choice.on').innerText()).includes('▶ Blinky'), 'Undo brings the animation back');
+  // Collision, drawn over the picture: one box, several boxes, or exactly its pixels.
+  await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
+  await se.getByTestId('se-collision').click();
+  const layer = se.getByTestId('se-collision-layer');
+  const boxesNow = async () => ((await layer.getAttribute('data-boxes')) ?? '').split(' ').filter(Boolean);
+  await check(async () => (await layer.isVisible()) && (await boxesNow()).length === 1 && (await se.getByTestId('se-col-box').getAttribute('aria-checked')) === 'true', 'Collision… shows the box it collides with over the picture (Box)');
+  await se.getByTestId('se-col-shape').click();
+  {
+    const b = await layer.boundingBox();
+    await page.mouse.move(b.x + b.width * 0.1, b.y + b.height * 0.1);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width * 0.3, b.y + b.height * 0.3, { steps: 4 });
+    await page.mouse.up();
+  }
+  await check(async () => (await boxesNow()).length === 2 && /2 boxes/.test(await se.getByTestId('se-col-count').innerText()), 'Shape: dragging out adds a box');
+  {
+    const b = await layer.boundingBox();
+    await page.mouse.click(b.x + b.width * 0.2, b.y + b.height * 0.2, { button: 'right' });
+  }
+  await check(async () => (await boxesNow()).length === 1, '(a right-click on a box takes it away)');
+  await se.getByTestId('se-col-pixels').click();
+  await check(async () => (await boxesNow()).length >= 1 && /covering its pixels/.test(await se.getByTestId('se-col-count').innerText()), 'Pixel-perfect: boxes covering exactly its pixels');
+  await se.getByTestId('se-col-box').click();
+  await check(async () => (await boxesNow()).length === 1, 'and back to one box');
+  await se.getByTestId('se-close').click();
+  // Each collision change was one Undo step: five back to where it was.
+  await check(async () => (await page.getByTestId('undo').getAttribute('title')).includes('Collision: box'), 'each collision change is an Undo step');
+  for (let n = 0; n < 5; n++) await page.getByTestId('undo').click();
   // A new sprite from inside the editor: a walk cycle started from the drawing being edited.
   await sp.locator('.sprite-choice.on').getByTestId('sprite-edit').click();
   await se.getByTestId('se-new').click();

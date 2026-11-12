@@ -139,12 +139,14 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (thin bridges, planks, mushroom caps, cloud platforms): things land on its top from above, jump up through it from below and walk through its sides; Down + Jump drops the player through it. Make it a 32x32 square with the platform drawn in its top rows and the Collider just that part (e.g. size 32x8, offset 0,-12, matchSprite false): level with the ground beside it. shape slopeRight / slopeLeft: a 45 degree ramp filling its square, rising to the right / to the left (◢ / ◣): characters and enemies walk up and down it.',
     category: 'Physics',
     fields: {
-      shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft'], default: 'box', description: 'box, circle, or a ramp: slopeRight rises to the right (◢), slopeLeft to the left (◣)' },
+      shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft', 'boxes'], default: 'box', description: 'box, circle, a ramp (slopeRight rises to the right ◢, slopeLeft to the left ◣), or boxes: several boxes (the boxes field), drawn in the sprite editor or worked out from the picture\'s pixels' },
       size: { kind: 'vec2', default: { x: 32, y: 32 }, description: 'Box size, or circle diameter in x' },
       offset: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Offset from the entity position' },
       isTrigger: { kind: 'boolean', default: false },
       oneWay: { kind: 'boolean', default: false, description: 'A jump-through platform: only its top holds, and only from above (jump up through it; Down + Jump drops through)' },
       matchSprite: { kind: 'boolean', default: true, description: 'Keep the collider the same size as the sprite (changing either changes both)' },
+      boxes: { kind: 'boxList', default: [], description: 'shape "boxes": the boxes it is made of, in the object\'s own pixels from its sprite\'s top-left corner ({x, y, w, h}). Walls and floors are each box; touching (hurting, picking up, shots) counts each box; a thing that moves on its own (a character) moves as the box round them all' },
+      fromPixels: { kind: 'boolean', default: false, description: 'shape "boxes": pixel-perfect, the boxes cover exactly the picture\'s visible pixels, worked out again whenever the picture changes' },
     },
   },
   {

@@ -272,6 +272,13 @@
 .se-row input[type='number'] { width: 52px; }
 .se-canvas-wrap { flex: 1; min-width: 0; display: grid; place-items: center; padding: 8px; border-radius: 10px; background: #1b1828; overflow: auto; }
 .se-canvas { image-rendering: pixelated; touch-action: none; display: block; }
+.se-canvas-stack { position: relative; display: inline-block; }
+.se-collision-layer { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; image-rendering: pixelated; }
+.se-collision-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.se-collision-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.se-collision-bar .se-seg { display: inline-flex; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden; }
+.se-collision-bar .se-seg button { background: none; border: 0; color: inherit; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.se-collision-bar .se-seg button.on { background: var(--accent-soft); }
 .se-frames { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
 .se-strip { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; }
 .se-frame { display: grid; justify-items: center; gap: 2px; padding: 4px; border-radius: 8px; border: 2px solid var(--line); background: #1b1828; font-size: 10.5px; color: var(--muted); }

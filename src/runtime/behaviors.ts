@@ -10,6 +10,7 @@ import type { InputState } from './input';
 import { moveAndCollide, overlaps, type Box } from './physics';
 import { ownPart } from './gameplay';
 import type { Runtime, RuntimeEntity } from './runtime';
+import { touchesParts } from './parts';
 
 /** A chasing patroller gives up after this many seconds without seeing its target. */
 const LOSE_SIGHT = 3;
@@ -100,7 +101,7 @@ export class BehaviorSystem {
           if (v === shot || !v.alive || v.projectile || v.id === shot.projectile.owner || !v.health || v.dying > 0 || v.invincible > 0) continue;
           if (v.tags.some((t) => shot.projectile!.team.includes(t)) || hit.has(v.id)) continue;
           const vb = this.rt.boxOf(v);
-          if (vb && overlaps(box, vb)) {
+          if (vb && overlaps(box, vb) && touchesParts(box, v)) {
             hit.add(v.id);
             this.rt.gameplay.emit('shot_hit', shot, v);
           }
@@ -118,7 +119,7 @@ export class BehaviorSystem {
       for (const v of this.rt.entities) {
         if (v === shot || !v.alive || v.projectile || v.id === shot.projectile.owner || !v.health) continue;
         const vb = this.rt.boxOf(v);
-        if (vb && overlaps(box, vb) && this.rt.gameplay.tryHurt(shot, v)) {
+        if (vb && overlaps(box, vb) && touchesParts(box, v) && this.rt.gameplay.tryHurt(shot, v)) {
           shot.alive = false;
           removed = true;
           break;

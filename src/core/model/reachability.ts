@@ -54,6 +54,23 @@ export type ReachabilityResult =
 const EDGE = 2;
 const MARGIN = 0.92;
 
+/** A collider of several boxes (shape "boxes"), where it is: each box (else its one box). */
+function partsOfResolved(r: ResolvedEntity): Box[] {
+  const col = r.components.Collider;
+  const list = col?.shape === 'boxes' && Array.isArray(col.boxes) ? (col.boxes as { x: number; y: number; w: number; h: number }[]).filter((b) => b.w > 0 && b.h > 0) : [];
+  if (!list.length) return [boxOf(r)];
+  const { position, scale } = r.transform;
+  const sw = Number(r.components.Sprite?.width ?? 32);
+  const sh = Number(r.components.Sprite?.height ?? 32);
+  return list.map((b) => {
+    const cx = position.x + (b.x + b.w / 2 - sw / 2) * scale.x;
+    const cy = position.y + (b.y + b.h / 2 - sh / 2) * scale.y;
+    const w = b.w * Math.abs(scale.x);
+    const h = b.h * Math.abs(scale.y);
+    return { left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2 };
+  });
+}
+
 function boxOf(r: ResolvedEntity): Box {
   const { position, scale } = r.transform;
   const col = r.components.Collider;
@@ -168,7 +185,8 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const grab = player.components.LedgeGrab ? pHeight * 0.6 : 0;
 
   // Standable tops: the top of a solid with nothing solid sitting right on it.
-  const boxes = solids.map((r) => ({ r, b: boxOf(r) }));
+  // (A collider of several boxes: each is a wall or floor of its own.)
+  const boxes = solids.flatMap((r) => partsOfResolved(r).map((b) => ({ r, b })));
   const tops: Span[] = [];
   for (const { r, b } of boxes) {
     const covered = boxes.some(({ r: o, b: ob }) => o !== r && ob.bottom >= b.top - 4 && ob.bottom <= b.top + EDGE && ob.left < b.right - EDGE && ob.right > b.left + EDGE);

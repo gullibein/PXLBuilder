@@ -7,6 +7,7 @@
  * separate demo logic. Rendering uses the shared renderer.
  */
 import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
+import { partsOf } from './parts';
 import { moverPath } from '../core/model/movingPath';
 import { Fog } from './fog';
 import { buildLevel, newSeed, type Dungeon } from '../core/model/dungeon';
@@ -64,7 +65,8 @@ export interface RuntimeEntity {
   speedFactor: number;
   /** Collision box relative to the position (null: no collider). */
   /** oneWay: a jump-through platform (only its top holds, from above); slope: a ramp rising to the right (1) or left (-1). */
-  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean; oneWay?: boolean; slope?: 1 | -1 } | null;
+  /** ox, oy, hw, hh: the box it collides with (with parts: the box round them all). parts: a collider made of several boxes. */
+  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean; oneWay?: boolean; slope?: 1 | -1; parts?: { ox: number; oy: number; hw: number; hh: number }[] } | null;
   controller: Controller | null;
   /** Ladders, vines…: things a character can climb. */
   climbable: boolean;
@@ -411,7 +413,34 @@ export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedE
     [ox, oy] = [ox * cos - oy * sin, ox * sin + oy * cos];
   }
   const slope = col.shape === 'slopeRight' ? 1 : col.shape === 'slopeLeft' ? -1 : 0;
-  return { ox, oy, hw: w / 2, hh: h / 2, trigger: col.isTrigger === true, ...(col.oneWay === true && !slope ? { oneWay: true } : {}), ...(slope ? { slope: slope as 1 | -1 } : {}) };
+  const base = { trigger: col.isTrigger === true, ...(col.oneWay === true && !slope ? { oneWay: true } : {}), ...(slope ? { slope: slope as 1 | -1 } : {}) };
+  // Several boxes (drawn in the sprite editor, or worked out from the picture's pixels): in the object's own pixels,
+  // from its sprite's top-left corner; the collider is the box round them all, its parts the boxes.
+  const list = col.shape === 'boxes' && Array.isArray(col.boxes) ? (col.boxes as { x: number; y: number; w: number; h: number }[]).filter((b) => b.w > 0 && b.h > 0) : [];
+  if (list.length) {
+    const sw = Number(c.Sprite?.width ?? size.x);
+    const sh = Number(c.Sprite?.height ?? size.y);
+    const a = (turn * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(a)) < 1e-9 ? 0 : Math.cos(a);
+    const sin = Math.abs(Math.sin(a)) < 1e-9 ? 0 : Math.sin(a);
+    const parts = list.map((b) => {
+      let px = (b.x + b.w / 2 - sw / 2) * scale.x;
+      let py = (b.y + b.h / 2 - sh / 2) * scale.y;
+      let pw = b.w * Math.abs(scale.x);
+      let ph = b.h * Math.abs(scale.y);
+      if (turn !== 0 && !dynamic) {
+        [px, py] = [px * cos - py * sin, px * sin + py * cos];
+        [pw, ph] = [Math.abs(pw * cos) + Math.abs(ph * sin), Math.abs(pw * sin) + Math.abs(ph * cos)];
+      }
+      return { ox: px, oy: py, hw: pw / 2, hh: ph / 2 };
+    });
+    const l = Math.min(...parts.map((p) => p.ox - p.hw));
+    const r = Math.max(...parts.map((p) => p.ox + p.hw));
+    const t = Math.min(...parts.map((p) => p.oy - p.hh));
+    const bt = Math.max(...parts.map((p) => p.oy + p.hh));
+    return { ox: (l + r) / 2, oy: (t + bt) / 2, hw: (r - l) / 2, hh: (bt - t) / 2, ...base, ...(parts.length > 1 ? { parts } : {}) };
+  }
+  return { ox, oy, hw: w / 2, hh: h / 2, ...base };
 }
 
 function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
@@ -815,8 +844,9 @@ export class Runtime {
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
       const fixed = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none'));
       // (Jump-through platforms and ramps are surfaces of their own, not walls.)
-      this.staticSolids = fixed.filter((e) => !e.collider!.oneWay && !e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
-      this.oneWays = fixed.filter((e) => e.collider!.oneWay).map((e) => ({ ...boxOf(e)!, friction: e.friction }));
+      // (A collider of several boxes: each of them is a wall or floor of its own.)
+      this.staticSolids = fixed.filter((e) => !e.collider!.oneWay && !e.collider!.slope).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
+      this.oneWays = fixed.filter((e) => e.collider!.oneWay).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
       this.slopes = fixed.filter((e) => e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction, dir: e.collider!.slope! }));
       this.rebuildLadders();
       this.solidsDirty = false;
@@ -839,7 +869,7 @@ export class Runtime {
       if ((e.body === 'kinematic' || drifts) && e.alive) {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (this.isSolid(e)) (e.collider?.oneWay ? movingOneWays : kinematicSolids).push({ ...boxOf(e)!, friction: e.friction });
+        if (this.isSolid(e)) (e.collider?.oneWay ? movingOneWays : kinematicSolids).push(...partsOf(e).map((b) => ({ ...b, friction: e.friction })));
       }
     }
     const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
