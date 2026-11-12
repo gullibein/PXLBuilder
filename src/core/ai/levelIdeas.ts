@@ -96,6 +96,7 @@ export const LEVEL_PUZZLES: Record<string, string> = {
   'bridge over the gap': 'A pit or a pool too wide to jump, crossed by a row of Bridge; enemies walking on it, or coins under it in the pit.',
   'swim for it': 'A pool (Water on top, Deep water under it) to dive into: the key or gems at the bottom, or an underwater tunnel through a wall to the next room.',
   'hill': 'A hill of ground with a Ramp up one side and Ramp left down the other (or ramps between two floors instead of a ladder); an enemy walking over it, coins on the top.',
+  'spring up': 'A ledge too high for any jump (springRows rows over the floor, playerReach.cells), with a Spring (or the game\'s own bouncy thing) on the floor under it: holding Jump on the spring launches the player up there; the key or the way on is up top.',
   'switch and door': 'A Switch on one floor opens a Door (controls/opens connection) somewhere else: the player sees the shut door first, then finds the switch.',
   'key and door': 'The Goal behind a Door that requires the Key, the key at the far end of another branch.',
   'moving platform': 'A wide gap or shaft crossed on a moving platform (an object with MovingPlatform, made with create_definition), with coins along its path.',
@@ -107,27 +108,27 @@ export const PLATFORMER_STYLES: { name: string; rules: string; puzzles: string[]
   {
     name: 'Classic blocks',
     rules: 'Bright sky, chunky solid blocks and bricks, floating block rows, pipes, pits; a block-built ground with a grassy top. Every platform is solid (no jump-through platforms, no ramps); coins in the air; walking enemies (Walker).',
-    puzzles: ['crate step', 'teleporter shortcut', 'switch and door', 'moving platform', 'hidden ladder'],
+    puzzles: ['crate step', 'teleporter shortcut', 'switch and door', 'moving platform', 'hidden ladder', 'spring up'],
   },
   {
     name: 'Cave explorer',
     rules: 'An enclosed cave: thick rock all round (autotiled), floors stacked inside it, a dark back wall, stalactites and vines hanging from the ceilings, glowing mushrooms; ladders, thin jump-through ledges and bridges, ramps where floors meet; pools of water (or acid); gems to collect; crates and barrels.',
-    puzzles: ['crate step', 'drop-through', 'bridge over the gap', 'swim for it', 'hill', 'teleporter shortcut', 'crate stack'],
+    puzzles: ['crate step', 'drop-through', 'bridge over the gap', 'swim for it', 'hill', 'teleporter shortcut', 'crate stack', 'spring up'],
   },
   {
     name: 'Hills and islands',
     rules: 'Outdoors: grassy hills of earth with 45 degree ramps up and down, floating islands, mushroom caps or clouds as jump-through platforms (on stems or nothing), vines to climb, trees, flowers and rocks as decoration, water below; a cottage or sign by the start.',
-    puzzles: ['hill', 'bridge over the gap', 'swim for it', 'drop-through', 'crate step', 'teleporter shortcut'],
+    puzzles: ['hill', 'bridge over the gap', 'swim for it', 'drop-through', 'crate step', 'teleporter shortcut', 'spring up'],
   },
   {
     name: 'Indoor rooms',
     rules: 'A building or lab: rooms with solid walls and floors, a patterned back wall, thin metal bars and plank shelves as jump-through platforms, crates and hazard boxes stacked, buttons and doors between rooms, elevators (moving platforms); no ramps.',
-    puzzles: ['crate step', 'crate stack', 'switch and door', 'drop-through', 'teleporter shortcut', 'moving platform'],
+    puzzles: ['crate step', 'crate stack', 'switch and door', 'drop-through', 'teleporter shortcut', 'moving platform', 'spring up'],
   },
   {
     name: 'Ruined temple',
     rules: 'Ancient stone blocks with cracks, overgrown with moss and grass, spikes on floors and ceilings, fire or lava pits, moving platforms on chains, stone ledges; a timer or a score in the corner; few ramps, no water.',
-    puzzles: ['lava pit', 'moving platform', 'crate step', 'switch and door', 'hidden ladder', 'teleporter shortcut'],
+    puzzles: ['lava pit', 'moving platform', 'crate step', 'switch and door', 'hidden ladder', 'teleporter shortcut', 'spring up'],
   },
 ];
 

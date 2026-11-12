@@ -88,7 +88,8 @@ const KEEPS_MOVEMENT = new Set([
   'set_music', 'complete_level', 'camera_shake',
 ]);
 
-export function changesMovement(script: unknown): boolean {
+/** `ownOnly`: only what moves the script's owner counts (a spring bouncing whoever lands on it doesn't move the spring). */
+export function changesMovement(script: unknown, ownOnly = false): boolean {
   const sc = script as { enabled?: boolean; takesOver?: string; handlers?: unknown } | null;
   if (sc?.enabled === false) return false;
   // (One that does part of the engine's own work, its movement say, instead of the engine.)
@@ -98,7 +99,7 @@ export function changesMovement(script: unknown): boolean {
     if (moves || !v || typeof v !== 'object') return;
     if (Array.isArray(v)) return v.forEach(walk);
     const o = v as Record<string, unknown>;
-    if (typeof o.do === 'string' && !KEEPS_MOVEMENT.has(o.do)) {
+    if (typeof o.do === 'string' && !KEEPS_MOVEMENT.has(o.do) && !(ownOnly && typeof o.on === 'string' && o.on !== 'self')) {
       moves = true;
       return;
     }
@@ -150,8 +151,8 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const solids = all.filter((r) => r !== player && isSolid(r) && !enemy(r));
 
   // Things that move solids or change how the player moves can't be judged statically.
-  if (solids.some((r) => r.components.MovingPlatform || r.scripts.some(changesMovement))) return { status: 'uncertain', why: 'moving or scripted platforms' };
-  if (player.scripts.some(changesMovement)) return { status: 'uncertain', why: 'the player runs scripts that change how it moves' };
+  if (solids.some((r) => r.components.MovingPlatform || r.scripts.some((sc) => changesMovement(sc, true)))) return { status: 'uncertain', why: 'moving or scripted platforms' };
+  if (player.scripts.some((sc) => changesMovement(sc))) return { status: 'uncertain', why: 'the player runs scripts that change how it moves' };
   if (scene.relationships.some((r) => r.type === 'controls' && (r.params.action === 'move' || r.params.action === 'disappear'))) return { status: 'uncertain', why: 'switches move platforms' };
 
   const base = characterReach(player.components, scene.world.gravity.y);
@@ -187,7 +188,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   // cut it in two, jumped over (canJump) as far as the jump keeps the whole body above them.
   const meRef = { id: player.id, definitionId: player.definitionId, tags: player.tags };
   const hazards = all
-    .filter((r) => r !== player && !r.tags.some((t) => /^(enemy|enemies|monster|guard)$/i.test(t)) && !r.components.Patrol && r.components.PhysicsBody?.bodyType !== 'dynamic' && !r.components.MovingPlatform && !r.scripts.some(changesMovement))
+    .filter((r) => r !== player && !r.tags.some((t) => /^(enemy|enemies|monster|guard)$/i.test(t)) && !r.components.Patrol && r.components.PhysicsBody?.bodyType !== 'dynamic' && !r.components.MovingPlatform && !r.scripts.some((sc) => changesMovement(sc)))
     .filter((r) => hurtsOnTouch(r.scripts, player.tags) || scene.relationships.some((rel) => rel.type === 'damages' && refMatches(rel.source, { id: r.id, definitionId: r.definitionId, tags: r.tags }) && refMatches(rel.target, meRef)))
     .map(boxOf);
   for (let i = 0; i < spans.length; i++) {
@@ -327,9 +328,19 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     const t = 2 * Math.sqrt((2 * (apex - tall)) / reach.gravity);
     return gr - gl <= reach.speed * t * MARGIN - pHalf * 2;
   };
+  // Springs (the ready-made Spring script): a launch from on top of one, its "launch" times the jump's height.
+  const springs = new Map<Span, number>();
+  for (const r of solids) {
+    const sc = r.scripts.find((x) => x.name === 'Spring' && x.enabled !== false);
+    if (!sc) continue;
+    const launch = Number(sc.vars.find((v) => v.name === 'launch')?.value ?? 2);
+    const on = spans.find((sp) => sp.ids.includes(r.id));
+    if (on && launch > 0) springs.set(on, Math.max(springs.get(on) ?? 0, launch));
+  }
+  const own = reach;
   const canJump = (from: Span, to: { left: number; right: number; top: number }) => {
     if (!overHazards(from, to)) return false;
-    const jump = (up: number) => {
+    const jump = (up: number, reach: Reach = own) => {
       const rise = from.top - up - to.top;
       if (rise > reach.height * MARGIN + grab) return false;
       const d = jumpDistance(reach, Math.max(-4000, Math.min(rise, reach.height * MARGIN)));
@@ -338,7 +349,9 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
       // (Down: not checked; the jump arcs over what is lower than where it starts.)
       return rise < -EDGE || roomToJump(from, from.top - up, to, reachX);
     };
-    return jump(0) || ((lift.get(from) ?? 0) > 0 && jump(lift.get(from)!));
+    // (From a spring: launched as high as it says, its launch times the jump's height.)
+    const launch = springs.get(from);
+    return jump(0) || ((lift.get(from) ?? 0) > 0 && jump(lift.get(from)!)) || (!!launch && jump(0, { ...own, height: own.height * launch, jumpForce: own.jumpForce * Math.sqrt(launch), distance: own.distance * Math.sqrt(launch) }));
   };
 
   // Search: spans and ladders.
@@ -663,6 +676,8 @@ export interface JumpTable {
   ladderGapRows: number;
   /** Rows a one-cell crate (pushed under a ledge) adds to how high it gets. */
   crateRows: number;
+  /** The most rows above a floor that a launch from a Spring standing on it (Jump held) gets the player up onto. */
+  springRows: number;
   /** The widest row of floor hazards it jumps over from the same floor (cells): half a cell tall (spikes), a whole cell tall. */
   spikeCells: { halfCellTall: number; cellTall: number };
 }
@@ -697,6 +712,8 @@ export function jumpTable(components: ResolvedEntity['components'], gravityY: nu
     maxRiseRows: Math.max(0, Math.floor(maxRise / CELL)),
     ladderGapRows: Math.max(0, Math.floor((reach.height * MARGIN + pH) / CELL + 1e-9) - 1),
     crateRows: 1,
+    // (The spring's pad is half a cell over the floor; the launch is twice the jump.)
+    springRows: Math.max(0, Math.floor((reach.height * 2 * MARGIN + CELL / 2) / CELL + 1e-9)),
     spikeCells: { halfCellTall: over(CELL / 2), cellTall: over(CELL) },
   };
 }

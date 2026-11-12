@@ -166,6 +166,8 @@ export interface RuntimeEntity {
   moveTarget: { x: number; y: number; speed: number } | null;
   /** Seconds after a stomp during which what it stomped can't hurt it. */
   stompGrace: number;
+  /** Bounced up (a stomp, a spring) and not yet landed: letting go of Jump doesn't cut the rise short. */
+  launched?: boolean;
   /** Position at the start of the step (to tell landing on top from bumping into the side). */
   prevY: number;
   /** Dropping through jump-through platforms for this long yet (Down + Jump on one). */
@@ -1378,6 +1380,7 @@ export class Runtime {
     }
     // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
     // Only the jump button jumps; Up is for climbing. (The ready-made Jumping script does exactly this: engineParts.ts.)
+    if (e.grounded) e.launched = false;
     if (input.wasPressed('jump')) e.jumpBuffer = JUMP_BUFFER;
     else e.jumpBuffer = Math.max(0, e.jumpBuffer - dt);
     e.coyote = e.grounded ? COYOTE_TIME : Math.max(0, e.coyote - dt);
@@ -1390,11 +1393,13 @@ export class Runtime {
       // Double jump: another full jump in the air.
       e.beh.doubleJump.left--;
       e.vy = -c.jumpForce;
+      e.launched = false;
       e.jumpBuffer = 0;
     }
     if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
     // Releasing jump early makes a shorter hop (not a swim stroke).
-    if (input.wasReleased('jump') && e.vy < 0 && !e.inLiquid?.swim) e.vy *= 0.5;
+    // (Not a bounce off a spring or a stomp: that rise is the bounce's own.)
+    if (input.wasReleased('jump') && e.vy < 0 && !e.inLiquid?.swim && !e.launched) e.vy *= 0.5;
   }
 
   /**

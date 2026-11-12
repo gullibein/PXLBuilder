@@ -7,6 +7,7 @@
 import { ModelError } from '../model/mutations';
 import { SWOOPER_SCRIPT } from './swooper';
 import { ENEMY_SCRIPTS } from './enemies';
+import { SPRING_SCRIPT } from './spring';
 import { hurtsScript, stompScript } from '../model/ruleScripts';
 
 /** A rule script as a ready-made one (no id of its own: each use gets one). */
@@ -31,6 +32,7 @@ export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT a
   'Gold pickup': GOLD_PICKUP_SCRIPT as Script,
   'Healing pickup': HEALING_PICKUP_SCRIPT as Script,
   ...(ENEMY_SCRIPTS as Record<string, Script>),
+  Spring: SPRING_SCRIPT as Script,
   // The side-view rules: landing on it defeats it (or takes hits), touching it hurts the player.
   Stomp: ready(stompScript({ by: ['player'], bounce: 320, hits: 0 }) as never) as Script,
   'Hurts on touch': ready(hurtsScript({ amount: 1, who: ['player'] }) as never) as Script,

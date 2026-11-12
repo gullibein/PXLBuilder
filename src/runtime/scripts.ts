@@ -563,6 +563,10 @@ export class ScriptSystem {
           t.vy = -Math.max(0, n(s.speed));
           t.grounded = false;
           t.stompGrace = 0.2;
+          // (Its own rise: not cut short by letting go of Jump, nor replaced by a jump off the ground it just left.)
+          t.launched = true;
+          t.coyote = 0;
+          t.jumpBuffer = 0;
         }
         break;
       }

@@ -4,6 +4,8 @@ import { defaultCamera } from './camera';
 import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
 import { hurtsScript, stompScript } from './ruleScripts';
+import { SPRING_SCRIPT } from '../script/spring';
+import { scriptSchema } from '../script/language';
 import type { AssetRecord, BehaviorScript, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
 
@@ -240,6 +242,31 @@ const BRIDGE: PixelArt = {
     '................',
   ],
 };
+/** The ready-made Spring script (its own id each time). */
+const SPRING_READY = (): BehaviorScript => scriptSchema.parse({ id: generateId('scr'), ...SPRING_SCRIPT }) as BehaviorScript;
+
+/** A coil spring standing on the floor: a red pad on top, the coil, a grey foot (the lower half of its square). */
+const SPRING: PixelArt = {
+  palette: [{ key: 'k', color: '#3a2630' }, { key: 'r', color: '#e04848' }, { key: 'l', color: '#ff9a8a' }, { key: 'g', color: '#c3cad6' }, { key: 'd', color: '#6b7280' }],
+  rows: [
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '.kkkkkkkkkkkkkk.',
+    'krllllllllllllrk',
+    'krrrrrrrrrrrrrrk',
+    '.kkkkkkkkkkkkkk.',
+    '....kggggggk....',
+    '...kddddddddk...',
+    '....kggggggk....',
+    '..kkkkkkkkkkkk..',
+  ],
+};
 /** Water: the surface (waves moving, two frames) and the water under it. */
 const WATER_PALETTE: PixelArt['palette'] = [{ key: 'h', color: '#d6f1ff' }, { key: 'a', color: '#5cb3e8' }, { key: 'b', color: '#2f7fc4' }];
 const WATER_FRAMES: string[][] = [[
@@ -458,6 +485,7 @@ export interface StarterAssets {
   bridge: AssetRecord;
   water: AssetRecord;
   deepWater: AssetRecord;
+  spring: AssetRecord;
 }
 
 /**
@@ -530,7 +558,7 @@ export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord)
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER) };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING) };
 }
 
 /** Library categories of the starter objects. */
@@ -554,6 +582,7 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Bridge: 'Platforms',
   Water: 'Environment',
   'Deep water': 'Environment',
+  Spring: 'Environment',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder', 'Ramp', 'Ramp left', 'Bridge', 'Water', 'Deep water']);
 
@@ -742,6 +771,18 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       },
       ['water', 'liquid'],
       'Water under the surface (the Water row): fills a pool below it.',
+    ),
+    createDefinition(
+      'Spring',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#e04848', assetId: assets.spring.id }),
+        // (Standing on the floor: the lower half of its square, its pad level with half a cell up.)
+        Collider: c('Collider', { size: { x: 28, y: 16 }, offset: { x: 0, y: 8 }, matchSprite: false }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['spring', 'bouncy'],
+      'A spring (or a bouncy mushroom, a bubble…) on the floor: a half-jump bounce; holding Jump on it launches the player two jumps high.',
+      [SPRING_READY()],
     ),
     heartDefinition(registry, assets.heart),
   ];
