@@ -4824,6 +4824,40 @@ try {
   await check(async () => (await gCanvas.getAttribute('data-overlays')) === '1', 'overlays are only drawn while editing');
   await gc.close();
 
+  step = 'puzzles in new levels';
+  {
+    const nc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const np = await nc.newPage();
+    np.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    const asked = [];
+    await np.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      asked.push(body.request);
+      const lib = (n) => body.context.library.find((d) => d.name === n).id;
+      const sceneId = body.context.level.id;
+      const legend = [{ char: '#', object: lib('Platform') }, { char: 'P', object: lib('Player') }, { char: 'G', object: lib('Goal') }, { char: '/', object: lib('Ramp') }, { char: '~', object: lib('Water') }, { char: 'B', object: lib('Crate') }, { char: 'S', object: lib('Spring') }];
+      const plain = ['##############', '#............#', '#.P.......G..#', '##############'];
+      // Asked again for the puzzles: the level once more, with ramps, water, a crate and a spring in it.
+      const full = ['##############', '#............#', '#.P.B.S..../G#', '#######~~#####', '##############'];
+      const again = body.request.includes('lack the puzzles');
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: again ? '' : 'A little game.', changes: again ? [] : ['Level 1'], operations: [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows: again ? full : plain, clear: true }] }) });
+    });
+    await np.goto(URL);
+    await np.getByTestId('viewport-canvas').waitFor();
+    if (!(await np.getByTestId('game-idea').isVisible())) {
+      await np.getByTestId('project-menu').click();
+      await np.getByTestId('menu-new').click();
+    }
+    if (!(await np.getByTestId('new-sprites-engine').isVisible())) await np.getByTestId('game-advanced').click();
+    await np.getByTestId('new-sprites-engine').click();
+    await np.getByTestId('game-idea').fill('a platformer about a frog');
+    await np.getByTestId('game-idea').press('Enter');
+    await check(async () => asked.length === 2 && /Puzzles to build this level around/.test(asked[0]) && /lack the puzzles picked for them: Level 1/.test(asked[1]), 'a new level without the puzzles picked for it goes back once, naming the missing ones');
+    await np.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+    await check(async () => Number(await np.getByTestId('viewport-canvas').getAttribute('data-entities')) > 50 && asked.length === 2, '(and what the AI adds is built into the level: no third request)');
+    await nc.close();
+  }
+
   step = 'moving platform path';
   {
     const mc = await browser.newContext({ viewport: { width: 1300, height: 860 } });

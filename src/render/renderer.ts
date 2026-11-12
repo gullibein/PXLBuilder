@@ -796,6 +796,22 @@ export function drawEntities(
     : entities;
   const tiles = new Set<string>();
   for (const e of near) if (e.tile || rounds(e) || autotiled(e)) tiles.add(tileKey(e.definitionId, e.transform.position.x, e.transform.position.y));
+  // Ramps, by where they are (rising to the right: 1, to the left: -1): ground under a ramp, or beside its tall side,
+  // is drawn joined to it (no grassy top under it, no edge against its tall side).
+  const ramps = new Map<string, 1 | -1>();
+  for (const e of near) {
+    const shape = e.components.Collider?.shape;
+    if (shape === 'slopeRight' || shape === 'slopeLeft') ramps.set(`${Math.round(e.transform.position.x)}|${Math.round(e.transform.position.y)}`, shape === 'slopeRight' ? 1 : -1);
+  }
+  /** Whether the tile at (x, y) is joined on side (dx, dy): a tile of its kind there, or a ramp that carries it on. */
+  const joined = (definitionId: string | null, x: number, y: number, dx: number, dy: number, sx: number, sy: number) => {
+    if (tiles.has(tileKey(definitionId, x + dx * sx, y + dy * sy))) return true;
+    if (!ramps.size || (dx !== 0 && dy !== 0)) return false;
+    const r = ramps.get(`${Math.round(x + dx * sx)}|${Math.round(y + dy * sy)}`);
+    if (r === undefined) return false;
+    // Above it; or beside it with its tall side toward this tile (a ramp rising to the left, on its right).
+    return dy === -1 || (dx === 1 && r === -1) || (dx === -1 && r === 1);
+  };
   // (Each thing's own drawing state is undone by hand: save and restore for each of thousands of tiles cost more
   // than drawing them. Only a clipped one, for rounded corners, saves and restores.)
   const base = ctx.getTransform();
@@ -851,7 +867,7 @@ export function drawEntities(
     const neighbours = () => {
       const sx = size.x * Math.abs(scale.x);
       const sy = size.y * Math.abs(scale.y);
-      return autotileIndex((dx, dy) => tiles.has(tileKey(entity.definitionId, position.x + dx * sx, position.y + dy * sy)));
+      return autotileIndex((dx, dy) => joined(entity.definitionId, position.x, position.y, dx, dy, sx, sy));
     };
     const cells = isoCells;
     const autoPicture = cells && isoAutoOf(entity) !== 'none' ? isoAutoPicture(entity, (dx, dy) => cells.get(isoKey(position.x + dx * 32, position.y + dy * 32, isoLiftOf(entity))) ?? []) : null;
@@ -942,7 +958,7 @@ export function drawEntities(
       const cuts = cornerCuts(r);
       const sx = size.x * Math.abs(scale.x);
       const sy = size.y * Math.abs(scale.y);
-      const corners = tileCorners((dx, dy) => tiles.has(tileKey(entity.definitionId, position.x + dx * sx, position.y + dy * sy)));
+      const corners = tileCorners((dx, dy) => joined(entity.definitionId, position.x, position.y, dx, dy, sx, sy));
       for (const f of corners.fill) {
         ctx.save();
         ctx.beginPath();
@@ -965,7 +981,7 @@ export function drawEntities(
       const w = size.x;
       const h = size.y;
       ctx.fillRect(-w / 2, -h / 2, w, h);
-      const above = tiles.has(tileKey(entity.definitionId, position.x, position.y - h * scale.y));
+      const above = joined(entity.definitionId, position.x, position.y, 0, -1, w, h * scale.y);
       const below = tiles.has(tileKey(entity.definitionId, position.x, position.y + h * scale.y));
       if (!above) {
         ctx.fillStyle = shade(color, 0.35);

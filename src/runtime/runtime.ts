@@ -949,11 +949,7 @@ export class Runtime {
         const goingDown = e.vy > 0;
         // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at the
         // top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
-        if (this.slopes.length && !e.climbing) {
-          const bottom = box.y + box.hh;
-          const overRamp = this.slopes.some((s) => Math.abs(box.x - s.x) <= s.hw && bottom >= s.y - s.hh - 2 && bottom <= s.y + s.hh + 2);
-          if (overRamp) surfaces = surfaces.filter((o) => (o.x - o.hw <= box.x && o.x + o.hw >= box.x) || o.y - o.hh > bottom + 0.5 || o.y - o.hh < bottom - box.hw - 1);
-        }
+        if (this.slopes.length && !e.climbing) surfaces = this.besideRamps(box, surfaces);
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
@@ -1581,7 +1577,8 @@ export class Runtime {
     const mine = pushables.filter((p) => p.alive && p.pushable!.pushers.some((t) => e.tags.includes(t)));
     if (!mine.length) return share;
     const blockers = (p: RuntimeEntity) => [
-      ...walls,
+      // (A crate on a ramp is pushed on up it: the ground at the ramp's top is no wall to it.)
+      ...(this.slopes.length ? this.besideRamps(boxOf(p)!, [...walls]) : walls),
       ...pushables.filter((o) => o !== p).map((o) => boxOf(o)!),
       // Other moving solid things (characters, enemies) are in the way too, but not the pusher.
       ...this.entities.filter((o) => o !== p && o !== e && o.alive && o.body === 'dynamic' && !o.pushable && o.collider && !o.collider.trigger).map((o) => boxOf(o)!),
@@ -1795,6 +1792,28 @@ export class Runtime {
     const box = boxOf(e);
     if (!box) return false;
     return standingOn(box, this.oneWays) && !standingOn(box, this.solids);
+  }
+
+  /**
+   * What is in the way of a box whose middle is over a ramp: the ramp holds its feet, so the ground that carries on
+   * from the ramp (right beside its high side, level with its top; or beside its low side, level with its bottom)
+   * neither stops it nor holds it up, nor does any low edge it walks over; walls do.
+   */
+  besideRamps<T extends Box>(box: Box, surfaces: T[]): T[] {
+    const bottom = box.y + box.hh;
+    const under = this.slopes.filter((s) => Math.abs(box.x - s.x) <= s.hw && bottom >= s.y - s.hh - 2 && bottom <= s.y + s.hh + 2);
+    if (!under.length) return surfaces;
+    return surfaces.filter((o) => {
+      // (Under its middle: the floor it is on.)
+      if (o.x - o.hw <= box.x && o.x + o.hw >= box.x) return true;
+      const top = o.y - o.hh;
+      if (top > bottom + 0.5) return true;
+      for (const s of under) {
+        const next = Math.abs(o.x - o.hw - (s.x + s.hw)) < 1 || Math.abs(o.x + o.hw - (s.x - s.hw)) < 1;
+        if (next && (Math.abs(top - (s.y - s.hh)) < 1.5 || Math.abs(top - (s.y + s.hh)) < 1.5)) return false;
+      }
+      return top < bottom - box.hw - 1;
+    });
   }
 
   /**

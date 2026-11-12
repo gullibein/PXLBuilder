@@ -240,11 +240,18 @@ export function statsLine(s: LevelStats, size = true): string {
   return `${size ? `${s.w}x${s.h} cells, ` : ''}${s.floors} floor rows, ${s.enemies} enemies, ${s.hazards} hazards; pieces: ${s.pieces.join(', ') || 'none'}`;
 }
 
+/** Puzzles built of the ground itself: ramps up a hill, a pool to swim. */
+const TERRAIN_PUZZLES = ['hill', 'swim for it'];
+
 /** The kind of platformer, and two or three of its puzzles (at random) for this level. */
 function styleAndPuzzles(style: (typeof PLATFORMER_STYLES)[number], random: () => number): { style: { name: string; rules: string }; puzzles: string[] } {
   const order = style.puzzles.map((p) => ({ p, k: random() })).sort((a, b) => a.k - b.k).map((x) => x.p);
   const n = 2 + (random() < 0.5 ? 1 : 0);
-  return { style: { name: style.name, rules: style.rules }, puzzles: order.slice(0, n).map((p) => `${p}: ${LEVEL_PUZZLES[p]}`) };
+  const picked = order.slice(0, n);
+  // (A kind with ramps or water always gets one of them: they shape a level more than anything.)
+  const terrain = order.filter((p) => TERRAIN_PUZZLES.includes(p));
+  if (terrain.length && !picked.some((p) => TERRAIN_PUZZLES.includes(p))) picked[picked.length - 1] = terrain[0];
+  return { style: { name: style.name, rules: style.rules }, puzzles: picked.map((p) => `${p}: ${LEVEL_PUZZLES[p]}`) };
 }
 
 /** This request's idea for a level (`random` in [0,1), e.g. Math.random). */

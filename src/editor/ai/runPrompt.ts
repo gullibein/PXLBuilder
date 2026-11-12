@@ -540,6 +540,37 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ ${stillStuck}`] };
       }
     }
+    // A new game (or the levels offered after one): the puzzles picked for each level must be in it (left alone,
+    // the AI built ramps, water and the like into hardly any level). Missing ones go back once, for just the
+    // operations that add them.
+    if ((newGame || options.moreLevels) && gameOps(response) && design?.puzzles?.length) {
+      const missing = missingPuzzles(useEditor.getState().project, ctx.sceneId, response.operations, options.moreLevels ? null : design.puzzles, (design.forNewLevels ?? []).map((l) => l.puzzles ?? []));
+      if (missing) {
+        trace?.('check', `The levels lack the puzzles picked for them: ${missing.text}`);
+        trace?.('retry', 'Sent back once for just the operations that add them');
+        stage('Adding the puzzles');
+        const more = await ask(
+          {
+            ...body,
+            history: [...body.history, { request, reply: [response.message, ...response.changes.map((c) => `- ${c}`)].join('\n') }],
+            request: `${body.request}\n\n[Your answer is kept, but these levels lack the puzzles picked for them: ${missing.text}. Build each one in so it matters (context.level.design says how; the pieces: Ramp and Ramp left "/" "\\", Water and Deep water "~", Bridge "-", Crate, Spring, Teleporter, Switch…). Send ONLY the operations that add them, added after your answer (kind "preview", message "" and changes []): draw_map the level again with clear true and its sceneId (the whole level, with them in it, and everything placed after the map placed again), or place_instance / draw_tiles where they fit.${mapText(missing.map)}]`,
+          },
+          signal,
+          trace,
+        ).catch((e: Error) => {
+          if (e.name === 'AbortError') throw e;
+          trace?.('note', `The puzzles couldn't be added (${e.message})`);
+          return null;
+        });
+        const extra = more?.operations.filter((o) => !isEditorOperation(o)) ?? [];
+        if (extra.length) {
+          const merged = [...response.operations, ...extra];
+          // (Kept only when it all still applies; else the answer as it was.)
+          if (!checkOperations(useEditor.getState().project, merged, componentRegistry)) response = { ...response, operations: merged };
+          else trace?.('note', "The added puzzles didn't apply; kept the answer as it was");
+        }
+      }
+    }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     const message = e instanceof AIUnavailableError ? `${e.message} (Without an AI these still work: ${QUICK_COMMAND_HELP}.)` : `AI request failed: ${(e as Error).message}`;
@@ -873,4 +904,54 @@ export function isoBlocksToSend(project: Project, sceneId: string, request: stri
   const scene = project.scenes.find((x) => x.id === sceneId);
   if (scene?.world.view !== 'iso' || (!always && !LOOK_WORDS.test(request))) return [];
   return project.definitions.filter((d) => d.components.Sprite?.isoLook === 'iso_floor' || d.components.Sprite?.isoLook === 'iso_block').map((d) => `look:${d.id}`);
+}
+
+/** What shows a puzzle is in a level (levelStats' kinds of pieces). */
+const PUZZLE_PIECES: Record<string, string> = {
+  'crate step': 'crates',
+  'crate stack': 'crates',
+  'teleporter shortcut': 'teleporters',
+  'drop-through': 'jump-through platforms',
+  'bridge over the gap': 'jump-through platforms',
+  'swim for it': 'water to swim',
+  hill: 'ramps',
+  'switch and door': 'switches',
+  'key and door': 'locked doors',
+  'moving platform': 'moving platforms',
+  'hidden ladder': 'hidden things',
+  'lava pit': 'lava',
+  'spring up': 'springs',
+};
+
+/**
+ * The puzzles picked for the levels an answer builds that aren't in them (by the pieces each needs): this level's
+ * (`here`, null: not built now) and those of the levels it creates, in order. Null when all are there.
+ */
+function missingPuzzles(project: Project, sceneId: Id, operations: Operation[], here: string[] | null, forNew: string[][]): { text: string; map: LevelMap | null } | null {
+  let after: Project;
+  let created: Id[] = [];
+  try {
+    after = produce(project, (d) => {
+      created = applyOperations(d, operations, componentRegistry).createdSceneIds;
+    });
+  } catch {
+    return null;
+  }
+  const builds = operations.some((o) => o.op === 'draw_map' && o.sceneId === sceneId);
+  // (New levels are named by the ref their create_level gave them: the operations added go in the same answer.)
+  const refs = operations.flatMap((o) => (o.op === 'create_level' ? [o.ref] : []));
+  const check: { id: Id; as: string; puzzles: string[] }[] = [...(here && builds ? [{ id: sceneId, as: sceneId, puzzles: here }] : []), ...created.map((id, i) => ({ id, as: refs[i] ?? id, puzzles: forNew[i] ?? [] }))];
+  const out: string[] = [];
+  let map: LevelMap | null = null;
+  for (const { id, as, puzzles } of check) {
+    const scene = after.scenes.find((s) => s.id === id);
+    const st = scene ? levelStats(after, scene, componentRegistry) : null;
+    if (!scene || !st) continue;
+    const lacking = puzzles.map((p) => p.split(':')[0].trim()).filter((name) => PUZZLE_PIECES[name] && !st.pieces.includes(PUZZLE_PIECES[name]));
+    if (lacking.length) {
+      out.push(`${scene.name} (sceneId ${as}): ${lacking.map((n) => `${n} (no ${PUZZLE_PIECES[n]})`).join(', ')}`);
+      map ??= levelMap(after, id, componentRegistry);
+    }
+  }
+  return out.length ? { text: out.join('; '), map } : null;
 }

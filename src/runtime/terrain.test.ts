@@ -501,3 +501,59 @@ describe('spikes on the floor are jumped over, as far as the jump really clears 
     expect(spikes(2, 3)).toEqual({ hurt: false, checker: true });
   });
 });
+
+describe('two ramps in a row (a staircase of ramps, each on the ground or a block)', () => {
+  /** Ground (top y=32); a Ramp at cell 0, a block at cell 1 with a Ramp on it, then ground two cells high from cell 2 on. */
+  function stairs(crate: boolean) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      const cell = (name: string, c: number, r: number) => place(name, { x: c * 32 + 16, y: r * 32 + 16 });
+      for (let c = -8; c <= 16; c++) cell('Platform', c, 1);
+      cell('Ramp', 0, 0);
+      cell('Platform', 1, 0);
+      cell('Ramp', 1, -1);
+      for (let c = 2; c <= 16; c++) {
+        cell('Platform', c, 0);
+        cell('Platform', c, -1);
+      }
+      if (crate) cell('Crate', -2, 0);
+      place('Player', { x: crate ? -140 : -120, y: 16 });
+    });
+    return { rt: new Runtime(project, sceneId, registry), input: new InputState() };
+  }
+
+  it('the player runs up both ramps without bumping into the ground at their tops, and back down', () => {
+    const { rt, input } = stairs(false);
+    input.press('right');
+    let slowest = Infinity;
+    for (let t = 0; t < 1.6; t += 1 / 120) {
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      if (p.x > -10 && p.x < 90) slowest = Math.min(slowest, p.vx);
+    }
+    expect(slowest).toBeGreaterThan(190);
+    expect(rt.find('Player')!.y).toBeCloseTo(-48, 0);
+    input.release('right');
+    input.press('left');
+    slowest = Infinity;
+    for (let t = 0; t < 1.6; t += 1 / 120) {
+      rt.update(1 / 120, input);
+      const p = rt.find('Player')!;
+      if (p.x > -10 && p.x < 90) slowest = Math.min(slowest, -p.vx);
+    }
+    expect(slowest).toBeGreaterThan(190);
+    expect(rt.find('Player')!.y).toBeCloseTo(16, 0);
+  });
+
+  it('a crate is pushed up both ramps onto the high ground', () => {
+    const { rt, input } = stairs(true);
+    input.press('right');
+    for (let t = 0; t < 2.2; t += 1 / 120) rt.update(1 / 120, input);
+    const c = rt.find('Crate')!;
+    expect(c.x).toBeGreaterThan(96);
+    expect(c.y).toBeCloseTo(-48, 0);
+  });
+});
