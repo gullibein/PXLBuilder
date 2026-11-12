@@ -116,7 +116,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'SpriteStates',
     label: 'Sprites by situation',
     description:
-      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting, defeated (stomped flat, knocked out), and (without gravity) moving up or down. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
+      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting, defeated (stomped flat, knocked out), sprung (a spring squashed as it bounces something), and (without gravity) moving up or down. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
     category: 'Rendering',
     fields: {
       run: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving along the ground' },
@@ -129,6 +129,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       defeated: { kind: 'assetRef', assetKind: 'image', default: null, description: 'When defeated (stomped, out of health): shown where it was for a moment, fading out, instead of vanishing at once (a squashed enemy). It no longer touches or hurts anything meanwhile. Not for characters that respawn' },
       up: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving up the screen without gravity (top-down games, fliers); else the running image' },
       down: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving down the screen without gravity (top-down games, fliers); else the running image' },
+      sprung: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after it bounces something off itself (a spring squashed down, a mushroom squished)' },
     },
   },
   {

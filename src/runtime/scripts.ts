@@ -567,6 +567,8 @@ export class ScriptSystem {
           t.launched = true;
           t.coyote = 0;
           t.jumpBuffer = 0;
+          // (What bounced it shows its "sprung" look a moment, when it has one.)
+          if (t !== e) e.sprungAt = this.rt.time;
         }
         break;
       }

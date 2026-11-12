@@ -107,3 +107,35 @@ describe('the level checker and the jump table know springs', () => {
     expect(ledge(table.springRows, false).checker).toBe(false);
   });
 });
+
+describe('a spring shows its squashed "sprung" look for a moment as it bounces something', () => {
+  it('sprung just after the bounce, its normal look again a little later', () => {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let c = -3; c <= 3; c++) place('Platform', { x: c * 32 + 16, y: 48 });
+      place('Spring', { x: 16, y: 16 });
+      place('Player', { x: 16, y: -60 });
+    });
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    const spring = () => rt.entities.find((e) => e.base.name === 'Spring')!;
+    let seen = false;
+    let bouncedAt = -1;
+    for (let t = 0; t < 1.5 && !seen; t += 1 / 120) {
+      rt.update(1 / 120, input);
+      if (rt.lookOf(spring()).situation === 'sprung') {
+        seen = true;
+        bouncedAt = t;
+      }
+    }
+    expect(seen).toBe(true);
+    const sprungLook = project.definitions.find((x) => x.name === 'Spring')!.components.SpriteStates!.sprung;
+    expect(rt.lookOf(spring()).assetId).toBe(sprungLook);
+    for (let t = 0; t < 0.3; t += 1 / 120) rt.update(1 / 120, input);
+    expect(rt.lookOf(spring()).situation).not.toBe('sprung');
+    expect(bouncedAt).toBeGreaterThan(0);
+  });
+});

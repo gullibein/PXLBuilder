@@ -47,6 +47,7 @@ const SET: Record<string, { frames: string[][]; fps?: number }> = {
   // Planks across the top of the square.
   // A red spring pad on a grey coil (the lower half of the tile).
   'platformer:Spring': { frames: [['........', '........', '........', '........', '88888888', '.e8888e.', '..6556..', '.555555.']] },
+  'platformer:Spring:sprung': { frames: [['........', '........', '........', '........', '........', '88888888', '.e8888e.', '.555555.']] },
   'platformer:Bridge': { frames: [['22222222', '94999949', '22222222', '........', '........', '........', '........', '........']] },
   // Water: the surface with moving waves, and the water under it.
   'platformer:Water': {

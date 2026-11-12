@@ -147,6 +147,8 @@ export interface RuntimeEntity {
   trail: { length: number; points: { x: number; y: number; t: number }[] } | null;
   /** Play time it was last hurt / last fired a shot (for the hurt and shoot looks). */
   hurtAt: number;
+  /** When it last bounced something off itself (a spring): its "sprung" look shows a moment. */
+  sprungAt?: number;
   shotAt: number;
   /** Being steered by a "follows" relationship this step (so it isn't also patrolling). */
   chasing: boolean;
@@ -209,6 +211,8 @@ export function groundGrip(own: number, surface: number): number {
 }
 const COYOTE_TIME = 0.1;
 const JUMP_BUFFER = 0.12;
+/** Seconds a spring shows its "sprung" look after it bounces something. */
+const SPRUNG_LOOK = 0.18;
 /** How much of a character must be inside a ladder (horizontally) to climb it. */
 const LADDER_GRIP = 0.5;
 /** How quickly a climbing character eases to the ladder's middle (per second, exponential). */
@@ -282,7 +286,7 @@ export interface ScreenDrawing {
   under?: boolean;
 }
 
-export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot' | 'defeated';
+export type Situation = 'idle' | 'run' | 'up' | 'down' | 'jump' | 'fall' | 'climb' | 'hang' | 'hurt' | 'shoot' | 'defeated' | 'sprung';
 /** How long the hurt and shoot looks last (seconds). */
 const HURT_LOOK = 0.4;
 const SHOOT_LOOK = 0.25;
@@ -2030,6 +2034,7 @@ export class Runtime {
     if (!e.alive && e.vanishing > 0) situation = 'defeated';
     else if (this.time - e.hurtAt < HURT_LOOK) situation = 'hurt';
     else if (this.time - e.shotAt < SHOOT_LOOK) situation = 'shoot';
+    else if (this.time - (e.sprungAt ?? -Infinity) < SPRUNG_LOOK) situation = 'sprung';
     else if (e.hanging) situation = 'hang';
     else if (e.climbing) situation = 'climb';
     else if (this.floats(e)) {

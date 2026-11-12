@@ -267,6 +267,18 @@ const SPRING: PixelArt = {
     '..kkkkkkkkkkkk..',
   ],
 };
+/** The spring squashed flat as it bounces something (its "sprung" look). */
+const SPRING_SPRUNG: PixelArt = {
+  palette: SPRING.palette,
+  rows: [
+    ...Array.from({ length: 11 }, () => '................'),
+    '.kkkkkkkkkkkkkk.',
+    'krllllllllllllrk',
+    'kkrrrrrrrrrrrrkk',
+    '.kkddddddddddkk.',
+    '..kkkkkkkkkkkk..',
+  ],
+};
 /** Water: the surface (waves moving, two frames) and the water under it. */
 const WATER_PALETTE: PixelArt['palette'] = [{ key: 'h', color: '#d6f1ff' }, { key: 'a', color: '#5cb3e8' }, { key: 'b', color: '#2f7fc4' }];
 const WATER_FRAMES: string[][] = [[
@@ -486,6 +498,7 @@ export interface StarterAssets {
   water: AssetRecord;
   deepWater: AssetRecord;
   spring: AssetRecord;
+  springSprung: AssetRecord;
 }
 
 /**
@@ -558,7 +571,7 @@ export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord)
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING) };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING), springSprung: createPixelArtAsset('Spring sprung', SPRING_SPRUNG) };
 }
 
 /** Library categories of the starter objects. */
@@ -776,6 +789,7 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       'Spring',
       {
         Sprite: c('Sprite', { width: 32, height: 32, color: '#e04848', assetId: assets.spring.id }),
+        SpriteStates: c('SpriteStates', { sprung: assets.springSprung.id }),
         // (Standing on the floor: the lower half of its square, its pad level with half a cell up.)
         Collider: c('Collider', { size: { x: 28, y: 16 }, offset: { x: 0, y: 8 }, matchSprite: false }),
         PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
