@@ -108,6 +108,7 @@ export function startJob(ctx: AIContext, asked: string, given: PromptOptions = {
     // (Something was built from them: they have been used.)
     if (outcome.status === 'applied' && outcome.changes.length) unusedPictures.delete(conversation);
     if (outcome.status === 'applied') trace.add('note', `Applied: ${outcome.changes.length} change line(s)${outcome.note ? `; ${outcome.note}` : ''}`);
+    if (outcome.status === 'applied' && outcome.result.notes?.length) trace.add('note', `Put right by the app: ${outcome.result.notes.join('; ')}`);
     // What it built is shown (also when its card was closed meanwhile): a level is framed, something off screen too.
     if (outcome.status === 'applied' && ctx.sceneId === useEditor.getState().activeSceneId) revealCreated(outcome.result.createdEntityIds);
     // About something else (asked on the player's card, it changed the enemy): the exchange goes to that one's

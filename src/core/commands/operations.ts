@@ -436,6 +436,8 @@ export interface ApplyResult {
   createdAssetIds: Id[];
   /** New levels (create_level), in order. */
   createdSceneIds: Id[];
+  /** What the app put right on its own while applying (shown in AI History). */
+  notes?: string[];
   /** Background pictures to make with the image generator (generate_background): the editor makes them afterwards. */
   backgroundRequests?: { sceneId: Id; prompt: string; size: 'level' | 'screen' | 'custom' | null; parallax: number | null; width?: number; height?: number }[];
 }
@@ -651,6 +653,40 @@ function onGrid(def: ObjectDefinition, p: Vec2): Vec2 {
  * things, only non-tiles, and only when no more than half of it is sunk in:
  * anything placed clearly in the air or clearly inside a wall stays.
  */
+/**
+ * A map row up to 3 cells too long or short, made `want` long by taking out (or adding) empty cells in one of its
+ * runs of empty cells: at the place where it then lines up best with the rows around it (the same characters in the
+ * same columns, walls and ladders above each other). Null when it is further off, or has no empty run to change.
+ */
+export function repairRow(row: string, want: number, around: string[]): string | null {
+  const cells = [...row];
+  const diff = cells.length - want;
+  if (diff === 0 || Math.abs(diff) > 3) return null;
+  const score = (cand: string[]) => {
+    let n = 0;
+    for (const other of around) {
+      const o = [...other];
+      for (let i = 0; i < want; i++) if (cand[i] === o[i]) n += cand[i] === '.' ? 1 : 3;
+    }
+    return n;
+  };
+  let best: { cand: string[]; s: number } | null = null;
+  for (let i = 0; i <= cells.length; i++) {
+    let cand: string[] | null = null;
+    if (diff > 0) {
+      // Take out `diff` empty cells starting here.
+      if (i + diff <= cells.length && cells.slice(i, i + diff).every((c) => c === '.')) cand = [...cells.slice(0, i), ...cells.slice(i + diff)];
+    } else if ((cells[i - 1] === '.' || cells[i] === '.') && i > 0 && i < cells.length) {
+      // Put `-diff` empty cells in here (inside or next to an empty run, never at the ends).
+      cand = [...cells.slice(0, i), ...Array(-diff).fill('.'), ...cells.slice(i)];
+    }
+    if (!cand) continue;
+    const sc = score(cand);
+    if (!best || sc > best.s) best = { cand, s: sc };
+  }
+  return best ? best.cand.join('') : null;
+}
+
 function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRegistry): void {
   if (!created.length) return;
   const fresh = new Set(created);
@@ -664,7 +700,11 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
       const s = col && typeof col.size === 'object' && col.size ? (col.size as Vec2) : getEntitySize(r);
       const w = s.x * Math.abs(e.transform.scale.x);
       const h = (col?.shape === 'circle' ? s.x : s.y) * Math.abs(e.transform.scale.y);
-      return { r, left: e.transform.position.x - w / 2, right: e.transform.position.x + w / 2, top: e.transform.position.y - h / 2, bottom: e.transform.position.y + h / 2, h };
+      // (Where the collider is: a jump-through bridge's is a thin strip along the top of its square.)
+      const off = col && typeof col.offset === 'object' && col.offset ? (col.offset as Vec2) : { x: 0, y: 0 };
+      const cx = e.transform.position.x + off.x * e.transform.scale.x;
+      const cy = e.transform.position.y + off.y * e.transform.scale.y;
+      return { r, left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2, h };
     };
     const solids = scene.entities
       .filter((e) => !fresh.has(e.id) || project.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile')
@@ -1172,10 +1212,21 @@ export function applyOperations(
         if (!op.rows.length) break;
         // Every row the same length: a character is a cell, so a row one short or long shifts everything after the
         // slip by a cell (a ladder no longer above the one below it). Sent back with the rows that are off.
-        const lengths = op.rows.map((r) => [...r].length);
+        let lengths = op.rows.map((r) => [...r].length);
         const count = new Map<number, number>();
         for (const n of lengths) count.set(n, (count.get(n) ?? 0) + 1);
         const usual = [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+        // A row a few cells off (the usual slip: a long run of empty cells miscounted) is put right here, where it
+        // lines up best with the rows above and below it, instead of going back to the AI (a whole round trip).
+        if (lengths.some((n) => n !== usual)) {
+          const fixed = op.rows.map((r, j) => (lengths[j] === usual ? r : (repairRow(r, usual, [op.rows[j - 1], op.rows[j + 1]].filter((x): x is string => !!x && [...x].length === usual)) ?? r)));
+          const repaired = fixed.filter((r, j) => r !== op.rows[j]).length;
+          if (repaired) {
+            op.rows = fixed;
+            lengths = op.rows.map((r) => [...r].length);
+            result.notes = [...(result.notes ?? []), `draw_map: ${repaired} row${repaired === 1 ? '' : 's'} a cell or few off put right (empty cells added or taken out where they line up best)`];
+          }
+        }
         const off = lengths.map((n, j) => ({ n, j })).filter((x) => x.n !== usual);
         if (off.length) {
           const ruler = Array.from({ length: usual }, (_, i) => String(i % 10)).join('');

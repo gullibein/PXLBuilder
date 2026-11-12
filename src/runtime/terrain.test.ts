@@ -557,3 +557,52 @@ describe('two ramps in a row (a staircase of ramps, each on the ground or a bloc
     expect(c.y).toBeCloseTo(-48, 0);
   });
 });
+
+describe('a coin over a pool is reached by swimming up and jumping out at the surface', () => {
+  /** Floors either side of a pool 6 cells wide, its surface level with them (y=32); a coin over its middle, `up` rows above it. */
+  function pool(up: number) {
+    let project = createProject(registry);
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      d.scenes[0].entities = [];
+      const place = (name: string, pos: Vec2) => m.addEntity(d, sceneId, instantiateDefinition(d.definitions.find((x) => x.name === name)!, pos));
+      for (let c = -6; c < 0; c++) place('Platform', { x: c * 32 + 16, y: 48 });
+      for (let c = 6; c < 12; c++) place('Platform', { x: c * 32 + 16, y: 48 });
+      for (let c = -6; c < 12; c++) place('Platform', { x: c * 32 + 16, y: 176 });
+      for (let c = 0; c < 6; c++) {
+        place('Water', { x: c * 32 + 16, y: 48 });
+        for (const y of [80, 112, 144]) place('Deep water', { x: c * 32 + 16, y });
+      }
+      place('Coin', { x: 96, y: 32 - up * 32 - 16 });
+      place('Player', { x: -100, y: 16 });
+    });
+    // In play: walk in, then swim up under the coin and keep jumping.
+    let tapped = false;
+    const rt = new Runtime(project, sceneId, registry);
+    const input = new InputState();
+    for (let t = 0; t < 4; t += 1 / 120) {
+      const p = rt.find('Player')!;
+      if (p.x < 90) input.press('right');
+      else input.release('right');
+      // A stroke whenever it sinks; a jump as soon as its head is out at the surface (as a player does).
+      const headOut = p.x > 0 && p.y - 16 < 32;
+      if (p.vy < 0 && input.isDown('jump')) {
+        // (Rising out of the water: Jump held all the way, as for any full jump.)
+      } else if (!tapped && ((headOut && p.vy > -60) || (!headOut && p.vy > 60))) {
+        input.press('jump');
+        tapped = true;
+      } else {
+        input.release('jump');
+        tapped = false;
+      }
+      rt.update(1 / 120, input);
+    }
+    const r = levelReachability(project, sceneId, registry);
+    return { collected: !rt.find('Coin')?.alive, checker: r.status === 'ok' && r.unreachable.things.length === 0 };
+  }
+
+  it('two rows over the water: collected, and counted; four rows: neither', () => {
+    expect(pool(2)).toEqual({ collected: true, checker: true });
+    expect(pool(4)).toEqual({ collected: false, checker: false });
+  });
+});

@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
-import { applyOperations, type Operation } from './commands/operations';
+import { applyOperations, repairRow, type Operation } from './commands/operations';
 import { createBuiltinRegistry } from './components/builtin';
 import { createDefinition, createProject, instantiateDefinition } from './model/factory';
 import * as m from './model/mutations';
@@ -130,9 +130,18 @@ describe('crates in the level checker', () => {
 });
 
 describe('draw_map rows of different lengths', () => {
-  it('are sent back, with the rows that are off beside the one above them (a ladder one cell out of line)', () => {
+  it('a row a cell off is put right where the ladder lines up again', () => {
     const { project, sceneId } = start();
     const rows = ['##########', '#....H...#', '#....H...#', '#.P.H...#', '##########'];
+    const op = { op: 'draw_map', sceneId, col: 0, row: 0, legend: [{ char: '#', object: 'Platform' }, { char: 'H', object: 'Ladder' }, { char: 'P', object: 'Player' }], rows, clear: true } as Operation;
+    const p = produce(project, (d) => void applyOperations(d, [op], registry));
+    const ladders = p.scenes[0].entities.filter((e) => e.name === 'Ladder').map((e) => e.transform.position.x);
+    expect(new Set(ladders).size).toBe(1);
+  });
+
+  it('rows further off are sent back, with the rows that are off beside the one above them', () => {
+    const { project, sceneId } = start();
+    const rows = ['##########', '#....H...#', '#....H...#', '#.P.H#', '##########'];
     const op = { op: 'draw_map', sceneId, col: 0, row: 0, legend: [{ char: '#', object: 'Platform' }, { char: 'H', object: 'Ladder' }, { char: 'P', object: 'Player' }], rows, clear: true } as Operation;
     let message = '';
     try {
@@ -141,9 +150,54 @@ describe('draw_map rows of different lengths', () => {
       message = (e as Error).message;
     }
     expect(message).toMatch(/exactly 10 characters/);
-    expect(message).toMatch(/row 3 \(9\)/);
+    expect(message).toMatch(/row 3 \(6\)/);
     expect(message).toContain('row 2: #....H...#');
-    expect(message).toContain('row 3: #.P.H...#   <- 9 characters');
+    expect(message).toContain('row 3: #.P.H#   <- 6 characters');
     expect(message).toContain('columns: 0123456789');
+  });
+});
+
+describe('things drawn on a jump-through bridge stand on it', () => {
+  it('an enemy over a bridge stands on its planks (the top of its square), not sunk into it', () => {
+    const p0 = createProject(registry);
+    const sceneId = p0.scenes[0].id;
+    const id = (n: string) => p0.definitions.find((d) => d.name === n)!.id;
+    const legend = [['#', 'Platform'], ['-', 'Bridge'], ['E', 'Enemy'], ['P', 'Player']].map(([char, n]) => ({ char, object: id(n) }));
+    const rows = ['##########', '#........#', '#P...E...#', '###----###', '#........#', '##########'];
+    const p = produce(p0, (d) => void applyOperations(d, [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows, clear: true } as unknown as Operation], registry));
+    const enemy = p.scenes[0].entities.find((e) => e.name === 'Enemy')!;
+    // The bridge's row starts at y 96: the enemy (30 tall) stands with its feet there.
+    expect(enemy.transform.position.y + 15).toBe(96);
+  });
+});
+
+describe('a map row a cell or few off is put right by the app (no round trip to the AI)', () => {
+  it('rows from real answers: the extra (or missing) empty cells go where the row lines up with its neighbours', () => {
+    // Level 3 of a game: a wall row with one "." too many.
+    expect(repairRow('#########.....................#', 30, ['#............................#', '#......#.....................#'])).toBe('#########....................#');
+    // Three too many: the walls on the right line up with the row above again.
+    const fixed = repairRow('#...............cc....................ccEc..............##....#', 60, ['#.....................................................#....#'])!;
+    expect(fixed).toHaveLength(60);
+    // (The row above has its wall at column 54: so has this one now.)
+    expect(fixed[54]).toBe('#');
+    expect(fixed.endsWith('#') && fixed.startsWith('#')).toBe(true);
+    // One short: an empty cell added inside an empty run.
+    expect(repairRow('#.......#', 10, ['#........#'])).toBe('#........#');
+    // Too far off, or nothing empty to change: left to the AI.
+    expect(repairRow('#....#', 12, [])).toBeNull();
+    expect(repairRow('#####', 4, [])).toBeNull();
+  });
+
+  it('draw_map applies a map with a row one off, and says so', () => {
+    const p0 = createProject(registry);
+    const sceneId = p0.scenes[0].id;
+    const id = (n: string) => p0.definitions.find((d) => d.name === n)!.id;
+    const legend = [['#', 'Platform'], ['P', 'Player']].map(([char, n]) => ({ char, object: id(n) }));
+    let notes: string[] | undefined;
+    const p = produce(p0, (d) => {
+      notes = applyOperations(d, [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows: ['######', '#P...#', '#.....#', '######'], clear: true } as unknown as Operation], registry).notes;
+    });
+    expect(notes?.[0]).toMatch(/1 row a cell or few off put right/);
+    expect(p.scenes[0].entities.filter((e) => e.name === 'Platform').length).toBe(6 + 6 + 2 + 2);
   });
 });

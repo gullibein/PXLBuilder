@@ -252,12 +252,14 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
       near.bottom = Math.max(near.bottom, b.bottom);
     } else pools.push({ ...b });
   }
+  const poolSpans: { pool: Box; spans: number[] }[] = [];
   for (const p of pools) {
     const touching = spans
       .map((s, i) => ({ s, i }))
       .filter(({ s }) => (s.right > p.left && s.left < p.right && s.top >= p.top - EDGE && s.top <= p.bottom + EDGE) || (gapBetween(s, p) <= pHalf * 2 + 8 && Math.abs(s.top - p.top) <= reach.height + pHeight))
       .map(({ i }) => i);
     for (const a of touching) for (const b of touching) if (a !== b) rampLinks.push([a, b]);
+    poolSpans.push({ pool: p, spans: touching });
   }
 
   // Ladders: stacked climbable pieces form columns.
@@ -425,7 +427,10 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     [...reachedSpans].some((i) => {
       const s = spans[i];
       return gapBetween(s, b) <= pHalf + 4 && b.bottom >= s.top - (reach.height * MARGIN + pHeight + grab) && b.top <= s.top + 4;
-    }) || [...reachedLadders].some((i) => gapBetween(ladders[i], b) <= pHalf * 2 && b.bottom >= ladders[i].top - pHeight && b.top <= ladders[i].bottom);
+    }) || [...reachedLadders].some((i) => gapBetween(ladders[i], b) <= pHalf * 2 && b.bottom >= ladders[i].top - pHeight && b.top <= ladders[i].bottom)
+    // Swimming: anywhere in a pool it gets into, and a whole jump out of it at the surface (the surface's jump is a
+    // full one).
+    || poolSpans.some(({ pool, spans: at }) => at.some((i) => reachedSpans.has(i)) && gapBetween(pool, b) <= pHalf + 4 && b.bottom >= pool.top - (reach.height * MARGIN + pHeight) && b.top <= pool.bottom);
   const things = all.filter((r) => important(r) && !within(boxOf(r))).map((r) => ({ id: r.id, name: r.name }));
 
   // An enclosed level's roof (the top of its ceiling, across nearly all of it) is no platform to get onto.
