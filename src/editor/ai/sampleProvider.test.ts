@@ -60,6 +60,32 @@ describe('Claude through claude.ai (sample)', () => {
     expect(prose).toMatchObject({ kind: 'answer', message: 'No changes this time: the record shows no errors.', operations: [] });
     expect(asked).toBe(1);
   });
+  it('an answer cut off by the length limit keeps what arrived complete and asks for the rest, then both are applied', async () => {
+    const op = (n: number) => ({ op: 'set_world', sceneId: 's', gravityX: 0, gravityY: n, backgroundColor: null });
+    const whole = JSON.stringify({ kind: 'preview', message: 'Built it.', changes: ['Level 1'], needCode: null, starter: null, operations: [op(1), op(2), op(3)] });
+    const cut = whole.slice(0, whole.indexOf('"gravityY":3') + 5);
+    const turns: unknown[] = [];
+    const answers = [
+      { text: cut, truncated: true },
+      { text: JSON.stringify({ kind: 'preview', message: '', changes: [], needCode: null, starter: null, operations: [op(3), op(4)] }), truncated: false },
+    ];
+    const provider = new SampleAIProvider(async (input: unknown) => (turns.push(input), answers.shift()!));
+    const r = await provider.respond(body);
+    expect(r.message).toBe('Built it.');
+    expect(r.changes).toEqual(['Level 1']);
+    expect(r.operations.map((o) => (o as { gravityY: number }).gravityY)).toEqual([1, 2, 3, 4]);
+    const ask = turns[1] as { role: string; content: string }[];
+    expect(ask.map((t) => t.role)).toEqual(['user', 'assistant', 'user']);
+    expect(JSON.parse(ask[1].content).operations).toHaveLength(2);
+    expect(ask[2].content).toMatch(/first 2 operations .*ONLY THE REST/s);
+
+    // The rest can't be had: what arrived is still applied, and the message says the end is missing.
+    const lost = [{ text: cut, truncated: true }, { text: 'not json at all', truncated: false }];
+    const partial = await new SampleAIProvider(async () => lost.shift()!).respond(body);
+    expect(partial.operations).toHaveLength(2);
+    expect(partial.message).toMatch(/cut off by the length limit .* Ask to finish the rest/);
+  });
+
   it('an unreadable answer is logged and asked for once more, with the exact problem; a fixed one is used', async () => {
     const good = { kind: 'apply', message: 'Pilla', changes: [], operations: [], needCode: null, starter: null };
     const inputs: unknown[] = [];

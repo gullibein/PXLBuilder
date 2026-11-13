@@ -14,6 +14,10 @@ import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
 import { pictureGrid } from './pictures';
+import { continueRequest, readCutOff, shortened } from '../../core/ai/cutOff';
+
+/** How many times an answer cut off by the length limit is continued. */
+const MAX_CONTINUATIONS = 3;
 
 interface SampleError {
   code: string;
@@ -146,6 +150,54 @@ export class SampleAIProvider implements AIProvider {
     return { ...body, images: undefined, pictureGrids };
   }
 
+  /**
+   * An answer cut off by the length limit: its operations that arrived complete, and the rest asked for (the answer
+   * continued, a few times if need be). If the rest can't be had, what arrived is applied and the message says so.
+   * Null when not even one operation arrived complete.
+   */
+  private async finishCutOff(question: string, body: AIRequestBody, text: string, signal: AbortSignal | undefined, trace: TraceFn | undefined, draft: DraftFn | undefined): Promise<Record<string, unknown> | null> {
+    const first = readCutOff(text);
+    if (!first) return null;
+    const reply = first.reply;
+    for (let round = 0; round < MAX_CONTINUATIONS; round++) {
+      const ops = reply.operations;
+      trace?.('retry', `The answer was cut off by the length limit after ${ops.length} complete operation${ops.length === 1 ? '' : 's'}: those are kept, and the AI is asked for the rest`);
+      this.log?.(`The AI's answer was cut off by the length limit after ${ops.length} complete changes; they are kept and the AI was asked to send the rest.`);
+      let more: { text: string; truncated: boolean };
+      try {
+        more = await this.ask(
+          [
+            { role: 'user', content: question },
+            { role: 'assistant', content: JSON.stringify({ ...reply, operations: shortened(ops) }) },
+            { role: 'user', content: `${continueRequest(ops.length, ops[ops.length - 1])}${JSON_ONLY}` },
+          ],
+          body,
+          signal,
+          trace,
+          draft,
+        );
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') throw e;
+        trace?.('error', `Asking for the rest failed: ${(e as Error)?.message ?? e}`);
+        break;
+      }
+      let next: Record<string, unknown> | null = null;
+      if (more.truncated) next = readCutOff(more.text)?.reply ?? null;
+      else
+        try {
+          next = parseJsonReply(more.text) as Record<string, unknown>;
+        } catch (e) {
+          trace?.('error', `The rest couldn't be read: ${(e as Error).message}`);
+        }
+      const added = Array.isArray(next?.operations) ? (next.operations as unknown[]).filter((o): o is Record<string, unknown> => !!o && typeof o === 'object') : [];
+      reply.operations.push(...added);
+      if (next && !more.truncated) return reply;
+      if (!added.length) break;
+    }
+    reply.message = `${typeof reply.message === 'string' ? reply.message : ''} (The answer was cut off by the length limit before its end: everything that arrived complete is applied. Ask to finish the rest.)`.trim();
+    return reply;
+  }
+
   async thinkAloud(prompt: string, signal?: AbortSignal, onText?: (soFar: string) => void): Promise<string> {
     // (The quick model: a few lines, seconds. Not cached: every plan is new.)
     const answer = await this.sample(prompt, { signal, cache: false, modelTier: 'quick', ...(onText ? { onText: (p: { text: string }) => onText(p.text) } : {}) });
@@ -167,8 +219,12 @@ export class SampleAIProvider implements AIProvider {
     // The answer is read here rather than by the viewer, so a sentence around the JSON or a code fence doesn't lose it,
     // and an answer that was cut off is told apart from one that is malformed.
     const cutOff = () => new AIUnavailableError("The AI's answer was too long and got cut off before it was complete. Ask for less at once (for example one drawing, or one part of the level, per request).");
-    if (answer.truncated) throw cutOff();
-    let raw: unknown = proseReply(answer.text);
+    let raw: unknown = null;
+    if (answer.truncated) {
+      // Cut off: what arrived complete is kept, and the AI is asked for the rest.
+      raw = await this.finishCutOff(question, body, answer.text, signal, trace, draft);
+      if (raw === null) throw cutOff();
+    } else raw = proseReply(answer.text);
     if (raw === null) try {
       raw = parseJsonReply(answer.text);
     } catch (e) {
