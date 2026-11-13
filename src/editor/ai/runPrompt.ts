@@ -329,7 +329,17 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
             }
           }
         : undefined;
-      const r = await provider.respond(b, sig, tr, draft);
+      // How the time went (AI History): before the first words came (the AI working it out), and the writing.
+      const sentAt = Date.now();
+      let firstAt = 0;
+      let written = 0;
+      const timed = (soFar: string, channel?: string) => {
+        if (soFar.trim() && !firstAt) firstAt = Date.now();
+        written = Math.max(written, soFar.length);
+        draft?.(soFar, channel);
+      };
+      const r = await provider.respond(b, sig, tr, timed);
+      tr?.('note', answerTiming(sentAt, firstAt, Date.now(), written));
       const drawn = r.operations.flatMap((o) => (o.op === 'draw_sprite' && !o.situation ? [{ name: o.name, palette: o.palette, rows: o.rows }] : []));
       if (drawn.length) options.onDrawings?.(drawn);
       return r;
@@ -973,4 +983,16 @@ function missingPuzzles(project: Project, sceneId: Id, operations: Operation[], 
     }
   }
   return out.length ? { text: out.join('; '), map } : null;
+}
+
+/**
+ * An answer's time in words: before its first words (the AI working the answer out, and reading the request) and the
+ * writing, with how fast it wrote. Without words as they came (a connection that gives the answer only at the end): the
+ * whole time.
+ */
+export function answerTiming(sentAt: number, firstAt: number, doneAt: number, chars: number): string {
+  const sec = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+  if (!firstAt || !chars) return `Timing: the answer came all at once after ${sec(doneAt - sentAt)} (this connection doesn't send it as it is written)`;
+  const writing = Math.max(1, doneAt - firstAt);
+  return `Timing: first words after ${sec(firstAt - sentAt)} (the AI working it out before it writes), then ${chars} characters written in ${sec(writing)} (${Math.round((chars / writing) * 1000)} a second)`;
 }
