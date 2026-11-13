@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { makeAutotileFrames, rampFromAutotile } from './autotile';
-import { createProject } from './factory';
+import { createPixelArtAsset, createProject } from './factory';
 import * as m from './mutations';
 
 const registry = createBuiltinRegistry();
@@ -21,6 +21,24 @@ describe('ramps in the look of the ground', () => {
     // Rising to the left: the mirror image of where the surface is.
     const left = rampFromAutotile(frames, -1).rows;
     expect(left.map((r) => r[7]).join('')).toBe('.......' + frames[14][0][7]);
+  });
+
+  it('in a game with 8-pixel sprites too: the starter ramps there take the ground\'s look', () => {
+    const p0 = produce(createProject(registry), (d) => void m.changeSpriteResolution(d, 8, registry));
+    const ground = p0.definitions.find((d) => d.name === 'Platform')!.id;
+    const p = produce(p0, (d) => {
+      // (The AI's own picture of the ground.)
+      const art = createPixelArtAsset('Dirt', dirt);
+      d.assets.push(art);
+      d.definitions.find((x) => x.id === ground)!.components.Sprite!.assetId = art.id;
+      m.makeAutotile(d, ground, { edge: 'none', top: 'grass', round: false }, registry);
+    });
+    for (const name of ['Ramp', 'Ramp left']) {
+      const ramp = p.definitions.find((d) => d.name === name)!;
+      const asset = p.assets.find((a) => a.id === ramp.components.Sprite!.assetId)!;
+      expect(JSON.parse(asset.description!), name).toEqual({ rampOf: ground });
+      expect(asset.pixelArt!.rows).toHaveLength(8);
+    }
   });
 
   it('making the ground an autotile gives the starter ramps its look (and how thick its grass is)', () => {

@@ -936,7 +936,8 @@ export function rampsLikeGround(project: Project, groundId: Id): void {
     const sprite = d.components.Sprite;
     if ((shape !== 'slopeRight' && shape !== 'slopeLeft') || !sprite) continue;
     const now = typeof sprite.assetId === 'string' ? project.assets.find((a) => a.id === sprite.assetId) : undefined;
-    const ours = !now || (now.description ?? '').startsWith('{"rampOf"') || ((now.name === 'Ramp' || now.name === 'Ramp left') && !now.description);
+    // (Ours: none yet, one made from a ground before, or the starter picture at any sprite size: "Ramp", "Ramp left 8"…)
+    const ours = !now || (now.description ?? '').startsWith('{"rampOf"') || (/^Ramp( left)?( (8|16|32|64))?$/.test(now.name) && !now.description);
     if (!ours) continue;
     const { rows, band } = rampFromAutotile(frames, shape === 'slopeRight' ? 1 : -1);
     const used = new Set(rows.join(''));
