@@ -55,6 +55,7 @@ const MESSAGES: Record<string, string> = {
   refused: 'Claude declined this request.',
   invalid_json: "claude.ai couldn't get an answer from the AI this time (it was asked 3 times). Try again in a moment.",
   prompt_too_large: 'This level is too big to send in one request. Try asking about a selected part.',
+  empty_completion: "The AI ran out of time before it wrote anything (claude.ai gives one answer about five minutes, and it spent them thinking). Ask for less at once, for example the objects first and then the level.",
   images_unavailable: "Pictures can't be sent to Claude from here. Remove them and describe the game in words instead.",
   image_rejected: "claude.ai didn't accept one of the pictures (too big, or a kind of file it can't read). Try a smaller PNG or JPEG.",
 };

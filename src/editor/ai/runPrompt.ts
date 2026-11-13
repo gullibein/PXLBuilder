@@ -270,6 +270,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   if (newGame) body.context.newGame = { current: starterNow(), starters: STARTERS, sprites, spriteSize: state.project.settings.spriteResolution ?? 32 };
   let response: AIResponse;
   let editorAfter: Operation[] = [];
+  // (A new game the AI draws: built in two answers, the objects first.)
+  const splitBuild = newGame && sprites === 'ai' && !options.moreLevels;
+  // (The game before part 1: what "drawn by the AI" is measured against.)
+  let lookBaseline: Project | null = null;
+  // (Part 1's applied changes, once applied: kept if part 2 fails.)
+  let partOne: { changes: string[] } | null = null;
   trace?.('note', `Request: ${request}\nAbout: ${contextKey(ctx)}; ${body.history.length} earlier exchange(s) sent as memory; context ${JSON.stringify(body.context).length} characters; speed ${body.speed}`);
   try {
     const provider = await currentProvider();
@@ -360,11 +366,46 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       planned = !!plan;
       if (plan) {
         trace?.('note', `Thought aloud first (quick model, ${((Date.now() - asked) / 1000).toFixed(1)} s):\n${plan}`);
-        body.request += `\n\n[Your plan, which the user has just watched you think through:\n${plan}\nBuild exactly that, all of it in this answer.]`;
+        body.request += `\n\n[Your plan, which the user has just watched you think through:\n${plan}\nBuild exactly that${splitBuild ? '' : ', all of it in this answer'}.]`;
       }
     }
-    stage(planned ? 'Building what it planned' : newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
-    response = await ask(body, signal, trace);
+    // A new game drawn by the AI: in two answers, the objects and their pictures first (applied as soon as they come),
+    // then the level. One answer with all of it ran past the time claude.ai gives an answer (about five minutes:
+    // cut off, or nothing at all) and was lost whole.
+    let drawnFirst: AIResponse | null = null;
+    let early: AIResponse | null = null;
+    if (splitBuild) {
+      stage(planned ? 'Drawing what it planned: the objects first' : 'Drawing the objects first');
+      const art = await ask({ ...body, request: `${body.request}\n\n${PART_ONE}` }, signal, trace);
+      if (art.kind === 'switch_starter' || art.kind === 'need_code') early = art;
+      else {
+        const ops = art.operations.filter((o) => !isEditorOperation(o));
+        const now = useEditor.getState().project;
+        const usable = checkOperations(now, ops, componentRegistry) ? pruneOperations(now, ops, componentRegistry).kept : ops;
+        if (usable.length && usable.length < ops.length) trace?.('check', `Part 1: left out ${ops.length - usable.length} part(s) that couldn't be applied`);
+        const applied = usable.length ? applyAIOperations(request, art.message, art.changes, usable, contextKey(ctx)) : null;
+        if (applied?.status === 'applied') {
+          drawnFirst = art;
+          partOne = { changes: art.changes };
+          lookBaseline = now;
+          trace?.('note', `Part 1 applied (${usable.length} changes): the objects and their pictures. Now the level.`);
+          // The game as it is now goes with part 2, keeping what was picked for it (the level's puzzles, the song idea…).
+          const keep = body.context;
+          const now2 = useEditor.getState();
+          const fresh = buildAIPayload(now2.project, ctx, componentRegistry, editorSettingsPayload(now2.layout), null, Math.random);
+          const level = fresh.level as { design?: unknown } | undefined;
+          if (level) {
+            const design = (keep.level as { design?: unknown } | undefined)?.design;
+            if (design === undefined) delete level.design;
+            else level.design = design;
+          }
+          body.context = { ...keep, ...fresh, newGame: keep.newGame };
+          body.request += `\n\n[${PART_TWO}${art.changes.length ? ` Part 1 made: ${art.changes.join('; ')}.` : ''}]`;
+        } else trace?.('note', `Part 1 gave nothing that applies${applied && 'message' in applied ? ` (${applied.message})` : ''}: the whole game in one answer instead`);
+      }
+    }
+    stage(drawnFirst ? 'Building the level' : planned ? 'Building what it planned' : newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
+    response = early ?? (await ask(body, signal, trace));
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
     const fetchCode = async () => {
@@ -458,7 +499,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     const building = newGame || (!!options.images?.length && !(state.project.scenes.find((s) => s.id === ctx.sceneId)?.entities.length ?? 0));
     const unasked = gameOps(response) && !broken && !stuck && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
     // A new game asked with AI-drawn sprites (or pictures) that leaves objects with the engine's pictures or as boxes.
-    const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length) : null;
+    const undrawn = sprites === 'ai' && gameOps(response) && !broken ? notDrawn(ctx.sceneId, response.operations, !!options.images?.length, lookBaseline) : null;
     // Isometric blocks drawn flat, or restyled without their turns and corners.
     const isoDrawn = gameOps(response) && !broken ? isoDrawingProblem(useEditor.getState().project, response.operations) : null;
     // The sprite size changed when nobody asked (the user chose it).
@@ -611,12 +652,15 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    const message = e instanceof AIUnavailableError ? `${e.message} (Without an AI these still work: ${QUICK_COMMAND_HELP}.)` : `AI request failed: ${(e as Error).message}`;
+    const kept = partOne ? ` The objects and their pictures from the first part are kept (Undo takes them back): ask again to build the level with them.` : '';
+    const message = e instanceof AIUnavailableError ? `${e.message}${kept} (Without an AI these still work: ${QUICK_COMMAND_HELP}.)` : `AI request failed: ${(e as Error).message}${kept}`;
     trace?.('error', message);
     state.logMessage('error', message);
     return { status: 'error', message };
   }
 
+  // (Part 1's changes, already applied, listed with part 2's.)
+  if (partOne) response = { ...response, changes: [...partOne.changes, ...response.changes] };
   if (response.operations.length === 0) {
     return { status: 'message', message: response.message, tone: response.kind === 'unsupported' ? 'warn' : 'info' };
   }
@@ -659,6 +703,13 @@ export function enginePartsTakenOver(project: Project, operations: AIResponse['o
   }
   return [...new Set(out)];
 }
+
+/** A new game drawn by the AI, part 1: the objects and their looks, not the level. */
+export const PART_ONE =
+  '[This game is built in two answers, so each fits in the time one answer has. THIS ANSWER is part 1 of 2: the game\'s objects, how they look and how they behave: create_definition, draw_sprite for every object the game will use (with its animations and situation looks), make_autotile or draw_autotile for the ground, set_script and component changes, make_background, set_world. NOT the level yet: no draw_map, draw_tiles, place_instance or connections (part 2, asked as soon as this one is applied, builds the levels with these objects). message: one sentence on the look; changes: one short line per object.]';
+/** Part 2: the levels, with the objects part 1 made. */
+export const PART_TWO =
+  'Part 2 of 2: your part 1 is applied (the objects, their pictures and scripts are in the context now): do not draw them again unless one is missing. Now build the rest of the plan: the level(s) with these objects (draw_map…), what goes in them, connections, the puzzles, the way to win. The starter stays as it is. message and changes: for the whole game.';
 
 /** Applies an answer's changes (also one the user said yes to): to the object (with "a new object instead"), or as they are. */
 export function applyResponse(ctx: AIContext, request: string, response: AIResponse): PromptOutcome {
@@ -926,7 +977,7 @@ function playability(sceneId: Id, operations: Operation[]): { text: string; map:
 }
 
 /** The objects a new game with AI-drawn sprites would leave undrawn, as a problem to send back (or null). */
-function notDrawn(sceneId: Id, operations: Operation[], pictures: boolean): string | null {
+function notDrawn(sceneId: Id, operations: Operation[], pictures: boolean, baseline: Project | null = null): string | null {
   const project = useEditor.getState().project;
   let after: Project;
   try {
@@ -934,7 +985,8 @@ function notDrawn(sceneId: Id, operations: Operation[], pictures: boolean): stri
   } catch {
     return null;
   }
-  const names = undrawnObjects(project, after, sceneId);
+  // (Built in two parts: drawn in part 1 counts.)
+  const names = undrawnObjects(baseline ?? project, after, sceneId);
   if (!names.length) return null;
   return `the game is to be drawn by you (context.newGame.sprites "ai"${pictures ? ', in the style of the pictures' : ''}), but these objects in the level would keep the engine's pictures or stay plain boxes: ${names.join(', ')}. Draw each of them with draw_sprite (ground and walls that join up with draw_autotile)${pictures ? ', as their counterparts in the pictures look' : ''}, along with everything else in your answer`;
 }

@@ -4858,6 +4858,51 @@ try {
     await nc.close();
   }
 
+  step = 'a drawn new game in two parts';
+  {
+    const tc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const tp = await tc.newPage();
+    tp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    const asked = [];
+    let failSecond = false;
+    await tp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      asked.push(body.request);
+      const lib = (n) => body.context.library.find((d) => d.name === n).id;
+      const sceneId = body.context.level.id;
+      if (/part 1 of 2/.test(body.request)) {
+        const draw = (n, c) => ({ op: 'draw_sprite', target: 'definition', id: lib(n), name: n, palette: [{ key: 'a', color: c }], rows: Array.from({ length: 16 }, () => 'aaaaaaaaaaaaaaaa'), frames: null, fps: null, situation: null });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A red hero.', changes: ['Player: red', 'Platform: brown'], operations: [draw('Player', '#d03030'), draw('Platform', '#8a5a2b'), draw('Goal', '#30d030')] }) });
+      }
+      if (failSecond) return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' }) });
+      const legend = [{ char: '#', object: lib('Platform') }, { char: 'P', object: lib('Player') }, { char: 'G', object: lib('Goal') }];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A little game.', changes: ['Level 1'], operations: [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows: ['##########', '#.P....G.#', '##########'], clear: true }] }) });
+    });
+    const start = async (idea) => {
+      await tp.goto(URL);
+      await tp.getByTestId('viewport-canvas').waitFor();
+      if (!(await tp.getByTestId('game-idea').isVisible())) {
+        await tp.getByTestId('project-menu').click();
+        await tp.getByTestId('menu-new').click();
+      }
+      if (!(await tp.getByTestId('new-sprites-ai').isVisible())) await tp.getByTestId('game-advanced').click();
+      await tp.getByTestId('new-sprites-ai').click();
+      await tp.getByTestId('game-idea').fill(idea);
+      await tp.getByTestId('game-idea').press('Enter');
+      await tp.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 15000 });
+    };
+    await start('a game about a red hero');
+    const result = tp.getByTestId('global-prompt').getByTestId('prompt-result');
+    await check(async () => asked.length >= 2 && /part 1 of 2/.test(asked[0]) && /Part 2 of 2/.test(asked[1]) && /Part 1 made: Player: red; Platform: brown/.test(asked[1]), `a new game the AI draws is asked for in two parts: the objects, then the level (${asked.length} requests)`);
+    await check(async () => (await result.getAttribute('data-status')) === 'applied' && Number(await tp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20 && /Player: red/.test(await result.innerText()) && /Level 1/.test(await result.innerText()), '(both parts applied, and both parts\' changes listed)');
+    // The level part fails: the drawings stay, and the message says so.
+    failSecond = true;
+    asked.length = 0;
+    await start('a game about a green hero');
+    await check(async () => (await result.getAttribute('data-status')) === 'error' && /first part are kept/.test(await result.innerText()) && (await tp.getByTestId('undo').getAttribute('title')).includes('✨'), 'when the level part fails, the drawn objects from the first part are kept (and can be undone)');
+    await tc.close();
+  }
+
   step = 'moving platform path';
   {
     const mc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
