@@ -173,6 +173,14 @@ export function NewGameProgress() {
             </div>
           )}
           <p className="chat-you">{job.again?.asked ?? job.request}</p>
+          {/* The AI thinking aloud first: its ideas, a line at a time as it writes them. */}
+          {(narration?.thoughts.length ?? 0) > 0 && (
+            <ul className="ngp-thoughts" data-testid="new-game-thoughts">
+              {narration!.thoughts.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
           {/* The AI's idea and plan, as it writes them (before it builds anything). */}
           {(narration?.idea || (narration?.plan.length ?? 0) > 0) && (
             <div className="ngp-idea" data-testid="new-game-idea">

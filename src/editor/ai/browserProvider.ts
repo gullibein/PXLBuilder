@@ -3,7 +3,7 @@
  * needed). Uses the same request as the dev server (core/ai/claude.ts).
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { askClaude, CLAUDE_MODELS, claudeFormats, MODEL, rememberClaudeFormats } from '../../core/ai/claude';
+import { askClaude, CLAUDE_MODELS, claudeFormats, MODEL, rememberClaudeFormats, usageCost } from '../../core/ai/claude';
 import { AIUnavailableError, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import type { TraceFn } from '../../core/ai/trace';
@@ -23,6 +23,22 @@ export class BrowserClaudeProvider implements AIProvider {
     /** Hears what went wrong along the way (a reply format refused, an unreadable answer and how it began). */
     private readonly onNote?: (message: string) => void,
   ) {}
+
+  async thinkAloud(prompt: string, signal?: AbortSignal, onText?: (soFar: string) => void): Promise<string> {
+    // (The quick, cheap model: a few lines.)
+    const stream = client(this.apiKey).messages.stream({ model: 'claude-haiku-5-5', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }, { signal });
+    let text = '';
+    stream.on('text', (delta) => {
+      text += delta;
+      onText?.(text);
+    });
+    const done = await stream.finalMessage();
+    if (done.usage) {
+      const spent = recordSpend(usageCost('claude-haiku-5-5', done.usage));
+      this.onSpend?.(`AI plan: ${spent.session.cost === null ? '' : `this session ${dollars(spent.session.cost)}`}`.trim());
+    }
+    return text;
+  }
 
   async respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse> {
     const model = getAISettings().claudeModel;

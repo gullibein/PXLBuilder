@@ -146,6 +146,12 @@ export class SampleAIProvider implements AIProvider {
     return { ...body, images: undefined, pictureGrids };
   }
 
+  async thinkAloud(prompt: string, signal?: AbortSignal, onText?: (soFar: string) => void): Promise<string> {
+    // (The quick model: a few lines, seconds. Not cached: every plan is new.)
+    const answer = await this.sample(prompt, { signal, cache: false, modelTier: 'quick', ...(onText ? { onText: (p: { text: string }) => onText(p.text) } : {}) });
+    return answer.text;
+  }
+
   async respond(asked: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse> {
     let body = await this.withPictures(asked, trace);
     let question = prompt(body);

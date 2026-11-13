@@ -12,6 +12,11 @@ export interface AIProvider {
    * sprites it has finished while it writes the rest.
    */
   respond(body: AIRequestBody, signal?: AbortSignal, trace?: TraceFn, draft?: DraftFn): Promise<AIResponse>;
+  /**
+   * A short answer in plain words from a quick model (thinking aloud before a big job: its ideas and plan), heard as it
+   * is written where the connection can (`onText`: all of it so far). Not every connection has one.
+   */
+  thinkAloud?(prompt: string, signal?: AbortSignal, onText?: (soFar: string) => void): Promise<string>;
 }
 
 /** Hears the answer so far as it comes in (the whole of it each time, per channel). */

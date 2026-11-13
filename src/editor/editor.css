@@ -1131,3 +1131,21 @@ body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-selec
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The AI thinking aloud before it builds: its ideas, a line each, the newest coming in. */
+.ngp-thoughts {
+  list-style: none;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ngp-thoughts li {
+  animation: ngp-in 0.3s ease-out;
+}
+.ngp-thoughts li::before {
+  content: '✦ ';
+  opacity: 0.7;
+}

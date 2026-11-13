@@ -155,6 +155,8 @@ export interface PromptOptions {
 }
 
 export interface Narration {
+  /** The AI thinking aloud before it builds (a quick model's few lines, as they are written). */
+  thoughts: string[];
   idea: string;
   plan: string[];
   doing: string[];
@@ -276,13 +278,13 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // each as soon as it is finished, read from the answer while it is still being written (where it comes in bit by bit).
     // What it is doing, in words (kept across its answers: a fix adds to it).
     const names = new Map<string, string>([...state.project.definitions.map((d) => [d.id, d.name] as [string, string]), ...state.project.scenes.map((sc) => [sc.id, sc.name] as [string, string])]);
-    const narration: Narration = { idea: '', plan: [], doing: [] };
+    const narration: Narration = { thoughts: [], idea: '', plan: [], doing: [] };
     let toldAt = 0;
     const tell = (force = false) => {
       const now = Date.now();
       if (!options.onNarration || (!force && now - toldAt < 200)) return;
       toldAt = now;
-      options.onNarration({ idea: narration.idea, plan: [...narration.plan], doing: [...narration.doing] });
+      options.onNarration({ thoughts: [...narration.thoughts], idea: narration.idea, plan: [...narration.plan], doing: [...narration.doing] });
     };
     const ask: typeof provider.respond = async (b, sig, tr) => {
       const scanners = new Map<string, DrawingScanner>();
@@ -344,7 +346,24 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       if (drawn.length) options.onDrawings?.(drawn);
       return r;
     };
-    stage(newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
+    // A new game, or more levels: first the AI thinks aloud (a quick model, a few lines in the user's words), shown as
+    // it is written, so there is something to read at once even where the big answer only comes in whole; the build
+    // then follows that plan.
+    let planned = false;
+    if ((newGame || options.moreLevels) && provider.thinkAloud) {
+      stage('Thinking it over');
+      const asked = Date.now();
+      const plan = await thinkFirst(provider, planPrompt(state.project, request, body, !!options.moreLevels), signal, (soFar) => {
+        narration.thoughts = soFar.split('\n').map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim()).filter(Boolean);
+        tell(true);
+      });
+      planned = !!plan;
+      if (plan) {
+        trace?.('note', `Thought aloud first (quick model, ${((Date.now() - asked) / 1000).toFixed(1)} s):\n${plan}`);
+        body.request += `\n\n[Your plan, which the user has just watched you think through:\n${plan}\nBuild exactly that, all of it in this answer.]`;
+      }
+    }
+    stage(planned ? 'Building what it planned' : newGame ? (options.images?.length ? 'Looking at your picture and planning the game' : 'Planning the game') : 'Working on it');
     response = await ask(body, signal, trace);
     // Other objects' code isn't sent up front (only the selected one's): when the AI needs some, it says which, and
     // the same request goes again with that code (after the cached game data, so it costs little). At most twice.
@@ -995,4 +1014,40 @@ export function answerTiming(sentAt: number, firstAt: number, doneAt: number, ch
   if (!firstAt || !chars) return `Timing: the answer came all at once after ${sec(doneAt - sentAt)} (this connection doesn't send it as it is written)`;
   const writing = Math.max(1, doneAt - firstAt);
   return `Timing: first words after ${sec(firstAt - sentAt)} (the AI working it out before it writes), then ${chars} characters written in ${sec(writing)} (${Math.round((chars / writing) * 1000)} a second)`;
+}
+
+/** Thinking aloud first, given up on after a while (the build goes on without it). Null when there is none. */
+async function thinkFirst(provider: { thinkAloud?: (p: string, s?: AbortSignal, t?: (x: string) => void) => Promise<string> }, prompt: string, signal: AbortSignal | undefined, onText: (soFar: string) => void): Promise<string | null> {
+  const stop = new AbortController();
+  const quit = () => stop.abort();
+  signal?.addEventListener('abort', quit);
+  const timer = setTimeout(quit, 25_000);
+  try {
+    const text = (await provider.thinkAloud!(prompt, stop.signal, onText)).trim();
+    return text ? text.slice(0, 1500) : null;
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', quit);
+  }
+}
+
+/** What the AI thinks aloud about: the request, and the game in brief (its objects, its levels, the puzzles picked). */
+export function planPrompt(project: Project, request: string, body: AIRequestBody, moreLevels: boolean): string {
+  const objects = project.definitions.map((d) => d.name).slice(0, 40).join(', ');
+  const levels = project.scenes.filter((sc) => sc.entities.length).map((sc) => {
+    const st = levelStats(project, sc, componentRegistry);
+    return st ? `${sc.name} (${statsLine(st)})` : sc.name;
+  });
+  const design = (body.context.level as { design?: { puzzles?: string[]; forNewLevels?: { puzzles?: string[] }[]; style?: { name: string } } } | undefined)?.design;
+  const puzzles = moreLevels
+    ? (design?.forNewLevels ?? []).slice(0, 2).map((l, i) => `new level ${i + 1}: ${(l.puzzles ?? []).map((p) => p.split(':')[0]).join(', ')}`).join('; ')
+    : (design?.puzzles ?? []).map((p) => p.split(':')[0]).join(', ');
+  return [
+    `You are the AI in PXLBuilder, a maker of 2D pixel-art games, about to ${moreLevels ? 'build more levels for a game' : 'make a whole new game'} for a user who watches while you work. They asked: "${request.split('\n\n[')[0]}"`,
+    `The game now: objects ${objects || 'none yet'}; levels ${levels.join('; ') || 'one, empty'}.${design?.style ? ` Kind of platformer suggested: ${design.style.name}.` : ''}${puzzles ? ` Puzzles picked for the levels: ${puzzles}.` : ''}`,
+    `Think aloud for them: 4 to 7 short lines in the language they wrote in, first person, each one decision you are making: the idea and its feel, the look, the player and what it can do, the enemies and pieces, ${moreLevels ? 'each new level\'s layout and puzzles and what makes it harder' : 'the level\'s layout and puzzles'}, the background. Concrete and specific, only what you will really build. Plain lines: no headings, numbering, lists or code.`,
+  ].join('\n\n');
 }

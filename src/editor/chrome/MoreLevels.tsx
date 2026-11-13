@@ -54,7 +54,7 @@ export function MoreLevels() {
 
   if (building) {
     const seconds = Math.max(0, Math.round((now - (building.started ?? now)) / 1000));
-    const line = building.narration?.doing.at(-1) ?? building.stage ?? 'Starting';
+    const line = building.narration?.doing.at(-1) ?? building.narration?.thoughts.at(-1) ?? building.stage ?? 'Starting';
     return (
       <div className="more-levels" data-testid="more-levels-building">
         <span className="ml-title">✦ Building {MORE} more levels…</span>
