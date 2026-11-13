@@ -24,6 +24,31 @@ describe('autotiling', () => {
     expect(autotileLabel(15)).toBe('joined all round');
   });
 
+  it('the black line: every open edge is one pixel of ink, joined sides carry none, grass sits just under the top line', () => {
+    const { palette, frames } = makeAutotileFrames(solidTile('#808080', 16, 16), { edge: 'black', top: 'grass', round: true });
+    const color = (frame: number, x: number, y: number) => palette.find((p) => p.key === frames[frame][y][x])?.color ?? null;
+    const INK = '#14121c';
+    // On its own: the top, sides and bottom all inked, one pixel thick.
+    expect(color(0, 8, 0)).toBe(INK);
+    expect(color(0, 0, 8)).toBe(INK);
+    expect(color(0, 15, 8)).toBe(INK);
+    expect(color(0, 8, 15)).toBe(INK);
+    expect(color(0, 8, 1)).not.toBe(INK);
+    expect(color(0, 1, 8)).not.toBe(INK);
+    // Grass (its light top row) right under the top line, then the grass.
+    expect(color(0, 8, 1)).toBe('#84ce77');
+    expect(color(0, 8, 2)).toBe('#5bbd4a');
+    // Joined all round: no ink anywhere.
+    expect(frames[15].join('').split('').some((k) => palette.find((p) => p.key === k)?.color === INK)).toBe(false);
+    // Joined left and right (2 + 8): ink on top and bottom only.
+    expect(color(10, 0, 8)).not.toBe(INK);
+    expect(color(10, 8, 0)).toBe(INK);
+    // A 32-pixel tile: the line is two pixels thick (one pixel of a 16-pixel tile).
+    const big = makeAutotileFrames(solidTile('#808080', 32, 32), { edge: 'black', top: 'none', round: false });
+    const at = (x: number, y: number) => big.palette.find((p) => p.key === big.frames[0][y][x])?.color;
+    expect([at(16, 0), at(16, 1), at(16, 2)]).toEqual([INK, INK, '#808080']);
+  });
+
   it('the 16 pictures: open sides get a darker edge, an open top a lighter band, open corners are cut', () => {
     const { palette, frames } = makeAutotileFrames(solidTile('#808080', 8, 8), { edge: 'outline', top: 'light', round: true });
     expect(frames).toHaveLength(AUTOTILE_COUNT);

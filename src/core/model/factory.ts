@@ -5,6 +5,7 @@ import { generateId } from '../ids';
 import { FORMAT_VERSION } from '../serialization/version';
 import { hurtsScript, stompScript } from './ruleScripts';
 import { SPRING_SCRIPT } from '../script/spring';
+import { BRICK_BLOCK_SCRIPT, QUESTION_BLOCK_SCRIPT } from '../script/blocks';
 import { scriptSchema } from '../script/language';
 import type { AssetRecord, BehaviorScript, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
@@ -244,6 +245,7 @@ const BRIDGE: PixelArt = {
 };
 /** The ready-made Spring script (its own id each time). */
 const SPRING_READY = (): BehaviorScript => scriptSchema.parse({ id: generateId('scr'), ...SPRING_SCRIPT }) as BehaviorScript;
+const READY = (script: object): BehaviorScript => scriptSchema.parse({ id: generateId('scr'), ...script }) as BehaviorScript;
 
 /** A coil spring standing on the floor: a red pad on top, the coil, a grey foot (the lower half of its square). */
 const SPRING: PixelArt = {
@@ -279,6 +281,60 @@ const SPRING_SPRUNG: PixelArt = {
     '..kkkkkkkkkkkk..',
   ],
 };
+/** A ? block: a gold block outlined in ink, a rivet in each corner, a white ? with its shadow. */
+const QUESTION_BLOCK: PixelArt = {
+  palette: [{ key: 'k', color: '#14121c' }, { key: 'l', color: '#fff0a0' }, { key: 'y', color: '#f8c030' }, { key: 'o', color: '#c06818' }, { key: 'd', color: '#7a3c10' }, { key: 'w', color: '#ffffff' }],
+  rows: [
+    'kkkkkkkkkkkkkkkk',
+    'klllllllllllllok',
+    'kldyyyyyyyyyydok',
+    'klyyyywwwyyyyyok',
+    'klyyywwowwoyyyok',
+    'klyyyooyywwoyyok',
+    'klyyyyywwoyyyyok',
+    'klyyyyywwoyyyyok',
+    'klyyyyyooyyyyyok',
+    'klyyyyyyyyyyyyok',
+    'klyyyyywwoyyyyok',
+    'klyyyyyooyyyyyok',
+    'klyyyyyyyyyyyyok',
+    'kldyyyyyyyyyydok',
+    'kooooooooooooook',
+    'kkkkkkkkkkkkkkkk',
+  ],
+};
+/** The ? block once used: a plain brown block, its rivets left. */
+const USED_BLOCK: PixelArt = {
+  palette: [{ key: 'k', color: '#14121c' }, { key: 'l', color: '#c89060' }, { key: 'b', color: '#a0683c' }, { key: 'd', color: '#6a4020' }],
+  rows: [
+    'kkkkkkkkkkkkkkkk',
+    'kllllllllllllldk',
+    'klkbbbbbbbbbbkdk',
+    ...Array.from({ length: 10 }, () => 'klbbbbbbbbbbbbdk'),
+    'klkbbbbbbbbbbkdk',
+    'kddddddddddddddk',
+    'kkkkkkkkkkkkkkkk',
+  ],
+};
+/** A brick block: courses of bricks, lit from the top left, outlined in ink. */
+const BRICK_A = ['k' + 'h'.repeat(7) + 'm' + 'h'.repeat(6) + 'k', 'k' + 'hrrrrrs' + 'm' + 'hrrrrs' + 'k', 'k' + 's'.repeat(7) + 'm' + 's'.repeat(6) + 'k'];
+const BRICK_B = ['k' + 'hhh' + 'm' + 'h'.repeat(7) + 'm' + 'hh' + 'k', 'k' + 'hrs' + 'm' + 'hrrrrrs' + 'm' + 'hs' + 'k', 'k' + 'sss' + 'm' + 's'.repeat(7) + 'm' + 'ss' + 'k'];
+const MORTAR = 'k' + 'm'.repeat(14) + 'k';
+const BRICK_BLOCK: PixelArt = {
+  palette: [{ key: 'k', color: '#14121c' }, { key: 'm', color: '#4a2016' }, { key: 'h', color: '#f09058' }, { key: 'r', color: '#c85a2c' }, { key: 's', color: '#8a3418' }],
+  rows: ['k'.repeat(16), ...BRICK_A, MORTAR, ...BRICK_B, MORTAR, ...BRICK_A, MORTAR, BRICK_B[0], BRICK_B[1], 'k'.repeat(16)],
+};
+/** One row across a green pipe `w` pixels wide inside its ink outline: a bright shine on the left, shade on the right. */
+const pipeRow = (w: number) =>
+  'k' + Array.from({ length: w }, (_, i) => (i >= w - 3 ? 'd' : i === w - 5 ? 'd' : i === 3 ? 'w' : i === 1 || i === 2 || i === 4 ? 'l' : 'g')).join('') + 'k';
+const PIPE_PALETTE: PixelArt['palette'] = [{ key: 'k', color: '#14121c' }, { key: 'w', color: '#e8ffd8' }, { key: 'l', color: '#8ee070' }, { key: 'g', color: '#3aa83c' }, { key: 'd', color: '#1c6a2a' }];
+/** The top of a pipe (two cells wide): its wide rim, the pipe going down under it. */
+const PIPE_TOP: PixelArt = {
+  palette: PIPE_PALETTE,
+  rows: ['k'.repeat(32), ...Array.from({ length: 10 }, () => pipeRow(30)), 'k'.repeat(32), ...Array.from({ length: 4 }, () => '..' + pipeRow(26) + '..')],
+};
+/** A pipe going down (two cells wide): stack these under a Pipe top. */
+const PIPE_BODY: PixelArt = { palette: PIPE_PALETTE, rows: Array.from({ length: 16 }, () => '..' + pipeRow(26) + '..') };
 /** Water: the surface (waves moving, two frames) and the water under it. */
 const WATER_PALETTE: PixelArt['palette'] = [{ key: 'h', color: '#d6f1ff' }, { key: 'a', color: '#5cb3e8' }, { key: 'b', color: '#2f7fc4' }];
 const WATER_FRAMES: string[][] = [[
@@ -499,6 +555,11 @@ export interface StarterAssets {
   deepWater: AssetRecord;
   spring: AssetRecord;
   springSprung: AssetRecord;
+  questionBlock: AssetRecord;
+  usedBlock: AssetRecord;
+  brick: AssetRecord;
+  pipeTop: AssetRecord;
+  pipe: AssetRecord;
 }
 
 /**
@@ -571,7 +632,7 @@ export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord)
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING), springSprung: createPixelArtAsset('Spring sprung', SPRING_SPRUNG) };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING), springSprung: createPixelArtAsset('Spring sprung', SPRING_SPRUNG), questionBlock: createPixelArtAsset('Question block', QUESTION_BLOCK), usedBlock: createPixelArtAsset('Used block', USED_BLOCK), brick: createPixelArtAsset('Brick', BRICK_BLOCK), pipeTop: createPixelArtAsset('Pipe top', PIPE_TOP), pipe: createPixelArtAsset('Pipe', PIPE_BODY) };
 }
 
 /** Library categories of the starter objects. */
@@ -596,6 +657,10 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Water: 'Environment',
   'Deep water': 'Environment',
   Spring: 'Environment',
+  'Question block': 'Platforms',
+  Brick: 'Platforms',
+  'Pipe top': 'Platforms',
+  Pipe: 'Platforms',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder', 'Ramp', 'Ramp left', 'Bridge', 'Water', 'Deep water']);
 
@@ -797,6 +862,49 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       ['spring', 'bouncy'],
       'A spring (or a bouncy mushroom, a bubble…) on the floor: a half-jump bounce; holding Jump on it launches the player two jumps high.',
       [SPRING_READY()],
+    ),
+    createDefinition(
+      'Question block',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#f8c030', assetId: assets.questionBlock.id }),
+        SpriteStates: c('SpriteStates', { used: assets.usedBlock.id }),
+        Collider: c('Collider', { size: { x: 32, y: 32 } }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['block', 'question'],
+      'A ? block: jumping up into it from below gives a Coin on top, once. Two empty cells under it.',
+      [READY(QUESTION_BLOCK_SCRIPT)],
+    ),
+    createDefinition(
+      'Brick',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#c85a2c', assetId: assets.brick.id }),
+        Collider: c('Collider', { size: { x: 32, y: 32 } }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['block', 'brick'],
+      'A brick block: jumping up into it from below breaks it.',
+      [READY(BRICK_BLOCK_SCRIPT)],
+    ),
+    createDefinition(
+      'Pipe top',
+      {
+        Sprite: c('Sprite', { width: 64, height: 32, color: '#3aa83c', assetId: assets.pipeTop.id }),
+        Collider: c('Collider', { size: { x: 64, y: 32 } }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'pipe'],
+      'The top of a pipe, two cells wide: on the ground or on Pipe pieces.',
+    ),
+    createDefinition(
+      'Pipe',
+      {
+        Sprite: c('Sprite', { width: 64, height: 32, color: '#3aa83c', assetId: assets.pipe.id }),
+        Collider: c('Collider', { size: { x: 56, y: 32 }, matchSprite: false }),
+        PhysicsBody: c('PhysicsBody', { bodyType: 'static' }),
+      },
+      ['platform', 'pipe'],
+      'Pipe going down, two cells wide, under a Pipe top.',
     ),
     heartDefinition(registry, assets.heart),
   ];

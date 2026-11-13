@@ -34,6 +34,7 @@ export type Trigger =
   | { on: 'key'; key: KeyName; edge: 'pressed' | 'held' | 'released' }
   | { on: 'signal'; name: string }
   | { on: 'landed_on' }
+  | { on: 'hit_from_below' }
   | { on: 'contact' }
   | { on: 'hurt' };
 
@@ -552,6 +553,10 @@ export const TRIGGERS: Record<Trigger['on'], { example: string; doc: string }> =
     example: '{"on":"landed_on"}',
     doc: 'something came down onto the top of this one this step ("other" is it): it was falling (not rising) and its feet were above this one\'s top a moment before, and it isn\'t floating (no gravity). The exact test for a stomp: runs before "contact", so a stomp can bounce the stomper before anything hurts it',
   },
+  hit_from_below: {
+    example: '{"on":"hit_from_below"}',
+    doc: 'something moving up ("other") bumped its underside: a ? block, a brick',
+  },
   contact: {
     example: '{"on":"contact"}',
     doc: 'every step while something touches this one (overlapping, standing on it or pressed against it; "other" is it), after "landed_on" handlers and picking things up. For what touching does: hurting, pushing, slowing down',
@@ -720,6 +725,7 @@ const trigger = z.discriminatedUnion('on', [
   z.object({ on: z.literal('key'), key: z.enum(KEYS as [KeyName, ...KeyName[]]), edge: z.enum(['pressed', 'held', 'released']).default('pressed') }),
   z.object({ on: z.literal('signal'), name: z.string().min(1) }),
   z.object({ on: z.literal('landed_on') }),
+  z.object({ on: z.literal('hit_from_below') }),
   z.object({ on: z.literal('contact') }),
   z.object({ on: z.literal('hurt') }),
 ]);
@@ -999,6 +1005,8 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
   const states = new Set(script.states);
   if (states.size !== script.states.length) return { error: `${name}: a state is listed twice` };
   const objects = new Set(project.definitions.map((d) => d.id));
+  // (spawn also takes an object's name: a ready-made script's "Coin".)
+  const objectNames = new Set(project.definitions.map((d) => d.name));
   const functions = Object.fromEntries(Object.entries(FUNCTIONS).map(([k, f]) => [k, { min: f.min, max: f.max }]));
   const members = new Set(Object.keys(MEMBERS));
   let count = 0;
@@ -1011,7 +1019,7 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
       return { error: `${where}: unknown event "${h.when.event}"${suggest(h.when.event, eventRegistry.list().map((e) => e.type))}` };
     }
     const base = new Set([...Object.keys(BUILTIN_NAMES), ...varNames]);
-    if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'contact' || h.when.on === 'hurt') base.add('other');
+    if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'hit_from_below' || h.when.on === 'contact' || h.when.on === 'hurt') base.add('other');
     if (h.when.on === 'hurt') base.add('damage_taken');
     const scopeOf = (names: Set<string>): Scope => ({ names, functions, members });
     const checkText = (text: string, names: Set<string>, what: string): string | null => {
@@ -1038,7 +1046,7 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
         }
         if (s.do === 'set' && !s.on && !varNames.has(s.var)) return `${at}: unknown variable "${s.var}"${suggest(s.var, [...varNames])}; declare it in "vars"`;
         if (s.do === 'state' && !states.has(s.name)) return `${at}: unknown state "${s.name}"${suggest(s.name, [...states])}; declare it in "states"`;
-        if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object)) return `${at}: there is no library object "${s.object}"`;
+        if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object) && !(s.do === 'spawn' && objectNames.has(s.object))) return `${at}: there is no library object "${s.object}"`;
         if (s.do === 'draw' && s.shape === 'sprite' && s.object === null) return `${at}: a sprite drawing needs "object" (a library object id)`;
         if (s.do === 'play_sound' && !findSound(project, s.sound)) {
           const names = project.assets.filter((a) => a.kind === 'sound').map((a) => a.name);

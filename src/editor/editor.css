@@ -1104,9 +1104,10 @@ body.moving-panel, body.moving-panel * { cursor: grabbing !important; user-selec
 }
 
 /* After a new game: the offer of more levels, then their progress while the user plays (top middle, small). */
+/* (At the bottom, above the toolbar: the prompt cards open at the top.) */
 .more-levels {
   position: fixed;
-  top: 58px;
+  bottom: 78px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;

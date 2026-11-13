@@ -34,6 +34,8 @@ export function describeTrigger(t: Trigger): string {
       return `on signal "${t.name}"`;
     case 'landed_on':
       return 'when something lands on it';
+    case 'hit_from_below':
+      return 'when something hits it from below';
     case 'contact':
       return 'while touching something';
     case 'hurt':

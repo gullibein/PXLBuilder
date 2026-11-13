@@ -950,9 +950,12 @@ export class Runtime {
         // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at the
         // top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
         if (this.slopes.length && !e.climbing) surfaces = this.besideRamps(box, surfaces);
+        const rising = e.vy < 0;
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
+        // Its head bumped into something above it: that thing's "hit_from_below" handlers (a "?" block, a brick).
+        if (rising && r.hitCeiling) this.bumpedFromBelow(e);
         e.bumped = r.hitX ? (e.vx > 0 ? 1 : e.vx < 0 ? -1 : 0) : 0;
         if (iso) this.followGround(e, dt);
         if (r.hitX) e.vx = 0;
@@ -1274,7 +1277,8 @@ export class Runtime {
 
   /** Adds a new instance of a library object during play. */
   spawn(definitionId: Id, at: Vec2): RuntimeEntity | null {
-    const def = this.project.definitions.find((d) => d.id === definitionId);
+    // (By id, or by name: a ready-made script names the object it gives, "Coin".)
+    const def = this.project.definitions.find((d) => d.id === definitionId) ?? this.project.definitions.find((d) => d.name === definitionId);
     if (!def) return null;
     const e = buildEntity(this.project, instantiateDefinition(def, at), this.registry);
     this.entities.push(e);
@@ -1792,6 +1796,23 @@ export class Runtime {
     const box = boxOf(e);
     if (!box) return false;
     return standingOn(box, this.oneWays) && !standingOn(box, this.solids);
+  }
+
+  /** `e` (moving up) hit its head: the solid most squarely above it hears it ("hit_from_below"). */
+  private bumpedFromBelow(e: RuntimeEntity): void {
+    const box = boxOf(e);
+    if (!box) return;
+    const head = box.y - box.hh;
+    let best: { o: RuntimeEntity; d: number } | null = null;
+    for (const o of this.entities) {
+      if (o === e || !o.alive || !o.collider || o.collider.trigger || !this.scripts.listens(o, 'hit_from_below')) continue;
+      const ob = boxOf(o)!;
+      const across = Math.min(box.x + box.hw, ob.x + ob.hw) - Math.max(box.x - box.hw, ob.x - ob.hw);
+      if (across <= 1 || Math.abs(ob.y + ob.hh - head) > 2) continue;
+      const d = Math.abs(ob.x - box.x);
+      if (!best || d < best.d) best = { o, d };
+    }
+    if (best) this.scripts.onTouch(best.o, e, 'hit_from_below');
   }
 
   /**

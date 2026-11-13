@@ -212,7 +212,7 @@ export class ScriptSystem {
   }
 
   /** `e` and `other` touch ("contact"), or `other` came down onto `e` ("landed_on"): `e`'s handlers for it. */
-  onTouch(e: RuntimeEntity, other: RuntimeEntity, kind: 'landed_on' | 'contact'): void {
+  onTouch(e: RuntimeEntity, other: RuntimeEntity, kind: 'landed_on' | 'hit_from_below' | 'contact'): void {
     if (!e.alive) return;
     const gen = this.generation;
     for (const inst of e.scripts) {
@@ -222,7 +222,7 @@ export class ScriptSystem {
   }
 
   /** Whether any of its scripts reacts to `kind` (so the engine only looks for it where it matters). */
-  listens(e: RuntimeEntity, kind: 'landed_on' | 'contact'): boolean {
+  listens(e: RuntimeEntity, kind: 'landed_on' | 'hit_from_below' | 'contact'): boolean {
     return e.scripts.some((inst) => inst.script.handlers.some((h) => h.when.on === kind));
   }
 

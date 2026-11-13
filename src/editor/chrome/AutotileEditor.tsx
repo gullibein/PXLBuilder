@@ -114,6 +114,7 @@ function AutotileDialog({ definitionId }: { definitionId: string }) {
               <span className="bg-label">Open sides</span>
               <div className="segmented">
                 {choice('edge', 'outline', 'Darker edge')}
+                {choice('edge', 'black', 'Black line')}
                 {choice('edge', 'none', 'As the tile')}
               </div>
               <span className="bg-label">Open top</span>

@@ -187,7 +187,7 @@ export const operationSchema = z.union([
   z.object({
     op: z.literal('make_autotile'),
     id: z.string().describe('The library object (definition id or ref): its 16 autotile pictures are made by the app from its own picture (draw_sprite it first, as the plain inside of the ground)'),
-    edge: z.enum(['outline', 'none']).describe('The open sides: a darker border, or none'),
+    edge: z.enum(['outline', 'black', 'none']).describe('The open sides: a darker border, a 1-pixel black line (classic 16-bit look), or none'),
     top: z.enum(['light', 'grass', 'none']).describe('The open top: a lighter band, grass, or as the rest'),
     round: z.boolean().describe('Round off the outer corners'),
   }),

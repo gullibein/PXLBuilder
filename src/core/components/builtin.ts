@@ -117,7 +117,7 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'SpriteStates',
     label: 'Sprites by situation',
     description:
-      'Other images for what the object is doing in play: running, jumping, falling, climbing, hanging from a ledge, hurt, shooting, defeated (stomped flat, knocked out), sprung (a spring squashed as it bounces something), and (without gravity) moving up or down. Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
+      'Other images for what the object is doing in play (each field below). Each is drawn at the Sprite size instead of the normal image while that happens; an empty one keeps the normal image (falling uses the jumping image when it has none).',
     category: 'Rendering',
     fields: {
       run: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving along the ground' },
@@ -131,13 +131,14 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
       up: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving up the screen without gravity (top-down games, fliers); else the running image' },
       down: { kind: 'assetRef', assetKind: 'image', default: null, description: 'While moving down the screen without gravity (top-down games, fliers); else the running image' },
       sprung: { kind: 'assetRef', assetKind: 'image', default: null, description: 'For a moment after it bounces something off itself (a spring squashed down, a mushroom squished)' },
+      used: { kind: 'assetRef', assetKind: 'image', default: null, description: 'Its used-up look (an emptied ? block), set by its script' },
     },
   },
   {
     type: 'Collider',
     label: 'Collider',
     description:
-      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (thin bridges, planks, mushroom caps, cloud platforms): things land on its top from above, jump up through it from below and walk through its sides; Down + Jump drops the player through it. Make it a 32x32 square with the platform drawn in its top rows and the Collider just that part (e.g. size 32x8, offset 0,-12, matchSprite false): level with the ground beside it. shape slopeRight / slopeLeft: a 45 degree ramp filling its square, rising to the right / to the left (◢ / ◣): characters and enemies walk up and down it.',
+      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (thin bridges, planks, mushroom caps, cloud platforms): things land on its top from above, jump up through it from below and walk through its sides; Down + Jump drops the player through it. Its Collider just the drawn top rows of its 32x32 square (e.g. 32x8, offset 0,-12). shape slopeRight / slopeLeft: a 45 degree ramp filling its square, rising to the right / to the left (◢ / ◣): characters and enemies walk up and down it.',
     category: 'Physics',
     fields: {
       shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft', 'boxes'], default: 'box', description: 'box, circle, a ramp (slopeRight rises to the right ◢, slopeLeft to the left ◣), or boxes: several boxes (the boxes field), drawn in the sprite editor or worked out from the picture\'s pixels' },

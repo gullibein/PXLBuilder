@@ -35,8 +35,8 @@ export function autotileLabel(index: number): string {
 }
 
 export interface AutotileStyle {
-  /** The open sides (no tile next to them): a darker border ("outline"), or none. */
-  edge: 'outline' | 'none';
+  /** The open sides (no tile next to them): a darker border ("outline"), a crisp 1-pixel black line ("black"), or none. */
+  edge: 'outline' | 'black' | 'none';
   /** The open top: a lighter band ("light"), grass ("grass"), or as the rest. */
   top: 'light' | 'grass' | 'none';
   /** Corners where two open sides meet are rounded off. */
@@ -53,6 +53,8 @@ export function makeAutotileFrames(base: PixelArt, style: AutotileStyle = DEFAUL
   const h = base.rows.length;
   // How thick an edge is, in picture pixels: 1 for small tiles, more for detailed ones (a 32-pixel tile: 3).
   const t = Math.max(1, Math.round(Math.min(w, h) / 10));
+  // (The black line's thickness.)
+  const line = Math.max(1, Math.round(Math.min(w, h) / 16));
   const colors = new Map(base.palette.map((p) => [p.key, p.color]));
   const palette = base.palette.map((p) => ({ ...p }));
   const used = new Set(palette.map((p) => p.key));
@@ -90,7 +92,8 @@ export function makeAutotileFrames(base: PixelArt, style: AutotileStyle = DEFAUL
           if (style.top === 'grass') {
             // A ragged lower edge: every other column one pixel shorter.
             if (y === band - 1 && x % 2 === 1) continue;
-            px[y][x] = key(y === 0 ? mix(GRASS, '#ffffff', 0.25) : GRASS);
+            // (Under a black outline the grass's light top row is the row below the line.)
+            px[y][x] = key(y === (style.edge === 'black' ? line : 0) ? mix(GRASS, '#ffffff', 0.25) : GRASS);
           } else px[y][x] = key(mix(c, '#ffffff', 0.3));
         }
     }
@@ -123,6 +126,24 @@ export function makeAutotileFrames(base: PixelArt, style: AutotileStyle = DEFAUL
           if (open.down && open.right) px[h - 1 - i][w - 1 - j] = '.';
         }
       }
+    }
+    // A black line: every pixel on an open side, or next to a see-through one (round corners, holes), is the line;
+    // as thick as one pixel of a 16-pixel tile (a 32-pixel tile: 2), so it matches art drawn at that scale.
+    if (style.edge === 'black') {
+      const ink = key('#14121c');
+      const inked = px.map((r) => r.map(() => false));
+      const clear = (x: number, y: number) => {
+        if (x < 0) return open.left;
+        if (x >= w) return open.right;
+        if (y < 0) return open.up;
+        if (y >= h) return open.down;
+        return px[y][x] === '.' || inked[y][x];
+      };
+      for (let pass = 0; pass < line; pass++) {
+        const next = px.map((r, y) => r.map((ch, x) => ch !== '.' && !inked[y][x] && (clear(x - 1, y) || clear(x + 1, y) || clear(x, y - 1) || clear(x, y + 1))));
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (next[y][x]) inked[y][x] = true;
+      }
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inked[y][x]) px[y][x] = ink;
     }
     frames.push(px.map((r) => r.join('')));
   }

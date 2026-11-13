@@ -183,8 +183,8 @@ describe('AI context', () => {
     expect(payload.otherEntities.some((e) => e.id === enemy.id)).toBe(false);
     expect(payload.library.find((d) => d.name === 'Door')?.category).toBe('Environment');
     // (The selected enemy's rule scripts, Stomp and Hurts on touch, come in full: the AI changes them when asked.)
-    // (The library grew by five platformer pieces: ramps, a bridge, water; then a spring.)
-    expect(JSON.stringify(payload).length).toBeLessThan(10400);
+    // (The library grew by five platformer pieces: ramps, a bridge, water; then a spring; then ? blocks, bricks, pipes.)
+    expect(JSON.stringify(payload).length).toBeLessThan(11500);
     void door;
   });
 
