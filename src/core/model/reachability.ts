@@ -106,6 +106,16 @@ const KEEPS_MOVEMENT = new Set([
   'set_music', 'complete_level', 'camera_shake',
 ]);
 
+/**
+ * Statements that look like changes but can't stand in anyone's way: a change to how it looks (a ? block showing its
+ * used picture), or it taking itself away (a brick that breaks: a way only opens).
+ */
+function lookOnly(o: Record<string, unknown>): boolean {
+  if (o.do === 'set_field') return (o.component === 'Sprite' || o.component === 'SpriteStates') && (o.on === null || o.on === undefined || o.on === 'self');
+  if (o.do === 'remove') return o.target === null || o.target === undefined || o.target === 'self';
+  return false;
+}
+
 /** `ownOnly`: only what moves the script's owner counts (a spring bouncing whoever lands on it doesn't move the spring). */
 export function changesMovement(script: unknown, ownOnly = false): boolean {
   const sc = script as { enabled?: boolean; takesOver?: string; handlers?: unknown } | null;
@@ -117,7 +127,7 @@ export function changesMovement(script: unknown, ownOnly = false): boolean {
     if (moves || !v || typeof v !== 'object') return;
     if (Array.isArray(v)) return v.forEach(walk);
     const o = v as Record<string, unknown>;
-    if (typeof o.do === 'string' && !KEEPS_MOVEMENT.has(o.do) && !(ownOnly && typeof o.on === 'string' && o.on !== 'self')) {
+    if (typeof o.do === 'string' && !KEEPS_MOVEMENT.has(o.do) && !lookOnly(o) && !(ownOnly && typeof o.on === 'string' && o.on !== 'self')) {
       moves = true;
       return;
     }

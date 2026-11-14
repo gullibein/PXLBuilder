@@ -118,6 +118,22 @@ export class LevelGrid {
     this.links.push(l);
   }
 
+  /** A copy (its cells, what is placed, links), to change without changing this one. */
+  clone(): LevelGrid {
+    const c = new LevelGrid(this.width, this.height, this.roles);
+    c.cells = this.cells.map((r) => [...r]);
+    c.placed.push(...this.placed.map((p) => structuredClone(p)));
+    c.links.push(...this.links.map((l) => structuredClone(l)));
+    return c;
+  }
+
+  /** Takes a placed thing away (and its links). */
+  unplace(ref: string): void {
+    const i = this.placed.findIndex((p) => p.ref === ref);
+    if (i >= 0) this.placed.splice(i, 1);
+    for (let j = this.links.length - 1; j >= 0; j--) if (this.links[j].from === ref || this.links[j].to === ref) this.links.splice(j, 1);
+  }
+
   /** The map as text, top row first (empty: "."). */
   rows(): string[] {
     return this.cells.map((r) => r.map((c) => (c ? ROLE_CHARS[c] : '.')).join(''));

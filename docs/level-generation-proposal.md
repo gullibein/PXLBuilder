@@ -336,3 +336,31 @@ So stages 1–8 cover classic and puzzle. Each other genre starts with its engin
 - **`levelGen/grid.ts`:** the cell grid a level is built in, with multi-cell objects, refusal of overlaps and edges, placed things with refs, moving paths and links. It is written out as one `draw_map` plus `place_instance`, `add_component` / `set_component_field` and `create_relationship`, so it is an ordinary level.
 
 Levels are not yet built any differently: nothing calls the grid outside tests.
+
+### Stage 2 — done
+
+- **`levelGen/blueprint.ts`:** the blueprint schema (zod). Everything but `difficulty` is optional:
+  - `length`, `seed`, `structure` (run, climb, descent, loop, hub);
+  - `focus`, `escalate`, `avoid` (mechanics);
+  - `routes` (one, bonus_above), `secrets`, `concept`;
+  - `sections` (named patterns and variants, or `custom` sections drawn as a small map with a legend of parts).
+- **`levelGen/pattern.ts`:** the pattern interface (id, version, mechanics, kinds of section, needed parts, variants with their own needs and minimum difficulty, a width rule, `build`) and a `Section` helper that builds in the section's own columns whichever way the player walks.
+- **`levelGen/patterns/classic.ts`:** 15 patterns with 34 variants:
+  - start, flat, stairs, gap, floating platforms, enemy, pipes, blocks, spring, moving platform, spikes, bonus cache, goal;
+  - key end and locked goal, for hubs.
+
+  Every size comes from the player's reach and the seed.
+- **`levelGen/patterns/index.ts`:** the registry. A new pattern is one entry.
+- **`levelGen/genres.ts`:** the classic genre's choices: how often each structure comes up, pattern weights per kind of section, and five pacings.
+- **`levelGen/generate.ts`:** blueprint → level.
+  1. Pick the structure and length, then lay out floors and runs.
+  2. Fill each run with sections until full. The blueprint's own sections come in its order, followed only by rests.
+  3. Join floors: a ladder, jump-through ledges or a spring up; a hole down.
+  4. Build on a copy and check it: win, layout, start, and reachability, with moving platforms checked as still bridges along their paths.
+  5. A build that fails is retried from the next seed in the same series, up to 12 times, so results stay deterministic.
+
+  It returns the operations, the record for `Scene.madeBy`, the state (`validated` | `uncertain`) and notes on anything it couldn't do as asked. It throws `LevelGenError` with the reason when nothing valid can be built.
+- **Checker fix (`model/reachability.ts`):** a script that only changes its own look (a ? block's used picture), or takes itself away (a brick breaking), no longer makes a level "uncertain". This also means AI-built levels with blocks are judged now.
+- **Measured:** 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds) were all `validated`. On average they took 1.1–2.9 builds and 47–182 ms each.
+
+Not yet connected to the AI or the editor (stage 3).

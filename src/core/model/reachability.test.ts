@@ -122,6 +122,19 @@ describe('can the player get there?', () => {
     expect(unreachable(walker.check())!.things.map((t) => t.name)).toEqual(['Coin']);
   });
 
+  it('? blocks and bricks (a look changed, a block taking itself away) leave a level judged; moving the block does not', () => {
+    const withBlock = (stmt: Record<string, unknown>) =>
+      level((place, d, sceneId) => {
+        place('Goal', 400, 16);
+        const id = place('Brick', 160, -80);
+        d.scenes[0].entities.find((e) => e.id === id)!.scripts = [{ id: 'scr_b', name: 'Block', description: '', enabled: true, vars: [], states: [], handlers: [{ when: { on: 'hit_from_below' }, if: null, in: null, do: [stmt] }] } as never];
+        void sceneId;
+      });
+    expect(withBlock({ do: 'remove', target: null }).check().status).toBe('ok');
+    expect(withBlock({ do: 'set_field', component: 'Sprite', field: 'assetId', value: 'field(self, "SpriteStates.used")', on: null }).check().status).toBe('ok');
+    expect(withBlock({ do: 'set_field', component: 'Transform', field: 'y', value: '0', on: null }).check().status).toBe('uncertain');
+  });
+
   it('double jump reaches higher', () => {
     const l = level((place, d) => {
       for (const x of [96, 128]) place('Platform', x, -16); // two tiles up
