@@ -208,6 +208,8 @@ export interface Scene {
    * goes in them); what is placed by hand stays as it is. The editor shows one example (preview seed).
    */
   generator?: DungeonGenerator;
+  /** Made by the engine's level builder: how (a record only; the entities are the level). */
+  madeBy?: LevelMadeBy;
 }
 
 /** What a monster or a treasure the generator places is, how often (weight), and from which floor on. */
@@ -332,6 +334,37 @@ export interface ProjectSettings {
   playPixels?: number;
   /** Which keys do what (model/controls.ts): the actions named here use these keys instead of the engine's. */
   controls?: Partial<Record<'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu', string[]>>;
+  /**
+   * A platformer's kind of play and its look, kept for the whole game (levelGen/profile.ts): how its levels are built
+   * and what they look like, each changeable on its own. Missing: not chosen (worked out from the game when needed,
+   * never written without the user or the AI choosing it).
+   */
+  levelProfile?: LevelProfile;
+}
+
+/** A platformer's kind of play (genre: "classic", "puzzle"…) and its look (theme: "forest", "castle"…). */
+export interface LevelProfile {
+  genre: string;
+  theme: string;
+  version: 1;
+}
+
+/**
+ * How a level was made by the engine's level builder (levelGen): what it was asked for and how it chose, so it can
+ * be made again, varied, and told apart from the game's other levels. Only a record: the level's entities are the
+ * level, and editing them by hand is fine.
+ */
+export interface LevelMadeBy {
+  /** The builder (genre id) and its version. */
+  generator: string;
+  version: number;
+  seed: number;
+  /** What it was asked to build (the blueprint, as given). */
+  blueprint: Record<string, unknown>;
+  /** The patterns it used, each with its version (a pattern's later improvements don't change what a seed meant). */
+  patterns: Record<string, number>;
+  /** What the level is like, to keep the game's levels different (levelGen/fingerprint.ts). */
+  fingerprint: Record<string, unknown> | null;
 }
 
 export type GameType = 'platformer' | 'topdown';

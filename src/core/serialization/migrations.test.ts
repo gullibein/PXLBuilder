@@ -188,6 +188,12 @@ describe('format v2 -> v3', () => {
     expect(own.definitions.map((d) => d.name)).toEqual(['Heart']);
   });
 
+  it('v13 -> v14: nothing changes (a game may now keep a platformer kind and look, and how a level was built); a newer game is refused, not cut down', async () => {
+    const { migrateProject, MigrationError } = await import('./migrations');
+    const v13 = { formatVersion: 13, id: 'p', name: 'G', settings: { gridSize: 16 }, scenes: [{ id: 's', name: 'L' }], definitions: [], assets: [] };
+    expect(migrateProject(structuredClone(v13))).toEqual({ ...v13, formatVersion: 14 });
+    expect(() => migrateProject({ ...v13, formatVersion: 15 })).toThrow(MigrationError);
+  });
   it('v12 -> v13: Stompable and Damage become the Stomp and Hurts on touch scripts, with the same values and victims', async () => {
     const { migrateProject } = await import('./migrations');
     type Def = { name: string; components: Record<string, Record<string, unknown>>; scripts?: { name: string; vars: { name: string; value: unknown }[]; handlers: { when: { on: string }; if: string | null }[] }[] };

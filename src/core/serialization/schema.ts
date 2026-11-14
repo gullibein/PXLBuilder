@@ -83,6 +83,16 @@ export const sceneSchema = z.object({
   music: id.nullable().optional(),
   camera: cameraSchema,
   generator: generatorSchema.optional(),
+  madeBy: z
+    .object({
+      generator: z.string().min(1),
+      version: z.number().int().min(1),
+      seed: z.number().int(),
+      blueprint: z.record(z.string(), z.unknown()),
+      patterns: z.record(z.string(), z.number().int().min(1)),
+      fingerprint: z.record(z.string(), z.unknown()).nullable(),
+    })
+    .optional(),
 });
 
 export const definitionSchema = z.object({
@@ -134,6 +144,7 @@ export const projectSchema = z.object({
     spriteResolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).optional(),
     playPixels: z.number().int().min(0).max(2160).optional(),
     controls: z.record(z.string(), z.array(z.string())).optional(),
+    levelProfile: z.object({ genre: z.string().min(1), theme: z.string().min(1), version: z.literal(1) }).optional(),
   }),
   startSceneId: id,
   scenes: z.array(sceneSchema).min(1),

@@ -391,6 +391,13 @@ export const MIGRATIONS: Migration[] = [
     migrate: migrateV12toV13,
     note: 'Stomping and hurting on touch become scripts you can change (each enemy and hazard gets a "Stomp" and/or "Hurts on touch" script with its old settings). Who gets hurt is now decided by the thing that hurts: enemies and spikes hurt what used to take damage from them.',
   },
+  {
+    // Nothing changes: games may now keep a platformer's kind and look (settings.levelProfile) and how a level was
+    // built (scene.madeBy). The version goes up so an older editor refuses such a game instead of dropping them.
+    from: 13,
+    to: 14,
+    migrate: (p) => p,
+  },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

@@ -23,6 +23,13 @@ const games = () => [
       m.setControls(d, { jump: ['KeyW'] });
     }),
   ],
+  [
+    'a platformer kind and look kept, and a level made by the level builder',
+    produce(createProject(registry, 'G', 'platformer'), (d) => {
+      d.settings.levelProfile = { genre: 'classic', theme: 'forest', version: 1 };
+      d.scenes[0].madeBy = { generator: 'classic', version: 1, seed: 58291, blueprint: { difficulty: 2, concept: 'springs' }, patterns: { gap: 1, spring_ledge: 2 }, fingerprint: { sections: ['intro:flat'] } };
+    }),
+  ],
 ] as const;
 
 describe('saved and loaded again', () => {

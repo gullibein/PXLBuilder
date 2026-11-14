@@ -1,6 +1,6 @@
 # Engine-built platformer levels — Stage 0 architecture proposal
 
-Status: proposal for review. No code changed yet.
+Status: approved with the changes in §11. Stage 1 done (see §12).
 Written against branch `claude/trusting-carson-2kvonz` at commit `7e967ee`.
 
 ---
@@ -301,3 +301,38 @@ So stages 1–8 cover classic and puzzle. Each other genre starts with its engin
 2. **Field names:** `ProjectSettings.levelProfile` and `Scene.madeBy`, or other names?
 3. **Engine-only buttons:** should "New level / Regenerate / Variation" be on the level menu, or only on the "two more levels" card at first?
 4. **Older games:** should games without a profile keep today's AI-drawn levels until the user picks a genre, or get one inferred (classic for platformers)? I recommend inferring it, with a way to change it.
+
+---
+
+## 11. Changes agreed after review
+
+1. **Whole-level structures, not one grammar.** Before patterns are chosen, the builder picks a structure: a run, a climb, a descent, a loop out and back, a hub with branches, stacked floors. These are the side-view layouts `levelIdeas.ts` already names, made buildable. Patterns fill each structure's sections. Uniqueness compares what can be measured about how a level plays: its structure, its up-and-down shape, which mechanics it introduces and in what order, its difficulty per section, and its branches and secrets.
+2. **The concept steers the build through structured fields that the AI fills in.** The engine doesn't parse free text. The blueprint gets `structure`, `focus` (mechanics to feature), `escalate` (a mechanic that gets harder section by section), `routes` (`one` | `choice` | `risky_shortcut` | `bonus_above` | `bonus_below`) and `secrets` (0–3). The AI translates "a level that introduces springs and makes them harder" into `focus: ["spring"], escalate: "spring"`. The concept text stays as the level's description.
+3. **Patterns are modules in a registry**, each with an id and a version. Adding one changes nothing else. `Scene.madeBy.patterns` records the version of each pattern used, so "same seed, same level" can be honoured (or knowingly not) after a pattern improves.
+4. **Three validation states: validated, invalid, uncertain.** An uncertain section is re-rolled into one that can be proven. If it stays uncertain, the level is applied with a visible warning, never silently. A scripted run of the route on the real runtime (§8, layer 4) is the extra test, planned for stage 6.
+5. **Decisions:**
+   - genres `classic` and `puzzle`;
+   - themes as listed, added to by appending to `THEMES`;
+   - fields `ProjectSettings.levelProfile` and `Scene.madeBy`;
+   - New level / Regenerate / Variation on the level menu;
+   - older games keep their levels and behaviour, get a genre inferred for suggestions only, and opt in.
+6. **Engine-directed and AI-directed generation, plus custom sections.** Sections may be left to the engine, named pattern by pattern, or be a `custom` section: a small map the AI draws itself, which the engine joins into the level (its entry and exit floors matched to its neighbours) and validates with the rest.
+
+## 12. Progress
+
+### Stage 1 — done
+
+- **Save format:**
+  - `ProjectSettings.levelProfile {genre, theme, version}` and `Scene.madeBy {generator, version, seed, blueprint, patterns, fingerprint}` (`core/types.ts`).
+  - Both saved by the schema (`serialization/schema.ts`).
+  - Format 13 → 14 with a no-op migration, so an older editor refuses a newer game instead of silently dropping the fields.
+- **`levelGen/profile.ts`:**
+  - `GENRES` (classic, puzzle: rules and puzzles) and `THEMES` (nine looks, each with puzzles its look rules out), kept apart.
+  - `levelProfileOf` returns the stored profile, or one inferred from the game without writing it: mostly switches, doors and crates means puzzle, otherwise classic. An empty game gets a stable look picked from its id; a game with levels keeps its look.
+- **Bug fixed:** `levelDesignIdea()` no longer picks a platformer style at random on every request. The style comes from the profile, so a game keeps one kind of play and look. `PLATFORMER_STYLES` is replaced by genres plus themes.
+- **`levelGen/random.ts`:** `seededRandom` (moved from `dungeon.ts`, which re-exports it unchanged, so dungeon seeds are unaffected), plus `makeRandom` (int, chance, pick, weighted, shuffle, fork) and `newLevelSeed`.
+- **`levelGen/roles.ts`:** which library object plays each of 26 parts, found by what it is (components, collider, scripts), not by name. The most-placed object wins, then the starter. Parts the game has no object for are missing and never made up.
+- **`levelGen/limits.ts`:** the player's reach in cells from the checker's own `jumpTable`, with a margin that shrinks from difficulty 1 to 5 (5 is exactly the checker's numbers).
+- **`levelGen/grid.ts`:** the cell grid a level is built in, with multi-cell objects, refusal of overlaps and edges, placed things with refs, moving paths and links. It is written out as one `draw_map` plus `place_instance`, `add_component` / `set_component_field` and `create_relationship`, so it is an ordinary level.
+
+Levels are not yet built any differently: nothing calls the grid outside tests.

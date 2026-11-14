@@ -44,17 +44,9 @@ export function defaultGenerator(project: Project): DungeonGenerator {
   };
 }
 
-/** A small, fast, seeded random number source (the same seed, the same numbers). */
-export function seededRandom(seed: number): () => number {
-  let a = seed >>> 0 || 0x9e3779b9;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** (The seeded random numbers live with the level builder's; the same function, so a seed gives the same dungeon.) */
+export { seededRandom } from '../levelGen/random';
+import { seededRandom } from '../levelGen/random';
 
 interface Room {
   x: number;

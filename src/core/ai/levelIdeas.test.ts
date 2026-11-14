@@ -4,7 +4,8 @@ import { createBuiltinRegistry } from '../components/builtin';
 import { createProject, createScene, instantiateDefinition } from '../model/factory';
 import * as m from '../model/mutations';
 import { buildAIPayload } from './context';
-import { LEVEL_PUZZLES, PLATFORMER_STYLES, levelDesignIdea, levelShape } from './levelIdeas';
+import { LEVEL_PUZZLES, levelDesignIdea, levelShape } from './levelIdeas';
+import { GENRES, THEMES } from '../levelGen/profile';
 
 const registry = createBuiltinRegistry();
 
@@ -55,13 +56,40 @@ describe('variety for generated levels', () => {
   });
 
   it('platformer levels come with puzzles that fit the kind of platformer, each one with how', () => {
-    for (const st of PLATFORMER_STYLES) for (const p of st.puzzles) expect(LEVEL_PUZZLES[p], `${st.name}: ${p}`).toBeTruthy();
+    for (const g of GENRES) for (const p of g.puzzles) expect(LEVEL_PUZZLES[p], `${g.name}: ${p}`).toBeTruthy();
     const p = createProject(registry);
     let n = 0;
     const idea = levelDesignIdea(p, p.scenes[0], registry, () => ((n = (n * 9301 + 49297) % 233280), n / 233280));
     expect(idea.style).toBeTruthy();
     expect(idea.puzzles!.length).toBeGreaterThanOrEqual(2);
-    const style = PLATFORMER_STYLES.find((s) => s.name === idea.style!.name)!;
-    expect(idea.puzzles!.every((x) => style.puzzles.includes(x.split(':')[0]))).toBe(true);
+    expect(idea.puzzles!.every((x) => GENRES[0].puzzles.includes(x.split(':')[0]))).toBe(true);
+  });
+
+  it("the game's kind and look stay the same from request to request (they used to be picked anew each time)", () => {
+    const p = createProject(registry);
+    let seed = 7;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const styles = new Set(Array.from({ length: 20 }, () => levelDesignIdea(p, p.scenes[0], registry, random).style!.name));
+    expect(styles.size).toBe(1);
+    // An empty game is offered a look; one with levels keeps the look they have.
+    expect([...styles][0]).toMatch(/^Classic platformer, /);
+    const built = project();
+    const style = levelDesignIdea(built, built.scenes[1], registry, random).style!;
+    expect(style.name).toBe('Classic platformer');
+    expect(style.rules).toMatch(/Look: as the game's levels already look/);
+  });
+
+  it('a kind and look the game chose are used; puzzles the look rules out are left out', () => {
+    const p = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'classic', theme: 'space', version: 1 }));
+    for (let i = 0; i < 20; i++) {
+      const idea = levelDesignIdea(p, p.scenes[0], registry, () => (i + 0.5) / 20);
+      expect(idea.style!.name).toBe('Classic platformer, Space station');
+      expect(idea.style!.rules).toContain(THEMES.find((t) => t.id === 'space')!.look);
+      expect(idea.puzzles!.some((x) => /^(hill|swim for it):/.test(x))).toBe(false);
+    }
+    const puzzle = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'puzzle', theme: 'castle', version: 1 }));
+    const idea = levelDesignIdea(puzzle, puzzle.scenes[0], registry, () => 0.3);
+    expect(idea.style!.name).toBe('Puzzle platformer, Castle');
+    expect(idea.puzzles!.every((x) => GENRES[1].puzzles.includes(x.split(':')[0]))).toBe(true);
   });
 });
