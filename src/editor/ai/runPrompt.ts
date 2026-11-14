@@ -207,7 +207,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   const topics = options.moreLevels ? ['levels', 'backgrounds'] : topicsFor(ctx, request, body.history, newGameAsked, !!topicScene && isTopDownScene(state.project, topicScene, componentRegistry));
   // The level design idea goes only with requests about levels (with the level guidance), and the ideas for new
   // levels only with requests for new ones: the rest of the time they are text the AI reads for nothing.
-  const level = body.context.level as { design?: { forNewLevels?: unknown[] } } | undefined;
+  const level = body.context.level as { design?: { forNewLevels?: unknown[] }; builder?: unknown } | undefined;
+  // (The level builder's patterns only go with requests about levels too.)
+  if (level?.builder && !topics.includes('levels')) delete level.builder;
   if (level?.design) {
     if (!topics.includes('levels')) delete level.design;
     else if (!/\b(new|next|more|another|other|extra|second|third|fourth|fifth|\d+)\s+(\w+\s+)?levels?\b|\blevels\b/i.test(request) && !options.newGame) level.design.forNewLevels = [];
@@ -223,6 +225,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     body.request = options.moreLevels
       ? `${request}\n\n[Puzzles for the new levels (the app picked them so games differ; each needed to get through; context.level.design.forNewLevels says how; a key and door may come too, never instead): ${more.map((l, i) => `new level ${i + 1}: ${names(l.puzzles!)}`).join('; ')}.]`
       : `${request}\n\n[Puzzles to build this level around (the app picked them so games differ; each needed to get through; context.level.design.puzzles says how; a key and door may come too, never instead): ${names(design.puzzles)}.${more.length ? ` Each new level you create gets its own, in context.level.design.forNewLevels (${more.map((l, i) => `${i + 2}: ${names(l.puzzles!)}`).join('; ')}).` : ''} Unless the user asked for something else.]`;
+    // (With the engine's level builder there, they are for a level drawn by hand: a generated one has its own.)
+    if (level?.builder) body.request = body.request.replace(/ Unless the user asked for something else\.\]$/, ' Unless the user asked for something else. These are for a level drawn with draw_map; with generate_level the engine picks the sections.]');
     trace?.('note', `Puzzles for this level: ${names(design.puzzles)}`);
   }
   // "Harder than level 2", "a more complex level", more levels: the level to beat, counted, goes in the request with
@@ -622,7 +626,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     // A new game (or the levels offered after one): the puzzles picked for each level must be in it (left alone,
     // the AI built ramps, water and the like into hardly any level). Missing ones go back once, for just the
     // operations that add them.
-    if ((newGame || options.moreLevels) && gameOps(response) && design?.puzzles?.length) {
+    if ((newGame || options.moreLevels) && gameOps(response) && design?.puzzles?.length && !response.operations.some((o) => o.op === 'generate_level')) {
       const missing = missingPuzzles(useEditor.getState().project, ctx.sceneId, response.operations, options.moreLevels ? null : design.puzzles, (design.forNewLevels ?? []).map((l) => l.puzzles ?? []));
       if (missing) {
         trace?.('check', `The levels lack the puzzles picked for them: ${missing.text}`);
@@ -706,10 +710,10 @@ export function enginePartsTakenOver(project: Project, operations: AIResponse['o
 
 /** A new game drawn by the AI, part 1: the objects and their looks, not the level. */
 export const PART_ONE =
-  '[This game is built in two answers, so each fits in the time one answer has. THIS ANSWER is part 1 of 2: the game\'s objects, how they look and how they behave: create_definition, draw_sprite for every object the game will use (with its animations and situation looks), make_autotile or draw_autotile for the ground, set_script and component changes, make_background, set_world. NOT the level yet: no draw_map, draw_tiles, place_instance or connections (part 2, asked as soon as this one is applied, builds the levels with these objects). message: one sentence on the look; changes: one short line per object.]';
+  '[This game is built in two answers, so each fits in the time one answer has. THIS ANSWER is part 1 of 2: the game\'s objects, how they look and how they behave: create_definition, draw_sprite for every object the game will use (with its animations and situation looks), make_autotile or draw_autotile for the ground, set_script and component changes, make_background, set_world, set_level_profile (a platformer). NOT the level yet: no draw_map, draw_tiles, place_instance or connections (part 2, asked as soon as this one is applied, builds the levels with these objects). message: one sentence on the look; changes: one short line per object.]';
 /** Part 2: the levels, with the objects part 1 made. */
 export const PART_TWO =
-  'Part 2 of 2: your part 1 is applied (the objects, their pictures and scripts are in the context now): do not draw them again unless one is missing. Now build the rest of the plan: the level(s) with these objects (draw_map…), what goes in them, connections, the puzzles, the way to win. The starter stays as it is. message and changes: for the whole game.';
+  'Part 2 of 2: your part 1 is applied (the objects, their pictures and scripts are in the context now): do not draw them again unless one is missing. Now build the rest of the plan: the level(s) with these objects (generate_level for each when context.level.builder is there, else draw_map…), what goes in them, connections, the puzzles, the way to win. The starter stays as it is. message and changes: for the whole game.';
 
 /** Applies an answer's changes (also one the user said yes to): to the object (with "a new object instead"), or as they are. */
 export function applyResponse(ctx: AIContext, request: string, response: AIResponse): PromptOutcome {

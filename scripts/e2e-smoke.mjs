@@ -4895,12 +4895,58 @@ try {
     const result = tp.getByTestId('global-prompt').getByTestId('prompt-result');
     await check(async () => asked.length >= 2 && /part 1 of 2/.test(asked[0]) && /Part 2 of 2/.test(asked[1]) && /Part 1 made: Player: red; Platform: brown/.test(asked[1]), `a new game the AI draws is asked for in two parts: the objects, then the level (${asked.length} requests)`);
     await check(async () => (await result.getAttribute('data-status')) === 'applied' && Number(await tp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20 && /Player: red/.test(await result.innerText()) && /Level 1/.test(await result.innerText()), '(both parts applied, and both parts\' changes listed)');
+    // Two more levels: built by the engine, with no AI request at all.
+    const before = asked.length;
+    await tp.getByTestId('more-levels-yes').click();
+    await check(async () => (await tp.getByTestId('more-levels-done').isVisible()) && /Built by the engine, no AI/.test(await tp.getByTestId('more-levels-line').innerText()) && asked.length === before, `"two more levels" is built by the engine at once, without asking the AI (${asked.length - before} requests)`);
+    await tp.getByTestId('more-levels-go').click();
+    await check(async () => (await tp.getByTestId('scene-selector').innerText()).trim() === 'Level 2' && Number(await tp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20, '(and its button goes to the first new level, built)');
     // The level part fails: the drawings stay, and the message says so.
     failSecond = true;
     asked.length = 0;
     await start('a game about a green hero');
     await check(async () => (await result.getAttribute('data-status')) === 'error' && /first part are kept/.test(await result.innerText()) && (await tp.getByTestId('undo').getAttribute('title')).includes('✨'), 'when the level part fails, the drawn objects from the first part are kept (and can be undone)');
     await tc.close();
+  }
+
+  step = 'levels built by the engine';
+  {
+    const lc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const lp = await lc.newPage();
+    lp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    let aiCalls = 0;
+    await lp.route('**/api/ai', (route) => {
+      aiCalls++;
+      return route.fulfill({ status: 500, body: '{}' });
+    });
+    await lp.goto(URL);
+    await lp.getByTestId('viewport-canvas').waitFor();
+    if (await lp.getByTestId('game-chooser').isVisible()) await lp.getByTestId('game-chooser-close').click();
+    await lp.getByTestId('game-chooser').waitFor({ state: 'detached' }).catch(() => {});
+    const menu = async () => {
+      await lp.getByTestId('scene-selector').click();
+      await lp.getByTestId('scene-menu').waitFor();
+    };
+    await menu();
+    await check(async () => await lp.getByTestId('vary-level').isDisabled(), 'a level not built by the engine has no variation to make');
+    await lp.getByTestId('new-scene-built').click();
+    const note = lp.getByTestId('level-build-note');
+    await check(async () => /checked: playable/.test(await note.innerText()) && (await lp.getByTestId('scene-selector').innerText()).trim() === 'Level 2' && Number(await lp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20, `New level, built by the engine: a whole level at once, checked (${await note.innerText().catch(() => '-')})`);
+    await check(async () => (await lp.getByTestId('undo').getAttribute('title')).includes('New level, built by the engine') && aiCalls === 0, '(one Undo step, and no AI asked)');
+    const layout = async () => (await lp.getByTestId('viewport-canvas').getAttribute('data-entities'));
+    const was = await layout();
+    await menu();
+    await check(async () => !(await lp.getByTestId('vary-level').isDisabled()), 'a level the engine built can be varied');
+    await lp.getByTestId('vary-level').click();
+    await check(async () => /checked: playable/.test(await note.innerText()) && (await lp.getByTestId('undo').getAttribute('title')).includes('A variation of the level'), 'A variation of this level: the same plan built afresh, one Undo step');
+    await menu();
+    await lp.getByTestId('regen-level').click();
+    await check(async () => /Undo brings the old level back/.test(await note.innerText()), 'Build this level again: a new level in its place');
+    await lp.getByTestId('undo').click();
+    await lp.getByTestId('undo').click();
+    await lp.getByTestId('undo').click();
+    await check(async () => (await lp.getByTestId('scene-selector').innerText()).trim() === 'Level 1', `(Undo takes it all back, to the one level there was; entities were ${was})`);
+    await lc.close();
   }
 
   step = 'moving platform path';

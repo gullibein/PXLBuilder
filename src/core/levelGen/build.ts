@@ -1,0 +1,116 @@
+/**
+ * Building levels into a game: which builder a game uses, what to ask it for (a new level, the same level made
+ * again, a variation of it), and putting a built level in (its operations, and the record of how it was made). Used
+ * by the generate_level operation (the AI) and the editor's level menu (no AI).
+ */
+import type { ComponentRegistry } from '../components/registry';
+import { applyOperations, type ApplyResult } from '../commands/operations';
+import { createLevelFor } from '../model/factory';
+import * as m from '../model/mutations';
+import type { Id, Project, Scene } from '../types';
+import { produce } from 'immer';
+import { MECHANICS, STRUCTURE_INFO, type Blueprint, type Structure } from './blueprint';
+import { patternById } from './patterns/index';
+import { findRoles } from './roles';
+import { generateLevel, type GenerateResult } from './generate';
+import { GENRE_BUILDS } from './genres';
+import { levelProfileOf } from './profile';
+
+/** The builder for this game's levels ("classic"…), or null (not a platformer, or its genre has no builder yet). */
+export function builderFor(project: Project, registry: ComponentRegistry): string | null {
+  const profile = levelProfileOf(project, registry);
+  return profile && GENRE_BUILDS[profile.genre.id] ? profile.genre.id : null;
+}
+
+/** Why a game has no builder (for the menu's hint), or null. */
+export function noBuilderReason(project: Project, registry: ComponentRegistry): string | null {
+  const profile = levelProfileOf(project, registry);
+  if (!profile) return 'Only platformer levels can be built by the engine';
+  return GENRE_BUILDS[profile.genre.id] ? null : `The engine can't build ${profile.genre.name.toLowerCase()} levels yet`;
+}
+
+type Fingerprint = { structure?: Structure; length?: string; sections?: string[] };
+const fingerprintOf = (s: Scene | undefined) => (s?.madeBy?.fingerprint ?? null) as Fingerprint | null;
+
+export type BuildKind = 'new' | 'regenerate' | 'variation';
+
+/**
+ * What to ask the builder for. new: a level a step harder than the game's hardest built one (else 2), of another
+ * structure than the last ones. regenerate: the level's own blueprint (else a plain one) with a new seed. variation:
+ * the same structure, length and sections (patterns and variants) with a new seed: the same plan, built afresh.
+ * Null when there is nothing to vary (a level not built by the engine).
+ */
+export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKind, seed: number): { blueprint: Record<string, unknown>; avoidStructures: Structure[] } | null {
+  const scene = sceneId ? project.scenes.find((s) => s.id === sceneId) : undefined;
+  const made = scene?.madeBy;
+  if (kind === 'new') {
+    const built = project.scenes.filter((s) => s.madeBy);
+    const hardest = Math.max(1, ...built.map((s) => Number(s.madeBy!.blueprint.difficulty) || 1));
+    const avoid = built.slice(-2).map((s) => fingerprintOf(s)?.structure).filter((x): x is Structure => !!x);
+    return { blueprint: { difficulty: built.length ? Math.min(5, hardest + 1) : 2, seed }, avoidStructures: avoid };
+  }
+  if (kind === 'regenerate') return { blueprint: { ...(made?.blueprint ?? { difficulty: 2 }), seed }, avoidStructures: [] };
+  if (!made) return null;
+  const f = fingerprintOf(scene);
+  const own = (made.blueprint.sections as Blueprint['sections']) ?? null;
+  // (The sections it was built of, by name, without its start and goal, which come anyway.)
+  const sections = own ?? (f?.sections ?? [])
+    .filter((x) => !/^(intro|finale):/.test(x))
+    .map((x) => {
+      const [role, rest] = x.split(':');
+      const [pattern, variant] = rest.split('@')[0].split('/');
+      return { role, pattern, variant };
+    })
+    .filter((x) => x.pattern !== 'custom');
+  return { blueprint: { ...made.blueprint, structure: f?.structure ?? null, length: f?.length ?? null, sections, seed }, avoidStructures: [] };
+}
+
+/** Builds a level of the game (checked, not applied). */
+export function buildLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, avoidStructures: Structure[] = []): GenerateResult {
+  return generateLevel(project, sceneId, blueprint, registry, builderFor(project, registry) ?? 'classic', { avoidStructures });
+}
+
+/** Puts a built level into a project being edited: its operations, and the record of how it was made. */
+export function applyBuilt(project: Project, sceneId: Id, built: GenerateResult, registry: ComponentRegistry): ApplyResult {
+  const result = applyOperations(project, built.ops, registry);
+  m.getScene(project, sceneId).madeBy = built.madeBy;
+  return result;
+}
+
+/**
+ * A new level for the game, built by the engine: the level (like the game's last one: gravity, background, camera)
+ * and what goes in it. The project isn't changed: add the scene, then applyBuilt.
+ */
+export function newBuiltLevel(project: Project, name: string, blueprint: unknown, registry: ComponentRegistry, avoidStructures: Structure[] = []): { scene: Scene; built: GenerateResult } {
+  const like = project.scenes.filter((s) => !s.generator).at(-1);
+  const scene = createLevelFor(project, name, like);
+  if (like) scene.world.background = JSON.parse(JSON.stringify(like.world.background));
+  const withIt = produce(project, (d) => void m.addScene(d, JSON.parse(JSON.stringify(scene))));
+  return { scene, built: buildLevel(withIt, scene.id, blueprint, registry, avoidStructures) };
+}
+
+/**
+ * What the AI is told about the level builder (context.level.builder, with level requests only): the structures,
+ * the mechanics, and this genre's patterns with their variants, for the parts the game has (one line each).
+ */
+export function builderInfo(project: Project, registry: ComponentRegistry): Record<string, unknown> | null {
+  const genre = builderFor(project, registry);
+  if (!genre) return null;
+  const roles = findRoles(project, registry);
+  const build = GENRE_BUILDS[genre];
+  const patterns = Object.keys(build.weights)
+    .map((id) => patternById(id))
+    .filter((p): p is NonNullable<typeof p> => !!p && p.needs.every((r) => roles[r]))
+    .map((p) => {
+      const vs = p.variants.filter((v) => (v.needs ?? []).every((r) => roles[r])).map((v) => v.id);
+      return `${p.id} (${vs.join(', ')}): ${p.name}`;
+    });
+  const profile = levelProfileOf(project, registry)!;
+  return {
+    genre,
+    theme: profile.theme?.id ?? null,
+    structures: STRUCTURE_INFO,
+    mechanics: MECHANICS.join(', '),
+    patterns,
+  };
+}

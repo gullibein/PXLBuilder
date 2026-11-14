@@ -364,3 +364,23 @@ Levels are not yet built any differently: nothing calls the grid outside tests.
 - **Measured:** 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds) were all `validated`. On average they took 1.1–2.9 builds and 47–182 ms each.
 
 Not yet connected to the AI or the editor (stage 3).
+
+### Stage 3 — done
+
+- **Operations** (`commands/operations.ts`):
+  - `generate_level {sceneId, difficulty, structure, length, focus, escalate, avoid, secrets, concept, sections[{role, pattern, variant, harder, map, legend}]}` builds the level through `levelGen`, applies its operations inside the same draft, writes `Scene.madeBy`, and adds a note ("Level 2: built by the engine (climb, 12 sections, checked: playable)"). A bad blueprint or an impossible level becomes a `ModelError` naming the problem, so it goes through the usual "didn't check out" path.
+  - `set_level_profile {genre, theme}`.
+  - To fit the compact reply format (at most 24 optional fields), lists are required (empty = none) and `seed` is left to the engine. To stay inside the 120,000-character prompt budget, mechanics are plain text in the reply format (the blueprint schema still checks them) and a few long descriptions were shortened.
+- **`levelGen/build.ts`:**
+  - `builderFor` / `noBuilderReason`: classic yes, puzzle not yet, top-down never.
+  - `blueprintFor`: new (a step harder than the hardest built level, another structure than the last two), regenerate (the same blueprint, a new seed), variation (the same structure, length and sections, a new seed).
+  - `buildLevel`, `applyBuilt`, `newBuiltLevel` (a new level with the last one's gravity, background and camera).
+  - `builderInfo`: what the AI is told.
+- **AI:**
+  - `context.level.builder` (genre, theme, structures, mechanics, and only the patterns and variants the game has parts for, about 2–3 KB) goes with level requests only.
+  - The levels guide tells the AI to use `generate_level` for whole levels, and `draw_map` / `build_path` only for levels described cell by cell, partial edits, or games without a builder.
+  - The new-game guide says to call `set_level_profile` once. Part 1 of a new game includes it; part 2 builds levels with `generate_level`.
+  - The puzzles note stays, marked as being for hand-drawn maps. The missing-puzzles follow-up is skipped for answers that use `generate_level`.
+- **Editor:**
+  - The level menu has ✦ New level, built by the engine / ✦ Build this level again / ✦ A variation of this level. There's no AI call, each is one Undo step, and a note under the level button says what was built and how it checked out.
+  - "Two more levels" after a new game is built by the engine at once, each a step harder; the AI is used only if the engine can't.

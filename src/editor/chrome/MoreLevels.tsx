@@ -5,6 +5,8 @@ import { winProblems } from '../../core/model/reachability';
 import type { Project } from '../../core/types';
 import { startJob, stopJob, useJobs, type PromptJob } from '../ai/jobs';
 import { useEditor } from '../store';
+import { builderFor } from '../../core/levelGen/build';
+import { engineMoreLevels } from '../levelBuild';
 
 /** How many levels are offered after a new game. */
 const MORE = 2;
@@ -36,6 +38,8 @@ export function MoreLevels() {
   const project = useEditor((s) => s.project);
   const [closed, setClosed] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(Date.now());
+  // Built by the engine (no AI): the first new level, and what was built.
+  const [engine, setEngine] = useState<{ first: string; message: string } | null>(null);
   const all = Object.values(jobs);
   const building = all.find((j) => j.again?.options.moreLevels && j.phase === 'working') ?? null;
   const built = all.find((j) => j.again?.options.moreLevels && j.phase === 'done' && !closed.has(id(j))) ?? null;
@@ -52,6 +56,32 @@ export function MoreLevels() {
   if (newGameWindow) return null;
   const close = (j: PromptJob) => setClosed((s) => new Set(s).add(id(j)));
 
+  if (engine) {
+    const first = project.scenes.find((sc) => sc.id === engine.first);
+    return (
+      <div className="more-levels" data-testid="more-levels-done">
+        <span className="ml-title">The new levels are ready</span>
+        <span className="muted small ml-line" data-testid="more-levels-line" title={engine.message}>
+          Built by the engine, no AI: {engine.message}
+        </span>
+        {first && (
+          <button
+            className="btn-primary"
+            data-testid="more-levels-go"
+            onClick={() => {
+              useEditor.getState().setActiveScene(first.id);
+              setEngine(null);
+            }}
+          >
+            Go to {first.name}
+          </button>
+        )}
+        <button className="text-btn" data-testid="more-levels-close" onClick={() => setEngine(null)}>
+          ×
+        </button>
+      </div>
+    );
+  }
   if (building) {
     const seconds = Math.max(0, Math.round((now - (building.started ?? now)) / 1000));
     const line = building.narration?.doing.at(-1) ?? building.narration?.thoughts.at(-1) ?? building.stage ?? 'Starting';
@@ -101,16 +131,23 @@ export function MoreLevels() {
     );
   }
   if (madeGame && fits) {
+    const byEngine = !!builderFor(project, componentRegistry);
     return (
       <div className="more-levels" data-testid="more-levels-offer">
         <span className="ml-title">Want {MORE} more levels?</span>
-        <span className="muted small ml-line">The AI builds them while you play and edit this one.</span>
+        <span className="muted small ml-line">{byEngine ? 'The engine builds them at once (no AI needed), each a step harder.' : 'The AI builds them while you play and edit this one.'}</span>
         <button
           className="btn-primary"
           data-testid="more-levels-yes"
           onClick={() => {
             close(madeGame);
-            startJob(madeGame.ctx, MORE_LEVELS_REQUEST, { moreLevels: true });
+            // The engine builds them when it can (no AI, at once); else, or if it can't build these, the AI.
+            const out = byEngine ? engineMoreLevels(MORE) : null;
+            if (out?.ok) setEngine({ first: out.sceneIds[0], message: out.message });
+            else {
+              if (out) useEditor.getState().logMessage('warn', `The engine couldn't build the levels (${out.message}); the AI builds them instead.`);
+              startJob(madeGame.ctx, MORE_LEVELS_REQUEST, { moreLevels: true });
+            }
           }}
         >
           Build {MORE} more levels

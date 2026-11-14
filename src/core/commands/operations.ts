@@ -35,6 +35,12 @@ import { isTopDownScene } from '../model/topDown';
 import { BACKGROUND_KINDS, type BackgroundKind } from '../model/backgroundArt';
 import { refreshPixelColliders } from '../model/colliderBoxes';
 import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
+import { STRUCTURES } from '../levelGen/blueprint';
+import { ZodError } from 'zod';
+import { GENRES, THEMES } from '../levelGen/profile';
+import { generateLevel, LevelGenError } from '../levelGen/generate';
+import { builderFor } from '../levelGen/build';
+import { current, isDraft } from 'immer';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
 
@@ -171,7 +177,7 @@ export const operationSchema = z.union([
   }),
   z.object({
     op: z.literal('create_level'),
-    ref: z.string().describe('Temporary name for the new level, usable as sceneId in later operations of this list (place_instance, build_path, draw_tiles, set_world, create_rule…)'),
+    ref: z.string().describe('Temporary name for the new level, usable as sceneId later in this list'),
     name: z.string().describe('Its name, e.g. "Level 2" or "The Mines"'),
   }),
   z.object({
@@ -275,15 +281,42 @@ export const operationSchema = z.union([
     clear: z.boolean().describe('true: everything already in the area goes first (the player is kept, and moved to "P" when the map has one); false: drawn over what is there (a second map of back walls or decoration on a Sprite layer below 0, behind the first, keeps it)'),
   }),
   z.object({
+    op: z.literal('generate_level'),
+    sceneId: z.string(),
+    difficulty: z.number().int().min(1).max(5),
+    structure: z.enum(STRUCTURES).nullable(),
+    length: z.enum(['short', 'medium', 'long']).nullable(),
+    focus: z.array(z.string()),
+    escalate: z.string().nullable(),
+    avoid: z.array(z.string()),
+    secrets: z.number().int().min(0).max(3),
+    concept: z.string().nullable(),
+    sections: z.array(
+      z.object({
+        role: z.string().nullable(),
+        pattern: z.string().nullable(),
+        variant: z.string().nullable(),
+        harder: z.boolean(),
+        map: z.array(z.string()),
+        legend: z.array(z.object({ char: z.string(), part: z.string() })),
+      }),
+    ),
+  }).describe('The engine builds a whole platformer level (see the levels guide)'),
+  z.object({
+    op: z.literal('set_level_profile'),
+    genre: z.enum(GENRES.map((g) => g.id) as [string, ...string[]]),
+    theme: z.string(),
+  }),
+  z.object({
     op: z.literal('build_path'),
     sceneId: z.string(),
     start: z
       .object({ col: z.number().int(), row: z.number().int() })
       .nullable()
-      .describe('The cell the player stands in where the route begins: a "_" cell of the level map. null = where the player starts'),
-    direction: z.enum(['right', 'left']).describe('Which way the route goes from its start (a level can branch both ways from the player)'),
-    floor: z.string().describe('The solid tile the route is built of (an object id, name or create_definition ref; e.g. Platform or Stone)'),
-    ladder: z.string().nullable().describe('The ladder object for climb steps (id, name or ref); null = the library Ladder'),
+      .describe('Where the route begins (a "_" cell); null = the player'),
+    direction: z.enum(['right', 'left']).describe('Which way it goes from its start'),
+    floor: z.string().describe('The solid tile it is built of (id, name or ref)'),
+    ladder: z.string().nullable().describe('Ladder for climbs; null = the library Ladder'),
     steps: z
       .array(
         z.discriminatedUnion('do', [
@@ -292,9 +325,9 @@ export const operationSchema = z.union([
           z.object({
             do: z.literal('climb'),
             rows: z.number().int().describe('A ladder this many rows high; the route continues on a platform at its top'),
-            back: z.boolean().nullish().describe('true: the platform at the top runs BACK over the floor below (a layer above it, the route turns around; needs rows >= 3); false/null: it continues ahead'),
+            back: z.boolean().nullish().describe('true: the platform on top runs back over the floor below (rows >= 3)'),
           }),
-          z.object({ do: z.literal('turn') }).describe('The route turns around and continues the other way from where it is (zig-zags, switchbacks; then e.g. jump up onto a ledge above the way you came)'),
+          z.object({ do: z.literal('turn') }).describe('The route turns around (zig-zags, switchbacks)'),
           z.object({ do: z.literal('hazard'), object: z.string().describe('Hazard object (id, name or ref)'), cells: z.number().int().describe('Cells of hazards on the floor, to jump over') }),
           z.object({ do: z.literal('put'), object: z.string().describe('Object to stand on the floor here (key, coin, door, switch, enemy, goal…; id, name or ref)'), name: z.string().nullable(), ref: z.string().nullable().describe('Temporary name to use it in later relationships/rules; null if not needed') }),
         ]),
@@ -308,7 +341,7 @@ export const operationSchema = z.union([
     row: z.number().int(),
     width: z.number().int().min(1),
     height: z.number().int().min(1),
-    definitionRef: z.string().nullable().describe('Only remove copies of this object; null removes everything in the area'),
+    definitionRef: z.string().nullable().describe('Only copies of this object; null: everything'),
   }),
   z.object({
     op: z.literal('create_relationship'),
@@ -1296,6 +1329,45 @@ export function applyOperations(
         for (const [d, rects] of rectsOf) applyOne({ op: 'draw_tiles', sceneId: op.sceneId, definitionRef: d.id, rects, onTop: null });
         break;
       }
+      case 'generate_level': {
+        // The engine builds the whole level from the blueprint (checked first), as ordinary operations.
+        const { op: _op, sceneId, sections, ...rest } = op;
+        const blueprint = {
+          ...rest,
+          focus: rest.focus.length ? rest.focus : null,
+          avoid: rest.avoid.length ? rest.avoid : null,
+          sections: !sections.length ? null : sections.map((x) => ({
+            role: x.role,
+            pattern: x.pattern,
+            variant: x.variant,
+            harder: x.harder,
+            custom: x.map.length ? { rows: x.map, legend: Object.fromEntries(x.legend.map((l) => [l.char, l.part])) } : null,
+          })),
+        };
+        const snapshot = isDraft(project) ? current(project) : project;
+        let built;
+        try {
+          built = generateLevel(snapshot, sceneId, blueprint, registry, builderFor(snapshot, registry) ?? 'classic');
+        } catch (e) {
+          if (e instanceof LevelGenError) throw new m.ModelError(`generate_level: ${e.message}`);
+          // (A mechanic or section kind that isn't one: said with what there is.)
+          if (e instanceof ZodError) throw new m.ModelError(`generate_level: ${e.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+          throw e;
+        }
+        for (const o of built.ops) applyOne(o);
+        m.getScene(project, sceneId).madeBy = built.madeBy;
+        const f = built.madeBy.fingerprint as { structure?: string; sections?: string[] } | null;
+        const name = m.getScene(project, sceneId).name;
+        result.notes = [
+          ...(result.notes ?? []),
+          `${name}: built by the engine (${f?.structure ?? 'level'}, ${f?.sections?.length ?? 0} sections, ${built.state === 'validated' ? 'checked: playable' : 'not proven playable'}${built.notes.length ? `; ${built.notes.join('; ')}` : ''})`,
+        ];
+        break;
+      }
+      case 'set_level_profile':
+        if (!THEMES.some((t) => t.id === op.theme)) throw new m.ModelError(`set_level_profile: there is no theme "${op.theme}" (there are: ${THEMES.map((t) => t.id).join(', ')})`);
+        m.setLevelProfile(project, op.genre, op.theme);
+        break;
       case 'build_path': {
         const byName = (x: string) => project.definitions.find((d) => d.name.toLowerCase() === x.trim().toLowerCase());
         const resolveDef = (x: string) => {

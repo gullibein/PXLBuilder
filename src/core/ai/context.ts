@@ -25,6 +25,7 @@ import { getEntitySize } from '../model/geometry';
 import { levelMap, type LevelMap } from '../model/levelMap';
 import { LEVEL_CELL } from '../model/placement';
 import { levelDesignIdea, type LevelDesignIdea } from './levelIdeas';
+import { builderInfo } from '../levelGen/build';
 import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
 import { gridFor } from '../model/spriteResolution';
@@ -232,6 +233,8 @@ export interface AIPayload {
      * asked for a particular layout.
      */
     design?: LevelDesignIdea;
+    /** The engine's level builder (generate_level): structures, mechanics, patterns. */
+    builder?: Record<string, unknown>;
     /** What the player-controlled character can do: the limits a level must respect to be playable. */
     playerReach: { character: string; jumpHeightPx: number; jumpHeightTiles: number; runningJumpDistancePx: number; runningJumpDistanceTiles: number; speed: number; cells?: Omit<JumpTable, 'gaps'> & { gaps: string } } | null;
   };
@@ -517,6 +520,11 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
           })()
         : {}),
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
+      // The engine's level builder (generate_level): what it can build in this game.
+      ...(random && (ctx.kind === 'level' || ctx.kind === 'project') && !isTopDownScene(project, scene, registry) ? (() => {
+        const b = builderInfo(project, registry);
+        return b ? { builder: b } : {};
+      })() : {}),
       playerReach: isTopDownScene(project, scene, registry) ? null : playerReach(project, scene, registry),
       camera: {
         ...scene.camera,

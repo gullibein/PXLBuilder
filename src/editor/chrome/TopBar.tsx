@@ -14,6 +14,8 @@ import { PromptBox } from '../prompt/PromptBox';
 import { useCloseOutside } from '../prompt/closeOutside';
 import { getActiveScene, useEditor } from '../store';
 import { JobDots } from './JobDots';
+import { noBuilderReason } from '../../core/levelGen/build';
+import { engineBuild } from '../levelBuild';
 
 /** Minimal top bar: wordmark, level selector, undo/redo, Play, global prompt, menu. */
 export function TopBar() {
@@ -109,6 +111,14 @@ function SceneSelector() {
   const scenes = useEditor((s) => s.project.scenes);
   const active = useEditor(getActiveScene);
   const { setActiveScene, edit } = useEditor.getState();
+  // (Worked out only while the menu is open: it looks through the game's levels.)
+  const noBuilder = open ? noBuilderReason(useEditor.getState().project, componentRegistry) : null;
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 9000);
+    return () => clearTimeout(t);
+  }, [note]);
   return (
     <div className="popover-anchor" ref={ref}>
       <button className="scene-btn" data-testid="scene-selector" onClick={() => setOpen(!open)}>
@@ -145,6 +155,37 @@ function SceneSelector() {
           >
             + New level
           </button>
+          {/* Levels built by the engine (no AI): checked before they change anything; each one Undo step. */}
+          {([
+            ['new', '✦ New level, built by the engine', 'new-scene-built', 'A new level after the others, a step harder, built and checked by the engine (no AI)'],
+            ['regenerate', '✦ Build this level again', 'regen-level', "This level built anew by the engine (from how it was made, if the engine made it); what's in it now is replaced (Undo brings it back)"],
+            ['variation', '✦ A variation of this level', 'vary-level', 'The same plan (structure and sections), built afresh with other numbers'],
+          ] as const).map(([kind, label, testId, tip]) => {
+            const off = noBuilder ?? (kind === 'variation' && !active.madeBy ? 'Only a level the engine built can be varied' : null);
+            return (
+              <button
+                key={kind}
+                role="menuitem"
+                className="menu-row"
+                data-testid={testId}
+                disabled={!!off}
+                title={off ?? tip}
+                onClick={() => {
+                  setOpen(false);
+                  const out = engineBuild(kind);
+                  setNote({ text: out.message, ok: out.ok });
+                  useEditor.getState().logMessage(out.ok ? 'info' : 'warn', `Level builder: ${out.message}`);
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {note && (
+        <div className={`level-build-note${note.ok ? '' : ' warn'}`} data-testid="level-build-note" role="status" onClick={() => setNote(null)}>
+          {note.text}
         </div>
       )}
     </div>

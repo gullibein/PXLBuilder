@@ -280,10 +280,12 @@ function connect(g: LevelGrid, run: RunPlan, exitRow: number, next: RunPlan, rol
 }
 
 /** Builds one level from a random source; throws GridError/PatternError when this build doesn't work out. */
-function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build: GenreBuild, notes: string[]): { grid: LevelGrid; built: Built[]; structure: Structure; length: string } {
+function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build: GenreBuild, notes: string[], avoidStructures: readonly Structure[] = []): { grid: LevelGrid; built: Built[]; structure: Structure; length: string } {
   const possible = possibleStructures(roles, lim);
   if (bp.structure && !possible.includes(bp.structure)) throw new LevelGenError(`A ${bp.structure} level needs ${bp.structure === 'hub' ? 'a key and a door' : 'a way up (a ladder, or jump-through ledges for a higher jump)'}, and the game has none`);
-  const structure = bp.structure ?? rnd.weighted(possible, (s) => build.structures[s] ?? 0);
+  // (Structures the game's last levels had are passed over when there are others.)
+  const fresh = possible.filter((s) => !avoidStructures.includes(s) && (build.structures[s] ?? 0) > 0);
+  const structure = bp.structure ?? rnd.weighted(fresh.length ? fresh : possible, (s) => build.structures[s] ?? 0);
   const length = bp.length ?? rnd.weighted(['short', 'medium', 'long'] as const, (l) => (l === 'medium' ? 3 : l === 'short' ? 2 : 1));
   const plan = layout(structure, length);
   const grid = new LevelGrid(plan.width, plan.height, roles);
@@ -461,7 +463,12 @@ function clearOutside(project: Project, sceneId: Id, width: number, height: numb
  * Builds a level from a blueprint into a level of the game: the operations that make it (applied by the caller, as
  * one step), checked first. `genre`: the builder to use (only "classic" so far).
  */
-export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic'): GenerateResult {
+export interface GenerateOptions {
+  /** Structures to pass over when the blueprint leaves the structure open (the game's last levels'). */
+  avoidStructures?: Structure[];
+}
+
+export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
   const bp = readBlueprint(blueprint);
   const build = genre === 'classic' ? CLASSIC_BUILD : null;
   if (!build) throw new LevelGenError(`There is no level builder for "${genre}" yet (there is: classic)`);
@@ -479,7 +486,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
     try {
-      out = buildOnce(bp, rnd, roles, lim, build, tried);
+      out = buildOnce(bp, rnd, roles, lim, build, tried, options.avoidStructures);
     } catch (e) {
       if (e instanceof LevelGenError) throw e;
       if (!(e instanceof GridError)) throw e;
