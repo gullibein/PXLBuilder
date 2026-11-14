@@ -38,8 +38,8 @@ import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
 import { STRUCTURES } from '../levelGen/blueprint';
 import { ZodError } from 'zod';
 import { GENRES, THEMES } from '../levelGen/profile';
-import { generateLevel, LevelGenError } from '../levelGen/generate';
-import { builderFor } from '../levelGen/build';
+import { LevelGenError } from '../levelGen/generate';
+import { buildLevel } from '../levelGen/build';
 import { current, isDraft } from 'immer';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -177,7 +177,7 @@ export const operationSchema = z.union([
   }),
   z.object({
     op: z.literal('create_level'),
-    ref: z.string().describe('Temporary name for the new level, usable as sceneId later in this list'),
+    ref: z.string().describe('A temporary name, usable as sceneId later in this list'),
     name: z.string().describe('Its name, e.g. "Level 2" or "The Mines"'),
   }),
   z.object({
@@ -290,6 +290,7 @@ export const operationSchema = z.union([
     escalate: z.string().nullable(),
     avoid: z.array(z.string()),
     secrets: z.number().int().min(0).max(3),
+    routes: z.string().nullable(),
     concept: z.string().nullable(),
     sections: z.array(
       z.object({
@@ -301,7 +302,7 @@ export const operationSchema = z.union([
         legend: z.array(z.object({ char: z.string(), part: z.string() })),
       }),
     ),
-  }).describe('The engine builds a whole platformer level (see the levels guide)'),
+  }).describe('The engine builds a whole level (levels guide)'),
   z.object({
     op: z.literal('set_level_profile'),
     genre: z.enum(GENRES.map((g) => g.id) as [string, ...string[]]),
@@ -341,7 +342,7 @@ export const operationSchema = z.union([
     row: z.number().int(),
     width: z.number().int().min(1),
     height: z.number().int().min(1),
-    definitionRef: z.string().nullable().describe('Only copies of this object; null: everything'),
+    definitionRef: z.string().nullable().describe('Only this object; null: all'),
   }),
   z.object({
     op: z.literal('create_relationship'),
@@ -1347,7 +1348,7 @@ export function applyOperations(
         const snapshot = isDraft(project) ? current(project) : project;
         let built;
         try {
-          built = generateLevel(snapshot, sceneId, blueprint, registry, builderFor(snapshot, registry) ?? 'classic');
+          built = buildLevel(snapshot, sceneId, blueprint, registry);
         } catch (e) {
           if (e instanceof LevelGenError) throw new m.ModelError(`generate_level: ${e.message}`);
           // (A mechanic or section kind that isn't one: said with what there is.)

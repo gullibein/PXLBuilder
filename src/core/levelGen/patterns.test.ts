@@ -30,7 +30,13 @@ describe('the pattern library', () => {
       for (const v of pat.variants) {
         const difficulty = Math.max(3, v.minDifficulty ?? 1);
         for (const seed of [1, 2, 3]) {
-          const r = generateLevel(p, p.scenes[0].id, { difficulty, structure: 'run', length: 'short', seed, sections: [{ pattern: pat.id, variant: v.id }] }, registry);
+          let r: ReturnType<typeof generateLevel>;
+          try {
+            r = generateLevel(p, p.scenes[0].id, { difficulty, structure: 'run', length: 'short', seed, sections: [{ pattern: pat.id, variant: v.id }] }, registry);
+          } catch (e) {
+            failures.push(`${pat.id}/${v.id} seed ${seed}: ${(e as Error).message}`);
+            continue;
+          }
           const s = (r.madeBy.fingerprint as { sections: string[] }).sections;
           if (r.state !== 'validated' || !s.some((x) => x.includes(`:${pat.id}/${v.id}@`))) failures.push(`${pat.id}/${v.id} seed ${seed}: ${r.state}, ${s.join(' ')} ${r.notes.join('; ')}`);
         }

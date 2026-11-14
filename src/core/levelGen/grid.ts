@@ -127,6 +127,13 @@ export class LevelGrid {
     return c;
   }
 
+  /** Puts back what a copy (clone) had: undoes everything done since it was made. */
+  restore(from: LevelGrid): void {
+    this.cells = from.cells.map((r) => [...r]);
+    this.placed.splice(0, this.placed.length, ...from.placed.map((p) => structuredClone(p)));
+    this.links.splice(0, this.links.length, ...from.links.map((l) => structuredClone(l)));
+  }
+
   /** Takes a placed thing away (and its links). */
   unplace(ref: string): void {
     const i = this.placed.findIndex((p) => p.ref === ref);

@@ -17,7 +17,7 @@ export interface GenreBuild {
 
 export const CLASSIC_BUILD: GenreBuild = {
   id: 'classic',
-  version: 1,
+  version: 2,
   structures: { run: 4, climb: 2, descent: 1.5, loop: 2, hub: 1.5 },
   weights: {
     start: { intro: 1 },
@@ -32,6 +32,10 @@ export const CLASSIC_BUILD: GenreBuild = {
     mover: { test: 1, twist: 2 },
     spikes: { teach: 1, test: 1.5, twist: 1 },
     bonus: { rest: 0.7 },
+    slopes: { teach: 1, test: 1, rest: 1.2, twist: 0.5 },
+    pool: { teach: 1, test: 1, twist: 1 },
+    cliff: { teach: 0.8, test: 1, twist: 0.8, rest: 0.5 },
+    split: { test: 0.4, twist: 0.7 },
     goal: { finale: 1 },
   },
   pacings: [

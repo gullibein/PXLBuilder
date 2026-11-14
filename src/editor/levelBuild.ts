@@ -36,7 +36,7 @@ export function engineBuild(kind: BuildKind): BuildOutcome {
   try {
     if (kind === 'new') {
       const ask = blueprintFor(project, null, 'new', seed)!;
-      const { scene, built } = newBuiltLevel(project, `Level ${project.scenes.length + 1}`, ask.blueprint, componentRegistry, ask.avoidStructures);
+      const { scene, built } = newBuiltLevel(project, `Level ${project.scenes.length + 1}`, ask.blueprint, componentRegistry, ask);
       const ok = state.edit(`New level, built by the engine`, (p) => {
         addScene(p, scene);
         applyBuilt(p, scene.id, built, componentRegistry);
@@ -49,7 +49,7 @@ export function engineBuild(kind: BuildKind): BuildOutcome {
     const sceneId = state.activeSceneId;
     const ask = blueprintFor(project, sceneId, kind, seed);
     if (!ask) return { ok: false, message: 'Only a level the engine built can be varied: use Regenerate to build this one anew' };
-    const built = buildLevel(project, sceneId, ask.blueprint, componentRegistry, ask.avoidStructures);
+    const built = buildLevel(project, sceneId, ask.blueprint, componentRegistry, ask);
     const label = kind === 'regenerate' ? 'Level built again by the engine' : 'A variation of the level, by the engine';
     if (!state.edit(label, (p) => void applyBuilt(p, sceneId, built, componentRegistry))) return { ok: false, message: "The level couldn't be changed (the Console says why)" };
     frameView();
@@ -69,7 +69,7 @@ export function engineMoreLevels(n: number): BuildOutcome {
   try {
     for (let i = 0; i < n; i++) {
       const ask = blueprintFor(soFar, null, 'new', newLevelSeed())!;
-      const r = newBuiltLevel(soFar, `Level ${soFar.scenes.length + 1}`, ask.blueprint, componentRegistry, ask.avoidStructures);
+      const r = newBuiltLevel(soFar, `Level ${soFar.scenes.length + 1}`, ask.blueprint, componentRegistry, ask);
       made.push(r);
       // (The next one is built knowing about this one: harder, another structure.)
       soFar = produce(soFar, (d) => {

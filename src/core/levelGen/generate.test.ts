@@ -146,8 +146,49 @@ describe('the level builder (classic platformer)', () => {
 
   it('records how the level was made: builder, seed, the blueprint, each pattern with its version', () => {
     const r = build(starter(), { difficulty: 2, seed: 31, concept: 'gentle start' });
-    expect(r.madeBy).toMatchObject({ generator: 'classic', version: 1, seed: 31, blueprint: { difficulty: 2, seed: 31, concept: 'gentle start' } });
+    expect(r.madeBy).toMatchObject({ generator: 'classic', version: 2, seed: 31, blueprint: { difficulty: 2, seed: 31, concept: 'gentle start' } });
     expect(Object.values(r.madeBy.patterns).every((v) => v >= 1)).toBe(true);
     expect(Object.keys(r.madeBy.patterns)).toContain('start');
+  });
+});
+
+describe('variety (stage 4)', () => {
+  const p = starter();
+  const fp = (r: ReturnType<typeof build>) => r.madeBy.fingerprint as { structure: string; signature: string | null; sections: string[] };
+
+  it('two ways through: a choice of ways, or a risky shortcut beside a slow safe way, each a checked section', { timeout: 60000 }, () => {
+    for (const routes of ['choice', 'risky_shortcut']) {
+      for (const [length, n] of [['medium', 1], ['long', 2]] as const) {
+        const r = build(p, { difficulty: 3, structure: 'run', length, routes, seed: 4 });
+        expect(r.state).toBe('validated');
+        expect(fp(r).sections.filter((x) => x.includes(`:split/${routes}@`)), `${routes} ${length}`).toHaveLength(n);
+      }
+    }
+  });
+
+  it('a level nobody says anything about is still about something: one mechanic of its own, another than the last levels had', { timeout: 60000 }, () => {
+    const sigs = Array.from({ length: 12 }, (_, seed) => fp(build(p, { difficulty: 3, seed })).signature);
+    expect(sigs.every((x) => !!x)).toBe(true);
+    expect(new Set(sigs).size).toBeGreaterThanOrEqual(4);
+    // Told what the last levels were about, a new one is mostly about something else.
+    const avoided = Array.from({ length: 12 }, (_, seed) => fp(generateLevel(p, p.scenes[0].id, { difficulty: 3, seed }, registry, 'classic', { recentSignatures: ['enemy', 'gap'] })).signature);
+    expect(avoided.filter((x) => x === 'enemy' || x === 'gap').length).toBeLessThanOrEqual(3);
+  });
+
+  it("what a level is about leans its structure: ladders and springs climb; gaps and ramps run", { timeout: 60000 }, () => {
+    const share = (focus: string[], structure: string) => Array.from({ length: 16 }, (_, seed) => fp(build(p, { difficulty: 3, seed, focus })).structure).filter((x) => x === structure).length;
+    expect(share(['ladder'], 'climb')).toBeGreaterThan(share(['gap'], 'climb'));
+    expect(share(['gap'], 'run')).toBeGreaterThan(share(['ladder'], 'run'));
+  });
+
+  it('it builds up: tests and twists late in a level are harder than early ones', { timeout: 60000 }, () => {
+    let early = 0;
+    let late = 0;
+    for (let seed = 0; seed < 10; seed++) {
+      const s = fp(build(p, { difficulty: 3, seed, structure: 'run', length: 'long' })).sections;
+      const hard = s.map((x, i) => ({ i, d: Number(x.split('@')[1]), test: /^(test|twist):/.test(x) })).filter((x) => x.test);
+      for (const h of hard) (h.i < s.length * 0.5 ? (early += h.d) : (late += h.d));
+    }
+    expect(late).toBeGreaterThan(early);
   });
 });

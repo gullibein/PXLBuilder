@@ -9,10 +9,10 @@ import { createLevelFor } from '../model/factory';
 import * as m from '../model/mutations';
 import type { Id, Project, Scene } from '../types';
 import { produce } from 'immer';
-import { MECHANICS, STRUCTURE_INFO, type Blueprint, type Structure } from './blueprint';
+import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
 import { patternById } from './patterns/index';
 import { findRoles } from './roles';
-import { generateLevel, type GenerateResult } from './generate';
+import { generateLevel, type GenerateOptions, type GenerateResult } from './generate';
 import { GENRE_BUILDS } from './genres';
 import { levelProfileOf } from './profile';
 
@@ -29,10 +29,21 @@ export function noBuilderReason(project: Project, registry: ComponentRegistry): 
   return GENRE_BUILDS[profile.genre.id] ? null : `The engine can't build ${profile.genre.name.toLowerCase()} levels yet`;
 }
 
-type Fingerprint = { structure?: Structure; length?: string; sections?: string[] };
+type Fingerprint = { structure?: Structure; length?: string; sections?: string[]; signature?: Mechanic | null };
 const fingerprintOf = (s: Scene | undefined) => (s?.madeBy?.fingerprint ?? null) as Fingerprint | null;
 
 export type BuildKind = 'new' | 'regenerate' | 'variation';
+
+/**
+ * How hard the game's n-th built level is: rising a step every two levels, every fourth a breather (2, 2, 3, 2, 4, 4, 5, 4…):
+ * a step easier and short; never more than a step easier than the level before, never past 5.
+ */
+export function difficultyCurve(n: number, previous: number): { difficulty: number; breather: boolean } {
+  const breather = n % 4 === 0;
+  const rising = Math.min(5, 1 + Math.ceil(n / 2));
+  const d = Math.max(1, Math.min(5, Math.max(rising - (breather ? 1 : 0), previous - 1)));
+  return { difficulty: d, breather };
+}
 
 /**
  * What to ask the builder for. new: a level a step harder than the game's hardest built one (else 2), of another
@@ -40,14 +51,16 @@ export type BuildKind = 'new' | 'regenerate' | 'variation';
  * the same structure, length and sections (patterns and variants) with a new seed: the same plan, built afresh.
  * Null when there is nothing to vary (a level not built by the engine).
  */
-export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKind, seed: number): { blueprint: Record<string, unknown>; avoidStructures: Structure[] } | null {
+export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKind, seed: number): { blueprint: Record<string, unknown>; avoidStructures: Structure[]; recentSignatures?: Mechanic[] } | null {
   const scene = sceneId ? project.scenes.find((s) => s.id === sceneId) : undefined;
   const made = scene?.madeBy;
   if (kind === 'new') {
     const built = project.scenes.filter((s) => s.madeBy);
-    const hardest = Math.max(1, ...built.map((s) => Number(s.madeBy!.blueprint.difficulty) || 1));
+    const last = Number(built.at(-1)?.madeBy!.blueprint.difficulty) || 0;
     const avoid = built.slice(-2).map((s) => fingerprintOf(s)?.structure).filter((x): x is Structure => !!x);
-    return { blueprint: { difficulty: built.length ? Math.min(5, hardest + 1) : 2, seed }, avoidStructures: avoid };
+    const recentSignatures = built.slice(-3).map((s) => fingerprintOf(s)?.signature).filter((x): x is Mechanic => !!x);
+    const { difficulty, breather } = difficultyCurve(built.length + 1, last);
+    return { blueprint: { difficulty, ...(breather ? { length: 'short' } : {}), seed }, avoidStructures: avoid, recentSignatures };
   }
   if (kind === 'regenerate') return { blueprint: { ...(made?.blueprint ?? { difficulty: 2 }), seed }, avoidStructures: [] };
   if (!made) return null;
@@ -65,9 +78,19 @@ export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKi
   return { blueprint: { ...made.blueprint, structure: f?.structure ?? null, length: f?.length ?? null, sections, seed }, avoidStructures: [] };
 }
 
-/** Builds a level of the game (checked, not applied). */
-export function buildLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, avoidStructures: Structure[] = []): GenerateResult {
-  return generateLevel(project, sceneId, blueprint, registry, builderFor(project, registry) ?? 'classic', { avoidStructures });
+/** Mechanics the game's look rules out (no swimming in a space station, no grassy slopes in a castle). */
+export function themeAvoids(project: Project, registry: ComponentRegistry): Mechanic[] {
+  const theme = levelProfileOf(project, registry)?.theme;
+  if (!theme) return [];
+  const out: Mechanic[] = [];
+  if (theme.avoid.includes('swim for it')) out.push('water');
+  if (theme.avoid.includes('hill')) out.push('ramp');
+  return out;
+}
+
+/** Builds a level of the game (checked, not applied), leaving out what its look rules out. */
+export function buildLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, options: GenerateOptions = {}): GenerateResult {
+  return generateLevel(project, sceneId, blueprint, registry, builderFor(project, registry) ?? 'classic', { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), ...themeAvoids(project, registry)] });
 }
 
 /** Puts a built level into a project being edited: its operations, and the record of how it was made. */
@@ -81,12 +104,12 @@ export function applyBuilt(project: Project, sceneId: Id, built: GenerateResult,
  * A new level for the game, built by the engine: the level (like the game's last one: gravity, background, camera)
  * and what goes in it. The project isn't changed: add the scene, then applyBuilt.
  */
-export function newBuiltLevel(project: Project, name: string, blueprint: unknown, registry: ComponentRegistry, avoidStructures: Structure[] = []): { scene: Scene; built: GenerateResult } {
+export function newBuiltLevel(project: Project, name: string, blueprint: unknown, registry: ComponentRegistry, options: GenerateOptions = {}): { scene: Scene; built: GenerateResult } {
   const like = project.scenes.filter((s) => !s.generator).at(-1);
   const scene = createLevelFor(project, name, like);
   if (like) scene.world.background = JSON.parse(JSON.stringify(like.world.background));
   const withIt = produce(project, (d) => void m.addScene(d, JSON.parse(JSON.stringify(scene))));
-  return { scene, built: buildLevel(withIt, scene.id, blueprint, registry, avoidStructures) };
+  return { scene, built: buildLevel(withIt, scene.id, blueprint, registry, options) };
 }
 
 /**
@@ -110,7 +133,8 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
     genre,
     theme: profile.theme?.id ?? null,
     structures: STRUCTURE_INFO,
-    mechanics: MECHANICS.join(', '),
+    mechanics: MECHANICS.filter((m) => !themeAvoids(project, registry).includes(m)).join(', '),
+    routes: ROUTES.join(', '),
     patterns,
   };
 }

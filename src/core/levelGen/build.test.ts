@@ -6,7 +6,7 @@ import { createProject } from '../model/factory';
 import * as m from '../model/mutations';
 import { levelReachability } from '../model/reachability';
 import type { Project } from '../types';
-import { applyBuilt, blueprintFor, builderFor, builderInfo, buildLevel, newBuiltLevel, noBuilderReason } from './build';
+import { applyBuilt, blueprintFor, builderFor, builderInfo, buildLevel, difficultyCurve, newBuiltLevel, noBuilderReason, themeAvoids } from './build';
 
 const registry = createBuiltinRegistry();
 const ops = (p: Project, list: unknown[]) => produce(p, (d) => void applyOperations(d, list as Operation[], registry));
@@ -66,9 +66,11 @@ describe('levels built into a game', () => {
     expect(blueprintFor(p, p.scenes[0].id, 'variation', 5)).toBeNull();
     const built = buildLevel(p, p.scenes[0].id, { difficulty: 3, seed: 8, focus: ['pipe'] }, registry);
     p = produce(p, (d) => void applyBuilt(d, d.scenes[0].id, built, registry));
-    // New: a step harder than the hardest, another structure than the last.
+    // New: the game's difficulty curve (the 2nd built level, after a difficulty 3 one: 3), another structure and
+    // another mechanic to build around than the last.
     const next = blueprintFor(p, null, 'new', 6)!;
-    expect(next.blueprint).toEqual({ difficulty: 4, seed: 6 });
+    // (The 2nd built level: 2 on the curve; the first was 3, so not less than 2.)
+    expect(next.blueprint).toEqual({ difficulty: 2, seed: 6 });
     expect(next.avoidStructures).toEqual([(built.madeBy.fingerprint as { structure: string }).structure]);
     // Regenerate: the same blueprint, another seed.
     expect(blueprintFor(p, p.scenes[0].id, 'regenerate', 9)!.blueprint).toMatchObject({ difficulty: 3, focus: ['pipe'], seed: 9 });
@@ -83,6 +85,30 @@ describe('levels built into a game', () => {
     expect(middle(again)).toEqual(middle(built));
     expect(again.rows).not.toEqual(built.rows);
   });
+
+  it('the difficulty across a game: up a step every two levels, a short breather every fourth, never past 5', () => {
+    const curve: number[] = [];
+    let prev = 0;
+    for (let n = 1; n <= 10; n++) {
+      const c = difficultyCurve(n, prev);
+      curve.push(c.difficulty);
+      expect(c.breather).toBe(n % 4 === 0);
+      prev = c.difficulty;
+    }
+    expect(curve).toEqual([2, 2, 3, 2, 4, 4, 5, 4, 5, 5]);
+    // (Never more than a step easier than the level before.)
+    expect(difficultyCurve(2, 5).difficulty).toBe(4);
+  });
+
+  it('the look rules mechanics out: no swimming in a space station, no grassy slopes in a castle', () => {
+    const space = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'classic', 'space'));
+    expect(themeAvoids(space, registry)).toEqual(['water', 'ramp']);
+    const forest = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'classic', 'forest'));
+    expect(themeAvoids(forest, registry)).toEqual([]);
+    const sections = (p: Project) => Array.from({ length: 6 }, (_, seed) => (buildLevel(p, p.scenes[0].id, { difficulty: 3, seed, structure: 'run', length: 'long', focus: ['water', 'ramp'] }, registry).madeBy.fingerprint as { sections: string[] }).sections).flat();
+    expect(sections(space).some((x) => /:(pool|slopes)\//.test(x))).toBe(false);
+    expect(sections(forest).some((x) => /:(pool|slopes)\//.test(x))).toBe(true);
+  }, 60000);
 
   it("a new built level is like the game's last one (gravity, background, camera)", () => {
     const p = produce(createProject(registry), (d) => {

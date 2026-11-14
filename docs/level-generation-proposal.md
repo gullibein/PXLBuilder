@@ -384,3 +384,29 @@ Not yet connected to the AI or the editor (stage 3).
 - **Editor:**
   - The level menu has ✦ New level, built by the engine / ✦ Build this level again / ✦ A variation of this level. There's no AI call, each is one Undo step, and a note under the level button says what was built and how it checked out.
   - "Two more levels" after a new game is built by the engine at once, each a step harder; the AI is used only if the engine can't.
+
+### Stage 4 — done
+
+- **More constructions.** New variants (patterns bumped to version 2):
+  - gap: `double` (two gaps with an island);
+  - stairs: `pyramid_gap` (two step pyramids with a gap between their tops);
+  - enemy: `on_rise`, `in_dip`;
+  - floating: `rising` (platforms climbing to higher ground);
+  - pipes: `pipe_gap` (pipe to pipe over a pit);
+  - blocks: `coin_row`;
+  - spikes: `stepping` (a long bed with a block to hop onto).
+- **New patterns:**
+  - `slopes` (up, down, hill, valley with ramps, rising the way the player goes);
+  - `pool` (a pool too wide to jump, to swim across);
+  - `cliff` (a ladder up a cliff too high to jump, or up to a coin ledge);
+  - `split` (two ways at once: `choice` gives a high way of jump-through platforms with coins over a low way with an enemy; `risky_shortcut` gives a pit with a slow safe way down and up beside platforms across its top at the limit of a jump).
+
+  That makes 19 patterns and 54 variants in use. A sweep of 400 levels used every one of them.
+- **Routes:** the blueprint's `routes` takes `choice` and `risky_shortcut`, which put one split section in a medium level or two in a long one, in place of tests and twists. The AI operation has the field too.
+- **Each level is about something:** when the blueprint names no focus or sections, the builder picks a signature mechanic from the seed. It's less likely to be one the game's last three levels were built around. That mechanic's patterns come up three times as often, and it is recorded in the fingerprint.
+- **Focus leans the structure:** ladders and springs favour climbs; gaps, ramps, water and pipes favour runs; enemies favour hubs.
+- **It builds up:** tests and twists in the last 40% of a level are a step harder.
+- **Difficulty across the game:** new built levels follow 2, 2, 3, then a short breather at 2, then 4, 4, 5, 4… (`difficultyCurve`). A level is never more than a step easier than the one before.
+- **The look rules mechanics out:** themes without water leave out pools, and themes without hills leave out ramps. This applies to the AI's `generate_level` too, and those mechanics aren't offered to the AI.
+- **Section-level repair:** a pattern that can't be built where it lands is undone (the grid is restored to before the section) and another is picked for that section, up to 4 times, instead of the whole level being rebuilt. In the sweep, builds needed fell to 1.0–1.8 on average.
+- **Measured:** 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds, a third of them with each route option) were all validated, at 45–157 ms each on average.

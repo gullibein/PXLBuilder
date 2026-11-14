@@ -22,8 +22,11 @@ export const STRUCTURE_INFO: Record<Structure, string> = {
   hub: 'the start in the middle: the key at one end, the locked goal at the other',
 };
 
-export const MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins'] as const;
+export const MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins', 'ramp', 'water', 'ladder'] as const;
 export type Mechanic = (typeof MECHANICS)[number];
+
+/** How many ways there are through: one; a bonus route up above; a choice of two ways; a risky shortcut beside a slow safe way. */
+export const ROUTES = ['one', 'bonus_above', 'choice', 'risky_shortcut'] as const;
 
 export const SECTION_ROLES = ['intro', 'teach', 'test', 'rest', 'twist', 'finale'] as const;
 export type SectionRole = (typeof SECTION_ROLES)[number];
@@ -49,7 +52,7 @@ export const blueprintSchema = z.object({
   focus: z.array(z.enum(MECHANICS)).max(3).nullable().default(null).describe('Mechanics the level is about'),
   escalate: z.enum(MECHANICS).nullable().default(null).describe('A mechanic that gets harder each time it comes'),
   avoid: z.array(z.enum(MECHANICS)).nullable().default(null),
-  routes: z.enum(['one', 'bonus_above']).nullable().default(null),
+  routes: z.enum(ROUTES).nullable().default(null),
   secrets: z.number().int().min(0).max(3).nullable().default(null),
   concept: z.string().max(300).nullable().default(null),
   sections: z.array(sectionSchema).max(16).nullable().default(null),

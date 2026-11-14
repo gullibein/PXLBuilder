@@ -130,9 +130,11 @@ function layout(structure: Structure, length: 'short' | 'medium' | 'long'): Layo
 }
 
 /** The difficulty of a section of this kind in a level of this difficulty. */
-function sectionDifficulty(base: number, role: SectionRole, harder: boolean): number {
+function sectionDifficulty(base: number, role: SectionRole, harder: boolean, progress: number): number {
   const step = role === 'teach' || role === 'rest' || role === 'intro' ? -1 : role === 'twist' ? 1 : 0;
-  return Math.max(1, Math.min(5, base + step + (harder ? 1 : 0)));
+  // (Tests and twists in the last part of the level are a step harder: it builds up to the goal.)
+  const late = progress >= 0.6 && (role === 'test' || role === 'twist') ? 1 : 0;
+  return Math.max(1, Math.min(5, base + step + late + (harder ? 1 : 0)));
 }
 
 interface Choice {
@@ -156,27 +158,32 @@ interface Pick {
   used: Built[];
   /** How many times each mechanic has come so far (escalation). */
   seen: Map<Mechanic, number>;
+  /** Mechanics left out (the blueprint's, and what the game's look rules out). */
+  avoid: Set<Mechanic>;
+  /** The mechanic this level is built around when the blueprint names none (picked from the seed). */
+  signature: Mechanic | null;
 }
 
 /** The pattern, variant and width for a slot, within `room` columns (null: nothing fits). */
-function choose(slot: Slot, room: number, band: Band, k: Pick): Choice | null {
+function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number, failed: ReadonlySet<string> = new Set()): Choice | null {
   const focus = k.bp.focus ?? [];
-  const avoid = new Set(k.bp.avoid ?? []);
+  const avoid = k.avoid;
   const named0 = slot.spec?.pattern ? patternById(slot.spec.pattern) : undefined;
   // (A named pattern the game lacks the parts for can't be built: another is picked, and that is said.)
-  if (named0 && !named0.needs.every((r) => k.roles[r])) return null;
+  if (named0 && (!named0.needs.every((r) => k.roles[r]) || failed.has(named0.id))) return null;
   const named = named0;
   const pool: Pattern[] = named
     ? [named]
     : Object.entries(k.build.weights)
         .filter(([, w]) => (w[slot.role] ?? 0) > 0)
         .map(([id]) => patternById(id)!)
-        .filter((p) => p && p.needs.every((r) => k.roles[r]) && !p.mechanics.some((m) => avoid.has(m) && m !== 'coins'));
+        .filter((p) => p && p.needs.every((r) => k.roles[r]) && !p.mechanics.some((m) => avoid.has(m) && m !== 'coins') && !failed.has(p.id));
   const options: { p: Pattern; w: number }[] = [];
   for (const p of pool) {
     let w = named ? 1 : (k.build.weights[p.id]?.[slot.role] ?? 0);
     if (p.mechanics.some((m) => focus.includes(m))) w *= slot.role === 'rest' ? 1.5 : 5;
     if (k.bp.escalate && p.mechanics.includes(k.bp.escalate)) w *= 3;
+    if (k.signature && p.mechanics.includes(k.signature) && slot.role !== 'rest') w *= 3;
     const last = k.used.at(-1);
     if (last?.pattern === p.id) w *= 0.12;
     const times = k.used.filter((u) => u.pattern === p.id).length;
@@ -186,7 +193,7 @@ function choose(slot: Slot, room: number, band: Band, k: Pick): Choice | null {
   for (let tries = 0; tries < options.length * 2 && options.some((o) => o.w > 0); tries++) {
     const pick = k.rnd.weighted(options, (o) => o.w);
     const p = pick.p;
-    let d = sectionDifficulty(k.bp.difficulty, slot.role, !!slot.spec?.harder);
+    let d = sectionDifficulty(k.bp.difficulty, slot.role, !!slot.spec?.harder, progress);
     const esc = k.bp.escalate && p.mechanics.includes(k.bp.escalate) ? k.bp.escalate : null;
     // (Escalating: easier the first time, a step harder each time after.)
     if (esc) d = Math.max(1, Math.min(5, k.bp.difficulty - 1 + (k.seen.get(esc) ?? 0)));
@@ -280,12 +287,47 @@ function connect(g: LevelGrid, run: RunPlan, exitRow: number, next: RunPlan, rol
 }
 
 /** Builds one level from a random source; throws GridError/PatternError when this build doesn't work out. */
-function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build: GenreBuild, notes: string[], avoidStructures: readonly Structure[] = []): { grid: LevelGrid; built: Built[]; structure: Structure; length: string } {
+/** How a level's mechanics lean its structure (a level about springs or ladders climbs; one about gaps runs…). */
+const STRUCTURE_LEAN: Partial<Record<Mechanic, Partial<Record<Structure, number>>>> = {
+  spring: { climb: 2, descent: 1.3 },
+  ladder: { climb: 2.5, loop: 1.5 },
+  stairs: { climb: 1.5 },
+  mover: { run: 1.5, loop: 1.5 },
+  gap: { run: 1.5, descent: 1.3 },
+  floating: { run: 1.3, loop: 1.3 },
+  enemy: { hub: 1.6, run: 1.2 },
+  water: { run: 1.6 },
+  ramp: { run: 1.6, loop: 1.3 },
+  pipe: { run: 1.4 },
+};
+
+/** The mechanics this game's patterns can build (with their parts, not left out). */
+function buildableMechanics(build: GenreBuild, roles: Roles, avoid: Set<Mechanic>): Mechanic[] {
+  const out = new Set<Mechanic>();
+  for (const id of Object.keys(build.weights)) {
+    const p = patternById(id);
+    if (!p || !p.needs.every((r) => roles[r])) continue;
+    for (const m of p.mechanics) if (m !== 'coins' && !avoid.has(m)) out.add(m);
+  }
+  return [...out];
+}
+
+function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build: GenreBuild, notes: string[], opts: GenerateOptions = {}): { grid: LevelGrid; built: Built[]; structure: Structure; length: string; signature: Mechanic | null } {
+  const avoidStructures = opts.avoidStructures ?? [];
+  const avoid = new Set<Mechanic>([...(bp.avoid ?? []), ...(opts.avoidMechanics ?? [])]);
+  // A level the blueprint says nothing about is still about something: one mechanic, picked from the seed (another
+  // than the game's last levels were about, when there are others), comes up more than the rest.
+  const signature = !bp.focus?.length && !bp.sections?.length ? (() => {
+    const can = buildableMechanics(build, roles, avoid);
+    return can.length ? rnd.weighted(can, (m) => (opts.recentSignatures?.includes(m) ? 0.15 : 1)) : null;
+  })() : null;
+  const leaning = [...(bp.focus ?? []), ...(signature ? [signature] : [])];
   const possible = possibleStructures(roles, lim);
   if (bp.structure && !possible.includes(bp.structure)) throw new LevelGenError(`A ${bp.structure} level needs ${bp.structure === 'hub' ? 'a key and a door' : 'a way up (a ladder, or jump-through ledges for a higher jump)'}, and the game has none`);
   // (Structures the game's last levels had are passed over when there are others.)
   const fresh = possible.filter((s) => !avoidStructures.includes(s) && (build.structures[s] ?? 0) > 0);
-  const structure = bp.structure ?? rnd.weighted(fresh.length ? fresh : possible, (s) => build.structures[s] ?? 0);
+  const lean = (st: Structure) => leaning.reduce((w, m) => w * (STRUCTURE_LEAN[m]?.[st] ?? 1), 1);
+  const structure = bp.structure ?? rnd.weighted(fresh.length ? fresh : possible, (st) => (build.structures[st] ?? 0) * lean(st));
   const length = bp.length ?? rnd.weighted(['short', 'medium', 'long'] as const, (l) => (l === 'medium' ? 3 : l === 'short' ? 2 : 1));
   const plan = layout(structure, length);
   const grid = new LevelGrid(plan.width, plan.height, roles);
@@ -294,7 +336,11 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build:
   const pacing = rnd.pick(build.pacings);
   const counter = { i: 0 };
   const specs = bp.sections ? [...bp.sections] : null;
-  const k: Pick = { rnd, lim, roles, build, bp, used: [], seen: new Map() };
+  const k: Pick = { rnd, lim, roles, build, bp, used: [], seen: new Map(), avoid, signature };
+  // Two ways through (a choice, a risky shortcut): sections of their own in place of tests and twists.
+  const twoWays = bp.routes === 'choice' || bp.routes === 'risky_shortcut' ? bp.routes : null;
+  let routes = twoWays && roles.oneway ? (length === 'long' ? 2 : 1) : 0;
+  if (twoWays && !roles.oneway) notes.push(`a ${twoWays === 'choice' ? 'choice of ways' : 'risky shortcut'} needs jump-through platforms, and the game has none`);
   const built: Built[] = [];
   let refs = 0;
   let hubEntry = 0;
@@ -318,6 +364,10 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build:
       // (Sections the blueprint names come in its order; after them, the builder only fills with rests.)
       if (specs && specs.length) return { role: specs[0].role ?? pacing[counter.i++ % pacing.length], spec: specs.shift()! };
       const role: SectionRole = specs ? 'rest' : pacing[counter.i++ % pacing.length];
+      if ((role === 'test' || role === 'twist') && routes > 0) {
+        routes--;
+        return { role, spec: { role, pattern: 'split', variant: twoWays, harder: null, custom: null } };
+      }
       // (Bonus caches the blueprint asks for take the place of rests.)
       if (role === 'rest' && bonuses > 0 && roles.coin) {
         bonuses--;
@@ -341,22 +391,40 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build:
         used += w;
         return true;
       }
-      let choice = choose(slot, room, run.band, k);
-      if (!choice && slot.spec?.pattern) {
-        notes.push(`pattern "${slot.spec.pattern}" can't be built here (missing parts or room); another was used`);
-        choice = choose({ role: slot.role, spec: null }, room, run.band, k);
+      // (How far through the level this is: later tests and twists are a step harder.)
+      const progress = (ri + used / Math.max(1, run.length)) / plan.runs.length;
+      // A pattern that can't be built here (no room for it at this height…) is undone and another picked: only
+      // this section is tried again, not the whole level.
+      const failed = new Set<string>();
+      for (let tries = 0; tries < 4; tries++) {
+        let choice = choose(slot, room, run.band, k, progress, failed);
+        if (!choice && slot.spec?.pattern) {
+          if (!notes.some((n) => n.startsWith(`pattern "${slot.spec!.pattern}"`))) notes.push(`pattern "${slot.spec.pattern}" can't be built here (missing parts or room); another was used`);
+          choice = choose({ role: slot.role, spec: null }, room, run.band, k, progress, failed);
+        }
+        if (!choice && !isEnding) choice = choose({ role: 'rest', spec: null }, room, run.band, k, progress, failed);
+        if (!choice) return false;
+        if (slot.spec?.variant && choice.variant !== slot.spec.variant) notes.push(`variant "${slot.spec.variant}" of "${choice.pattern.id}" can't be built here (missing parts, or not on this floor); "${choice.variant}" was used`);
+        // The ending takes up what is left of the run (the goal at its very end).
+        if (isEnding) choice.width = room;
+        const before = grid.clone();
+        const refsBefore = refs;
+        try {
+          entry = choice.pattern.build(ctxBase(choice.width, choice.difficulty, choice.variant));
+        } catch (e) {
+          if (!(e instanceof PatternError)) throw e;
+          grid.restore(before);
+          refs = refsBefore;
+          failed.add(choice.pattern.id);
+          continue;
+        }
+        built.push({ pattern: choice.pattern.id, variant: choice.variant, role: slot.role, difficulty: choice.difficulty });
+        k.used.push(built[built.length - 1]);
+        for (const m of choice.pattern.mechanics) k.seen.set(m, (k.seen.get(m) ?? 0) + 1);
+        used += choice.width;
+        return true;
       }
-      if (!choice && !isEnding) choice = choose({ role: 'rest', spec: null }, room, run.band, k);
-      if (!choice) return false;
-      if (slot.spec?.variant && choice.variant !== slot.spec.variant) notes.push(`variant "${slot.spec.variant}" of "${choice.pattern.id}" can't be built here (missing parts, or not on this floor); "${choice.variant}" was used`);
-      // The ending takes up what is left of the run (the goal at its very end).
-      if (isEnding) choice.width = room;
-      entry = choice.pattern.build(ctxBase(choice.width, choice.difficulty, choice.variant));
-      built.push({ pattern: choice.pattern.id, variant: choice.variant, role: slot.role, difficulty: choice.difficulty });
-      k.used.push(built[built.length - 1]);
-      for (const m of choice.pattern.mechanics) k.seen.set(m, (k.seen.get(m) ?? 0) + 1);
-      used += choice.width;
-      return true;
+      return false;
     };
     for (let guard = 0; guard < 40; guard++) {
       const slot = nextSlot();
@@ -378,7 +446,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build:
     grid.link({ type: 'requires', from: 'door', to: 'key' });
   }
   if (!grid.rows().some((r) => r.includes('G'))) throw new PatternError('no room was left for the goal');
-  return { grid, built, structure, length };
+  return { grid, built, structure, length, signature };
 }
 
 /** The same level with each moving platform's ride as a still bridge along its path (what the checker can judge). */
@@ -466,6 +534,10 @@ function clearOutside(project: Project, sceneId: Id, width: number, height: numb
 export interface GenerateOptions {
   /** Structures to pass over when the blueprint leaves the structure open (the game's last levels'). */
   avoidStructures?: Structure[];
+  /** Mechanics left out besides the blueprint's (what the game's look rules out: no water in a space station). */
+  avoidMechanics?: Mechanic[];
+  /** What the game's last levels were built around (a new one is about something else, when it can be). */
+  recentSignatures?: Mechanic[];
 }
 
 export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
@@ -486,7 +558,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
     try {
-      out = buildOnce(bp, rnd, roles, lim, build, tried, options.avoidStructures);
+      out = buildOnce(bp, rnd, roles, lim, build, tried, options);
     } catch (e) {
       if (e instanceof LevelGenError) throw e;
       if (!(e instanceof GridError)) throw e;
@@ -514,7 +586,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
         seed,
         blueprint: Object.fromEntries(Object.entries({ ...bp, seed }).filter(([, v]) => v !== null)),
         patterns,
-        fingerprint: { structure: out.structure, length: out.length, size: [out.grid.width, out.grid.height], sections: out.built.map((b) => `${b.role}:${b.pattern}/${b.variant}@${b.difficulty}`) },
+        fingerprint: { structure: out.structure, length: out.length, size: [out.grid.width, out.grid.height], signature: out.signature, routes: bp.routes ?? 'one', sections: out.built.map((b) => `${b.role}:${b.pattern}/${b.variant}@${b.difficulty}`) },
       },
     };
     if (check.state === 'validated') return result;

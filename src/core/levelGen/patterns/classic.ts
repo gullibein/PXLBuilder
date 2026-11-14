@@ -78,17 +78,31 @@ const flat: Pattern = {
 
 const stairs: Pattern = {
   id: 'stairs',
-  version: 1,
-  name: 'steps up or down, or a hill over and down again',
+  version: 2,
+  name: 'steps up or down, a hill over and down again, or two step pyramids with a gap between their tops',
   mechanics: ['stairs'],
   fits: ['teach', 'test', 'rest', 'twist'],
   needs: ['ground'],
-  variants: [{ id: 'up' }, { id: 'down' }, { id: 'hill' }],
+  variants: [{ id: 'up' }, { id: 'down' }, { id: 'hill' }, { id: 'pyramid_gap', minDifficulty: 2 }],
   difficulty: [1, 5],
-  width: () => [4, 9],
+  width: (lim, _d, v) => (v === 'pyramid_gap' ? [9, 9 + Math.max(1, lim.gap(0))] : [4, 9]),
   build(ctx) {
     const s = new Section(ctx);
     let r = ctx.entry;
+    if (ctx.variant === 'pyramid_gap') {
+      const e = r;
+      const h = Math.min(2, e - s.highest, ctx.lim.maxRise >= 1 ? 3 : 0);
+      if (h < 1) throw new PatternError('no room for step pyramids');
+      const g = Math.max(1, Math.min(ctx.lim.gap(0), s.scaled(1, ctx.lim.gap(0)), s.w - 4 - 2 * h));
+      if (2 * h + g + 3 > s.w) throw new PatternError('step pyramids: too narrow');
+      s.flat(0, 0, e);
+      let i = 1;
+      for (let k = 1; k <= h; k++) s.ground(i++, e - k);
+      i += g;
+      for (let k = h; k >= 1; k--) s.ground(i++, e - k);
+      s.flat(i, s.w - 1, e);
+      return e;
+    }
     const room = { up: r - s.highest, down: s.lowest - r };
     let way = ctx.variant;
     if (way === 'up' && (room.up < 1 || ctx.lim.maxRise < 1)) way = 'down';
@@ -115,17 +129,30 @@ const stairs: Pattern = {
 
 const gap: Pattern = {
   id: 'gap',
-  version: 1,
-  name: 'a gap to jump: level, onto higher or lower ground, over spikes, or with coins over it',
+  version: 2,
+  name: 'a gap to jump: level, onto higher or lower ground, over spikes, with coins over it, or two gaps with an island between',
   mechanics: ['gap'],
   fits: ['teach', 'test', 'twist'],
   needs: ['ground'],
-  variants: [{ id: 'plain' }, { id: 'step_up' }, { id: 'step_down' }, { id: 'spike_pit', needs: ['hazard'], bottomOnly: true, minDifficulty: 2 }, { id: 'coin_arc', needs: ['coin'] }],
+  variants: [{ id: 'plain' }, { id: 'step_up' }, { id: 'step_down' }, { id: 'spike_pit', needs: ['hazard'], bottomOnly: true, minDifficulty: 2 }, { id: 'coin_arc', needs: ['coin'] }, { id: 'double', minDifficulty: 2 }],
   difficulty: [1, 5],
-  width: (lim) => [4, 4 + Math.max(1, lim.gap(-1))],
+  width: (lim, _d, v) => (v === 'double' ? [7, 6 + 2 * Math.max(1, lim.gap(0))] : [4, 4 + Math.max(1, lim.gap(-1))]),
   build(ctx) {
     const s = new Section(ctx);
     const e = ctx.entry;
+    if (ctx.variant === 'double') {
+      // Lip, a gap, an island (1-2 cells), a gap, the landing.
+      const most = ctx.lim.gap(0);
+      const room = s.w - 4;
+      if (most < 1 || room < 3) throw new PatternError('no room for two gaps');
+      const g1 = Math.max(1, Math.min(most, s.scaled(1, most), room - 2));
+      const g2 = Math.max(1, Math.min(most, s.scaled(1, most), room - g1 - 1));
+      const island = Math.max(1, Math.min(2, room - g1 - g2));
+      s.flat(0, 0, e);
+      s.flat(1 + g1, g1 + island, e);
+      s.flat(1 + g1 + island + g2, s.w - 1, e);
+      return e;
+    }
     let to = e;
     if (ctx.variant === 'step_up' && ctx.lim.maxRise >= 1 && e - 1 >= s.highest) to = e - 1;
     if (ctx.variant === 'step_down' && e + 1 <= s.lowest) to = e + Math.min(2, s.lowest - e);
@@ -141,17 +168,37 @@ const gap: Pattern = {
 
 const floating: Pattern = {
   id: 'floating',
-  version: 1,
-  name: 'a pit crossed on floating platforms, each a jump from the last',
+  version: 2,
+  name: 'a pit crossed on floating platforms, each a jump from the last; or platforms rising to higher ground',
   mechanics: ['floating', 'gap'],
   fits: ['test', 'twist'],
   needs: ['ground'],
-  variants: [{ id: 'ledges', needs: ['ledge'] }, { id: 'oneways', needs: ['oneway'] }, { id: 'bricks', needs: ['brick'] }],
+  variants: [{ id: 'ledges', needs: ['ledge'] }, { id: 'oneways', needs: ['oneway'] }, { id: 'bricks', needs: ['brick'] }, { id: 'rising', needs: ['ledge'], minDifficulty: 2 }],
   difficulty: [2, 5],
   width: (lim) => [6, 7 + 2 * Math.max(1, lim.gap(0))],
   build(ctx) {
     const s = new Section(ctx);
     const e = ctx.entry;
+    if (ctx.variant === 'rising') {
+      // Each platform a row higher, then higher ground.
+      const top = Math.max(s.highest, e - 2);
+      if (top >= e || ctx.lim.maxRise < 1 || ctx.lim.gap(1) < 1) throw new PatternError('no room to rise here');
+      s.flat(0, 0, e);
+      let pos = 0;
+      let r = e;
+      while (r > top) {
+        const gx = Math.max(1, Math.min(ctx.lim.gap(1), s.scaled(1, ctx.lim.gap(1))));
+        r -= 1;
+        const at = pos + gx + 1;
+        if (at >= s.w - 2) throw new PatternError('rising platforms: too narrow');
+        s.put('ledge', at, r);
+        pos = at;
+      }
+      const gf = Math.max(1, Math.min(ctx.lim.gap(0), s.w - 2 - pos));
+      if (pos + gf + 1 > s.w - 1) throw new PatternError('rising platforms: no room to land');
+      s.flat(pos + gf + 1, s.w - 1, r);
+      return r;
+    }
     const role = ctx.variant === 'oneways' ? 'oneway' : ctx.variant === 'bricks' ? 'brick' : 'ledge';
     const landingAt = s.w - 2;
     s.flat(0, 0, e);
@@ -179,17 +226,29 @@ const floating: Pattern = {
 
 const enemy: Pattern = {
   id: 'enemy',
-  version: 1,
-  name: 'enemies: on open ground, guarding a landing, or on both sides of a bump',
+  version: 2,
+  name: 'enemies: on open ground, guarding a landing, on both sides of a bump, up on a rise, or down in a dip',
   mechanics: ['enemy'],
   fits: ['teach', 'test', 'twist'],
   needs: ['ground', 'enemy'],
-  variants: [{ id: 'flat' }, { id: 'guarded_gap' }, { id: 'pincer', minDifficulty: 2 }],
+  variants: [{ id: 'flat' }, { id: 'guarded_gap' }, { id: 'pincer', minDifficulty: 2 }, { id: 'on_rise' }, { id: 'in_dip' }],
   difficulty: [1, 5],
-  width: (lim, _d, v) => (v === 'guarded_gap' ? [6, 7 + Math.max(1, lim.gap(0))] : v === 'pincer' ? [7, 10] : [5, 9]),
+  width: (lim, _d, v) => (v === 'guarded_gap' ? [6, 7 + Math.max(1, lim.gap(0))] : v === 'flat' ? [5, 9] : [7, 10]),
   build(ctx) {
     const s = new Section(ctx);
     const e = ctx.entry;
+    if (ctx.variant === 'on_rise' || ctx.variant === 'in_dip') {
+      // A stretch of ground a row up (or down) with an enemy patrolling it.
+      const dr = ctx.variant === 'on_rise' ? -1 : 1;
+      const r = e + dr;
+      // (A dip goes down into the ground under the floor, as a pool does; not past its bottom row.)
+      if (r < s.highest || r > ctx.band.fill - 1 || (dr < 0 && ctx.lim.maxRise < 1)) throw new PatternError('no room for a rise or a dip here');
+      s.flat(0, 1, e);
+      s.flat(2, s.w - 3, r);
+      s.flat(s.w - 2, s.w - 1, e);
+      s.put('enemy', Math.floor(s.w / 2), r - 1);
+      return e;
+    }
     if (ctx.variant === 'guarded_gap') {
       const most = Math.min(ctx.lim.gap(0), s.w - 4);
       if (most < 1) throw new PatternError('no gap fits before the guard');
@@ -223,14 +282,14 @@ function pipeAt(s: Section, i: number, ground: number, h: number): void {
 
 const pipes: Pattern = {
   id: 'pipes',
-  version: 1,
-  name: 'pipes to jump onto: one, rising steps of them, or an enemy between two',
+  version: 2,
+  name: 'pipes to jump onto: one, rising steps of them, an enemy between two, or a pit to jump from pipe to pipe',
   mechanics: ['pipe'],
   fits: ['teach', 'test', 'twist', 'rest'],
   needs: ['ground', 'pipeTop'],
-  variants: [{ id: 'single' }, { id: 'steps', minDifficulty: 2 }, { id: 'enemy_between', needs: ['enemy'] }],
+  variants: [{ id: 'single' }, { id: 'steps', minDifficulty: 2 }, { id: 'enemy_between', needs: ['enemy'] }, { id: 'pipe_gap', minDifficulty: 2 }],
   difficulty: [1, 5],
-  width: (_l, _d, v) => (v === 'single' ? [4, 6] : v === 'steps' ? [7, 10] : [8, 11]),
+  width: (l, _d, v) => (v === 'single' ? [4, 6] : v === 'steps' ? [7, 10] : v === 'pipe_gap' ? [7, 7 + Math.max(1, l.gap(0))] : [8, 11]),
   build(ctx) {
     const s = new Section(ctx);
     const e = ctx.entry;
@@ -238,6 +297,14 @@ const pipes: Pattern = {
     s.flat(0, s.w - 1, e);
     const room = Math.max(1, e - ctx.band.top - 3);
     const h1 = Math.max(1, Math.min(ctx.lim.maxRise, room, ctx.rnd.int(1, 2)));
+    if (ctx.variant === 'pipe_gap') {
+      // Two pipes with a pit between them: from one top to the other.
+      const g = Math.max(1, Math.min(ctx.lim.gap(0), s.scaled(1, ctx.lim.gap(0)), s.w - 6));
+      pipeAt(s, 1, e, h1);
+      for (let i = 3; i < 3 + g; i++) s.ctx.g.clear(s.col(i), ctx.band.top, s.col(i), ctx.band.fill);
+      pipeAt(s, 3 + g, e, h1);
+      return e;
+    }
     if (ctx.variant === 'single') pipeAt(s, Math.floor((s.w - 2) / 2), e, h1);
     else if (ctx.variant === 'steps') {
       pipeAt(s, 1, e, h1);
@@ -255,12 +322,12 @@ const pipes: Pattern = {
 
 const blocks: Pattern = {
   id: 'blocks',
-  version: 1,
-  name: 'a row of ? blocks and bricks overhead to bump, or brick steps',
+  version: 2,
+  name: 'a row of ? blocks and bricks overhead to bump, bricks with coins on top, or brick steps',
   mechanics: ['blocks', 'coins'],
   fits: ['teach', 'rest', 'test'],
   needs: ['ground'],
-  variants: [{ id: 'row', needs: ['brick'] }, { id: 'question', needs: ['block'] }, { id: 'steps', needs: ['brick'] }],
+  variants: [{ id: 'row', needs: ['brick'] }, { id: 'question', needs: ['block'] }, { id: 'steps', needs: ['brick'] }, { id: 'coin_row', needs: ['brick', 'coin'] }],
   difficulty: [1, 5],
   width: () => [5, 9],
   build(ctx) {
@@ -281,8 +348,9 @@ const blocks: Pattern = {
     const hasQ = s.has('block');
     const hasB = s.has('brick');
     for (let i = 2; i <= s.w - 3; i++) {
-      const q = ctx.variant === 'question' ? !hasB || i % 2 === 0 : hasQ && ctx.rnd.chance(0.3);
+      const q = ctx.variant === 'question' ? !hasB || i % 2 === 0 : ctx.variant !== 'coin_row' && hasQ && ctx.rnd.chance(0.3);
       s.put(q ? 'block' : 'brick', i, row);
+      if (ctx.variant === 'coin_row' && row - 1 >= ctx.band.top) s.put('coin', i, row - 1);
     }
     return e;
   },
@@ -355,14 +423,14 @@ const mover: Pattern = {
 
 const hazard: Pattern = {
   id: 'spikes',
-  version: 1,
-  name: 'spikes on the floor to jump over, one row or two',
+  version: 2,
+  name: 'spikes on the floor to jump over: one row, two, or a long bed with a stepping block in it',
   mechanics: ['hazard'],
   fits: ['teach', 'test', 'twist'],
   needs: ['ground', 'hazard'],
-  variants: [{ id: 'run' }, { id: 'double', minDifficulty: 2 }],
+  variants: [{ id: 'run' }, { id: 'double', minDifficulty: 2 }, { id: 'stepping', minDifficulty: 2 }],
   difficulty: [1, 5],
-  width: (lim, _d, v) => (v === 'double' ? [8, 6 + 2 * Math.max(1, lim.spikeCells)] : [4, 4 + Math.max(1, lim.spikeCells)]),
+  width: (lim, _d, v) => (v === 'double' || v === 'stepping' ? [8, 6 + 2 * Math.max(1, lim.spikeCells)] : [4, 4 + Math.max(1, lim.spikeCells)]),
   build(ctx) {
     const s = new Section(ctx);
     const e = ctx.entry;
@@ -373,7 +441,13 @@ const hazard: Pattern = {
       for (let k = 0; k < n; k++) s.put('hazard', from + k, e - 1);
       return from + n;
     };
-    if (ctx.variant === 'double') {
+    if (ctx.variant === 'stepping') {
+      // A bed of spikes too long to clear, with a raised block in its middle to hop onto.
+      if (ctx.lim.maxRise < 1 || e - 1 < s.highest) throw new PatternError('no stepping block possible here');
+      const first = run(2, Math.floor((s.w - 5) / 2));
+      s.ground(first, e - 1);
+      run(first + 1, s.w - 2 - (first + 1));
+    } else if (ctx.variant === 'double') {
       const first = run(2, Math.floor((s.w - 6) / 2));
       run(first + 2, s.w - 2 - (first + 2));
     } else run(2, s.w - 4);
@@ -477,4 +551,167 @@ const lockedGoal: Pattern = {
   },
 };
 
-export const CLASSIC_PATTERNS: Pattern[] = [intro, flat, stairs, gap, floating, enemy, pipes, blocks, spring, mover, hazard, bonus, finale, keyEnd, lockedGoal];
+const slopes: Pattern = {
+  id: 'slopes',
+  version: 1,
+  name: 'ramps: a rise, a drop, a hill over, or a valley through',
+  mechanics: ['ramp'],
+  fits: ['teach', 'test', 'rest', 'twist'],
+  needs: ['ground', 'rampRight', 'rampLeft'],
+  variants: [{ id: 'up' }, { id: 'down' }, { id: 'hill' }, { id: 'valley' }],
+  difficulty: [1, 5],
+  width: () => [5, 10],
+  build(ctx) {
+    const s = new Section(ctx);
+    // (Rising in the way the player goes: ◢ going right, ◣ going left.)
+    const rise = ctx.dir > 0 ? 'rampRight' : 'rampLeft';
+    const fall = ctx.dir > 0 ? 'rampLeft' : 'rampRight';
+    let r = ctx.entry;
+    let i = 0;
+    const flat = () => i < s.w && (s.ground(i++, r), true);
+    const up = () => {
+      if (i >= s.w || r - 1 < s.highest) return flat();
+      s.ground(i, r);
+      s.put(rise, i++, r - 1);
+      r -= 1;
+      return true;
+    };
+    const down = () => {
+      if (i >= s.w || r + 1 > s.lowest) return flat();
+      s.ground(i, r + 1);
+      s.put(fall, i++, r);
+      r += 1;
+      return true;
+    };
+    const k = ctx.rnd.int(1, 2);
+    const steps: (() => boolean)[] = [flat];
+    if (ctx.variant === 'up') steps.push(...Array(k).fill(up));
+    else if (ctx.variant === 'down') steps.push(...Array(k).fill(down));
+    else if (ctx.variant === 'hill') steps.push(...Array(k).fill(up), flat, flat, ...Array(k).fill(down));
+    else steps.push(...Array(k).fill(down), flat, flat, ...Array(k).fill(up));
+    for (const step of steps) if (i < s.w) step();
+    while (i < s.w) flat();
+    return r;
+  },
+};
+
+const pool: Pattern = {
+  id: 'pool',
+  version: 1,
+  name: 'a pool too wide to jump: swim across (coins over it)',
+  mechanics: ['water'],
+  fits: ['teach', 'test', 'twist'],
+  needs: ['ground', 'water'],
+  variants: [{ id: 'swim' }, { id: 'coins', needs: ['coin'] }],
+  difficulty: [1, 5],
+  width: (lim) => [Math.max(6, lim.gap(0) + 5), Math.max(8, lim.gap(0) + 8)],
+  build(ctx) {
+    const s = new Section(ctx);
+    const e = ctx.entry;
+    const depth = Math.min(3, ctx.band.fill - e);
+    if (depth < 2) throw new PatternError('no room under the ground for a pool here');
+    s.flat(0, 1, e);
+    s.flat(s.w - 2, s.w - 1, e);
+    for (let i = 2; i <= s.w - 3; i++) {
+      s.ctx.g.fill('ground', s.col(i), e + depth, s.col(i), ctx.band.fill);
+      // The surface level with the banks; deep water under it.
+      s.put('water', i, e);
+      for (let r = e + 1; r < e + depth; r++) s.put(s.has('deepWater') ? 'deepWater' : 'water', i, r);
+    }
+    if (ctx.variant === 'coins') coinArc(s, 3, s.w - 4, e, 1);
+    return e;
+  },
+};
+
+const cliff: Pattern = {
+  id: 'cliff',
+  version: 1,
+  name: 'a cliff too high to jump, climbed by a ladder; or a ladder up to a ledge of coins',
+  mechanics: ['ladder'],
+  fits: ['teach', 'test', 'twist', 'rest'],
+  needs: ['ground', 'ladder'],
+  variants: [{ id: 'route' }, { id: 'cache', needs: ['coin'] }],
+  difficulty: [1, 5],
+  width: () => [5, 8],
+  build(ctx) {
+    const s = new Section(ctx);
+    const e = ctx.entry;
+    if (ctx.variant === 'route') {
+      const lo = Math.max(2, ctx.lim.maxRise + 1);
+      const hi = Math.min(4, e - s.highest);
+      if (hi < lo) throw new PatternError('no room for a cliff here');
+      const k = ctx.rnd.int(lo, hi);
+      s.flat(0, 2, e);
+      s.flat(3, s.w - 1, e - k);
+      for (let r = e - k; r <= e - 1; r++) s.put('ladder', 2, r);
+      return e - k;
+    }
+    const k = Math.min(4, e - ctx.band.top - 2);
+    if (k < 2) throw new PatternError('no room for a ledge up a ladder');
+    s.flat(0, s.w - 1, e);
+    const role = s.has('oneway') ? 'oneway' : 'ledge';
+    if (!s.has(role)) throw new PatternError('no ledge to climb up to');
+    for (let i = 3; i < Math.min(s.w, 6); i++) {
+      s.put(role, i, e - k);
+      s.put('coin', i, e - k - 1);
+    }
+    for (let r = e - k; r <= e - 1; r++) s.put('ladder', 2, r);
+    return e;
+  },
+};
+
+const split: Pattern = {
+  id: 'split',
+  version: 1,
+  name: 'two ways at once: a high way of platforms with coins over a low way with an enemy (choice); or a pit with a slow safe way down and up, and a risky way across at the limit of a jump (risky_shortcut)',
+  mechanics: ['floating', 'enemy'],
+  fits: ['test', 'twist'],
+  needs: ['ground', 'oneway'],
+  variants: [{ id: 'choice' }, { id: 'risky_shortcut', minDifficulty: 2 }],
+  difficulty: [2, 5],
+  width: () => [10, 14],
+  build(ctx) {
+    const s = new Section(ctx);
+    const e = ctx.entry;
+    if (ctx.lim.maxRise < 1) throw new PatternError('the player can jump onto nothing here');
+    if (ctx.variant === 'choice') {
+      // Low: the ground, with an enemy (or spikes). High: jump-through steps up to a row of platforms three rows up.
+      if (e - 5 < ctx.band.top) throw new PatternError('no room for a high way here');
+      s.flat(0, s.w - 1, e);
+      const lane = e - 3;
+      let i = 1;
+      for (let r = e - 1; r > lane; r--) s.put('oneway', i++, r);
+      while (i <= s.w - 3) {
+        s.put('oneway', i, lane);
+        if (s.has('coin')) s.put('coin', i, lane - 1);
+        const gx = ctx.rnd.chance(0.4) ? Math.min(ctx.lim.gap(0), 1) : 0;
+        i += 1 + gx;
+      }
+      const mid = Math.floor(s.w / 2);
+      if (s.has('enemy')) s.put('enemy', mid, e - 1);
+      else if (s.has('hazard') && ctx.lim.spikeCells >= 1) s.put('hazard', mid, e - 1);
+      return e;
+    }
+    // risky_shortcut: a pit two rows deep, steps down and up (safe, slow), jump-through platforms across its top (fast).
+    const depth = Math.min(2, ctx.band.fill - e);
+    if (depth < 1) throw new PatternError('no room under the ground for a pit here');
+    s.flat(0, 0, e);
+    let i = 1;
+    for (let k = 1; k <= depth; k++) s.ground(i++, e + k);
+    const floorEnd = s.w - 2 - depth;
+    for (; i <= floorEnd; i++) s.ground(i, e + depth);
+    for (let k = depth - 1; k >= 0; k--) s.ground(i++, e + k);
+    for (; i < s.w; i++) s.ground(i, e);
+    if (ctx.difficulty >= 3 && s.has('enemy')) s.put('enemy', Math.floor(s.w / 2), e + depth - 1);
+    // (Across the top: platforms a long jump apart, coins over them.)
+    const g = Math.max(1, ctx.lim.gap(0));
+    for (let x = 1 + g; x < s.w - 1 - g + 1; x += g + 1) {
+      if (!s.ctx.g.isEmpty(s.col(x), e)) continue;
+      s.put('oneway', x, e);
+      if (s.has('coin') && s.ctx.g.isEmpty(s.col(x), e - 1)) s.put('coin', x, e - 1);
+    }
+    return e;
+  },
+};
+
+export const CLASSIC_PATTERNS: Pattern[] = [intro, flat, stairs, gap, floating, enemy, pipes, blocks, spring, mover, hazard, bonus, slopes, pool, cliff, split, finale, keyEnd, lockedGoal];
