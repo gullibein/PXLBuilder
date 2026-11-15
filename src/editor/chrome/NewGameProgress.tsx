@@ -27,6 +27,51 @@ export const BUILD_TIPS = [
   'Sounds at the bottom opens the sound editor: draw a sound note by note.',
 ];
 
+/** How fast the AI's planning is written out (characters a second), and the pause after each point. */
+const TYPE_CPS = 28;
+const LINE_PAUSE = 1.4;
+
+/** A line of the AI's planning: its thinking aloud first, then what it is building. */
+interface PlanLine {
+  text: string;
+  kind: 'thought' | 'plan';
+}
+
+/**
+ * The AI's planning written out slowly, one point at a time, as if read while it thinks (the game is built in the
+ * background meanwhile): which line it is on and how much of it is written. Lines that came in already wait their
+ * turn; a new job starts again from the top.
+ */
+function useTypedLines(lines: PlanLine[], jobKey: string | null): { line: number; chars: number } {
+  const [pos, setPos] = useState({ line: 0, chars: 0 });
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const waitUntil = useRef(0);
+  useEffect(() => {
+    setPos({ line: 0, chars: 0 });
+    waitUntil.current = 0;
+    if (!jobKey) return;
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const tick = 50;
+    const t = setInterval(() => {
+      setPos((p) => {
+        const all = linesRef.current;
+        if (p.line >= all.length) return p;
+        const len = all[p.line].text.length;
+        if (p.chars < len) return { ...p, chars: reduced ? len : Math.min(len, p.chars + Math.max(1, Math.round((TYPE_CPS * tick) / 1000))) };
+        // (The point is written: a moment to read it, then the next.)
+        const now = Date.now();
+        if (!waitUntil.current) waitUntil.current = now + LINE_PAUSE * 1000;
+        if (now < waitUntil.current || p.line + 1 >= all.length) return p;
+        waitUntil.current = 0;
+        return { line: p.line + 1, chars: 0 };
+      });
+    }, tick);
+    return () => clearInterval(t);
+  }, [jobKey]);
+  return pos;
+}
+
 /** A drawing the AI sent (palette and rows), as a picture to show. */
 function svgOf(d: { palette: { key: string; color: string }[]; rows: string[] }): string {
   try {
@@ -87,6 +132,19 @@ export function NewGameProgress() {
     return () => clearInterval(t);
     // (Per job, not per update: updates come many times a second while the answer is written.)
   }, [job?.key]);
+  // The AI's planning, one stream: its thinking aloud, then (once that is all written) what it is building.
+  const n = job?.narration;
+  const planLines: PlanLine[] = [
+    ...(n?.thoughts ?? []).map((text) => ({ text, kind: 'thought' as const })),
+    // (Its idea only when it didn't think aloud first, and only once complete: the plan comes after it.)
+    ...(!(n?.thoughts.length) && n?.idea && (n.plan.length ?? 0) > 0 ? [{ text: n.idea, kind: 'thought' as const }] : []),
+    ...(n?.plan ?? []).map((text) => ({ text, kind: 'plan' as const })),
+  ];
+  const typed = useTypedLines(planLines, job?.key ?? null);
+  const newestLine = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    newestLine.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [typed.line]);
   const finish = (key: string) => {
     if (useJobs.getState().jobs[key]) useEditor.getState().setGlobalPrompt(true, 'project');
   };
@@ -156,8 +214,7 @@ export function NewGameProgress() {
   const piece = fresh ?? (pieces.length ? pieces[Math.floor(seconds / SHOW_EACH) % pieces.length] : null);
   // Under the picture: a tip, a new one every few seconds.
   const tip = BUILD_TIPS[(tipStart.current + Math.floor(seconds / LINE_EACH)) % BUILD_TIPS.length];
-  const narration = job.narration;
-  const doing = narration?.doing ?? [];
+  const doing = job.narration?.doing ?? [];
   return (
     <div className="dialog-backdrop">
       <section className="dialog new-game-progress" role="dialog" aria-label="Building your game" data-testid="new-game-progress">
@@ -173,39 +230,31 @@ export function NewGameProgress() {
             </div>
           )}
           <p className="chat-you">{job.again?.asked ?? job.request}</p>
-          {/* The AI thinking aloud first: its ideas, a line at a time as it writes them. */}
-          {(narration?.thoughts.length ?? 0) > 0 && (
-            <ul className="ngp-thoughts" data-testid="new-game-thoughts">
-              {narration!.thoughts.map((line, i) => (
-                <li key={i}>{line}</li>
+          {/* The AI's planning, written out a point at a time while the game is built in the background. */}
+          {planLines.length > 0 && (
+            <ul className="ngp-plan" data-testid="new-game-thoughts">
+              {planLines.slice(0, typed.line + 1).map((l, i) => (
+                <li key={i} ref={i === typed.line ? newestLine : undefined} className={l.kind} data-testid={l.kind === 'plan' ? 'new-game-plan-line' : undefined}>
+                  {i < typed.line ? l.text : l.text.slice(0, typed.chars)}
+                  {i === typed.line && typed.chars < l.text.length && <span className="ngp-caret" aria-hidden="true" />}
+                </li>
               ))}
             </ul>
-          )}
-          {/* The AI's idea and plan, as it writes them (before it builds anything). */}
-          {(narration?.idea || (narration?.plan.length ?? 0) > 0) && (
-            <div className="ngp-idea" data-testid="new-game-idea">
-              {narration?.idea && <p>{narration.idea}</p>}
-              {(narration?.plan.length ?? 0) > 0 && (
-                <ul data-testid="new-game-plan">
-                  {narration!.plan.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
           )}
           {/* The level as the AI draws it, row by row (once it has begun the map). */}
           {job.sketch && <LevelSketchView sketch={job.sketch} drawings={job.drawings ?? []} project={project} />}
           {piece ? (
             // (One piece after another; key: each comes in with its own little animation.)
             <figure className="ngp-show" key={piece.key} data-testid="new-game-piece" data-source={engine ? 'engine' : 'ai'}>
-              {piece.asset ? <SpriteImage asset={piece.asset} size={72} /> : <img src={piece.svg} alt="" width={72} height={72} />}
-              <figcaption>{piece.name}</figcaption>
-              {!engine && (
-                <span className="muted small" data-testid="new-game-drawn-count">
-                  {pieces.length} drawn so far
-                </span>
-              )}
+              {piece.asset ? <SpriteImage asset={piece.asset} size={56} /> : <img src={piece.svg} alt="" width={56} height={56} />}
+              <figcaption>
+                {piece.name}
+                {!engine && (
+                  <span className="muted small" data-testid="new-game-drawn-count">
+                    {' '}· {pieces.length} drawn so far
+                  </span>
+                )}
+              </figcaption>
             </figure>
           ) : (
             <p className="ngp-waiting muted small" data-testid="new-game-no-pieces">
@@ -213,34 +262,30 @@ export function NewGameProgress() {
             </p>
           )}
           {doing.length > 0 ? (
-            // What it is doing, a line per step it has finished writing (the newest last, bold).
-            <ol className="ngp-doing" data-testid="new-game-doing">
-              {doing.slice(-4).map((line, i, shown) => (
-                <li key={`${doing.length - shown.length + i}`} className={i === shown.length - 1 ? 'now' : ''}>
-                  {line}
-                </li>
-              ))}
-            </ol>
+            // What it is doing now: the step it last finished writing.
+            <p className="ngp-tip ngp-now" key={`doing:${doing.length}`} data-testid="new-game-doing">
+              {doing.at(-1)}
+            </p>
           ) : (
             <p className="ngp-tip" key={`tip:${tip}`} data-testid="new-game-tip">
               <span className="ngp-tip-label">Tip</span> {tip}
             </p>
           )}
           <div className="prompt-progress" aria-label="Working" />
-          {/* At the bottom: the steps done so far, then the one going on now. */}
-          <ol className="ngp-steps" data-testid="new-game-steps">
-            {(steps.at(-1) === job.stage ? steps.slice(0, -1) : steps).map((st, i) => (
-              <li key={i} className="done">
-                {st}
-              </li>
-            ))}
-          </ol>
           <p className="ngp-stage" data-testid="new-game-stage">
-            {job.stage ?? 'Starting'}…
+            {job.stage ?? 'Starting'}… <span className="muted small">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span>
           </p>
-          <p className="muted small">
-            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')} · A whole game takes the AI one to four minutes: it plans the game, writes its rules and draws its sprites.
-          </p>
+          {/* The app's own steps so far, folded away (one to four minutes in all). */}
+          <details className="ngp-steps-box">
+            <summary className="muted small">Steps so far · a whole game takes one to four minutes</summary>
+            <ol className="ngp-steps" data-testid="new-game-steps">
+              {(steps.at(-1) === job.stage ? steps.slice(0, -1) : steps).map((st, i) => (
+                <li key={i} className="done">
+                  {st}
+                </li>
+              ))}
+            </ol>
+          </details>
         </div>
         <footer className="ngp-foot">
           <button className="text-btn" data-testid="new-game-stop" onClick={() => stopJob(job.key)}>

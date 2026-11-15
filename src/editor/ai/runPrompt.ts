@@ -375,6 +375,9 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       });
       planned = !!plan;
       if (plan) {
+        // (The whole plan, also from an AI that gives it all at once rather than as it writes.)
+        narration.thoughts = plan.split('\n').map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim()).filter(Boolean);
+        tell(true);
         trace?.('note', `Thought aloud first (quick model, ${((Date.now() - asked) / 1000).toFixed(1)} s):\n${plan}`);
         body.request += `\n\n[Your plan, which the user has just watched you think through:\n${plan}\nBuild exactly that${splitBuild ? '' : ', all of it in this answer'}.]`;
       }
