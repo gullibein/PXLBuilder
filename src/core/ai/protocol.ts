@@ -106,6 +106,40 @@ export function fillMissingNulls(raw: unknown): unknown {
   };
 }
 
+/**
+ * Reads an answer into the reply format. An operation that isn't in the format (a misspelt field, a value it
+ * doesn't take) is left out, and said in the answer's changes, rather than throwing away the whole answer (maybe a
+ * long one: a new game's art and levels) over one line of it. Anything else wrong with the answer still fails.
+ */
+export function readReply(raw: unknown): { ok: true; response: AIResponse; dropped: string[] } | { ok: false; issues: string } {
+  const filled = fillMissingNulls(raw);
+  const first = aiResponseSchema.safeParse(filled);
+  if (first.success) return { ok: true, response: first.data, dropped: [] };
+  const says = (issues: z.core.$ZodIssue[]) => issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+  const ops = (filled as { operations?: unknown }).operations;
+  const bad = new Set<number>();
+  for (const i of first.error.issues) {
+    if (i.path[0] !== 'operations' || typeof i.path[1] !== 'number' || !Array.isArray(ops)) return { ok: false, issues: says(first.error.issues) };
+    bad.add(i.path[1]);
+  }
+  const list = ops as unknown[];
+  // (Too much of it unreadable: something is wrong with the whole answer, not a line of it.)
+  if (bad.size > Math.max(2, list.length / 4)) return { ok: false, issues: says(first.error.issues) };
+  const dropped = [...bad].sort((a, b) => a - b).map((n) => {
+    const op = list[n] as { op?: unknown; name?: unknown } | null;
+    const name = String(op?.op ?? '?');
+    const shape = OPERATION_SHAPES.get(name);
+    const why = shape ? z.object(shape).safeParse(op) : null;
+    const detail = why && !why.success ? why.error.issues.slice(0, 2).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') : shape ? 'not readable' : 'no such operation';
+    return `${name}${typeof op?.name === 'string' ? ` "${op.name}"` : ''} (${detail})`;
+  });
+  const second = aiResponseSchema.safeParse({ ...(filled as object), operations: list.filter((_, n) => !bad.has(n)) });
+  if (!second.success) return { ok: false, issues: says(first.error.issues) };
+  const response = second.data;
+  response.changes = [...response.changes, `Not done (the app couldn't read it): ${dropped.join('; ')}`];
+  return { ok: true, response, dropped };
+}
+
 export class AIUnavailableError extends Error {
   constructor(message: string) {
     super(message);

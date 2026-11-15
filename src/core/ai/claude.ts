@@ -11,7 +11,7 @@ import { compactSchema, expandReply } from './compactSchema';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
-import { aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from './protocol';
+import { aiResponseSchema, type AIRequestBody, type AIResponse, readReply } from './protocol';
 
 export const MODEL = 'claude-opus-5-5';
 
@@ -180,12 +180,13 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
       note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
       return withUsage(incomplete);
     }
-    const parsed = aiResponseSchema.safeParse(fillMissingNulls(expandReply(response.parsed_output, fullFormat())));
-    if (!parsed.success) {
-      note(`${CLAUDE_MODELS[model].name}'s answer (compact format) did not read back into the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+    const parsed = readReply(expandReply(response.parsed_output, fullFormat()));
+    if (!parsed.ok) {
+      note(`${CLAUDE_MODELS[model].name}'s answer (compact format) did not read back into the reply format: ${parsed.issues}`);
       return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
     }
-    return withUsage({ ok: true, response: parsed.data });
+    if (parsed.dropped.length) note(`Left out of ${CLAUDE_MODELS[model].name}'s answer, not in the reply format: ${parsed.dropped.join('; ')}`);
+    return withUsage({ ok: true, response: parsed.response });
   }
   if (!level) {
     systemPrompt ??= buildSystemPrompt(componentRegistry);
@@ -247,12 +248,13 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
       return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read (twice; the Console shows what came back). Try again, or ask for less at once.", kind: 'other' });
     }
   }
-  const parsed = aiResponseSchema.safeParse(fillMissingNulls(raw));
-  if (!parsed.success) {
-    note(`${CLAUDE_MODELS[model].name}'s answer was read, but not in the reply format: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+  const parsed = readReply(raw);
+  if (!parsed.ok) {
+    note(`${CLAUDE_MODELS[model].name}'s answer was read, but not in the reply format: ${parsed.issues}`);
     return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
   }
-  return withUsage({ ok: true, response: parsed.data });
+  if (parsed.dropped.length) note(`Left out of ${CLAUDE_MODELS[model].name}'s answer, not in the reply format: ${parsed.dropped.join('; ')}`);
+  return withUsage({ ok: true, response: parsed.response });
 }
 
 let fullFormatSchema: Record<string, unknown> | null = null;
