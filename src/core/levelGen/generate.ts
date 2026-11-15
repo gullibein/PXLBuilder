@@ -21,6 +21,7 @@ import type { Id, LevelMadeBy, Project } from '../types';
 import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
 import { CLASSIC_BUILD, type GenreBuild } from './genres';
 import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
+import { solveLevel } from './solver';
 import { GridError, LevelGrid, type Placed } from './grid';
 import { playerLimits, type Limits } from './limits';
 import { PatternError, type Band, type Pattern, type SectionCtx } from './pattern';
@@ -546,6 +547,8 @@ export interface GenerateOptions {
   recentSignatures?: Mechanic[];
   /** How many checked builds to compare against the game's other levels (default CANDIDATES; 1: the first). */
   candidates?: number;
+  /** Told about every checked build's grid (its moving platforms as bridges), for tools and tests. */
+  onBuilt?: (grid: LevelGrid) => void;
 }
 
 export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
@@ -557,6 +560,8 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
   for (const r of ['player', 'ground', 'goal'] as Role[]) if (!roles[r]) throw new LevelGenError(`The game needs a ${r} object to build a level`);
   const lim = playerLimits(project, sceneId, roles.player!.id, registry, bp.difficulty);
   if (!lim) throw new LevelGenError("The player doesn't jump here (no gravity, or no Character Controller): levels to jump through can't be built");
+  // (The route solver uses the player's whole reach, as the level checker does: any jump within it is fair.)
+  const reach = playerLimits(project, sceneId, roles.player!.id, registry, 5)!;
   const seed = bp.seed ?? newLevelSeed();
   const notes: string[] = [];
   // The game's other levels: a new one is to be unlike them (not just another seed).
@@ -590,6 +595,14 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       lastProblems = check.problems;
       continue;
     }
+    // The route solver too: walls, ceilings and doors in the way, keys before the doors they open, every coin.
+    const still = moving ? asStill(out.grid, roles) : out.grid;
+    const solved = solveLevel(still, reach);
+    if (!solved.goal || solved.unreached.length) {
+      lastProblems = [`the route solver ${!solved.goal ? "can't get to the goal" : `can't get to ${solved.unreached.map((u) => `the ${u.role} at ${u.col},${u.row}`).join(', ')}`}`];
+      continue;
+    }
+    options.onBuilt?.(still);
     const patterns: Record<string, number> = {};
     for (const b of out.built) patterns[b.pattern] = patternById(b.pattern)?.version ?? 1;
     const rows = out.grid.rows();
@@ -604,7 +617,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       ops,
       rows,
       state: check.state,
-      notes: [...notes, ...tried, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
+      notes: [...notes, ...tried, `the route solver got to the goal in ${solved.path.length - 1} moves`, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
       attempts: attempt + 1,
       madeBy: {
         generator: build.id,

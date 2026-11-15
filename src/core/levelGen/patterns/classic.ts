@@ -322,8 +322,8 @@ const pipes: Pattern = {
 
 const blocks: Pattern = {
   id: 'blocks',
-  version: 2,
-  name: 'a row of ? blocks and bricks overhead to bump, bricks with coins on top, or brick steps',
+  version: 3,
+  name: 'a row of ? blocks and bricks overhead to bump, bricks with coins (on top when the player can get up there, else under them), or brick steps',
   mechanics: ['blocks', 'coins'],
   fits: ['teach', 'rest', 'test'],
   needs: ['ground'],
@@ -350,7 +350,11 @@ const blocks: Pattern = {
     for (let i = 2; i <= s.w - 3; i++) {
       const q = ctx.variant === 'question' ? !hasB || i % 2 === 0 : ctx.variant !== 'coin_row' && hasQ && ctx.rnd.chance(0.3);
       s.put(q ? 'block' : 'brick', i, row);
-      if (ctx.variant === 'coin_row' && row - 1 >= ctx.band.top) s.put('coin', i, row - 1);
+      // (Coins on top only for a player that can get up there; else under them, taken when bumping them.)
+      if (ctx.variant === 'coin_row') {
+        if (ctx.lim.maxRise >= 3 && row - 1 >= ctx.band.top) s.put('coin', i, row - 1);
+        else s.put('coin', i, row + 1);
+      }
     }
     return e;
   },

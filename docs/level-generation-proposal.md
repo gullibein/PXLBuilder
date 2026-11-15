@@ -447,3 +447,27 @@ Not yet connected to the AI or the editor (stage 3).
   - difficulty rising across them.
 
   Comparing 3 builds also gives less alike levels than taking the first (most-alike pair about 0.41 against 0.45).
+
+### Stage 6 — done
+
+- **The route solver (`levelGen/solver.ts`)** works cell by cell on the grid a level is built in.
+  - **Moves:** walking, falling, jumping within the player's whole reach (the checker's own numbers), climbing ladders, swimming, spring launches and teleporters.
+  - **What stands in the way:** walls, ceilings, spikes and lava, and doors until opened.
+  - **Rules it enforces:**
+    - every jump needs room overhead and nothing solid across its path;
+    - spikes at body height only as wide as the player clears;
+    - with a wall right in front of the take-off (no run-up), only about half as far;
+    - a spring's cell is stood on, never in: walking into one launches from its top, and launches cost more than hops, so routes hop over springs and use them only to go up.
+  - **States:** it explores (cell, keys held, switches on), so a key behind the door it opens fails, and a puzzle passes only when some order of keys and switches gets through.
+  - **Results:** whether the goal was reached, what can never be reached (goal, keys, switches, coins, hearts; coins count when taken mid-jump), and the route.
+  - **Cost:** the route is cheapest-first (walking cheap, jumps dearer, long jumps dearer still), so it's the one a player would take. About 4 ms per level.
+- **In the builder:** a build must pass the level checker and the solver, with moving platforms turned into still bridges for both. A build that fails is a failed build, not a passed one with a note. The notes say "the route solver got to the goal in N moves".
+- **Uncertain levels:** as before, an uncertain build is kept only when no validated one is found within 12 builds, and it is said, never passed off as validated. It now also has to pass the solver.
+- **Found and fixed by the solver:** "bricks with coins" put coins on top of bricks three rows up, which the starter player can never reach. The coins now go under the bricks when the player can't get on top (blocks → version 3). The level checker had missed it.
+- **The route bot (`runtime/routeBot.ts`)** plays the solver's route on the real runtime, with the player's controls:
+  - it runs up to jumps and takes off near the edge, or from a wall;
+  - it holds Jump through a jump, and lets go only after landing;
+  - it climbs on and off ladders, hops onto springs holding Jump and steers after the launch, and strokes in water.
+
+  It's a test-time check, not a gate: it doesn't fight enemies or time moving platforms, and levels with moving platforms are skipped (said, not counted).
+- **Measured:** levels of all structures, without enemies: 29 of 32 played were won (91%), at about 0.3 s each. The test requires at least 80%. A sweep of 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds) was all validated with the solver gating, at 1.33 builds and 99 ms per level on average.
