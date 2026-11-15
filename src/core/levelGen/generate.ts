@@ -20,6 +20,7 @@ import { resolveEntity } from '../model/resolve';
 import type { Id, LevelMadeBy, Project } from '../types';
 import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
 import { CLASSIC_BUILD, type GenreBuild } from './genres';
+import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
 import { GridError, LevelGrid, type Placed } from './grid';
 import { playerLimits, type Limits } from './limits';
 import { PatternError, type Band, type Pattern, type SectionCtx } from './pattern';
@@ -45,6 +46,11 @@ export interface GenerateResult {
 
 /** Builds tried before giving up. */
 const ATTEMPTS = 12;
+/** Checked builds compared against the game's other levels (the least alike is kept). */
+export const CANDIDATES = 3;
+/** More alike than this (0..1) to another level of the game: more builds are tried (up to MAX_CANDIDATES). */
+export const TOO_ALIKE = 0.6;
+const MAX_CANDIDATES = 6;
 /** Rows inside a floor of a stacked level, under the next floor. */
 const ROOM = 5;
 
@@ -538,6 +544,8 @@ export interface GenerateOptions {
   avoidMechanics?: Mechanic[];
   /** What the game's last levels were built around (a new one is about something else, when it can be). */
   recentSignatures?: Mechanic[];
+  /** How many checked builds to compare against the game's other levels (default CANDIDATES; 1: the first). */
+  candidates?: number;
 }
 
 export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
@@ -551,9 +559,19 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
   if (!lim) throw new LevelGenError("The player doesn't jump here (no gravity, or no Character Controller): levels to jump through can't be built");
   const seed = bp.seed ?? newLevelSeed();
   const notes: string[] = [];
+  // The game's other levels: a new one is to be unlike them (not just another seed).
+  const history = project.scenes
+    .filter((s) => s.id !== sceneId && !s.generator)
+    .map((s) => ({ name: s.name, fp: fingerprintOfScene(project, s, registry) }))
+    .filter((h): h is { name: string; fp: Fingerprint } => !!h.fp);
+  // With other levels to be unlike, a few checked builds are compared and the least alike kept; alone, the first.
+  const wanted = history.length ? (options.candidates ?? CANDIDATES) : 1;
+  const found: { result: GenerateResult; score: number; closestName: string | null }[] = [];
   let uncertain: (GenerateResult & { why: string[] }) | null = null;
   let lastProblems: string[] = [];
-  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+  // (Still too like another level after those: a few more builds, while there are tries left.)
+  const enough = () => found.length >= wanted && (found.length >= MAX_CANDIDATES || !history.length || Math.min(...found.map((f) => f.score)) < TOO_ALIKE);
+  for (let attempt = 0; attempt < ATTEMPTS && !enough(); attempt++) {
     const rnd = makeRandom((seed ^ Math.imul(attempt, 0x9e3779b1)) >>> 0);
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
@@ -574,9 +592,17 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     }
     const patterns: Record<string, number> = {};
     for (const b of out.built) patterns[b.pattern] = patternById(b.pattern)?.version ?? 1;
+    const rows = out.grid.rows();
+    const { shape, counts } = shapeOfRows(rows);
+    for (const p of out.grid.placed) {
+      const key = p.path ? 'movers' : p.role === 'teleporter' ? 'teleporters' : p.role === 'door' ? 'doors' : p.role === 'key' ? 'keys' : null;
+      if (key) counts[key] = (counts[key] ?? 0) + 1;
+    }
+    const fingerprint: Fingerprint = { structure: out.structure, length: out.length, size: [out.grid.width, out.grid.height], signature: out.signature, routes: bp.routes ?? 'one', sections: out.built.map((b) => `${b.role}:${b.pattern}/${b.variant}@${b.difficulty}`), shape, counts };
+    const near = closest(fingerprint, history.map((h) => h.fp));
     const result: GenerateResult = {
       ops,
-      rows: out.grid.rows(),
+      rows,
       state: check.state,
       notes: [...notes, ...tried, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
       attempts: attempt + 1,
@@ -586,12 +612,18 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
         seed,
         blueprint: Object.fromEntries(Object.entries({ ...bp, seed }).filter(([, v]) => v !== null)),
         patterns,
-        fingerprint: { structure: out.structure, length: out.length, size: [out.grid.width, out.grid.height], signature: out.signature, routes: bp.routes ?? 'one', sections: out.built.map((b) => `${b.role}:${b.pattern}/${b.variant}@${b.difficulty}`) },
+        fingerprint: { ...fingerprint, ...(near ? { closest: history[near.index].name, similarity: near.score } : {}) },
       },
     };
-    if (check.state === 'validated') return result;
+    if (check.state === 'validated') found.push({ result, score: near?.score ?? 0, closestName: near ? history[near.index].name : null });
     // Uncertain: kept, in case nothing better comes (said so).
-    if (!uncertain) uncertain = { ...result, notes: [...result.notes, `not proven playable: ${check.problems.join('; ')}`], why: check.problems };
+    else if (!uncertain) uncertain = { ...result, notes: [...result.notes, `not proven playable: ${check.problems.join('; ')}`], why: check.problems };
+  }
+  if (found.length) {
+    // The least like the game's other levels (the first of equals).
+    const best = found.reduce((a, b) => (b.score < a.score ? b : a));
+    if (best.closestName) best.result.notes.push(`${best.score >= TOO_ALIKE ? 'still quite like' : 'most like'} ${best.closestName} (similarity ${best.score.toFixed(2)}${found.length > 1 ? `, the least alike of ${found.length} builds` : ''})`);
+    return best.result;
   }
   if (uncertain) return uncertain;
   throw new LevelGenError(`No level could be built that checks out (${ATTEMPTS} tries): ${lastProblems.join('; ')}`);

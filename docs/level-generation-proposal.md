@@ -410,3 +410,40 @@ Not yet connected to the AI or the editor (stage 3).
 - **The look rules mechanics out:** themes without water leave out pools, and themes without hills leave out ramps. This applies to the AI's `generate_level` too, and those mechanics aren't offered to the AI.
 - **Section-level repair:** a pattern that can't be built where it lands is undone (the grid is restored to before the section) and another is picked for that section, up to 4 times, instead of the whole level being rebuilt. In the sweep, builds needed fell to 1.0–1.8 on average.
 - **Measured:** 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds, a third of them with each route option) were all validated, at 45–157 ms each on average.
+
+### Stage 5 — done
+
+- **`levelGen/fingerprint.ts`:** a level's fingerprint is its structure, length, signature mechanic, routes, its sections in order, its shape (the solid share of each block of an 8 × 4 grid stretched over the level, so levels of any size compare) and its counts (enemies, hazards, coins, springs, ladders, water, platforms, blocks, pipes, movers, teleporters, doors, keys…).
+  - It's worked out the same way for any level: from the engine's record, or from the level's objects (`rowsOfScene`, using the role finder) for levels made by hand or by the AI.
+- **`similarity(a, b)` (0..1)** is a weighted sum. If either level has no sections (made by hand), those parts drop out and the rest are renormalised.
+
+  | Part | Weight | How it's measured |
+  |---|---|---|
+  | sections | 0.30 | edit distance over pattern/variant, with the same pattern but another variant counting as half a change |
+  | pairs | 0.15 | which patterns follow which (Jaccard) |
+  | shape | 0.25 | the 8 × 4 solid shares |
+  | kind | 0.15 | structure 0.5, signature 0.3, routes 0.2 |
+  | counts | 0.15 | per thing counted |
+
+- **Calibration:**
+
+  | Comparison | Similarity |
+  |---|---|
+  | A level to itself | 1 |
+  | Its variation (the same plan, new numbers) | 0.69–0.94 |
+  | The same blueprint with another seed | 0.26–0.41 |
+  | The most alike pair in a ten-level game | about 0.41 |
+
+  Threshold `TOO_ALIKE = 0.6`.
+- **In the builder:** when the game has other levels, 3 checked builds are compared against all of them and the least alike is kept. If even the best is at or above `TOO_ALIKE`, up to 6 are tried, and the note then says "still quite like Level N". A level alone in its game takes the first checked build, as before.
+  - The record keeps the full fingerprint, plus the closest level and its score.
+  - The note says "most like Level 3 (similarity 0.38, the least alike of 3 builds)".
+- **AI:** `context.level.builder.levels` lists the game's levels briefly (its structure, what it's about, its patterns), so the AI can ask for something else too.
+- **Ten-level test** (`uniqueness.test.ts`): ten levels added one after another, as "New level" does. Checked:
+  - no pair at or above 0.6;
+  - at least 6 different signature mechanics and 4 structures;
+  - 10 distinct section sequences;
+  - at least 25 different pattern/variants;
+  - difficulty rising across them.
+
+  Comparing 3 builds also gives less alike levels than taking the first (most-alike pair about 0.41 against 0.45).

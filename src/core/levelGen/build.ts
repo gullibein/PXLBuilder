@@ -12,6 +12,7 @@ import { produce } from 'immer';
 import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
 import { patternById } from './patterns/index';
 import { findRoles } from './roles';
+import { fingerprintOfScene } from './fingerprint';
 import { generateLevel, type GenerateOptions, type GenerateResult } from './generate';
 import { GENRE_BUILDS } from './genres';
 import { levelProfileOf } from './profile';
@@ -134,6 +135,13 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
     theme: profile.theme?.id ?? null,
     structures: STRUCTURE_INFO,
     mechanics: MECHANICS.filter((m) => !themeAvoids(project, registry).includes(m)).join(', '),
+    // (The game's levels, briefly, so a new one is something else: the engine checks that too.)
+    levels: project.scenes.flatMap((s) => {
+      const f = fingerprintOfScene(project, s, registry);
+      if (!f) return [];
+      const parts = f.sections.filter((x) => !/^(intro|finale):/.test(x)).map((x) => x.split(':')[1].split('@')[0].split('/')[0]);
+      return [`${s.name}: ${f.structure ?? 'made by hand'}${f.signature ? `, about ${f.signature}` : ''}${parts.length ? ` (${[...new Set(parts)].slice(0, 6).join(', ')})` : ''}`];
+    }),
     routes: ROUTES.join(', '),
     patterns,
   };
