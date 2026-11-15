@@ -32,6 +32,7 @@ export type Role =
   | 'heart'
   | 'door'
   | 'switch'
+  | 'plate'
   | 'teleporter'
   | 'goal'
   | 'crate'
@@ -75,6 +76,7 @@ const FITS: [Role, (i: Info) => boolean][] = [
   ['player', (i) => !!i.c.CharacterController],
   ['goal', (i) => !!i.c.Goal],
   ['door', (i) => !!i.c.Openable],
+  ['plate', (i) => !!i.c.Switch && (i.scripts.includes('Pressure plate') || i.tags.includes('plate'))],
   ['switch', (i) => !!i.c.Switch],
   ['ladder', (i) => !!i.c.Climbable],
   ['crate', (i) => !!i.c.Pushable],

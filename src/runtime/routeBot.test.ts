@@ -64,4 +64,28 @@ describe('the route bot: playing a level on the real runtime', () => {
     expect(won / played, `won ${won} of ${played} (${skipped} skipped): ${lost.join('; ')}`).toBeGreaterThanOrEqual(0.8);
     expect(played).toBeGreaterThanOrEqual(25);
   });
+
+  it('puzzle levels are won in play too: crates pushed into place, levers pulled, keys taken, teleporters taken', { timeout: 120000 }, () => {
+    let played = 0;
+    let won = 0;
+    const lost: string[] = [];
+    let pushed = 0;
+    for (const structure of STRUCTURES)
+      for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+        let grid: LevelGrid | null = null;
+        const built = generateLevel(base, base.scenes[0].id, { difficulty: 3, structure, seed, length: 'short', avoid: ['enemy'] }, registry, 'puzzle', { onBuilt: (gr) => (grid = gr), candidates: 1 });
+        const p = produce(base, (d) => void applyOperations(d, built.ops, registry));
+        const path = solveLevel(grid!, lim).path;
+        if (path.some((s) => s.move === 'push')) pushed++;
+        const r = playRoute(p, p.scenes[0].id, path, registry);
+        if (r.skipped) continue;
+        played++;
+        if (r.won) won++;
+        else lost.push(`${structure} seed ${seed}: ${r.stuck?.move} ${JSON.stringify(r.stuck?.from)}→${JSON.stringify(r.stuck?.to)}`);
+      }
+    expect(won / played, `won ${won} of ${played}: ${lost.join('; ')}`).toBeGreaterThanOrEqual(0.85);
+    expect(played).toBeGreaterThanOrEqual(30);
+    // (Crates are pushed in a fair share of them.)
+    expect(pushed).toBeGreaterThanOrEqual(5);
+  });
 });

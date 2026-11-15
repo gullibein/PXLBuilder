@@ -6,6 +6,7 @@ import { FORMAT_VERSION } from '../serialization/version';
 import { hurtsScript, stompScript } from './ruleScripts';
 import { SPRING_SCRIPT } from '../script/spring';
 import { BRICK_BLOCK_SCRIPT, QUESTION_BLOCK_SCRIPT } from '../script/blocks';
+import { PRESSURE_PLATE_SCRIPT } from '../script/plate';
 import { scriptSchema } from '../script/language';
 import type { AssetRecord, BehaviorScript, ComponentMap, EntityInstance, GameType, ObjectDefinition, Project, Scene, Transform, Vec2 } from '../types';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions } from './topDownStarters';
@@ -279,6 +280,28 @@ const SPRING_SPRUNG: PixelArt = {
     'kkrrrrrrrrrrrrkk',
     '.kkddddddddddkk.',
     '..kkkkkkkkkkkk..',
+  ],
+};
+/** A pressure plate on the floor: a raised steel plate with a red top, on a dark base (the bottom of its square). */
+const PLATE: PixelArt = {
+  palette: [{ key: 'k', color: '#1c1a24' }, { key: 'r', color: '#e04848' }, { key: 'l', color: '#ff9a8a' }, { key: 'g', color: '#9aa3b2' }, { key: 'd', color: '#5a6170' }],
+  rows: [
+    ...Array.from({ length: 11 }, () => '................'),
+    '..kkkkkkkkkkkk..',
+    '.krllllllllllrk.',
+    '.krrrrrrrrrrrrk.',
+    'kgggggggggggggdk',
+    'kkkkkkkkkkkkkkkk',
+  ],
+};
+/** The plate pressed down, flush with its base. */
+const PLATE_DOWN: PixelArt = {
+  palette: PLATE.palette,
+  rows: [
+    ...Array.from({ length: 13 }, () => '................'),
+    '.krrrrrrrrrrrrk.',
+    'kgggggggggggggdk',
+    'kkkkkkkkkkkkkkkk',
   ],
 };
 /** A ? block: a gold block outlined in ink, a rivet in each corner, a white ? with its shadow. */
@@ -560,6 +583,8 @@ export interface StarterAssets {
   brick: AssetRecord;
   pipeTop: AssetRecord;
   pipe: AssetRecord;
+  plate: AssetRecord;
+  plateDown: AssetRecord;
 }
 
 /**
@@ -632,7 +657,7 @@ export function heartDefinition(registry: ComponentRegistry, asset: AssetRecord)
 }
 
 export function createStarterAssets(): StarterAssets {
-  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING), springSprung: createPixelArtAsset('Spring sprung', SPRING_SPRUNG), questionBlock: createPixelArtAsset('Question block', QUESTION_BLOCK), usedBlock: createPixelArtAsset('Used block', USED_BLOCK), brick: createPixelArtAsset('Brick', BRICK_BLOCK), pipeTop: createPixelArtAsset('Pipe top', PIPE_TOP), pipe: createPixelArtAsset('Pipe', PIPE_BODY) };
+  return { ladder: createLadderAsset(), lever: createLeverAsset(), player: createPlayerAsset(), enemy: createEnemyAsset(), hazard: createSpikesAsset(), teleporter: createTeleporterAsset(), goal: createGoalAsset(), crate: createPixelArtAsset('Crate', CRATE), heart: createHeartAsset(), ramp: createPixelArtAsset('Ramp', RAMP_RIGHT), rampLeft: createPixelArtAsset('Ramp left', RAMP_LEFT), bridge: createPixelArtAsset('Bridge', BRIDGE), water: createAnimatedPixelArtAsset('Water', WATER_PALETTE, WATER_FRAMES, 3), deepWater: createPixelArtAsset('Deep water', DEEP_WATER), spring: createPixelArtAsset('Spring', SPRING), springSprung: createPixelArtAsset('Spring sprung', SPRING_SPRUNG), questionBlock: createPixelArtAsset('Question block', QUESTION_BLOCK), usedBlock: createPixelArtAsset('Used block', USED_BLOCK), brick: createPixelArtAsset('Brick', BRICK_BLOCK), pipeTop: createPixelArtAsset('Pipe top', PIPE_TOP), pipe: createPixelArtAsset('Pipe', PIPE_BODY), plate: createPixelArtAsset('Pressure plate', PLATE), plateDown: createPixelArtAsset('Pressure plate down', PLATE_DOWN) };
 }
 
 /** Library categories of the starter objects. */
@@ -661,6 +686,7 @@ const STARTER_CATEGORIES: Record<string, string> = {
   Brick: 'Platforms',
   'Pipe top': 'Platforms',
   Pipe: 'Platforms',
+  'Pressure plate': 'Environment',
 };
 const STARTER_TILES = new Set(['Platform', 'Stone', 'Ladder', 'Ramp', 'Ramp left', 'Bridge', 'Water', 'Deep water']);
 
@@ -907,6 +933,19 @@ export function createStarterDefinitions(registry: ComponentRegistry, assets: St
       'Pipe going down, two cells wide, under a Pipe top.',
     ),
     heartDefinition(registry, assets.heart),
+    createDefinition(
+      'Pressure plate',
+      {
+        Sprite: c('Sprite', { width: 32, height: 32, color: '#e04848', assetId: assets.plate.id }),
+        SpriteStates: c('SpriteStates', { used: assets.plateDown.id }),
+        // (Only its bottom: a player or a crate standing in its square presses it.)
+        Collider: c('Collider', { size: { x: 28, y: 8 }, offset: { x: 0, y: 12 }, isTrigger: true, matchSprite: false }),
+        Switch: c('Switch'),
+      },
+      ['switch', 'plate'],
+      'A pressure plate on the floor: on while the player or a crate stands on it, off when it leaves. Make it control a door: the door is open only while the plate is held down (push a crate onto it to keep it open).',
+      [READY(PRESSURE_PLATE_SCRIPT)],
+    ),
   ];
   for (const def of defs) {
     // Remembers which starter this is, so it can be reset even after being renamed.

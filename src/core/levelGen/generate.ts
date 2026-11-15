@@ -19,7 +19,7 @@ import { layoutProblems, levelReachability, startConflicts, winProblems } from '
 import { resolveEntity } from '../model/resolve';
 import type { Id, LevelMadeBy, Project } from '../types';
 import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
-import { CLASSIC_BUILD, type GenreBuild } from './genres';
+import { GENRE_BUILDS, type GenreBuild } from './genres';
 import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
 import { solveLevel } from './solver';
 import { GridError, LevelGrid, type Placed } from './grid';
@@ -319,13 +319,15 @@ function buildableMechanics(build: GenreBuild, roles: Roles, avoid: Set<Mechanic
   return [...out];
 }
 
-function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build: GenreBuild, notes: string[], opts: GenerateOptions = {}): { grid: LevelGrid; built: Built[]; structure: Structure; length: string; signature: Mechanic | null } {
+function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach: Limits, build: GenreBuild, notes: string[], opts: GenerateOptions = {}): { grid: LevelGrid; built: Built[]; structure: Structure; length: string; signature: Mechanic | null } {
   const avoidStructures = opts.avoidStructures ?? [];
   const avoid = new Set<Mechanic>([...(bp.avoid ?? []), ...(opts.avoidMechanics ?? [])]);
   // A level the blueprint says nothing about is still about something: one mechanic, picked from the seed (another
   // than the game's last levels were about, when there are others), comes up more than the rest.
   const signature = !bp.focus?.length && !bp.sections?.length ? (() => {
-    const can = buildableMechanics(build, roles, avoid);
+    const all = buildableMechanics(build, roles, avoid);
+    const core = all.filter((m) => build.core?.includes(m));
+    const can = core.length ? core : all;
     return can.length ? rnd.weighted(can, (m) => (opts.recentSignatures?.includes(m) ? 0.15 : 1)) : null;
   })() : null;
   const leaning = [...(bp.focus ?? []), ...(signature ? [signature] : [])];
@@ -384,7 +386,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, build:
     };
     const buildSlot = (slot: Slot, room: number, isEnding: boolean): boolean => {
       const ctxBase = (width: number, difficulty: number, variant: string): SectionCtx => ({
-        g: grid, rnd: rnd.fork(), lim, roles, difficulty, variant, dir: run.dir, start: run.start + run.dir * used, width, band: run.band, entry,
+        g: grid, rnd: rnd.fork(), lim, reach, roles, difficulty, variant, dir: run.dir, start: run.start + run.dir * used, width, band: run.band, entry,
         ref: (p) => `${p}${++refs}`,
       });
       if (slot.spec?.custom) {
@@ -473,6 +475,33 @@ function asStill(grid: LevelGrid, roles: Roles): LevelGrid {
   return still;
 }
 
+/**
+ * The puzzle pieces a level can be won without (each taken away in turn and the level solved again): levers, keys,
+ * crates, teleporters. Empty: every one is needed.
+ */
+export function unneededPuzzles(grid: LevelGrid, reach: Limits): string[] {
+  const out: string[] = [];
+  const without = (change: (g: LevelGrid) => void) => {
+    const g = grid.clone();
+    change(g);
+    return solveLevel(g, reach).goal;
+  };
+  for (const p of grid.placed) {
+    if (p.role !== 'switch' && p.role !== 'key') continue;
+    if (without((g) => g.unplace(p.ref))) out.push(`the ${p.role === 'switch' ? 'lever' : 'key'} at ${p.col},${p.row}`);
+  }
+  for (const l of grid.links) {
+    if (l.type !== 'teleports_to') continue;
+    if (without((g) => g.unplace(l.from))) out.push(`the teleporter ${l.from}`);
+  }
+  grid.rows().forEach((row, r) =>
+    [...row].forEach((ch, c) => {
+      if (ch === 'C' && without((g) => g.clear(c, r, c, r))) out.push(`the crate at ${c},${r}`);
+    }),
+  );
+  return out;
+}
+
 interface Check {
   state: 'validated' | 'uncertain' | 'invalid';
   problems: string[];
@@ -553,8 +582,8 @@ export interface GenerateOptions {
 
 export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
   const bp = readBlueprint(blueprint);
-  const build = genre === 'classic' ? CLASSIC_BUILD : null;
-  if (!build) throw new LevelGenError(`There is no level builder for "${genre}" yet (there is: classic)`);
+  const build = GENRE_BUILDS[genre] ?? null;
+  if (!build) throw new LevelGenError(`There is no level builder for "${genre}" (there is: ${Object.keys(GENRE_BUILDS).join(', ')})`);
   if (!project.scenes.some((s) => s.id === sceneId)) throw new LevelGenError(`There is no level ${sceneId}`);
   const roles = findRoles(project, registry);
   for (const r of ['player', 'ground', 'goal'] as Role[]) if (!roles[r]) throw new LevelGenError(`The game needs a ${r} object to build a level`);
@@ -581,7 +610,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
     try {
-      out = buildOnce(bp, rnd, roles, lim, build, tried, options);
+      out = buildOnce(bp, rnd, roles, lim, reach, build, tried, options);
     } catch (e) {
       if (e instanceof LevelGenError) throw e;
       if (!(e instanceof GridError)) throw e;
@@ -602,13 +631,26 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       lastProblems = [`the route solver ${!solved.goal ? "can't get to the goal" : `can't get to ${solved.unreached.map((u) => `the ${u.role} at ${u.col},${u.row}`).join(', ')}`}`];
       continue;
     }
+    // A level of a genre with core mechanics (a puzzle level) has at least one section about one (a hub's key counts).
+    if (build.core && out.structure !== 'hub' && !out.built.some((b) => patternById(b.pattern)?.mechanics.some((m) => build.core!.includes(m)))) {
+      lastProblems = [`it has no ${build.core.join(', ')} section`];
+      continue;
+    }
+    // A puzzle level: every puzzle in it is needed (without its lever, key, crate or teleporter, no way to the goal).
+    if (build.id === 'puzzle') {
+      const spare = unneededPuzzles(still, reach);
+      if (spare.length) {
+        lastProblems = [`it can be won without ${spare.join(', ')}`];
+        continue;
+      }
+    }
     options.onBuilt?.(still);
     const patterns: Record<string, number> = {};
     for (const b of out.built) patterns[b.pattern] = patternById(b.pattern)?.version ?? 1;
     const rows = out.grid.rows();
     const { shape, counts } = shapeOfRows(rows);
     for (const p of out.grid.placed) {
-      const key = p.path ? 'movers' : p.role === 'teleporter' ? 'teleporters' : p.role === 'door' ? 'doors' : p.role === 'key' ? 'keys' : null;
+      const key = p.path ? 'movers' : p.role === 'teleporter' ? 'teleporters' : p.role === 'door' ? 'doors' : p.role === 'key' ? 'keys' : p.role === 'switch' ? 'levers' : p.role === 'plate' ? 'plates' : null;
       if (key) counts[key] = (counts[key] ?? 0) + 1;
     }
     const fingerprint: Fingerprint = { structure: out.structure, length: out.length, size: [out.grid.width, out.grid.height], signature: out.signature, routes: bp.routes ?? 'one', sections: out.built.map((b) => `${b.role}:${b.pattern}/${b.variant}@${b.difficulty}`), shape, counts };

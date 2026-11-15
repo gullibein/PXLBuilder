@@ -4,6 +4,7 @@
  */
 import type { Pattern } from '../pattern';
 import { CLASSIC_PATTERNS } from './classic';
+import { PUZZLE_PATTERNS } from './puzzle';
 
 const REGISTRY = new Map<string, Pattern>();
 
@@ -12,7 +13,7 @@ export function registerPattern(p: Pattern): void {
   REGISTRY.set(p.id, p);
 }
 
-for (const p of CLASSIC_PATTERNS) registerPattern(p);
+for (const p of [...CLASSIC_PATTERNS, ...PUZZLE_PATTERNS]) registerPattern(p);
 
 export function patternById(id: string): Pattern | undefined {
   return REGISTRY.get(id);

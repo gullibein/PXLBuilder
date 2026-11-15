@@ -12,7 +12,7 @@ describe('which object plays each part of a level', () => {
     const r = findRoles(createProject(registry), registry);
     const names = Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v!.name]));
     expect(names).toEqual({
-      player: 'Player', goal: 'Goal', door: 'Door', switch: 'Switch', ladder: 'Ladder', crate: 'Crate', deepWater: 'Deep water', water: 'Water', spring: 'Spring',
+      player: 'Player', goal: 'Goal', door: 'Door', plate: 'Pressure plate', switch: 'Switch', ladder: 'Ladder', crate: 'Crate', deepWater: 'Deep water', water: 'Water', spring: 'Spring',
       block: 'Question block', brick: 'Brick', enemy: 'Enemy', hazard: 'Hazard', key: 'Key', heart: 'Heart', coin: 'Coin', teleporter: 'Teleporter',
       rampRight: 'Ramp', rampLeft: 'Ramp left', oneway: 'Bridge', pipeTop: 'Pipe top', pipe: 'Pipe', ground: 'Platform', ledge: 'Stone',
     });

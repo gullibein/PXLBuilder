@@ -31,6 +31,8 @@ export interface SectionCtx {
   g: LevelGrid;
   rnd: Random;
   lim: Limits;
+  /** The player's whole reach (no margin for the difficulty): what a puzzle must be beyond, to be needed. */
+  reach: Limits;
   roles: Roles;
   /** 1 (easy) to 5. */
   difficulty: number;

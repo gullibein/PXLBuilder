@@ -484,3 +484,43 @@ Not yet connected to the AI or the editor (stage 3).
   - Asking for a change to part of a level, or a level drawn by hand, still gets the full guide.
 - **No AI at all:** New level, Regenerate and Variation on the level menu, and "two more levels" after a new game, are built by the engine (the AI only as a fallback when the game has no builder).
 - **Still to measure live:** the numbers above are characters counted in the requests the app makes, not timings of a model. The real saving in seconds is best read from AI History, where every request shows its time, input and output size. Compare a new platformer game, and "more levels", before and after this stage.
+
+### Stage 8 — done
+
+- **The pressure plate (`script/plate.ts`, a new starter object):**
+  - It's a ready-made script, "Pressure plate". The plate is on while the player or a crate is on it, and off when they leave.
+  - What it controls opens while it's held down and closes after, so a door far from its plate needs a crate left on it.
+  - It shows a pressed look (its "used" image) while held, and has its own 8×8 art.
+  - Like everything else it's an ordinary script, editable line by line.
+  - The level builder finds it as the "plate" part.
+- **The route solver: crates and plates.**
+  - Crates are part of the state: pushed a cell at a time (only with nothing on top, and room beyond); they fall, and are stood on.
+  - A plate holds its door open while the player or a crate is in its cell. A jump off a plate is judged with the door as it is once the player leaves, so the player can't slip through a door that shuts behind them.
+  - A crate pushed into a corner stays there, so a level whose crate can only go the wrong way fails.
+  - A jump off a crate's top has no run-up: upward only onto what is right beside it.
+- **Puzzle patterns (`patterns/puzzle.ts`):** 5 patterns, 12 variants.
+  - **Walled-in doors:** a door across the way, walled up to the floor's ceiling, so nothing jumps over it whatever the player's jump.
+    - `lever_door`: a lever before the door, on a hill, down in a dip, or up a ladder on a ledge.
+    - `key_door`: a key before the door, in the same three spots.
+  - `plate_door`: the plate sits at the near end of a notch two cells wide. The door is further on than the player's longest jump. Push the crate along the floor, or off a step, and it drops into the notch, onto the plate, level with the floor. It can't be pushed past or out again, so the puzzle can't be spoiled by pushing too far.
+  - `crate_step`: a wall a row higher than the player jumps; the crate starts near it or further back.
+  - `teleport`: a wall from floor to ceiling with a teleporter through it, or a teleporter up onto ground too high to reach.
+  - Widths and heights come from the player's whole reach (`ctx.reach`, no difficulty margin), so the puzzle really is beyond a plain jump.
+- **The puzzle genre (`PUZZLE_BUILD`):**
+  - Puzzles with a rest after each, quieter running and jumping between them, few enemies.
+  - Every structure, hubs more often.
+  - A level is built around a puzzle mechanic (switch, key, crate, teleporter) and must have at least one puzzle section, or it is built again.
+  - Puzzle games now get New level / Regenerate / Variation and "more levels" with no AI call, as classic ones do.
+  - New mechanics for blueprints: `switch`, `key`, `crate`, `teleporter`.
+- **Every puzzle needed:** for a puzzle level, each lever, key, crate and teleporter is taken away in turn and the level solved again. If it can still be won, the build is rejected: "it can be won without the crate at 12,9".
+- **Tests:**
+  - **The plate in play:** the player opens the door standing on it and closes it stepping off; a pushed crate keeps it open after the player walks on.
+  - **The solver:** a crate is needed to climb a wall, and one pushed into a corner can't be used; a plate opens its door with a crate on it, never for the player alone.
+  - **Each pattern and variant:** validated, solvable, not solvable without its piece.
+  - **Sweep:** 45 levels (5 structures × 3 difficulties × 3 seeds), all validated, each with a puzzle, every puzzle needed, all six kinds of puzzle seen.
+  - **The route bot** (which now pulls levers with Interact and follows teleporters): it wins at least 85% of 40 puzzle levels on the real runtime (39 of 40 when measured), with crates pushed in at least 5 of them.
+- **Measured:** 300 puzzle levels (5 structures × 3 lengths × 5 difficulties × 4 seeds): all validated, 1.77 builds per level, 252 ms on average (2.7 s at most). These timings were taken while the end-to-end tests ran alongside, so they are on the slow side.
+- **Limitations:**
+  - A crate pushed the wrong way can block a level, as in most puzzle platformers; restarting the level puts it back. The plate's notch removes the commonest way to spoil it.
+  - Older games have no pressure plate object, so `plate_door` is left out for them unless one is added (the starter's, or the AI's).
+  - Levers are used with Interact (E), as the starter Switch is.

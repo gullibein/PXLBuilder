@@ -1,6 +1,7 @@
 /**
  * A bot that plays a level along a route (the route solver's, cell by cell) on the real runtime: it runs, jumps,
- * climbs and swims with the same controls a player has, and says whether it got to the goal. It checks what the
+ * climbs, swims, pushes crates and pulls levers with the same controls a player has, and says whether it got to the
+ * goal. It checks what the
  * level checker and the solver only estimate (the real jump arc, a head bumped mid-jump, landing on the far edge,
  * how a ladder or a spring really behaves). Used by tests of the level builder; not part of play.
  */
@@ -40,7 +41,20 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
     return { col: Math.floor(p.x / CELL), row: Math.floor((p.y + 8) / CELL) };
   };
   let stepNow = 0;
+  // (A lever it stands at that is still off: pulled, with Interact, as a player would.)
+  let pulling = false;
   const tick = () => {
+    if (pulling) {
+      input.release('interact');
+      pulling = false;
+    } else {
+      const p = rt.entities.find((e) => e.alive && e.controller);
+      const lever = p && [...p.touching].map((id) => rt.byId(id)).find((o) => o?.alive && o.switch?.activation === 'interact' && !o.switch.on);
+      if (lever) {
+        input.press('interact');
+        pulling = true;
+      }
+    }
     rt.update(DT, input);
     t += DT;
     if (onTick) {
@@ -82,6 +96,12 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
       const next = path[i + 1];
       const onward = !!next && (next.move === 'jump' || next.move === 'walk') && Math.sign(next.col - to.col) === Math.sign(to.col - from.col) && to.col !== from.col;
       if (here.col === to.col && here.row === to.row && settled && (Math.abs(p.x - toX) < 12 || to.move === 'walk' || to.move === 'fall' || onward)) {
+        done = true;
+        break;
+      }
+      // (Stepping onto a teleporter takes the player on at once: already where the step after goes.)
+      if (next?.move === 'teleport' && here.col === next.col && Math.abs(here.row - next.row) <= 1) {
+        i++;
         done = true;
         break;
       }

@@ -13,7 +13,7 @@ import type { Role, Roles } from './roles';
 /** The character each role is written with in the map (readable when the map is shown to the AI or a test). */
 export const ROLE_CHARS: Record<Role, string> = {
   player: 'P', ground: '#', ledge: '=', oneway: '-', rampRight: '/', rampLeft: '\\', ladder: 'H', hazard: '^', lava: 'L',
-  water: '~', deepWater: 'w', enemy: 'E', coin: 'o', key: 'k', heart: 'h', door: 'D', switch: 's', teleporter: 'T',
+  water: '~', deepWater: 'w', enemy: 'E', coin: 'o', key: 'k', heart: 'h', door: 'D', switch: 's', plate: '_', teleporter: 'T',
   goal: 'G', crate: 'C', spring: 'S', block: '?', brick: 'b', pipeTop: 'U', pipe: '|', mover: 'M',
 };
 

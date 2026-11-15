@@ -41,12 +41,15 @@ describe('levels built into a game', () => {
     expect(() => ops(p, [{ op: 'set_level_profile', genre: 'classic', theme: 'moon' }])).toThrow(/no theme "moon"/);
   });
 
-  it('which builder a game has: classic platformers yes; puzzle platformers not yet; top-down games never', () => {
+  it('which builder a game has: classic and puzzle platformers each their own; top-down games never', () => {
     expect(builderFor(createProject(registry), registry)).toBe('classic');
     const puzzle = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'puzzle', 'castle'));
-    expect(builderFor(puzzle, registry)).toBeNull();
-    expect(noBuilderReason(puzzle, registry)).toMatch(/can't build puzzle platformer levels yet/);
+    expect(builderFor(puzzle, registry)).toBe('puzzle');
+    expect(noBuilderReason(puzzle, registry)).toBeNull();
+    // (What the AI is told for a puzzle game: its own patterns.)
+    expect((builderInfo(puzzle, registry)!.patterns as string[]).some((x) => x.startsWith('plate_door ('))).toBe(true);
     expect(builderFor(createProject(registry, 'T', 'topdown'), registry)).toBeNull();
+    expect(noBuilderReason(createProject(registry, 'T', 'topdown'), registry)).toMatch(/Only platformer/);
   });
 
   it('what the AI is told: structures, mechanics, and only the patterns (and variants) the game has the parts for', () => {

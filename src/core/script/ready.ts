@@ -8,6 +8,7 @@ import { ModelError } from '../model/mutations';
 import { SWOOPER_SCRIPT } from './swooper';
 import { ENEMY_SCRIPTS } from './enemies';
 import { SPRING_SCRIPT } from './spring';
+import { PRESSURE_PLATE_SCRIPT } from './plate';
 import { BRICK_BLOCK_SCRIPT, QUESTION_BLOCK_SCRIPT } from './blocks';
 import { hurtsScript, stompScript } from '../model/ruleScripts';
 
@@ -36,6 +37,7 @@ export const READY_SCRIPTS: Record<string, Script> = { Swooper: SWOOPER_SCRIPT a
   Spring: SPRING_SCRIPT as Script,
   'Question block': QUESTION_BLOCK_SCRIPT as Script,
   'Brick block': BRICK_BLOCK_SCRIPT as Script,
+  'Pressure plate': PRESSURE_PLATE_SCRIPT as Script,
   // The side-view rules: landing on it defeats it (or takes hits), touching it hurts the player.
   Stomp: ready(stompScript({ by: ['player'], bounce: 320, hits: 0 }) as never) as Script,
   'Hurts on touch': ready(hurtsScript({ amount: 1, who: ['player'] }) as never) as Script,

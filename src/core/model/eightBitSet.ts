@@ -54,6 +54,9 @@ const SET: Record<string, { frames: string[][]; fps?: number }> = {
   'platformer:Pipe top': { frames: [['0000000000000000', '0b7b333333333110', '0b7b333333333110', '0000000000000000', '.0b7b3333333310.', '.0b7b3333333310.', '.0b7b3333333310.', '.0b7b3333333310.']] },
   'platformer:Pipe': { frames: [Array.from({ length: 8 }, () => '.0b7b3333333310.')] },
   'platformer:Spring:sprung': { frames: [['........', '........', '........', '........', '........', '88888888', '.e8888e.', '.555555.']] },
+  // A pressure plate: a red plate on a grey base (pressed: flush with it).
+  'platformer:Pressure plate': { frames: [['........', '........', '........', '........', '........', '.000000.', '08888880', '05555550']] },
+  'platformer:Pressure plate:used': { frames: [['........', '........', '........', '........', '........', '........', '08888880', '05555550']] },
   'platformer:Bridge': { frames: [['22222222', '94999949', '22222222', '........', '........', '........', '........', '........']] },
   // Water: the surface with moving waves, and the water under it.
   'platformer:Water': {

@@ -73,4 +73,30 @@ describe('the route solver', () => {
     expect(locked.goal).toBe(false);
     expect(locked.unreached.map((u) => u.role).sort()).toEqual(['goal', 'key']);
   });
+
+  it('crates: pushed along and stood on to reach a ledge too high to jump; without the crate, no way up', () => {
+    const level = ['..............', '...........G..', '..........####', '.P.C......####', '##############'];
+    const r = solveLevel(grid(level), lim);
+    expect(r.goal).toBe(true);
+    expect(r.path.map((p) => p.move)).toContain('push');
+    expect(solveLevel(grid(level.map((row) => row.replace('C', '.'))), lim).goal).toBe(false);
+    // (A crate the player can only push into the corner, away from the wall: no way up.)
+    expect(solveLevel(grid(['..............', '...........G..', '..........####', '#C.P......####', '##############']), lim).goal).toBe(false);
+  });
+
+  it('a pressure plate opens its door only while held down: a crate left on it keeps it open; the player alone cannot', () => {
+    const level = ['............', '............', '.P.C.......G', '############'];
+    const plate = [{ role: 'plate' as Role, col: 5, row: 2, ref: 'plate' }, { role: 'door' as Role, col: 10, row: 2, ref: 'door' }];
+    const links = [{ type: 'controls' as const, from: 'plate', to: 'door' }];
+    const r = solveLevel(grid(level, plate, links), lim);
+    expect(r.goal).toBe(true);
+    expect(r.path.filter((p) => p.move === 'push').length).toBe(2);
+    // Without the crate: standing on the plate opens the door, but it shuts again before the player gets there.
+    const alone = solveLevel(grid(level.map((row) => row.replace('C', '.')), plate, links), lim);
+    expect(alone.goal).toBe(false);
+    expect(alone.unreached.map((u) => u.role)).toEqual(['goal']);
+    // Right next to the plate, a step off it and through before it shuts... is still shut (the door closes at once).
+    const near = solveLevel(grid(level.map((row) => row.replace('C', '.')), [plate[0], { ...plate[1], col: 6 }], links), lim);
+    expect(near.goal).toBe(false);
+  });
 });
