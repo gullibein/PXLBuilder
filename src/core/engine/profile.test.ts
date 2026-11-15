@@ -13,8 +13,8 @@ import { Runtime } from '../../runtime/runtime';
 import { InputState } from '../../runtime/input';
 import { normalizedDefinitions } from './golden';
 import { KIT_ROLES } from './kitRoles';
-import { modules, type GeneratorModule } from './modules';
-import { checkProfile, changedProfile, inferProfile, profileOf, projectFromPreset, projectFromProfile, setGameProfile, storedGameProfile } from './profile';
+import { modules, type GeneratorModule, type KitModule } from './modules';
+import { checkProfile, changedProfile, inferProfile, kitOf, profileOf, projectFromPreset, projectFromProfile, setGameProfile, storedGameProfile } from './profile';
 import { PRESETS, presetById } from './presets';
 
 const registry = createBuiltinRegistry();
@@ -217,6 +217,10 @@ describe('F1: game profiles and the module registry', () => {
     expect(roles.ground?.name).toBe('Platform');
     const built = buildLevel(p, p.scenes[0].id, { difficulty: 3, seed: 4 }, registry);
     expect(built.state).toBe('validated');
+  });
+
+  it('each kit\'s new game is recognised as that kit (the names table loading games uses agrees with the kits)', () => {
+    for (const kit of modules.list<KitModule>('kit')) expect(kitOf(kit.create(registry, 'x'), registry), kit.id).toBe(kit.id);
   });
 
   it('kit role declarations agree with what the level builder finds by itself in the starter', () => {

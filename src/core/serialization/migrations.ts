@@ -1,5 +1,5 @@
 import { componentRegistry } from '../components/builtin';
-import { inferProfile } from '../engine/profile';
+import { inferProfileFromObjects } from '../engine/infer';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
 import { createHeartAsset, createStarterAssets, createStarterDefinitions, ENEMY_PATROL, heartDefinition, SPIKES_ART_V8_ROWS } from '../model/factory';
@@ -386,7 +386,7 @@ function migrateV14toV15(raw: Raw): Raw {
   const lp = project.settings.levelProfile;
   delete project.settings.levelProfile;
   if (lp && typeof lp.genre === 'string' && typeof lp.theme === 'string') {
-    const base = inferProfile({ settings: project.settings, definitions: Array.isArray(raw.definitions) ? raw.definitions : [] }, componentRegistry);
+    const base = inferProfileFromObjects({ settings: project.settings, definitions: Array.isArray(raw.definitions) ? raw.definitions : [] });
     project.settings.profile = { ...base, generator: { id: 'sections', settings: { genre: lp.genre } }, theme: lp.theme };
   }
   return project;

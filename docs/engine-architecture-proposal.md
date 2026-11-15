@@ -866,6 +866,7 @@ That is the "no new features, real work" part of the foundation: Mario and puzzl
 | Today's modules | `engine/modules.ts` | Views `side` / `top` / `iso`; time `realtime` / `turns`; locomotion `arcade` / `topdown`; abilities `double_jump` / `ledge_grab`; geometry `box` / `one_way` / `ramp`; camera `follow`; kits `platformer` / `topdown` / `rpg` / `roguelike` / `isometric`; generators `sections` / `dungeon`; progression `stages`; validators `layout` / `checker` / `cell_solver` / `puzzle_needed` / `route_bot` |
 | Presets (data) | `engine/presets.ts` | `platformer`, `classic-platformer`, `puzzle-platformer`, `topdown`, `rpg`, `roguelike`, `isometric` |
 | Profile logic | `engine/profile.ts` | Profile inferred for games without one (from their objects, never written); compatibility check; new game from a profile or preset (kits merged without repeating a part); `setGameProfile` (checked; applies movement, gravity for a view, kits added) |
+| Kit recognition | `engine/infer.ts` | Which kit (preset) a game was made from, by its objects' names: data only, so loading a game (and the exported player) doesn't need the starter sets; a test checks it against every kit |
 | Kit roles | `engine/kitRoles.ts` | The level-builder part each kit object plays, declared; `findRoles` counts a declaration as well as what the object is |
 
 **What goes through the profile now:**
@@ -891,4 +892,5 @@ That is the "no new features, real work" part of the foundation: Mario and puzzl
 - **The generator's genre without a look:** a profile can now name a genre with no theme chosen (presets do). It counts as chosen, while the theme is still worked out from the game, as before.
 - **`gameType` stays** in settings, read where the old code reads it, until F2/F3 move that code.
 - **Kits added to an existing game:** objects that repeat a name or a part already in the game are left out. A kit taken away doesn't remove objects.
+- **Size:** the editor page grows by about 27 KB (3.571 → 3.598 MB). The exported player is unchanged in what it carries. A first build pulled every starter set into the player through the migration; recognising kits by name fixed it.
 - **AI cost:** the profile line adds about 230 characters to each request's context. The instructions sent with every request stay under their 120,000-character budget: the new operation's description was paid for by trimming wordy examples elsewhere.

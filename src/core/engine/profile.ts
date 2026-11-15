@@ -12,6 +12,7 @@ import { tagMet, type Module, type ModuleKind } from './module';
 import { modules, type GeneratorModule, type KitModule, type LocomotionModule, type ViewModule } from './modules';
 import { presetById, PRESETS } from './presets';
 import { gameProfileSchema, type GameProfile } from './profileSchema';
+import { inferProfileFromObjects, kitOfObjects } from './infer';
 
 // (Through JSON: profiles are plain data, and this reads an Immer draft as well.)
 const cloneValue = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -25,28 +26,9 @@ export function storedGameProfile(project: Project): GameProfile | null {
 /** The starter name of an object (older games: its name). */
 const starterName = (d: { name: string; metadata?: Record<string, unknown> }) => (typeof d.metadata?.starter === 'string' ? d.metadata.starter : d.name);
 
-/** Each kit's object names (made once: a kit's new game, read). */
-let kitNames: Map<string, Set<string>> | null = null;
-function namesOfKits(registry: ComponentRegistry): Map<string, Set<string>> {
-  kitNames ??= new Map(modules.list<KitModule>('kit').map((k) => [k.id, new Set(k.create(registry, 'x').definitions.map(starterName))]));
-  return kitNames;
-}
-
-/** The kit a game was made from, by its objects (the kit with the most of its own objects there); null: none of them. */
-export function kitOf(project: Pick<Project, 'definitions' | 'settings'>, registry: ComponentRegistry): string | null {
-  const names = namesOfKits(registry);
-  const have = new Set(project.definitions.map(starterName));
-  let best: { id: string; own: number; all: number } | null = null;
-  for (const [id, set] of names) {
-    // (Objects only this kit has count most: the RPG's party, the roguelike's monsters.)
-    const own = [...set].filter((n) => have.has(n) && [...names].every(([o, s]) => o === id || !s.has(n))).length;
-    const all = [...set].filter((n) => have.has(n)).length;
-    if (!best || own > best.own || (own === best.own && all > best.all)) best = { id, own, all };
-  }
-  if (!best || best.all === 0) return null;
-  // (Equal: what the game says it is.)
-  if (best.own === 0) return project.settings.gameType === 'topdown' ? 'topdown' : 'platformer';
-  return best.id;
+/** The kit a game was made from, by its objects; null: none of them (engine/infer.ts). */
+export function kitOf(project: Pick<Project, 'definitions' | 'settings'>, _registry?: ComponentRegistry): string | null {
+  return kitOfObjects(project.definitions, project.settings.gameType);
 }
 
 /**
@@ -54,10 +36,8 @@ export function kitOf(project: Pick<Project, 'definitions' | 'settings'>, regist
  * it was made from. Never written by this: a game gets a stored profile when the user or the AI chooses one, or when
  * it is made from a preset.
  */
-export function inferProfile(project: Pick<Project, 'definitions' | 'settings'>, registry: ComponentRegistry): GameProfile {
-  const kit = kitOf(project, registry) ?? (project.settings.gameType === 'topdown' ? 'topdown' : 'platformer');
-  const preset = presetById(kit === 'platformer' ? 'platformer' : kit) ?? presetById('platformer')!;
-  return cloneValue(preset.profile);
+export function inferProfile(project: Pick<Project, 'definitions' | 'settings'>, _registry?: ComponentRegistry): GameProfile {
+  return inferProfileFromObjects(project);
 }
 
 /** The game's profile: the stored one, else worked out from the game. */
