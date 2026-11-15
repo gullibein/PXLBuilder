@@ -13,7 +13,7 @@ import { EXAMPLE_ROUTING, SCRIPT_EXAMPLES } from '../script/examples';
 import { SCRIPT_TOPICS, scriptDocsFor } from '../script/language';
 import { COMPONENT_TOPICS, componentDocsFor, enginepartsGuide } from './capabilities';
 import { componentRegistry } from '../components/builtin';
-import { NEW_GAME_GUIDE, CAMERA_GUIDE, DEBUGGING_GUIDE, DRAWING_GUIDE, EDITOR_GUIDE, LEVELS_GUIDE, TOPDOWN_GUIDE } from './guideSections';
+import { NEW_GAME_GUIDE, CAMERA_GUIDE, DEBUGGING_GUIDE, DRAWING_GUIDE, EDITOR_GUIDE, LEVELS_BUILDER_GUIDE, LEVELS_GUIDE, TOPDOWN_GUIDE } from './guideSections';
 
 /** Each ready-made enemy behavior with its settings and defaults, for the enemies topic. */
 const ENEMY_LIST = Object.entries(ENEMY_SCRIPTS)
@@ -31,6 +31,8 @@ export interface Topic {
   newGame?: boolean;
   /** Goes with every request about a level seen from above. */
   topDown?: boolean;
+  /** Put in by the app itself (never asked for by the AI, so no pointer to it in the instructions). */
+  internal?: boolean;
 }
 
 export const TOPICS: Record<string, Topic> = {
@@ -53,6 +55,14 @@ export const TOPICS: Record<string, Topic> = {
     newGame: true,
     words: /\blevels?\b|\bmaps?\b|layout|\bstage|\brooms?\b|platforms?\b|ladders?|\bpit|tower|\bcave|maze|spikes?|\bgaps?\b|harder|easier|puzzle|crate|bridge|ramp|teleport|\breach|can'?t get|cannot get|get to|jump (to|over|up)|\bplace|\bput (a|an|some|the|more)|\badd (a|an|some|more)\b|\bmove (the|it|this)|floor|\bwalls?\b|ceiling|\bpool|lava/i,
     text: LEVELS_GUIDE,
+  },
+  // (Instead of "levels" for a request that builds whole levels where the engine's level builder can: runPrompt.)
+  levels_builder: {
+    title: "Building whole levels with the engine's level builder",
+    scopes: [],
+    internal: true,
+    words: /$^/,
+    text: LEVELS_BUILDER_GUIDE,
   },
   drawing: {
     title: 'Drawing sprites',

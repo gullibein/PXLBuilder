@@ -471,3 +471,16 @@ Not yet connected to the AI or the editor (stage 3).
 
   It's a test-time check, not a gate: it doesn't fight enemies or time moving platforms, and levels with moving platforms are skipped (said, not counted).
 - **Measured:** levels of all structures, without enemies: 29 of 32 played were won (91%), at about 0.3 s each. The test requires at least 80%. A sweep of 400 levels (5 structures × 2 lengths × 5 difficulties × 8 seeds) was all validated with the solver gating, at 1.33 builds and 99 ms per level on average.
+
+### Stage 7 — done
+
+- **Measured (`levelGen/measure.test.ts`):** 25 levels (5 structures × 5 seeds, difficulty 3), the AI's answer drawn by hand against the same level asked of the engine.
+  - **The answer:** a level drawn by the AI (draw_map, enemies, items, the goal) is about 1,488 characters (about 425 tokens). A generate_level blueprint is about 238 characters (about 68 tokens), 6.3× smaller. Output tokens are the slow, dear part of a reply, so this is most of the time a level takes.
+  - **The engine:** 109 ms per level on average (205 ms at most), 1.20 builds per level, about 85 solver states. No AI call.
+  - **Repair rounds:** a level the checker rejected used to cost another round trip with the whole request (about 150,000–170,000 characters, about 45,000 tokens) and another answer. A built level is checked before it is applied, so that round never happens.
+- **A shorter levels guide when the engine builds:** when the game has a level builder and the request is a new game, more levels or making levels, the full levels guide (about 22,000 characters) is replaced by a short one about the builder (about 4,700). The request trace says so.
+  - "More levels": 157,854 → 139,543 characters per request (−18,311).
+  - A new game in two parts: part 1 (the plan and the art) no longer carries the levels guide at all (−23,010). Part 2 (the levels) carries the short guide (−18,311).
+  - Asking for a change to part of a level, or a level drawn by hand, still gets the full guide.
+- **No AI at all:** New level, Regenerate and Variation on the level menu, and "two more levels" after a new game, are built by the engine (the AI only as a fallback when the game has no builder).
+- **Still to measure live:** the numbers above are characters counted in the requests the app makes, not timings of a model. The real saving in seconds is best read from AI History, where every request shows its time, input and output size. Compare a new platformer game, and "more levels", before and after this stage.

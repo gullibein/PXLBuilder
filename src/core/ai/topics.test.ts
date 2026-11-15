@@ -12,7 +12,8 @@ describe('guidance only some requests need', () => {
     const prompt = buildSystemPrompt(createBuiltinRegistry());
     for (const [key, t] of Object.entries(TOPICS)) {
       expect(prompt).not.toContain(t.text.slice(0, 60));
-      expect(prompt).toContain(`topic "${key}"`);
+      // (One the app puts in by itself needs no pointer: the AI never asks for it.)
+      if (!t.internal) expect(prompt).toContain(`topic "${key}"`);
     }
   });
 

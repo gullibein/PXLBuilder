@@ -258,6 +258,12 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     topics.unshift('pictures');
     trace?.('note', `Pictures sent along: ${options.images.map((p) => `${p.name} (${p.sourceWidth}×${p.sourceHeight}, sent ${p.width}×${p.height})`).join(', ')}`);
   }
+  // Whole levels the engine builds (a new game, more levels, "build N levels"): the short levels guide (the builder
+  // and what goes with it), not the whole guide to drawing maps by hand.
+  if (level?.builder && topics.includes('levels') && (newGameAsked || options.moreLevels || /\b(build|make|create|generate|design|rebuild|redo|add)\b[^.?!]*\blevels?\b/i.test(request))) {
+    topics.splice(topics.indexOf('levels'), 1, 'levels_builder');
+    trace?.('note', "The short levels guide went along (the engine builds the levels); the full one when a level is drawn by hand");
+  }
   if (topics.length) {
     body.topics = topics;
     trace?.('note', `Guidance sent along: ${topics.join(', ')}`);
@@ -380,7 +386,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     let early: AIResponse | null = null;
     if (splitBuild) {
       stage(planned ? 'Drawing what it planned: the objects first' : 'Drawing the objects first');
-      const art = await ask({ ...body, request: `${body.request}\n\n${PART_ONE}` }, signal, trace);
+      // (Part 1 builds no level: no levels guide with it.)
+      const art = await ask({ ...body, topics: body.topics?.filter((t) => t !== 'levels' && t !== 'levels_builder'), request: `${body.request}\n\n${PART_ONE}` }, signal, trace);
       if (art.kind === 'switch_starter' || art.kind === 'need_code') early = art;
       else {
         const ops = art.operations.filter((o) => !isEditorOperation(o));
