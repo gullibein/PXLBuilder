@@ -62,8 +62,11 @@ export const themeById = (id: string | undefined): Theme | undefined => THEMES.f
 
 /** A profile the game chose (genre and theme both known), else null. */
 export function storedProfile(project: Project): LevelProfile | null {
-  const p = project.settings.levelProfile;
-  return p && genreById(p.genre) && themeById(p.theme) ? p : null;
+  // (Read from the game's profile: the level builder's genre and the look.)
+  const p = project.settings.profile;
+  const genre = typeof p?.generator.settings.genre === 'string' ? p.generator.settings.genre : undefined;
+  const theme = p?.theme ?? undefined;
+  return genre && theme && genreById(genre) && themeById(theme) ? { genre, theme, version: 1 } : null;
 }
 
 /** A small, stable number from a text (the same game always gets the same pick). */
@@ -101,10 +104,16 @@ function counts(project: Project, registry: ComponentRegistry): { puzzles: numbe
 export function levelProfileOf(project: Project, registry: ComponentRegistry): { genre: Genre; theme: Theme | null; stored: boolean } | null {
   const stored = storedProfile(project);
   if (stored) return { genre: genreById(stored.genre)!, theme: themeById(stored.theme)!, stored: true };
-  if ((project.settings.gameType ?? 'platformer') !== 'platformer') return null;
+  // (Seen from the side: as the game's profile says, else as it was started.)
+  const view = project.settings.profile?.view ?? ((project.settings.gameType ?? 'platformer') === 'platformer' ? 'side' : 'top');
+  if (view !== 'side') return null;
   const { puzzles, action, built } = counts(project, registry);
-  const genre = puzzles >= 3 && puzzles > action ? genreById('puzzle')! : genreById('classic')!;
-  return { genre, theme: built ? null : THEMES[hash(project.id) % THEMES.length], stored: false };
+  // (Each of the two as the profile has it when it has one: a genre chosen without a look, a look without a genre.)
+  const p = project.settings.profile;
+  const chosenGenre = typeof p?.generator.settings.genre === 'string' ? genreById(p.generator.settings.genre) : undefined;
+  const chosenTheme = themeById(p?.theme ?? undefined);
+  const genre = chosenGenre ?? (puzzles >= 3 && puzzles > action ? genreById('puzzle')! : genreById('classic')!);
+  return { genre, theme: chosenTheme ?? (built ? null : THEMES[hash(project.id) % THEMES.length]), stored: false };
 }
 
 /** The puzzles for a level of this profile: the genre's, without those the look rules out. */

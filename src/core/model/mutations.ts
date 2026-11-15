@@ -1069,9 +1069,4 @@ export function setPlatformPath(project: Project, sceneId: Id, entityId: Id, pat
   setEntityComponentField(project, sceneId, entityId, 'MovingPlatform', 'offset', { x: Math.round(path.offset.x), y: Math.round(path.offset.y) }, registry);
 }
 
-/** The game's kind of platformer and its look (levelGen/profile.ts), kept for the whole game. */
-export function setLevelProfile(project: Project, genre: string, theme: string): void {
-  // (Checked against the lists by the operation's schema; here only that they are words.)
-  if (!genre.trim() || !theme.trim()) throw new ModelError('A level profile needs a genre and a theme');
-  project.settings.levelProfile = { genre, theme, version: 1 };
-}
+

@@ -40,6 +40,7 @@ import { ZodError } from 'zod';
 import { GENRES, THEMES } from '../levelGen/profile';
 import { LevelGenError } from '../levelGen/generate';
 import { buildLevel } from '../levelGen/build';
+import { profileChangeSchema, setGameProfile, setLevelProfile, type ProfileChange } from '../engine/profile';
 import { current, isDraft } from 'immer';
 
 const target = z.enum(['instance', 'definition']).describe('"instance" changes one placed entity, "definition" changes the library object and every instance that does not override it');
@@ -135,7 +136,7 @@ export const operationSchema = z.union([
     stars: z
       .object({ density: z.number(), speedX: z.number(), speedY: z.number(), layers: z.number(), color: z.string() })
       .nullable()
-      .describe('Stars the engine draws over the color, moving by themselves (space, flying): density = stars per 100×100 level px (10-20 typical, up to 60; 0 removes them), speedX/speedY = px a second of the nearest layer (a vertical shooter: speedY 60-200, flying up past them), layers 1-3 (depth: farther layers slower and dimmer), color "#rrggbb"; null = keep'),
+      .describe('Stars the engine draws over the color, moving by themselves (space, flying): density = stars per 100×100 level px (10-20 typical, up to 60; 0 removes them), speedX/speedY = px/s of the nearest layer (vertical shooter: speedY 60-200), layers 1-3 (farther: slower, dimmer), color "#rrggbb"; null = keep'),
     gradient: z
       .object({ top: z.string().describe('"#rrggbb" at the top of the screen'), bottom: z.string().describe('"#rrggbb" at the bottom'), bands: z.number().describe('0 = a smooth fade; 3-16 = that many even bands of color, as old games drew skies') })
       .nullable()
@@ -158,7 +159,7 @@ export const operationSchema = z.union([
     generatorJson: z
       .string()
       .describe(
-        'Makes the level a RANDOM level (a new dungeon each play: rooms, corridors, walls, monsters, treasure) or changes its recipe: JSON with only the settings to change: style ("rooms": rooms joined by corridors, "caves": winding natural caves, "maze": corridors one square wide), width, height (squares, 10-120), rooms, roomMin, roomMax (room sides in squares), corridor (1-3 wide), loops (0-1), wall, floor, stairs (library objects by id or name; floor optional), door and key (both: a locked door on the only way to the stairs and its key on the near side, the door made to need the key; from lockFromFloor down; the player needs an Inventory to carry it), templates (room templates: a list of levels, by id or name, each a room built by hand (a vault, a shrine, pillars, a monster den); a room it fits into gets it now and then (templateChance 0-1, default 0.5; never the start room); those levels are no longer played as levels of their own; anything solid in them must leave the room passable or that room skips it), monsters and loot (lists of {"object","weight","fromFloor"}), monsterCount, monstersPerFloor, lootCount, lootPerFloor, seed (null: a new dungeon each play), preview (the example the editor shows), previewFloor. "null" makes it an ordinary level again. What is placed by hand stays; the player starts in the first room',
+        'Makes the level a RANDOM level (a new dungeon of rooms, monsters and treasure each play) or changes its recipe: JSON with only the settings to change: style ("rooms": rooms joined by corridors, "caves": winding natural caves, "maze": corridors one square wide), width, height (squares, 10-120), rooms, roomMin, roomMax (room sides in squares), corridor (1-3 wide), loops (0-1), wall, floor, stairs (library objects by id or name; floor optional), door and key (both: a locked door on the only way to the stairs and its key on the near side, the door made to need the key; from lockFromFloor down; the player needs an Inventory to carry it), templates (levels by id or name, each a room built by hand: a vault, a shrine, a monster den; a room it fits gets it now and then (templateChance 0-1, default 0.5; never the start room); they are no longer played as levels; solids in them must leave the room passable), monsters and loot (lists of {"object","weight","fromFloor"}), monsterCount, monstersPerFloor, lootCount, lootPerFloor, seed (null: a new dungeon each play), preview (the example the editor shows), previewFloor. "null" makes it an ordinary level again. What is placed by hand stays; the player starts in the first room',
       ),
   }),
   z.object({
@@ -169,7 +170,7 @@ export const operationSchema = z.union([
     op: z.literal('set_controls'),
     controlsJson: z
       .string()
-      .describe('The game\'s keys, for the actions to change: JSON {"action": ["key", ...]} with actions left, right, up, down, jump, interact (the action / use / talk / choose key), fire, menu (pause, back); keys by name ("W", "Space", "Up", "Enter", "Esc", "Shift", "1") or browser code ("KeyW"); 1-4 a action, no key for two. Actions left out keep the engine\'s keys; "{}" puts all back'),
+      .describe('The game\'s keys, for the actions to change: JSON {"action": ["key", ...]} with actions left, right, up, down, jump, interact (the action / use / talk / choose key), fire, menu (pause, back); keys by name ("W", "Space", "Up", "Esc", "1") or browser code ("KeyW"); 1-4 an action, no key for two. Others keep the engine\'s keys; "{}" puts all back'),
   }),
   z.object({
     op: z.literal('set_sprite_resolution'),
@@ -307,6 +308,10 @@ export const operationSchema = z.union([
     op: z.literal('set_level_profile'),
     genre: z.enum(GENRES.map((g) => g.id) as [string, ...string[]]),
     theme: z.string(),
+  }),
+  z.object({
+    op: z.literal('set_game_profile'),
+    changeJson: z.string().describe('JSON of what to change (context.game): preset, view, time, movement, abilities, geometry, camera, addKits, generator, genre, theme'),
   }),
   z.object({
     op: z.literal('build_path'),
@@ -1365,9 +1370,20 @@ export function applyOperations(
         ];
         break;
       }
+      case 'set_game_profile': {
+        let change: ProfileChange;
+        try {
+          change = profileChangeSchema.parse(JSON.parse(op.changeJson));
+        } catch (e) {
+          throw new m.ModelError(`set_game_profile: changeJson is not a profile change (${e instanceof ZodError ? e.issues.slice(0, 2).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') : (e as Error).message})`);
+        }
+        const done = setGameProfile(project, change, registry);
+        result.notes = [...(result.notes ?? []), `Game profile: ${done.length ? done.join('; ') : 'changed'}`];
+        break;
+      }
       case 'set_level_profile':
         if (!THEMES.some((t) => t.id === op.theme)) throw new m.ModelError(`set_level_profile: there is no theme "${op.theme}" (there are: ${THEMES.map((t) => t.id).join(', ')})`);
-        m.setLevelProfile(project, op.genre, op.theme);
+        setLevelProfile(project, op.genre, op.theme, registry);
         break;
       case 'build_path': {
         const byName = (x: string) => project.definitions.find((d) => d.name.toLowerCase() === x.trim().toLowerCase());

@@ -1,4 +1,5 @@
 import { produce } from 'immer';
+import { setLevelProfile } from '../engine/profile';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { applyOperations, type Operation } from '../commands/operations';
@@ -37,13 +38,13 @@ describe('levels built into a game', () => {
 
   it('set_level_profile keeps the kind and look; a theme that is not one is refused', () => {
     const p = createProject(registry);
-    expect(ops(p, [{ op: 'set_level_profile', genre: 'classic', theme: 'castle' }]).settings.levelProfile).toEqual({ genre: 'classic', theme: 'castle', version: 1 });
+    expect(ops(p, [{ op: 'set_level_profile', genre: 'classic', theme: 'castle' }]).settings.profile).toMatchObject({ generator: { id: 'sections', settings: { genre: 'classic' } }, theme: 'castle' });
     expect(() => ops(p, [{ op: 'set_level_profile', genre: 'classic', theme: 'moon' }])).toThrow(/no theme "moon"/);
   });
 
   it('which builder a game has: classic and puzzle platformers each their own; top-down games never', () => {
     expect(builderFor(createProject(registry), registry)).toBe('classic');
-    const puzzle = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'puzzle', 'castle'));
+    const puzzle = produce(createProject(registry), (d) => void setLevelProfile(d, 'puzzle', 'castle', registry));
     expect(builderFor(puzzle, registry)).toBe('puzzle');
     expect(noBuilderReason(puzzle, registry)).toBeNull();
     // (What the AI is told for a puzzle game: its own patterns.)
@@ -105,9 +106,9 @@ describe('levels built into a game', () => {
   });
 
   it('the look rules mechanics out: no swimming in a space station, no grassy slopes in a castle', () => {
-    const space = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'classic', 'space'));
+    const space = produce(createProject(registry), (d) => void setLevelProfile(d, 'classic', 'space', registry));
     expect(themeAvoids(space, registry)).toEqual(['water', 'ramp']);
-    const forest = produce(createProject(registry), (d) => void m.setLevelProfile(d, 'classic', 'forest'));
+    const forest = produce(createProject(registry), (d) => void setLevelProfile(d, 'classic', 'forest', registry));
     expect(themeAvoids(forest, registry)).toEqual([]);
     const sections = (p: Project) => Array.from({ length: 6 }, (_, seed) => (buildLevel(p, p.scenes[0].id, { difficulty: 3, seed, structure: 'run', length: 'long', focus: ['water', 'ramp'] }, registry).madeBy.fingerprint as { sections: string[] }).sections).flat();
     expect(sections(space).some((x) => /:(pool|slopes)\//.test(x))).toBe(false);

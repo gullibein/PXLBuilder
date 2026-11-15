@@ -1,4 +1,5 @@
 import { produce } from 'immer';
+import { setLevelProfile } from '../engine/profile';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
@@ -26,7 +27,7 @@ const games = () => [
   [
     'a platformer kind and look kept, and a level made by the level builder',
     produce(createProject(registry, 'G', 'platformer'), (d) => {
-      d.settings.levelProfile = { genre: 'classic', theme: 'forest', version: 1 };
+      setLevelProfile(d, 'classic', 'forest', registry);
       d.scenes[0].madeBy = { generator: 'classic', version: 1, seed: 58291, blueprint: { difficulty: 2, concept: 'springs' }, patterns: { gap: 1, spring_ledge: 2 }, fingerprint: { sections: ['intro:flat'] } };
     }),
   ],

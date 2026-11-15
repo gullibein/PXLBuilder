@@ -7,6 +7,7 @@
  * The model never receives the raw project file.
  */
 import { generateDungeon } from '../model/dungeon';
+import { describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
 import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { EnginePart } from '../script/language';
@@ -205,6 +206,11 @@ export interface AIPayload {
   /** The editor's adjustable settings and overlays, with their current values (editor changes are possible from any scope). */
   editor?: EditorSettingsPayload;
   scope_note: string;
+  /**
+   * The game's profile (engine/profile.ts): which module of each system it uses, in a line; with requests about the
+   * whole game, also what each system can be and the presets (set_game_profile changes it).
+   */
+  game?: { profile: string; stored: boolean; choices?: Record<string, string[]>; presets?: string[] };
   level: {
     id: Id;
     name: string;
@@ -484,6 +490,10 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       ctx.kind === 'object' && ctx.panel
         ? "EDITOR PANEL for this library object: the user asks what its own panel (beside it in the editor, never in the game) shows and how. Answer with set_panel (or remove_panel); the object's current panel is object.panel. See the panels guidance."
         : SCOPE_NOTES[ctx.kind],
+    game: (() => {
+      const p = profileOf(project, registry);
+      return { profile: describeProfile(p), stored: !!storedGameProfile(project), ...(ctx.kind === 'project' ? profileChoices() : {}) };
+    })(),
     ...(editor ? { editor } : {}),
     ...(connection ? { connection: { id: connection.id, text: describeRelationship(project, scene, connection), type: connection.type, source: connection.source, target: connection.target, params: connection.params, conditions: connection.conditions } } : {}),
     level: {

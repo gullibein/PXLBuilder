@@ -8,6 +8,7 @@ import type { Instrument, Song } from './audio/music';
 import type { GameSound } from './audio/sound';
 import type { CameraSettings } from './model/camera';
 import type { BehaviorScript } from './script/language';
+import type { GameProfile } from './engine/profileSchema';
 
 export type { BehaviorScript };
 
@@ -335,14 +336,15 @@ export interface ProjectSettings {
   /** Which keys do what (model/controls.ts): the actions named here use these keys instead of the engine's. */
   controls?: Partial<Record<'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu', string[]>>;
   /**
-   * A platformer's kind of play and its look, kept for the whole game (levelGen/profile.ts): how its levels are built
-   * and what they look like, each changeable on its own. Missing: not chosen (worked out from the game when needed,
-   * never written without the user or the AI choosing it).
+   * The game's profile (engine/profileSchema.ts): which module of each engine system it uses (view, time, movement,
+   * geometry, camera, kits, level builder, progression) and its look. Missing: not chosen (worked out from the game
+   * when needed, engine/profile.ts, never written without the user or the AI choosing it, or a new game from a preset).
+   * A platformer's kind of play (its genre) is the level builder's setting; its look is the theme.
    */
-  levelProfile?: LevelProfile;
+  profile?: GameProfile;
 }
 
-/** A platformer's kind of play (genre: "classic", "puzzle"…) and its look (theme: "forest", "castle"…). */
+/** A platformer's kind of play (genre: "classic", "puzzle"…) and its look (theme: "forest", "castle"…), as read from its profile. */
 export interface LevelProfile {
   genre: string;
   theme: string;

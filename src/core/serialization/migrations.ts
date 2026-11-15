@@ -1,4 +1,5 @@
 import { componentRegistry } from '../components/builtin';
+import { inferProfile } from '../engine/profile';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
 import { createHeartAsset, createStarterAssets, createStarterDefinitions, ENEMY_PATROL, heartDefinition, SPIKES_ART_V8_ROWS } from '../model/factory';
@@ -373,6 +374,24 @@ function migrateV12toV13(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v14 -> v15
+ * - A game's profile (settings.profile: its view, time, movement, geometry, camera, kits, level builder, progression,
+ *   look). A platformer's chosen kind and look (settings.levelProfile) move into it: the kind becomes the level
+ *   builder's genre, the look the theme; the rest is what the game was made from (worked out from its objects).
+ *   Games that hadn't chosen one get nothing written (their profile is worked out when needed, as before).
+ */
+function migrateV14toV15(raw: Raw): Raw {
+  const project = { ...raw, settings: { ...(raw.settings ?? {}) } };
+  const lp = project.settings.levelProfile;
+  delete project.settings.levelProfile;
+  if (lp && typeof lp.genre === 'string' && typeof lp.theme === 'string') {
+    const base = inferProfile({ settings: project.settings, definitions: Array.isArray(raw.definitions) ? raw.definitions : [] }, componentRegistry);
+    project.settings.profile = { ...base, generator: { id: 'sections', settings: { genre: lp.genre } }, theme: lp.theme };
+  }
+  return project;
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -398,6 +417,7 @@ export const MIGRATIONS: Migration[] = [
     to: 14,
     migrate: (p) => p,
   },
+  { from: 14, to: 15, migrate: migrateV14toV15 },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

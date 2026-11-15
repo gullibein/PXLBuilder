@@ -13,21 +13,30 @@ import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type 
 import { patternById } from './patterns/index';
 import { findRoles } from './roles';
 import { fingerprintOfScene } from './fingerprint';
-import { generateLevel, type GenerateOptions, type GenerateResult } from './generate';
+import type { GenerateOptions, GenerateResult } from './generate';
 import { GENRE_BUILDS } from './genres';
 import { levelProfileOf } from './profile';
+import { generatorOf } from '../engine/profile';
+import { modules, type GeneratorModule } from '../engine/modules';
 
-/** The builder for this game's levels ("classic"…), or null (not a platformer, or its genre has no builder yet). */
+/**
+ * What builds this game's levels, by name ("classic", "puzzle", or another generator's id), or null: the game's
+ * profile has no level builder that builds levels here (not a platformer, or its genre has no builder yet).
+ */
 export function builderFor(project: Project, registry: ComponentRegistry): string | null {
-  const profile = levelProfileOf(project, registry);
-  return profile && GENRE_BUILDS[profile.genre.id] ? profile.genre.id : null;
+  const gen = generatorOf(project, registry);
+  if (!gen?.build) return null;
+  return gen.label ? gen.label(project, registry) : gen.id;
 }
 
 /** Why a game has no builder (for the menu's hint), or null. */
 export function noBuilderReason(project: Project, registry: ComponentRegistry): string | null {
   const profile = levelProfileOf(project, registry);
-  if (!profile) return 'Only platformer levels can be built by the engine';
-  return GENRE_BUILDS[profile.genre.id] ? null : `The engine can't build ${profile.genre.name.toLowerCase()} levels yet`;
+  const gen = generatorOf(project, registry);
+  if (!profile && !gen?.build) return 'Only platformer levels can be built by the engine';
+  if (!gen?.build) return "This game's profile has no level builder";
+  if (builderFor(project, registry)) return null;
+  return profile ? `The engine can't build ${profile.genre.name.toLowerCase()} levels yet` : "This game's level builder can't build its levels";
 }
 
 type Fingerprint = { structure?: Structure; length?: string; sections?: string[]; signature?: Mechanic | null };
@@ -91,7 +100,11 @@ export function themeAvoids(project: Project, registry: ComponentRegistry): Mech
 
 /** Builds a level of the game (checked, not applied), leaving out what its look rules out. */
 export function buildLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, options: GenerateOptions = {}): GenerateResult {
-  return generateLevel(project, sceneId, blueprint, registry, builderFor(project, registry) ?? 'classic', { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), ...themeAvoids(project, registry)] });
+  // The game's level builder (its profile's generator). (A game whose profile has none is built as a platformer,
+  // as before profiles: generate_level and "more levels" asked for anyway get the sections builder's answer.)
+  const gen = generatorOf(project, registry);
+  const builder = gen?.build ? gen : modules.get<GeneratorModule>('generator', 'sections')!;
+  return builder.build!({ project, sceneId, blueprint, registry, options: { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), ...themeAvoids(project, registry)] } });
 }
 
 /** Puts a built level into a project being edited: its operations, and the record of how it was made. */

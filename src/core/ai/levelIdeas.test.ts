@@ -1,4 +1,5 @@
 import { produce } from 'immer';
+import { setLevelProfile } from '../engine/profile';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject, createScene, instantiateDefinition } from '../model/factory';
@@ -80,14 +81,14 @@ describe('variety for generated levels', () => {
   });
 
   it('a kind and look the game chose are used; puzzles the look rules out are left out', () => {
-    const p = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'classic', theme: 'space', version: 1 }));
+    const p = produce(createProject(registry), (d) => void (setLevelProfile(d, 'classic', 'space', registry)));
     for (let i = 0; i < 20; i++) {
       const idea = levelDesignIdea(p, p.scenes[0], registry, () => (i + 0.5) / 20);
       expect(idea.style!.name).toBe('Classic platformer, Space station');
       expect(idea.style!.rules).toContain(THEMES.find((t) => t.id === 'space')!.look);
       expect(idea.puzzles!.some((x) => /^(hill|swim for it):/.test(x))).toBe(false);
     }
-    const puzzle = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'puzzle', theme: 'castle', version: 1 }));
+    const puzzle = produce(createProject(registry), (d) => void (setLevelProfile(d, 'puzzle', 'castle', registry)));
     const idea = levelDesignIdea(puzzle, puzzle.scenes[0], registry, () => 0.3);
     expect(idea.style!.name).toBe('Puzzle platformer, Castle');
     expect(idea.puzzles!.every((x) => GENRES[1].puzzles.includes(x.split(':')[0]))).toBe(true);

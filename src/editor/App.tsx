@@ -21,6 +21,7 @@ import { StylePicker } from './chrome/StylePicker';
 import { GameChooser } from './chrome/GameChooser';
 import { MoreLevels } from './chrome/MoreLevels';
 import { NewGameProgress } from './chrome/NewGameProgress';
+import { GameProfileDialog } from './chrome/GameProfileDialog';
 import { ControlsDialog } from './chrome/ControlsDialog';
 import { DungeonPanel } from './chrome/DungeonPanel';
 import { SpriteEditor } from './chrome/SpriteEditor';
@@ -128,6 +129,7 @@ export function App() {
         <GameSite />
         <ExportGameDialog />
         <ControlsDialog />
+        <GameProfileDialog />
         <DungeonPanel />
         <SoundEditor />
         <MusicStudio />

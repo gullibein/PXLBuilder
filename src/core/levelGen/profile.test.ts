@@ -1,4 +1,5 @@
 import { produce } from 'immer';
+import { setLevelProfile } from '../engine/profile';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject, instantiateDefinition } from '../model/factory';
@@ -13,7 +14,7 @@ const withLevel = (names: string[]) =>
 
 describe("a platformer's kind of play and its look", () => {
   it('a profile the game chose is used as it is', () => {
-    const p = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'puzzle', theme: 'snow', version: 1 }));
+    const p = produce(createProject(registry), (d) => void (setLevelProfile(d, 'puzzle', 'snow', registry)));
     const got = levelProfileOf(p, registry)!;
     expect([got.genre.id, got.theme!.id, got.stored]).toEqual(['puzzle', 'snow', true]);
   });
@@ -23,7 +24,7 @@ describe("a platformer's kind of play and its look", () => {
     expect(levelProfileOf(withLevel(['Platform', 'Switch', 'Door', 'Crate', 'Enemy']), registry)!.genre.id).toBe('puzzle');
     const p = withLevel(['Platform']);
     expect(levelProfileOf(p, registry)!.stored).toBe(false);
-    expect(p.settings.levelProfile).toBeUndefined();
+    expect(p.settings.profile).toBeUndefined();
   });
 
   it('an empty game is offered a look, the same every time; a game with levels keeps the look it has', () => {
@@ -35,7 +36,7 @@ describe("a platformer's kind of play and its look", () => {
   });
 
   it('an unknown genre or theme (from a newer version, say) counts as not chosen; a top-down game has none', () => {
-    const odd = produce(createProject(registry), (d) => void (d.settings.levelProfile = { genre: 'metroidvania', theme: 'forest', version: 1 }));
+    const odd = produce(createProject(registry), (d) => void (setLevelProfile(d, 'metroidvania', 'forest', registry)));
     expect(levelProfileOf(odd, registry)!.stored).toBe(false);
     expect(levelProfileOf(createProject(registry, 'T', 'topdown'), registry)).toBeNull();
   });

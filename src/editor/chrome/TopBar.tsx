@@ -366,6 +366,12 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
         ]
       : []),
     {
+      label: 'Game profile…',
+      detail: 'What the game is made of: how it is seen, how the player moves, what builds its levels, which objects it has',
+      run: () => useEditor.getState().setProfileOpen(true),
+      testId: 'menu-profile',
+    },
+    {
       label: 'Controls…',
       detail: 'Which keys do what in this game (move, jump, action, fire, menu): in Play and in exported games',
       run: () => useEditor.getState().setControlsOpen(true),

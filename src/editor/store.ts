@@ -163,6 +163,8 @@ export interface EditorState {
   exportGameOpen: boolean;
   /** The game's Controls window (which keys do what). */
   controlsOpen: boolean;
+  /** The Game profile dialog (chrome/GameProfileDialog.tsx). */
+  profileOpen: boolean;
   /** The Random level panel (a level's dungeon recipe). */
   dungeonOpen: boolean;
   /** The sound editor, open on this sound (an asset id), 'open': on the sound last edited (or the first one), 'none': with no sound in it. */
@@ -217,6 +219,7 @@ export interface EditorState {
   openSpriteEditor(target: { definitionId: Id; assetId: Id | null; frame?: number } | null): void;
   setExportGameOpen(open: boolean): void;
   setControlsOpen(open: boolean): void;
+  setProfileOpen(open: boolean): void;
   setDungeonOpen(open: boolean): void;
   setSoundEditor(id: Id | 'open' | 'none' | null): void;
   setSaveDialog(open: boolean): void;
@@ -306,6 +309,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     backgroundTarget: null,
     exportGameOpen: false,
     controlsOpen: false,
+    profileOpen: false,
     dungeonOpen: false,
     soundEditor: null,
     flash: null,
@@ -562,6 +566,9 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     openSpriteEditor(spriteEditor) {
       set({ spriteEditor });
+    },
+    setProfileOpen(profileOpen) {
+      set({ profileOpen });
     },
     setControlsOpen(controlsOpen) {
       set({ controlsOpen });

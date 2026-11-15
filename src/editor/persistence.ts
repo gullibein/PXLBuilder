@@ -3,13 +3,11 @@ import { changeSpriteResolution } from '../core/model/mutations';
 import { DEFAULT_SPRITE_RESOLUTION, type SpriteResolution } from '../core/model/spriteResolution';
 import { claudeCapability, type ViewerDownloads } from './claudeViewer';
 import { componentRegistry } from '../core/components/builtin';
-import { createProject } from '../core/model/factory';
 import { gameFromText, projectFromBundle, projectToBundle, type LoadResult } from '../core/serialization/serialize';
 import { updateNotes } from '../core/serialization/migrations';
 import type { Project, Starter } from '../core/types';
-import { createRpgProject } from '../core/model/rpgStarter';
-import { createRoguelikeProject } from '../core/model/roguelikeStarter';
-import { createIsometricProject } from '../core/model/isometricStarter';
+import { projectFromPreset } from '../core/engine/profile';
+import { STARTER_PRESET } from '../core/engine/presets';
 import { useEditor } from './store';
 import { aiHistoryFor, restoreAIHistory } from './ai/aiLog';
 import { withoutUnused } from '../core/model/unused';
@@ -131,9 +129,9 @@ export function startNewGame(gameType: Starter, first = false, spriteResolution:
   useEditor.getState().logMessage('info', `Started a new ${kind}`);
 }
 
-/** A new game from a starter, at a sprite size. */
+/** A new game from a starter (its preset: engine/presets.ts), at a sprite size. */
 function starterProject(gameType: Starter, spriteResolution: SpriteResolution): Project {
-  const base = gameType === 'rpg' ? createRpgProject(componentRegistry, 'Untitled Game') : gameType === 'roguelike' ? createRoguelikeProject(componentRegistry, 'Untitled Game') : gameType === 'isometric' ? createIsometricProject(componentRegistry, 'Untitled Game') : createProject(componentRegistry, 'Untitled Game', gameType);
+  const base = projectFromPreset(STARTER_PRESET[gameType] ?? 'platformer', componentRegistry, 'Untitled Game');
   return produce(base, (p) => {
     if (spriteResolution !== DEFAULT_SPRITE_RESOLUTION) changeSpriteResolution(p, spriteResolution, componentRegistry);
   });

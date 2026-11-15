@@ -1,4 +1,5 @@
 import { instrumentSchema, songSchema } from '../audio/music';
+import { gameProfileSchema } from '../engine/profileSchema';
 import { gameSoundSchema } from '../audio/sound';
 import { z } from 'zod';
 import { relationshipSchema, ruleSchema } from '../logic/vocabulary';
@@ -144,7 +145,7 @@ export const projectSchema = z.object({
     spriteResolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).optional(),
     playPixels: z.number().int().min(0).max(2160).optional(),
     controls: z.record(z.string(), z.array(z.string())).optional(),
-    levelProfile: z.object({ genre: z.string().min(1), theme: z.string().min(1), version: z.literal(1) }).optional(),
+    profile: gameProfileSchema.optional(),
   }),
   startSceneId: id,
   scenes: z.array(sceneSchema).min(1),

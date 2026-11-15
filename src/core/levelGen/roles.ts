@@ -13,6 +13,7 @@ import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
 import type { ComponentMap, Id, ObjectDefinition, Project } from '../types';
+import { KIT_ROLES } from '../engine/kitRoles';
 
 export type Role =
   | 'player'
@@ -121,8 +122,10 @@ export function findRoles(project: Project, registry: ComponentRegistry): Roles 
   }));
   const taken = new Set<Id>();
   const roles: Roles = {};
+  // (A kit's object plays the part its kit declares for it, as well as any it fits by what it is.)
+  const declared = (i: Info) => (i.starter ? Object.values(KIT_ROLES).find((t) => t[i.starter])?.[i.starter] : undefined);
   for (const [role, fits] of FITS) {
-    const options = infos.filter((i) => !taken.has(i.def.id) && fits(i));
+    const options = infos.filter((i) => !taken.has(i.def.id) && (fits(i) || declared(i) === role));
     if (!options.length) continue;
     // (Placed most often first; then a starter object; then library order.)
     const best = [...options].sort((a, b) => (placed.get(b.def.id) ?? 0) - (placed.get(a.def.id) ?? 0) || Number(!!b.starter) - Number(!!a.starter))[0];

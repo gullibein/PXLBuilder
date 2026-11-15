@@ -2843,6 +2843,25 @@ try {
     await dlg.getByTestId('controls-close').click();
   }
 
+  step = 'game profile';
+  {
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-profile').click();
+    const dlg = page.getByTestId('profile-dialog');
+    await check(async () => (await dlg.isVisible()) && (await dlg.getByTestId('profile-view').locator('select').inputValue()) === 'side' && (await dlg.getByTestId('profile-movement').locator('select').inputValue()) === 'arcade' && (await dlg.getByTestId('profile-state').innerText()).includes('go together'), 'Game profile shows what the game is made of (seen from the side, run and jump), and that it goes together');
+    await dlg.getByTestId('profile-genre').locator('select').selectOption('puzzle');
+    await check(async () => (await dlg.getByTestId('profile-genre').locator('select').inputValue()) === 'puzzle' && (await dlg.getByTestId('profile-problem').count()) === 0, 'one system changed on its own (the kind of level: puzzle)');
+    await dlg.getByTestId('profile-movement').locator('select').selectOption('topdown');
+    await check(async () => (await dlg.getByTestId('profile-problem').innerText()).includes('needs view:top or view:iso') && (await dlg.getByTestId('profile-movement').locator('select').inputValue()) === 'arcade', "a change that doesn't go together is refused, saying why (walking from above in a side view)");
+    await page.keyboard.press('Escape');
+    await check(async () => (await dlg.count()) === 0, '(Esc closes it)');
+    await page.getByTestId('undo').click();
+    await page.getByTestId('project-menu').click();
+    await page.getByTestId('menu-profile').click();
+    await check(async () => (await dlg.getByTestId('profile-genre').locator('select').inputValue()) === '', 'Undo takes the change back');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'export sprites';
   {
     await page.getByTestId('project-menu').click();

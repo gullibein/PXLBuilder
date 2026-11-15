@@ -399,6 +399,16 @@ Foundation first, then vertical slices. Each slice is one design reference built
 
 ### Foundation (no change to what games do)
 
+**F1 starts the modularization; it doesn't finish it.** F1 registers today's implementations as modules that describe and point to the existing code. F2–F6 then **move** that code behind the interfaces:
+- **F2:** `Runtime.control` becomes the `arcade` and `topdown` locomotion models.
+- **F3:** the runtime's box lists become `GeometryQuery`.
+- **F4:** `Limits` and the solver's hardcoded moves become reach descriptions and move rules.
+- **F5:** the camera becomes a behaviour pipeline.
+- **F6:** `generate.ts` and its layouts become the `sections` generator.
+
+**When each is done:** the old path is gone (not kept beside the new one), and behaviour is identical (golden tests). A registry entry that only points to old hardcoded code is temporary: each one is marked as such in the code and in this document's checklist until its stage moves it.
+
+
 | Stage | What | Done when |
 |---|---|---|
 | F1 | **Game profile and module registries.** Profile v2 with migration from `levelProfile` and the game type. Registries for views, time models, locomotion, abilities, geometry kinds, camera behaviours, kits, generators and progression models. Today's code registered as the first modules: the views, `realtime` and `turns` (the turn kit), `arcade` and `topdown`, box/one-way/ramp, follow, every existing starter set as kits, `sections` with classic and puzzle, `dungeon`, `stages`. Every starter (platformer, top-down, RPG, roguelike, isometric) becomes a preset stored as data. The AI is told the selected modules | Every existing test unchanged; old games of every type load as their preset; a profile survives save and load |
@@ -680,9 +690,20 @@ Later validators are added the same way:
 - `grid_bot`: digging.
 - `progression`: a graph search over abilities and keys across rooms; it generalises today's key-before-door check.
 
-### 8.3 Simulation needs a deterministic runtime
+### 8.3 Reproducible simulation (practical, not a big prerequisite)
 
-Simulation is only evidence if a replay is exact. The runtime already steps at a fixed `dt`. F4 makes it fully deterministic: seeded randomness everywhere (the camera shake already has a hook), and no wall-clock time in scripts. A recorded input log then reproduces the run.
+What is required: **the same initial state, inputs and seeds give the same result.** A simulation test records:
+- the level (its project state),
+- the input log,
+- the seeds it used.
+
+Replaying them must reproduce the verdict.
+
+This is not a "fully deterministic engine" project that blocks other work:
+- The runtime already steps at a fixed `dt`.
+- Randomness the runtime uses is seeded per run as it is met; the camera shake already has a hook.
+- Each part that can't yet guarantee reproduction is **listed as a known limitation** (in this document and in the validator's notes) rather than fixed up front. Examples: wall-clock time read by a script, or physics that depends on frame rate.
+- A validator whose replay doesn't reproduce says so, and its verdict counts as **uncertain**.
 
 A simulator policy is per locomotion model:
 - **Route following:** today's bot for `arcade`.
@@ -696,7 +717,8 @@ A simulator policy is per locomotion model:
 3. For each mechanic, use the **cheapest** representation whose `covers` includes it: table, then moves, then simulator.
 4. A mechanic no representation covers makes the level **uncertain**, with a note ("momentum on curves isn't checked: no simulator for this movement").
 5. Run the chosen validators, cheapest first; stop at the first **fail**. A generator then repairs the failing section, or rebuilds it, as today.
-6. Simulation costs time, so it has a budget per level: the profile's `validation.budgetMs`, by default about 2 s in the editor. Within the budget its verdict counts; past it, the level is **uncertain**.
+6. **Combinations, not only single mechanics.** Coverage is checked for the *set* of mechanics that meet in a level, and where they meet. A representation covers a combination only if it declares so: `covers` lists combinations too, such as `['spring', 'mover']` or `['momentum', 'curve', 'spring']`. A combination nobody declares goes to the next stronger method, even when each part alone is covered. Interactions are found where they occur: the draft's intent records the mechanics of each section, and two mechanics within reach of each other (a spring launching onto a moving platform, momentum carried off a curve into a spring) count as a combination. By default, an undeclared combination of two or more physical mechanics means simulation. With no simulator, the level is **uncertain**, and the note names the combination.
+7. Simulation costs time, so it has a budget per level: the profile's `validation.budgetMs`, by default about 2 s in the editor. Within the budget its verdict counts; past it, the level is **uncertain**.
 
 **What this gives for each reference:**
 
@@ -726,6 +748,16 @@ A simulator policy is per locomotion model:
 | Donkey Kong | `committed` locomotion; girders as height profiles; a rolling hazard that takes ladders; a spawner; `arcade_stage` | Stages validated with fixed arcs; barrels roll down the girders in play |
 | Mega Man | Room zones (reused from Celeste); weapons; bosses (an arena zone, locked doors, phases); `room_stage`; `stage_select` | A stage of rooms ends in a boss arena that locks; a weapon from a boss carries to the next stage |
 | Hollow Knight | `world` generator and progression; persistent state; ability gates; melee and pogo abilities; a map | Every generated world passes the progression solver; the world can't be finished without each gating ability |
+
+**Hybrid acceptance tests (architectural criteria, not F1):** at least these, with genuinely different systems working together, each built from modules the references introduced, with no code for the combination itself:
+
+| Hybrid | Movement | Camera | Generator | Progression |
+|---|---|---|---|---|
+| Momentum Metroidvania | `surface` | look-ahead + room zones | `world` | ability gates |
+| Precision movement in rooms with bosses | `arcade` + Dash + WallJump | room zones | `room_stage` | `stage_select` + bosses |
+| Digging puzzles | `grid` + Dig | room lock | `grid_stage` with puzzle objects | `stages` |
+
+Each must pass `checkProfile`, generate validated content (with the combination-aware validation of §8.4), and be played through by its simulator. These are added to the roadmap after the slices they depend on, and the architecture isn't considered done without them.
 
 **Second family** (the engine's other starters, kept working through the same interfaces): top-down adventure, RPG, roguelike, tactics, isometric, shooter. Their acceptance tests are the existing tests, unchanged, with each starter becoming a preset.
 
@@ -818,3 +850,45 @@ That is the "no new features, real work" part of the foundation: Mario and puzzl
 | Combining compatible modules | `checkProfile` table tests (§10: ok / degraded / incompatible); a hybrid preset (side view + `arcade` + platformer and puzzle kits + RPG kit) makes a game with all three kits' objects, no duplicate roles, and builds validated levels |
 
 **Size:** about one stage of the size of the level-builder stages. It ends with the profile panel visible in the editor, so the foundation is something you can see and use, not only code.
+
+---
+
+## 13. Progress
+
+### F1 — done (awaiting review before F2)
+
+**What exists now:**
+
+| Piece | Where | What it does |
+|---|---|---|
+| Profile | `engine/profileSchema.ts`, `settings.profile` (format 15) | View, time, movement (model + abilities), geometry, camera, kits, generator (+ settings), progression, theme; module ids are plain strings, so a game naming an unknown module still loads |
+| Module registry | `engine/module.ts` | One `Module` shape for every system (requires / provides / fallback tags, `pointsTo` while the code hasn't moved) and one `ModuleRegistry` |
+| Today's modules | `engine/modules.ts` | Views `side` / `top` / `iso`; time `realtime` / `turns`; locomotion `arcade` / `topdown`; abilities `double_jump` / `ledge_grab`; geometry `box` / `one_way` / `ramp`; camera `follow`; kits `platformer` / `topdown` / `rpg` / `roguelike` / `isometric`; generators `sections` / `dungeon`; progression `stages`; validators `layout` / `checker` / `cell_solver` / `puzzle_needed` / `route_bot` |
+| Presets (data) | `engine/presets.ts` | `platformer`, `classic-platformer`, `puzzle-platformer`, `topdown`, `rpg`, `roguelike`, `isometric` |
+| Profile logic | `engine/profile.ts` | Profile inferred for games without one (from their objects, never written); compatibility check; new game from a profile or preset (kits merged without repeating a part); `setGameProfile` (checked; applies movement, gravity for a view, kits added) |
+| Kit roles | `engine/kitRoles.ts` | The level-builder part each kit object plays, declared; `findRoles` counts a declaration as well as what the object is |
+
+**What goes through the profile now:**
+- New games (the starter chooser and the AI's switch_starter make games from presets).
+- The level builder (New level / Regenerate / Variation, "more levels", generate_level find the generator from the profile).
+- `set_level_profile` (it writes the profile).
+- The AI's context (`game.profile`; with whole-game requests, also the choices and presets).
+- The new `set_game_profile` operation.
+- The **Game profile** dialog (project menu).
+
+**Still pointing to old code**, to be moved by the stages named (this is the checklist §5 asks for; the test "modules that only point to old code…" fails if one loses its stage):
+
+| Module | Old code | Moves in |
+|---|---|---|
+| locomotion `arcade`, `topdown`; abilities `double_jump`, `ledge_grab`; time `turns` | `Runtime.control`, `walkTopDown`, ledge code; `TurnKit` | F2 |
+| geometry `box`, `one_way`, `ramp` | `physics.ts`, the runtime's box lists | F3 |
+| validators `layout`, `checker`, `cell_solver`, `puzzle_needed`, `route_bot` | `reachability.ts`, `solver.ts`, `generate.ts`, `routeBot.ts` | F4 |
+| camera `follow` | `runtime/camera.ts` | F5 |
+| generators `sections`, `dungeon`; progression `stages` | `generate.ts` and its layouts, `dungeon.ts`, next_level / go_to_level | F6 |
+
+**Known limitations of F1:**
+- **Not every system acts yet.** View, movement, kits and generator act on the game. Time, geometry, camera and progression are recorded and checked, but their code doesn't yet read the profile: camera settings stay per level, and the turn kit runs by scripts, as before. That is F2–F6.
+- **The generator's genre without a look:** a profile can now name a genre with no theme chosen (presets do). It counts as chosen, while the theme is still worked out from the game, as before.
+- **`gameType` stays** in settings, read where the old code reads it, until F2/F3 move that code.
+- **Kits added to an existing game:** objects that repeat a name or a part already in the game are left out. A kit taken away doesn't remove objects.
+- **AI cost:** the profile line adds about 230 characters to each request's context. The instructions sent with every request stay under their 120,000-character budget: the new operation's description was paid for by trimming wordy examples elsewhere.
