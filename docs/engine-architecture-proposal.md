@@ -434,3 +434,387 @@ If you'd rather see Sonic sooner, V3 can come right after F1–F4 (it needs F5's
 - **Editable:** everything stays editable by hand and by prompt (modules are fields, kits are ordinary objects with scripts, levels are ordinary levels).
 - **AI cost:** the AI is told only what the game's profile selects, so a richer engine doesn't make every request bigger.
 - **Original work:** design references are about how games play. Heroes and art are the game's own, never copies of a company's characters.
+
+---
+
+# Part II: interfaces, validation, test cases, hybrids, and the scope of F1
+
+## 7. The interfaces between systems
+
+**Principle:** systems share **data**, not each other's code. Each system publishes a small snapshot or query interface that the others read; nothing reaches into another module's internals. Interfaces are deliberately *rich* in what they expose (surface normals, curvature, velocity, motion states) so that new modules can use them, and *narrow* in what they let others change.
+
+### 7.1 Geometry → movement, enemies, camera, generators
+
+Movement asks the world questions; it never walks the entity list or the tile map itself.
+
+```ts
+interface Surface {
+  point: Vec2;                       // where the probe met it
+  normal: Vec2;                      // unit normal: (0,-1) flat floor, (1,0) a wall facing right
+  angle: number;                     // radians from flat, from the normal
+  curvature: number;                 // 1/radius (0 on flat ground and straight slopes; a loop's tiles: 1/r)
+  kind: 'solid' | 'oneWay' | 'loopPath';
+  friction: number;
+  owner: Id;                         // the object or tile it belongs to (for scripts: "landed on")
+  layer?: number;                    // loops: which of the crossing paths it belongs to
+}
+
+interface CellInfo { solid: boolean; role: Role | null; state: string | null; until: number | null }
+
+interface GeometryQuery {
+  /** Moves a box by delta against what blocks it (today's moveAndCollide, behind the interface). */
+  sweep(box: Box, delta: Vec2, opts?: { oneWays?: boolean; layer?: number }): { box: Box; hit: Surface | null };
+  /** A ray from a point: the first surface along it (sensors for running along curves, ledge checks, enemies). */
+  probe(from: Vec2, dir: Vec2, maxDist: number, opts?: { layer?: number }): Surface | null;
+  /** Things overlapping a box (triggers, hazards, liquids). */
+  overlaps(box: Box): Id[];
+  /** Cell view, for grid models, digging, generators and solvers. */
+  cell(col: number, row: number): CellInfo;
+  setCell(col: number, row: number, state: string | null, until?: number): void; // dig, crumble, refill
+  /** Changes whenever geometry changes (caches, the camera's bounds, path-finding). */
+  readonly version: number;
+}
+```
+
+- **A momentum (`surface`) model:** uses `probe` with two sensors under its feet (normal and curvature from them) and `sweep` along the surface tangent.
+- **`arcade` (today):** uses `sweep` and `probe` only for ramps and ledges.
+- **`grid`:** uses `cell`.
+- **Digging:** an ability calls `setCell(.., 'dug', now + refill)`.
+- **Enemies:** path-finding reads `cell`, or `probe` for edges.
+- **Each geometry kind implements its part of these:**
+  - boxes: `sweep`, `overlaps` and `cell`;
+  - height-profile tiles: `probe` with a real normal and curvature;
+  - loops: `layer`.
+
+### 7.2 Movement → camera, animation, scripts, enemies, validation
+
+Every locomotion model publishes the same **motion snapshot** each step, whatever its internals:
+
+```ts
+interface MotionSnapshot {
+  position: Vec2;
+  velocity: Vec2;                    // world velocity
+  groundSpeed: number | null;        // along the ground (momentum models), else null
+  facing: 1 | -1 | Vec2;             // side view: ±1; top view: a direction
+  ground: Surface | null;            // what it stands or runs on (angle: on a wall, upside down in a loop)
+  states: ReadonlySet<string>;       // 'grounded' | 'airborne' | 'rolling' | 'dashing' | 'onWall' | 'climbing' |
+                                     // 'swimming' | 'hanging' | 'digging' | … (models and abilities add their own)
+  intent: { moveX: number; moveY: number; jump: boolean };  // what the input asked (camera look-ahead, bots)
+}
+```
+
+- **The camera** reads `velocity` and `facing` (look-ahead grows with speed) and `ground` (vertical lag only when airborne).
+- **Animation** reads `states`, which pick `SpriteStates` looks. A new state (`rolling`) needs only a look named for it.
+- **Scripts** read `self.speed`, `self.state("dashing")`, `self.ground_angle`: new expressions over the snapshot. A spin attack is a Hurts/Stomp script condition on `rolling`, not engine code.
+- **Validation's simulator** reads the snapshot to see what happened.
+
+The model interface itself:
+
+```ts
+interface LocomotionModel extends Module {
+  views: View[];                                  // where it makes sense ('side', 'top', 'iso')
+  understands: GeometryKind[];                    // the rest falls back (§7.6)
+  settings: FieldSchema;                          // its tuning, shown as component fields
+  step(ctx: { body: Body; intent: Intent; geo: GeometryQuery; abilities: AbilityState[]; dt: number; time: TimeModel }): void;
+  snapshot(body: Body): MotionSnapshot;
+  reach(settings: Settings, abilities: AbilityRef[], world: WorldParams): ReachDescription;   // §8
+  simulator?: SimPolicyFactory;                   // how a bot drives it (§8.3)
+}
+
+interface Ability extends Module {
+  worksWith: string[];                            // locomotion ids
+  phase: 'beforeMove' | 'afterMove';              // when it runs in the step
+  step(ctx): void;                                // may set states, change velocity, take over (dash)
+  takeOverScript?(): BehaviorScript;              // the "engine parts" mechanism, as today
+  reachMoves?(settings): MoveRule[];              // its moves for solvers (§8)
+}
+```
+
+### 7.3 Camera ← movement, zones
+
+```ts
+interface CameraBehavior extends Module {
+  apply(cam: CameraState, ctx: { target: MotionSnapshot | null; zone: Zone | null; bounds: Rect | null; view: Size; dt: number }): CameraState;
+}
+interface Zone { rect: Rect; camera: CameraBehaviorRef[]; transition?: 'slide' | 'cut' | 'none'; lockDoors?: boolean }
+```
+
+The pipeline is the profile's list of behaviours, applied in order. A zone the target is in replaces or extends the list while it's inside (a boss arena, a Celeste screen). Generators place zones (§7.5); the editor shows them as rectangles to drag, like moving-platform paths.
+
+### 7.4 Objects and kits → everything
+
+```ts
+interface Kit extends Module {
+  objects: KitObject[];              // ordinary definitions (components + scripts), as starters are today
+}
+interface KitObject { definition: DefinitionTemplate; role?: Role; provides?: string[] }   // provides: 'moves:spring', 'state:key'
+```
+
+- **Roles:** kits declare them. For objects drawn by the user or the AI, recognising roles by components (today's `FITS`) stays as the fallback.
+- **Objects contribute moves and state to solvers.** A spring adds a launch move, a teleporter a jump across, a crate a push, a key or plate state bits. This is how today's solver already works: it only becomes declared instead of hardcoded (§8.2).
+
+### 7.5 Generators ← reach, kits, progression → validators, camera
+
+```ts
+interface Generator extends Module {
+  blueprint: ZodSchema;                           // its own (sections, track, rooms…)
+  needs: { views: View[]; roles?: Role[]; reach?: ReachRepresentation[] };   // §8.1
+  generate(req: { project: Project; target: SceneRef | WorldRef; blueprint: unknown; seed: number;
+                  reach: ReachDescription; roles: RoleMap; progression: ProgressionContext }): Draft;
+  describeForAI(project: Project): Record<string, unknown>;                  // as builderInfo is today
+}
+
+interface Draft {
+  ops: Operation[];                               // what makes it (applied only after validation)
+  grids: LevelGrid[];                             // the cell view of each level or room
+  intent: {
+    routes: { from: Point; to: Point; via: Point[]; needs: string[] }[];     // the routes it meant
+    mechanics: string[];                          // what it used: 'gap', 'loop', 'dash', 'dig', 'key'…
+    zones: Zone[];
+    gates: { at: Point; needs: string }[];        // doors, ability gates
+  };
+  madeBy: LevelMadeBy;
+}
+```
+
+The **draft's intent** is what validators check against (§8): the routes the generator meant, and the mechanics it used. A generator says "this needs a dash here", and validation proves it.
+
+### 7.6 Progression ← generators, abilities
+
+```ts
+interface ProgressionModel extends Module {
+  structure(project: Project): ProgressGraph;     // nodes: levels or rooms; edges: exits, doors, edges of rooms
+  persists: string[];                             // what is kept between nodes: 'abilities', 'opened', 'collected'…
+}
+interface ProgressGraph { nodes: { id: Id; scene: Id }[]; edges: { from: Id; to: Id; needs: string[] }[] }
+```
+
+A world generator writes the graph, and the progression solver (§8.2) checks it. `stages` is the trivial graph, levels in a line, which is what games have today.
+
+### 7.7 What a module declares (the same for every system)
+
+```ts
+interface Module {
+  kind: 'view' | 'time' | 'locomotion' | 'ability' | 'geometry' | 'camera' | 'kit' | 'generator' | 'progression' | 'validator';
+  id: string; version: number;
+  describe: string;                               // one line for the AI and the profile panel
+  requires: string[];                             // capability tags: 'view:side', 'geometry:cells', 'reach:moves'…
+  provides: string[];                             // 'moves:dash', 'camera:rooms', 'reach:simulator'…
+  fallback?: Record<string, string>;              // 'geometry:height_profile' → 'as boxes'
+}
+```
+
+One `Registry<Module>` helper serves every kind: register, list by kind, look up by id. There is no class hierarchy and no framework. Tags are plain strings, so a new capability is a new tag, not a code change elsewhere.
+
+---
+
+## 8. Extensible validation
+
+**The rule:** the profile's modules and the draft's mechanics decide *how* a level is validated. No validator is assumed. A level is **validated** when every required check passes, **uncertain** when something couldn't be judged (said, never passed off as validated), and **invalid** when a check fails. These are today's three states, kept.
+
+### 8.1 Reach descriptions: what movement offers to validation
+
+A movement setup (its locomotion model, abilities and the objects in the game) publishes a **reach description**. It holds one or more *representations*, each optional:
+
+```ts
+interface ReachDescription {
+  /** Analytical: closed-form numbers (today's jump table: rises, gaps, spring rows). Cheap; for sizing and static checks. */
+  table?: ReachTable;
+  /** Mechanics-specific: move rules for a graph search over cells and states. */
+  moves?: MoveRule[];
+  /** Simulation: drives the real runtime (a bot policy, or an input search). Slow; covers anything the runtime does. */
+  simulator?: SimPolicyFactory;
+  /** Which mechanics each representation covers soundly (§8.4). */
+  covers: { table: string[]; moves: string[]; simulator: string[] };
+}
+
+interface MoveRule {
+  id: string;                                     // 'jump', 'wall_jump', 'dash', 'dig', 'push', 'spring', 'teleport'
+  stateSlots?: StateSlot[];                       // extra search state it needs: dashes left, stamina, dug cells+time
+  successors(s: SearchState, world: CellWorld): { to: SearchState; cost: number }[];
+}
+```
+
+**What each setup can offer:**
+
+| Setup | Table | Moves | Simulator |
+|---|---|---|---|
+| `arcade` (Mario, puzzle) | yes (today's `jumpTable`) | walk, fall, jump (from the table) | route bot (today's) |
+| + WallJump | (no closed form) | wall_slide, wall_jump | route bot + wall policy |
+| + Dash | — | dash in 8 directions, with a "dashes left" slot refilled on landing or by crystals | input search |
+| `grid` + Dig | — | step, climb, hang, fall, dig (a "dug cells with refill time" slot) | grid bot |
+| `surface` (momentum) | — (momentum has no table) | — | track bot (hold the run, jump at marks), input search |
+| `committed` (Donkey Kong) | a fixed arc table | jump (fixed arcs), climb | route bot |
+| Objects | — | spring, teleport, push crate, key/switch/plate state | (simulated by the runtime) |
+
+### 8.2 Validators: a registry like the rest
+
+```ts
+interface Validator extends Module {
+  strategy: 'static' | 'analytical' | 'solver' | 'simulation' | 'progression';
+  cost: 'cheap' | 'moderate' | 'expensive';
+  needs: ('table' | 'moves' | 'simulator')[];     // what of the reach description it uses
+  validate(draft: Draft, ctx: { reach: ReachDescription; project: Project; budgetMs: number }): Verdict;
+}
+interface Verdict {
+  state: 'pass' | 'fail' | 'unknown';
+  covered: string[];                              // the mechanics it judged
+  problems: string[];                             // where and why, mapped back to sections or rooms
+  evidence?: { route?: Point[]; replay?: InputLog };   // a route or a replay the editor can show
+}
+```
+
+The first validators are today's checks, registered as they are:
+
+| Validator | Strategy | What it is today |
+|---|---|---|
+| `layout` | static | winProblems, layoutProblems, startConflicts |
+| `checker` | analytical | levelReachability (jump arcs, ladders, springs, ceilings). Also judges hand-drawn and AI-drawn levels |
+| `cell_solver` | solver | `solveLevel`, its moves and state slots now taken from the reach description and the objects |
+| `puzzle_needed` | solver | `unneededPuzzles` (each puzzle piece removed in turn) |
+| `route_bot` | simulation | `playRoute`, today a test only, becomes a validator |
+
+Later validators are added the same way:
+- `input_search`: a bounded search over input sequences on the deterministic runtime, for precision rooms.
+- `track_bot`: momentum.
+- `grid_bot`: digging.
+- `progression`: a graph search over abilities and keys across rooms; it generalises today's key-before-door check.
+
+### 8.3 Simulation needs a deterministic runtime
+
+Simulation is only evidence if a replay is exact. The runtime already steps at a fixed `dt`. F4 makes it fully deterministic: seeded randomness everywhere (the camera shake already has a hook), and no wall-clock time in scripts. A recorded input log then reproduces the run.
+
+A simulator policy is per locomotion model:
+- **Route following:** today's bot for `arcade`.
+- **Mark following:** for tracks, the generator's `intent.routes` say where to jump.
+- **Input search:** a beam search over a few inputs per frame window, for precision rooms where the route is a puzzle in itself.
+
+### 8.4 Choosing the validators for a draft
+
+1. Collect the draft's mechanics (`intent.mechanics`, from the patterns, kits and abilities it used).
+2. **Static** validators always run (`layout`).
+3. For each mechanic, use the **cheapest** representation whose `covers` includes it: table, then moves, then simulator.
+4. A mechanic no representation covers makes the level **uncertain**, with a note ("momentum on curves isn't checked: no simulator for this movement").
+5. Run the chosen validators, cheapest first; stop at the first **fail**. A generator then repairs the failing section, or rebuilds it, as today.
+6. Simulation costs time, so it has a budget per level: the profile's `validation.budgetMs`, by default about 2 s in the editor. Within the budget its verdict counts; past it, the level is **uncertain**.
+
+**What this gives for each reference:**
+
+| Reference | What validates its levels |
+|---|---|
+| Mario | `layout` + `checker` + `cell_solver` (today) |
+| Puzzle | + `puzzle_needed` (today) |
+| Celeste | `cell_solver` with dash and wall-jump moves where the moves cover the room, otherwise `input_search` |
+| Lode Runner | `cell_solver` with dig moves and refill timing (enemy timing makes some levels uncertain), plus `grid_bot` |
+| Sonic | `layout` + `track_bot` (no table or moves for momentum) |
+| Hollow Knight | `progression` across rooms + each room by its own movement's validators |
+
+---
+
+## 9. The design references as architectural test cases
+
+**The rule:** no module, file or setting is named after a game. Each reference is a **preset** (data) plus **acceptance tests**, and every capability it needed is a reusable module that other presets can select. A slice that needs a change outside its own new modules has found a flaw in the foundation, and the flaw is fixed there.
+
+| Reference | Demonstrates (reusable modules) | Its acceptance test |
+|---|---|---|
+| Mario | `arcade` locomotion; boxes, one-ways and ramps; follow camera; core + blocks kits; `sections` generator; `stages` progression; `checker` + `cell_solver` validation | Today's classic sweep, run through the interfaces, gives identical levels (golden hashes) |
+| Puzzle | Object-contributed moves and state (crates, plates, keys); `puzzle_needed` | Today's puzzle sweep, identical, through the interfaces |
+| Celeste | Dash and WallJump/Climb abilities; room zones with transitions; `challenge_rooms`; `input_search` | Generated rooms solvable only with the dash (removing it fails validation); the bot clears them |
+| Super Meat Boy | Arcade tuning (momentum in the air); instant retry; hazards on paths; the same `challenge_rooms` with other settings | The same generator with Meat Boy's preset gives different rooms (different reach), all validated |
+| Lode Runner | `grid` locomotion; Dig + HangRope; stateful cells; path-finding chasers; `grid_stage`; dig moves | Stages winnable only by digging; chasers trapped in holes in play |
+| Sonic | `surface` locomotion; height-profile geometry and loops; velocity look-ahead; `track`; `track_bot` | A loop is gone round at speed and falls off when slow; tracks validated by the bot on both roads |
+| Donkey Kong | `committed` locomotion; girders as height profiles; a rolling hazard that takes ladders; a spawner; `arcade_stage` | Stages validated with fixed arcs; barrels roll down the girders in play |
+| Mega Man | Room zones (reused from Celeste); weapons; bosses (an arena zone, locked doors, phases); `room_stage`; `stage_select` | A stage of rooms ends in a boss arena that locks; a weapon from a boss carries to the next stage |
+| Hollow Knight | `world` generator and progression; persistent state; ability gates; melee and pogo abilities; a map | Every generated world passes the progression solver; the world can't be finished without each gating ability |
+
+**Second family** (the engine's other starters, kept working through the same interfaces): top-down adventure, RPG, roguelike, tactics, isometric, shooter. Their acceptance tests are the existing tests, unchanged, with each starter becoming a preset.
+
+---
+
+## 10. Hybrids and compatibility
+
+**Presets are starting points.** After a game is made, its profile is its own: each system's module and settings can be changed on its own (by hand in a profile panel, or by prompt with a `set_game_profile` operation).
+
+**Compatibility is checked from the declarations** (`requires`, `provides`, `fallback`), not from a list of allowed combinations:
+
+```ts
+type Compatibility = { state: 'ok' } | { state: 'degraded'; notes: string[] } | { state: 'incompatible'; reasons: string[] };
+function checkProfile(p: GameProfile): Compatibility;
+```
+
+1. Every `requires` tag of every selected module must be `provided` by another selected module, or by the engine core.
+2. An unmet tag that has a `fallback` is **degraded**: it works, and the fallback is said ("height-profile ground will be treated as square cells by grid movement").
+3. An unmet tag with no fallback is **incompatible**: the change is refused, with the reason and what would fix it.
+
+**Examples:**
+
+| Hybrid | Result |
+|---|---|
+| Sonic movement in a Metroidvania world: `surface` + `world` + room camera | **ok, at a cost**: `world` needs each room validated, and `surface` provides only `reach:simulator`, so rooms are validated by the track bot. Slower generation, but sound |
+| Celeste movement in Mega Man rooms: `arcade` + Dash + WallJump + `room_stage` + room zones | **ok** |
+| Lode Runner digging in a puzzle stage: `grid` + Dig + puzzle kit + `grid_stage` | **ok**: crates and plates contribute their moves to the dig solver |
+| Grid movement over curved ground: `grid` + height-profile geometry | **degraded**: curves count as full cells |
+| Momentum movement with turn-based time: `surface` + `turns` | **incompatible**: `surface` requires `time:realtime` |
+| A top-view game with the `track` generator | **incompatible**: `track` requires `view:side` |
+
+---
+
+## 11. Mario and puzzle through the interfaces: verified, and the work they need
+
+They work today, but not through interfaces. I checked the code paths they use:
+
+| Today | Where | Through which interface | Stage |
+|---|---|---|---|
+| Starter chosen by `settings.gameType`, only `platformer` or `topdown`. RPG, roguelike and isometric games are saved as `topdown`, with no record of which starter they came from | `factory.ts`, `rpgStarter.ts`, `roguelikeStarter.ts`, `isometricStarter.ts`, `persistence.ts` | Kits + presets; migration infers the preset from the starter objects' `metadata.starter` names | F1 |
+| Genre and theme in `levelProfile`; builder by genre | `levelGen/profile.ts`, `build.ts` | Profile → generator `sections` with its genre setting | F1 |
+| Generator internals: floors, sections, `GENRE_BUILDS` | `generate.ts`, `genres.ts` | `Generator` interface (F1 registers it; F6 moves the rest behind it) | F1 / F6 |
+| Movement: `Runtime.control` with `platformer` and `topdown` branches; ramps, ladders, ledges, swimming, climbing inside it | `runtime.ts` | `arcade` and `topdown` locomotion; DoubleJump and LedgeGrab as abilities | F2 |
+| Collision: box lists built inside the runtime (`staticSolids`, `slopes`, `oneWays`, `ladderTops`); `moveAndCollide` | `runtime.ts`, `physics.ts` | `GeometryQuery` over box, one-way and ramp kinds | F3 |
+| Reach: `jumpTable` → `Limits` | `reachability.ts`, `limits.ts` | `ReachDescription.table` from the `arcade` model | F4 |
+| Solver moves hardcoded (walk/fall/jump/climb/swim/spring/teleport/push), state as fixed bit fields | `solver.ts` | `MoveRule`s from the locomotion model and from objects (springs, teleporters, crates, keys, plates) | F4 |
+| Roles: a fixed `FITS` list | `roles.ts` | Kit role declarations; `FITS` stays as the fallback | F1 (declarations) |
+| Camera: one follow with fixed look-ahead and dead zone, per level | `camera.ts`, `model/camera.ts` | The `follow` behaviour in the pipeline | F5 |
+| AI: fixed guide text; `set_level_profile` | `guideSections.ts`, `operations.ts` | Module descriptions from the profile; `set_game_profile` (with `set_level_profile` kept as a shorthand) | F1 |
+
+**Each move is proven by identical behaviour:**
+- golden hashes of generated levels and new projects, recorded before the change;
+- every existing unit and browser test unchanged.
+
+That is the "no new features, real work" part of the foundation: Mario and puzzle are the first users of every interface.
+
+---
+
+## 12. F1, precisely, and its tests
+
+**F1 does:**
+1. **`GameProfile`** in `settings.profile` (schema, format version 15, migration), with a section for each system: view, time, movement, geometry, camera, kits, generator, progression, validation, theme. `levelProfile` and `gameType` are migrated into it; `gameType` stays readable for old code until F2 and F3 move it.
+2. **`Registry<Module>` and `Module`** (§7.7). The existing implementations are registered as modules that *describe and point to* today's code, without moving it yet:
+   - views: side, top, iso;
+   - time: realtime, turns;
+   - locomotion: arcade, topdown;
+   - geometry: box, one_way, ramp;
+   - camera: follow;
+   - kits: one per existing starter set, with role declarations;
+   - generators: `sections` (genre setting classic/puzzle), `dungeon`;
+   - progression: `stages`;
+   - validators: layout, checker, cell_solver, puzzle_needed.
+3. **Presets as data:** platformer-classic, platformer-puzzle, top-down, RPG, roguelike, isometric.
+4. **New game from a preset:** the starter chooser makes games through presets (kits → objects, locomotion → the player's controller settings), so starters, and with them the presets, are the way games are made.
+5. **Dispatch through the profile:** New level / Regenerate / Variation, "more levels" and `generate_level` find the generator via the profile; the level ideas read the profile.
+6. **`checkProfile`** compatibility (§10).
+7. **Editing:** `set_game_profile` (AI and command), undoable; a small profile panel in the Game card (each system: its module, with compatible choices only).
+
+**F1 doesn't:** move movement, physics, camera or solver code (F2–F5), or add new gameplay. Its value is that every later stage plugs in instead of special-casing, and that the profile shows and edits what a game is made of.
+
+**Tests, one or more for each of your points:**
+
+| Requirement | Test |
+|---|---|
+| Existing games can use the profile system | Saved projects of every starter (fixtures written by today's code, before the change) load with the right preset inferred (classic, puzzle, top-down, RPG, roguelike, isometric); their levels play as before (runtime test on the fixtures) |
+| Starter sets and generation unchanged | Golden snapshots: a new game from each preset has exactly the definitions, components and scripts of today's `createProject` / `createRpgProject` / …; the classic and puzzle sweeps through the profile give byte-identical operations to today's direct calls (hashes recorded before the change) |
+| Different profiles select different implementations | Classic vs puzzle profile → different generators (`madeBy.generator`); a test-only generator module registered and selected by a profile is the one New level uses; the locomotion section selects `arcade` vs `topdown` and the new game's player gets that controller |
+| Profiles can be saved, loaded and edited | Round trip through save/load (schema); `set_game_profile` changes one system, keeps the rest, undoes in one step; an incompatible edit is refused with its reason; the AI's operation goes through the same check |
+| Backward compatibility | All existing migration tests; a game from every format version up to 14 loads; a game without a profile gets one inferred and nothing written until changed (as `levelProfile` today); every existing unit and browser test passes unchanged |
+| Combining compatible modules | `checkProfile` table tests (§10: ok / degraded / incompatible); a hybrid preset (side view + `arcade` + platformer and puzzle kits + RPG kit) makes a game with all three kits' objects, no duplicate roles, and builds validated levels |
+
+**Size:** about one stage of the size of the level-builder stages. It ends with the profile panel visible in the editor, so the foundation is something you can see and use, not only code.
