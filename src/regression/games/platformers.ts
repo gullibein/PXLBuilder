@@ -22,6 +22,14 @@ export function marioLevel(registry: ComponentRegistry, seed: number): { project
 }
 
 /** A level drawn as a map of role characters (P player, # ground, E enemy, ? block…), on the platformer preset. */
+/** The cell grid of a level drawn as a map (what the route solver searches), with the game's roles. */
+export function mapGrid(project: Project, registry: ComponentRegistry, rows: string[]): LevelGrid {
+  const byChar = new Map(Object.entries(ROLE_CHARS).map(([r, ch]) => [ch, r as Role]));
+  const g = new LevelGrid(rows[0].length, rows.length, findRoles(project, registry));
+  rows.forEach((row, r) => [...row].forEach((ch, c) => ch !== '.' && g.fill(byChar.get(ch)!, c, r, c, r)));
+  return g;
+}
+
 export function mapLevel(registry: ComponentRegistry, rows: string[]): Project {
   const base = projectFromPreset('platformer', registry, 'Map');
   const roles = findRoles(base, registry);

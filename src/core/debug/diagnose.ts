@@ -16,7 +16,7 @@ import { itemNameOf } from '../graph/graph';
 import { resolveRef } from '../logic/refs';
 import { relationshipRegistry } from '../logic/vocabulary';
 import { getWorldBounds } from '../model/geometry';
-import { reachabilityProblems } from '../model/reachability';
+import { levelReachProblems } from '../validation/levelProblems';
 import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import { checkScript, type Stmt } from '../script/language';
 import type { BehaviorScript, EntityRef, Id, Project, Scene } from '../types';
@@ -240,7 +240,8 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
   if (players.length && !finishes) add('no-goal', 'note', "This level can't be won yet: there is no Goal and nothing completes the level (a rule or script with complete level). Place a Goal, or add a rule (e.g. when no coin is left, complete the level).", []);
 
   // ---- can the player get to everything?
-  for (const r of reachabilityProblems(project, sceneId, registry)) add(r.key, 'warning', r.text, r.entityIds);
+  // (As the validators judge it: unjudged, not "can't", for abilities the jump checker doesn't know.)
+  for (const r of levelReachProblems(project, sceneId, registry)) add(r.key, r.key === 'reach-unjudged' ? 'note' : 'warning', r.text, r.entityIds);
 
   const order = { error: 0, warning: 1, note: 2 };
   return out.sort((a, b) => order[a.severity] - order[b.severity]);

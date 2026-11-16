@@ -233,8 +233,8 @@ describe('F1: game profiles and the module registry', () => {
     const kinds = ['view', 'time', 'locomotion', 'ability', 'geometry', 'camera', 'kit', 'generator', 'progression', 'validator'] as const;
     const pointing = kinds.flatMap((k) => modules.list(k)).filter((m) => m.pointsTo);
     expect(pointing.length).toBeGreaterThan(0);
-    // (F2 moved movement and F3 geometry behind their interfaces: none of theirs points to old code any more.)
-    for (const k of ['locomotion', 'ability', 'geometry'] as const) expect(modules.list(k).filter((m) => m.pointsTo).map((m) => m.id), k).toEqual([]);
+    // (F2 moved movement, F3 geometry and F4 validation behind their interfaces: none of theirs points to old code any more.)
+    for (const k of ['locomotion', 'ability', 'geometry', 'validator'] as const) expect(modules.list(k).filter((m) => m.pointsTo).map((m) => m.id), k).toEqual([]);
     for (const m of pointing) expect(m.pointsTo!.movesIn, `${m.kind} ${m.id}`).toMatch(/^F[2-6]$/);
   });
 });

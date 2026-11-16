@@ -13,6 +13,7 @@
  */
 import type { LevelGrid } from './grid';
 import type { Limits } from './limits';
+import { ARCADE_MOVES, type MoveRule, type SolverState, type SolverView } from './moves';
 import type { Role } from './roles';
 
 const SOLID = new Set<Role>(['ground', 'ledge', 'brick', 'block', 'pipeTop', 'pipe', 'crate', 'rampRight', 'rampLeft']);
@@ -27,10 +28,11 @@ export interface SolveResult {
   /** States looked at (how much searching it took). */
   states: number;
   /** The way to the goal, cell by cell (where the player stands after each move), when found. */
-  path: { col: number; row: number; move: Move }[];
+  path: { col: number; row: number; move: Move; mode?: number }[];
 }
 
-export type Move = 'start' | 'walk' | 'fall' | 'jump' | 'climb' | 'swim' | 'spring' | 'teleport' | 'push';
+/** How the player got into a cell: 'start', or a move rule's move ('walk', 'jump', 'wall_jump', 'dash'…). */
+export type Move = 'start' | 'walk' | 'fall' | 'jump' | 'climb' | 'swim' | 'spring' | 'teleport' | 'push' | 'wall_slide' | 'wall_jump' | 'dash';
 
 const MAX_STATES = 400000;
 
@@ -43,7 +45,7 @@ interface Cellish {
  * cell, col × height + row; -1: gone, pushed out of the level), and where the player is (a pressure plate is held
  * down by the player standing on it or by a crate).
  */
-interface World {
+export interface World {
   kh: number;
   so: number;
   cr: number[];
@@ -53,8 +55,19 @@ interface World {
   open: Set<string>;
 }
 
-/** Solves a level as the grid has it (moving platforms already turned into still bridges along their paths). */
-export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
+/** What the solver needs of the player's reach: its limits, and the move rules (by default the arcade model's). */
+export interface SolverReach {
+  limits: Limits;
+  moves: readonly MoveRule[];
+}
+
+/**
+ * Solves a level as the grid has it (moving platforms already turned into still bridges along their paths), with
+ * the player's reach: its limits alone (the arcade model's moves), or a reach description's limits and move rules.
+ */
+export function solveLevel(grid: LevelGrid, reach: Limits | SolverReach): SolveResult {
+  const lim: Limits = 'limits' in reach ? reach.limits : reach;
+  const rules: readonly MoveRule[] = 'limits' in reach ? reach.moves : ARCADE_MOVES;
   const W = grid.width;
   const H = grid.height;
   // Things placed by themselves: doors (walls until opened), keys, levers, pressure plates, teleporters.
@@ -170,7 +183,8 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
   if (!start) return { goal: false, unreached: wanted, states: 0, path: [] };
 
   const maxGap = Math.max(0, ...Array.from({ length: lim.maxRise + 9 }, (_, i) => lim.gap(lim.maxRise - i)));
-  const key = (c: number, r: number, kh: number, so: number, cr: number[]) => `${c},${r},${kh},${so},${cr.join('.')}`;
+  // (A mode other than standing: on a wall, sliding; written only then, so a level without such moves searches as ever.)
+  const key = (c: number, r: number, kh: number, so: number, cr: number[], mode = 0) => `${c},${r},${kh},${so},${cr.join('.')}${mode ? `,m${mode}` : ''}`;
   const seen = new Map<string, string | null>(); // state → state it came from (null for the start)
   const costOf = new Map<string, number>();
   const moveOf = new Map<string, Move>();
@@ -210,8 +224,8 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
     }
     return top;
   };
-  const stateOf = new Map<string, [number, number, number, number, number[]]>();
-  const push = (c: number, r: number, kh: number, so: number, cr: number[], from: string | null, move: Move, step = 1) => {
+  const stateOf = new Map<string, [number, number, number, number, number[], number]>();
+  const push = (c: number, r: number, kh: number, so: number, cr: number[], from: string | null, move: Move, step = 1, mode = 0) => {
     // (Picking up keys and pressing switches where it is.)
     keys.forEach((k, i) => {
       if (k.col === c && k.row === r) kh |= 1 << i;
@@ -219,13 +233,13 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
     switches.forEach((s, i) => {
       if (s.col === c && s.row === r) so |= 1 << i;
     });
-    const id = key(c, r, kh, so, cr);
+    const id = key(c, r, kh, so, cr, mode);
     const cost = (from !== null ? costOf.get(from)! : 0) + step;
     if ((costOf.has(id) && costOf.get(id)! <= cost) || seen.size >= MAX_STATES) return;
     seen.set(id, from);
     costOf.set(id, cost);
     moveOf.set(id, move);
-    stateOf.set(id, [c, r, kh, so, cr]);
+    stateOf.set(id, [c, r, kh, so, cr, mode]);
     reachedCells.add(`${c},${r}`);
     heapPush(cost, id);
   };
@@ -234,10 +248,10 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
   push(start.c, s0, 0, 0, crateStart, null, 'start');
 
   /** A jump from (c, r) to stand at (c + dx, r - rise): room overhead, nothing solid in the way, within reach. */
-  const canJump = (c: number, r: number, dx: number, rise: number, w: World, gapOf: (rise: number) => number): boolean => {
+  const canJump = (c: number, r: number, dx: number, rise: number, w: World, gapOf: (rise: number) => number, land: (c: number, r: number, w: World) => boolean = canBe): boolean => {
     const tc = c + dx;
     const tr = r - rise;
-    if (!canBe(tc, tr, w)) return false;
+    if (!land(tc, tr, w)) return false;
     const between = Math.abs(dx) - 1;
     if (between > gapOf(rise)) return false;
     // (A wall right in front at body height: no run-up, the jump goes up first: only about half as far.)
@@ -280,13 +294,14 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
       }
   };
 
+  const view: SolverView = { W, H, lim, maxGap, role, solidAt, supportAt, freeAt, hurtsAt, waterAt, ladderAt, canBe, fall, crateFall, crateAt, worldOf, canJump, jumpsFrom, push, teleportFrom: (c, r) => tele.get(`${c},${r}`) };
   let goalId: string | null = null;
   const done = new Set<string>();
   for (let next = heapPop(); next; next = heapPop()) {
     const [cost, id] = next;
     if (done.has(id) || cost > costOf.get(id)!) continue;
     done.add(id);
-    const [c, r, kh, so, cr] = stateOf.get(id)!;
+    const [c, r, kh, so, cr, mode] = stateOf.get(id)!;
     const w = worldOf(kh, so, cr, c, r);
     // (Inside a door that shut once the player stepped off its plate: not a place to be.)
     const inDoor = doorAt.get(`${c},${r}`);
@@ -296,74 +311,16 @@ export function solveLevel(grid: LevelGrid, lim: Limits): SolveResult {
     if (goals.some((g) => g.col === c && g.row === r)) {
       if (goalId === null) goalId = id;
     }
-    // Walk left and right (then fall); step up a ramp or onto a spring.
-    for (const dx of [-1, 1]) {
-      const nc = c + dx;
-      if (freeAt(nc, r, w) && !hurtsAt(nc, r) && role(nc, r) !== 'spring') {
-        const y = fall(nc, r, w);
-        if (y !== null) push(nc, y, kh, so, cr, id, y === r ? 'walk' : 'fall');
-      } else {
-        const x = role(nc, r);
-        if ((x === 'rampRight' || x === 'rampLeft') && canBe(nc, r - 1, w)) push(nc, r - 1, kh, so, cr, id, 'walk');
-        // (Walking onto a spring bounces: it launches from its top at once, Jump held, wherever that reaches.)
-        if (x === 'spring' && freeAt(nc, r - 1, w)) jumpsFrom(nc, r - 1, w, id, true, 1);
-        // Pushing a crate (standing on something, the crate with nothing on top of it): it goes one cell on, if
-        // that is free, and falls; the player steps into where it was.
-        const ci = cr.indexOf(nc * H + r);
-        if (ci >= 0 && supportAt(c, r + 1, w) && !crateAt(nc, r - 1, w) && freeAt(nc + dx, r, w) && nc + dx > 0 && nc + dx < W - 1) {
-          const y = crateFall(nc + dx, r, w);
-          const moved = [...cr];
-          moved[ci] = y === null ? -1 : (nc + dx) * H + y;
-          const after = worldOf(kh, so, moved, nc, r);
-          const py = fall(nc, r, after);
-          if (py !== null) push(nc, py, kh, so, moved, id, 'push', 2);
-        }
-      }
-    }
-    // Ladders: up and down.
-    if (ladderAt(c, r) || ladderAt(c, r + 1)) {
-      if (ladderAt(c, r - 1) || (ladderAt(c, r) && freeAt(c, r - 1, w))) {
-        const up = r - 1;
-        if (canBe(c, up, w)) push(c, up, kh, so, cr, id, 'climb');
-        else {
-          // (Off the top of a ladder: stepping onto the ground beside it.)
-          for (const dx of [-1, 1]) if (canBe(c + dx, up, w)) push(c + dx, up, kh, so, cr, id, 'climb');
-        }
-      }
-      if (ladderAt(c, r + 1) && freeAt(c, r + 1, w)) push(c, r + 1, kh, so, cr, id, 'climb');
-      // (From the top of a ladder sticking out of the floor, onto the floor beside.)
-      for (const dx of [-1, 1]) if (ladderAt(c, r) && canBe(c + dx, r, w)) push(c + dx, r, kh, so, cr, id, 'climb');
-    }
-    // Swimming: any way through water; up out of it at the surface.
-    if (waterAt(c, r)) {
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nc = c + dx;
-        const nr = r + dy;
-        if (freeAt(nc, nr, w) && !hurtsAt(nc, nr)) {
-          if (waterAt(nc, nr) || canBe(nc, nr, w)) push(nc, nr, kh, so, cr, id, 'swim');
-          else {
-            const y = fall(nc, nr, w);
-            if (y !== null) push(nc, y, kh, so, cr, id, 'swim');
-          }
-        }
-      }
-    }
-    // Jumps (from the ground, a ladder, or the water's surface).
-    const standing = supportAt(c, r + 1, w) || ladderAt(c, r) || (waterAt(c, r) && !waterAt(c, r - 1));
-    if (standing) jumpsFrom(c, r, away, id, role(c, r + 1) === 'spring', 0);
-    // Teleporters.
-    const to = tele.get(`${c},${r}`);
-    if (to) {
-      const y = fall(to.col, to.row, w);
-      if (y !== null) push(to.col, y, kh, so, cr, id, 'teleport');
-    }
+    // The moves: each rule adds the states it reaches from here (the arcade model's, then its abilities').
+    const st: SolverState = { c, r, kh, so, cr, mode, id, w, away };
+    for (const rule of rules) rule.successors(st, view);
   }
 
   const path: SolveResult['path'] = [];
   if (goalId !== null) {
     for (let id: string | null = goalId; id !== null; id = seen.get(id)!) {
-      const [c, r] = stateOf.get(id)!;
-      path.unshift({ col: c, row: r, move: moveOf.get(id)! });
+      const [c, r, , , , mode] = stateOf.get(id)!;
+      path.unshift({ col: c, row: r, move: moveOf.get(id)!, ...(mode ? { mode } : {}) });
     }
   }
   // (A thing counts as reached when the player stands in its cell or right under it, or passes through it jumping;

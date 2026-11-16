@@ -4,9 +4,8 @@
  * level never asks for the player's longest jump; the hardest asks for exactly it, never more).
  */
 import type { ComponentRegistry } from '../components/registry';
-import { instantiateDefinition } from '../model/factory';
-import { jumpTable, type JumpTable } from '../model/reachability';
-import { resolveEntity } from '../model/resolve';
+import type { JumpTable } from '../model/reachability';
+import { playerReach } from '../reach/reach';
 import type { Id, Project } from '../types';
 
 export interface Limits {
@@ -48,16 +47,10 @@ export function limitsFrom(table: JumpTable, difficulty: number): Limits {
 }
 
 /**
- * The limits of the game's player in a level (its gravity), at a difficulty. `playerId`: the player's object (from
- * the roles). Null when there is no player that jumps (a top-down game, no gravity).
+ * The limits of the game's player in a level (its gravity), at a difficulty: the reach description's (core/reach),
+ * which its movement setup publishes. `playerId`: the player's object (from the roles). Null when there is no player
+ * that jumps (a top-down game, no gravity).
  */
 export function playerLimits(project: Project, sceneId: Id, playerId: Id, registry: ComponentRegistry, difficulty: number): Limits | null {
-  const scene = project.scenes.find((s) => s.id === sceneId);
-  const def = project.definitions.find((d) => d.id === playerId);
-  if (!scene || !def) return null;
-  // (A player placed in the level may have its own changes: those count.)
-  const placed = scene.entities.find((e) => e.definitionId === playerId);
-  const components = resolveEntity(project, placed ?? instantiateDefinition(def, { x: 0, y: 0 }), registry).components;
-  const table = jumpTable(components, scene.world.gravity.y);
-  return table ? limitsFrom(table, difficulty) : null;
+  return playerReach(project, sceneId, playerId, registry)?.limits?.(difficulty) ?? null;
 }

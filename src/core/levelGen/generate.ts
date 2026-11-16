@@ -10,20 +10,20 @@
  * a moving solid, is in the way: said, never passed off as validated). A level that can't be made valid throws
  * LevelGenError with why.
  */
-import { produce } from 'immer';
 import type { ComponentRegistry } from '../components/registry';
+import { produce } from 'immer';
 import { applyOperations, type Operation } from '../commands/operations';
 import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
-import { layoutProblems, levelReachability, startConflicts, winProblems } from '../model/reachability';
 import { resolveEntity } from '../model/resolve';
 import type { Id, LevelMadeBy, Project } from '../types';
 import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
 import { GENRE_BUILDS, type GenreBuild } from './genres';
 import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
-import { solveLevel } from './solver';
+import { playerReach, type ReachDescription } from '../reach/reach';
+import { runValidators, unneededPuzzles, type Validation, type ValidationTarget } from '../validation/validators';
 import { GridError, LevelGrid, type Placed } from './grid';
-import { playerLimits, type Limits } from './limits';
+import type { Limits } from './limits';
 import { PatternError, type Band, type Pattern, type SectionCtx } from './pattern';
 import { patternById } from './patterns/index';
 import { makeRandom, newLevelSeed, type Random } from './random';
@@ -475,67 +475,41 @@ function asStill(grid: LevelGrid, roles: Roles): LevelGrid {
   return still;
 }
 
-/**
- * The puzzle pieces a level can be won without (each taken away in turn and the level solved again): levers, keys,
- * crates, teleporters. Empty: every one is needed.
- */
-export function unneededPuzzles(grid: LevelGrid, reach: Limits): string[] {
-  const out: string[] = [];
-  const without = (change: (g: LevelGrid) => void) => {
-    const g = grid.clone();
-    change(g);
-    return solveLevel(g, reach).goal;
-  };
-  for (const p of grid.placed) {
-    if (p.role !== 'switch' && p.role !== 'key') continue;
-    if (without((g) => g.unplace(p.ref))) out.push(`the ${p.role === 'switch' ? 'lever' : 'key'} at ${p.col},${p.row}`);
-  }
-  for (const l of grid.links) {
-    if (l.type !== 'teleports_to') continue;
-    if (without((g) => g.unplace(l.from))) out.push(`the teleporter ${l.from}`);
-  }
-  grid.rows().forEach((row, r) =>
-    [...row].forEach((ch, c) => {
-      if (ch === 'C' && without((g) => g.clear(c, r, c, r))) out.push(`the crate at ${c},${r}`);
-    }),
-  );
-  return out;
-}
+// (Moved to the puzzle_needed validator: core/validation/validators.ts.)
+export { unneededPuzzles };
 
 interface Check {
   state: 'validated' | 'uncertain' | 'invalid';
   problems: string[];
 }
 
-/** Checks a level built by these operations (on a copy: the project is not changed). */
-export function checkBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps: Operation[] | null, registry: ComponentRegistry): Check {
+/** A level built by these operations, validated by these validators (on a copy: the project is not changed). */
+function validateBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps: Operation[] | null, registry: ComponentRegistry, ids: readonly string[], rest: Omit<ValidationTarget, 'project' | 'sceneId' | 'registry' | 'judged'>): Validation {
   let after: Project;
   try {
     after = produce(project, (d) => void applyOperations(d, ops, registry));
   } catch (e) {
-    return { state: 'invalid', problems: [`it couldn't be made: ${(e as Error).message}`] };
+    return { state: 'invalid', problems: [`it couldn't be made: ${(e as Error).message}`], verdicts: {}, uncertain: [] };
   }
-  const problems: string[] = [];
-  for (const p of winProblems(after, sceneId, registry)) problems.push(p.text);
-  for (const p of layoutProblems(after, sceneId, registry)) problems.push(p.text);
-  const start = startConflicts(after, sceneId, registry);
-  if (start && (start.solid.length || start.hurts.length)) problems.push(`the player starts inside or next to ${[...start.solid, ...start.hurts].map((x) => x.name).join(', ')}`);
-  // Reachability on the still version (moving platforms as bridges along their paths), when there are any.
-  let judged = after;
+  let judged: Project | undefined;
   if (stillOps) {
     try {
       judged = produce(project, (d) => void applyOperations(d, stillOps, registry));
     } catch (e) {
-      return { state: 'invalid', problems: [`its still version couldn't be made: ${(e as Error).message}`] };
+      return { state: 'invalid', problems: [`its still version couldn't be made: ${(e as Error).message}`], verdicts: {}, uncertain: [] };
     }
   }
-  const reach = levelReachability(judged, sceneId, registry);
-  if (reach.status === 'ok') {
-    if (reach.unreachable.things.length) problems.push(`the player can't get to ${reach.unreachable.things.map((t) => t.name).join(', ')}`);
-  } else if (reach.status === 'uncertain') {
-    if (!problems.length) return { state: 'uncertain', problems: [reach.why] };
-  } else problems.push(reach.status === 'no-player' ? 'there is no player' : 'the player has no ground to stand on');
-  return problems.length ? { state: 'invalid', problems } : { state: 'validated', problems: [] };
+  return runValidators(ids, { project: after, sceneId, registry, judged, ...rest });
+}
+
+/**
+ * Checks a level built by these operations (on a copy: the project is not changed): the layout and the level checker
+ * (validators layout and checker).
+ */
+export function checkBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps: Operation[] | null, registry: ComponentRegistry, reach: ReachDescription | null = null): Check {
+  const v = validateBuilt(project, sceneId, ops, stillOps, registry, ['layout', 'checker'], { reach, mechanics: [] });
+  if (v.state === 'invalid') return { state: 'invalid', problems: v.problems };
+  return v.state === 'uncertain' ? { state: 'uncertain', problems: v.uncertain } : { state: 'validated', problems: [] };
 }
 
 /** Removes what the level had outside the new map's area (draw_map clears inside it). */
@@ -576,6 +550,8 @@ export interface GenerateOptions {
   recentSignatures?: Mechanic[];
   /** How many checked builds to compare against the game's other levels (default CANDIDATES; 1: the first). */
   candidates?: number;
+  /** The validators its levels go through (default: the sections generator's: layout, checker, cell_solver, and puzzle_needed for puzzles). */
+  validators?: string[];
   /** Told about every checked build's grid (its moving platforms as bridges), for tools and tests. */
   onBuilt?: (grid: LevelGrid) => void;
 }
@@ -587,10 +563,18 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
   if (!project.scenes.some((s) => s.id === sceneId)) throw new LevelGenError(`There is no level ${sceneId}`);
   const roles = findRoles(project, registry);
   for (const r of ['player', 'ground', 'goal'] as Role[]) if (!roles[r]) throw new LevelGenError(`The game needs a ${r} object to build a level`);
-  const lim = playerLimits(project, sceneId, roles.player!.id, registry, bp.difficulty);
-  if (!lim) throw new LevelGenError("The player doesn't jump here (no gravity, or no Character Controller): levels to jump through can't be built");
+  // The player's reach, as its movement setup publishes it: the builder sizes sections from its table, the route
+  // solver searches with its moves.
+  const description = playerReach(project, sceneId, roles.player!.id, registry);
+  const lim = description?.limits?.(bp.difficulty) ?? null;
+  if (!description || !lim) throw new LevelGenError("The player doesn't jump here (no gravity, or no Character Controller): levels to jump through can't be built");
   // (The route solver uses the player's whole reach, as the level checker does: any jump within it is fair.)
-  const reach = playerLimits(project, sceneId, roles.player!.id, registry, 5)!;
+  const reach = description.limits!(5);
+  // The validators its levels go through: the generator module's (layout, checker, cell_solver, puzzle_needed for
+  // puzzles), as given; the generator's own section check sits between the route search and the puzzle check.
+  const validators = options.validators ?? ['layout', 'checker', 'cell_solver', ...(build.id === 'puzzle' ? ['puzzle_needed'] : [])];
+  const before = validators.filter((id) => id !== 'puzzle_needed');
+  const after = validators.filter((id) => id === 'puzzle_needed');
   const seed = bp.seed ?? newLevelSeed();
   const notes: string[] = [];
   // The game's other levels: a new one is to be unlike them (not just another seed).
@@ -619,28 +603,26 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     }
     const ops = [...clearOutside(project, sceneId, out.grid.width, out.grid.height, registry), ...out.grid.toOperations(sceneId)];
     const moving = out.grid.placed.some((p: Placed) => p.path);
-    const check = checkBuilt(project, sceneId, ops, moving ? [...ops.filter((o) => o.op === 'erase_area'), ...asStill(out.grid, roles).toOperations(sceneId)] : null, registry);
-    if (check.state === 'invalid') {
-      lastProblems = check.problems;
-      continue;
-    }
-    // The route solver too: walls, ceilings and doors in the way, keys before the doors they open, every coin.
+    // The layout, the level checker, then the route solver (walls, ceilings and doors in the way, keys before the
+    // doors they open, every coin).
     const still = moving ? asStill(out.grid, roles) : out.grid;
-    const solved = solveLevel(still, reach);
-    if (!solved.goal || solved.unreached.length) {
-      lastProblems = [`the route solver ${!solved.goal ? "can't get to the goal" : `can't get to ${solved.unreached.map((u) => `the ${u.role} at ${u.col},${u.row}`).join(', ')}`}`];
+    const checked = validateBuilt(project, sceneId, ops, moving ? [...ops.filter((o) => o.op === 'erase_area'), ...asStill(out.grid, roles).toOperations(sceneId)] : null, registry, before, { reach: description, mechanics: [], grid: still });
+    if (checked.state === 'invalid') {
+      lastProblems = checked.problems;
       continue;
     }
+    const check: { state: 'validated' | 'uncertain'; problems: string[] } = checked.state === 'uncertain' ? { state: 'uncertain', problems: checked.uncertain } : { state: 'validated', problems: [] };
+    const route = checked.verdicts.cell_solver?.evidence?.route ?? [];
     // A level of a genre with core mechanics (a puzzle level) has at least one section about one (a hub's key counts).
     if (build.core && out.structure !== 'hub' && !out.built.some((b) => patternById(b.pattern)?.mechanics.some((m) => build.core!.includes(m)))) {
       lastProblems = [`it has no ${build.core.join(', ')} section`];
       continue;
     }
     // A puzzle level: every puzzle in it is needed (without its lever, key, crate or teleporter, no way to the goal).
-    if (build.id === 'puzzle') {
-      const spare = unneededPuzzles(still, reach);
-      if (spare.length) {
-        lastProblems = [`it can be won without ${spare.join(', ')}`];
+    if (after.length) {
+      const needed = runValidators(after, { project, sceneId, registry, reach: description, mechanics: [], grid: still });
+      if (needed.state === 'invalid') {
+        lastProblems = needed.problems;
         continue;
       }
     }
@@ -659,7 +641,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       ops,
       rows,
       state: check.state,
-      notes: [...notes, ...tried, `the route solver got to the goal in ${solved.path.length - 1} moves`, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
+      notes: [...notes, ...tried, `the route solver got to the goal in ${route.length - 1} moves`, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
       attempts: attempt + 1,
       madeBy: {
         generator: build.id,

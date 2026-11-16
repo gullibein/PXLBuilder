@@ -1209,3 +1209,121 @@ No other path kills something with a filling square.
 | Shared spatial queries: `fits`, `count_in` and `thing_at` through `world.cell` and one index | After F4, with the board goldens | Planned (§18.2) |
 | Isometric heights (`isoGround`) and the top-down crawler (`crawl.ts`) asking `world.cell` | F5–F6, or with a grid locomotion model (V2) | Not started |
 | Crumbling and other stateful cells | V1 | Not started; `cells` holds the state |
+
+## 19. F4: the reach model and pluggable validation
+
+### 19.1 What F4 must not change
+
+Before anything moved, `regression/validation.test.ts` pinned goldens of:
+- **What validation says about every family:**
+  - games: Mario-style generated, stomp and block, Tetris, Dr. Mario, space shooter, mining, Boulder Dash, Celeste-inspired (with and without abilities), Lode Runner-inspired;
+  - starters: top-down, RPG, roguelike, isometric;
+  - for each: the level checker's verdict, the win, layout and start checks, and the editor's reach problems.
+- **The level builder's sweeps:**
+  - classic: seeds 1–6 at difficulties 2 and 4;
+  - puzzle: seeds 1–6 at difficulty 3;
+  - for each level: what was built, whether it validated, its attempts and notes, and the route solver's full route.
+
+These are identical after F4, with all earlier goldens. **The one deliberate change** is to the editor and AI path (§19.4), and only for players with abilities the jump checker doesn't model.
+
+### 19.2 Reach descriptions (`core/reach/reach.ts`)
+
+`reachOf(components, gravity)` is what a player's movement setup publishes:
+
+| Part | `arcade` model | `+ WallJump` | `+ Dash` | `topdown` model |
+|---|---|---|---|---|
+| `table` | Today's `jumpTable` (double jump and ledge grab included) | Same | Same | None |
+| `limits(d)` | The builder's `Limits` from the table (`playerLimits` now reads this) | Same | Same | None |
+| `moves` | `ARCADE_MOVES`: walk (with ramps, springs, pushing crates), climb, swim, jump, teleport | + `wall_jump` (holding walls, sliding, kicking off) | + `dash` (a jump and a dash at its top: further across, or higher) | None |
+| `simulator` | `route_bot` | `route_bot` | `route_bot` | None |
+| `covers.table` | The arcade mechanics | Not `wall_jump` | Not `dash` | — |
+| `approximate` | — | `wall_jump` | `dash` | — |
+
+**Ability moves are worked out from the component's own settings,** kept under the estimate as the jump table is:
+- wall jump: rise from `jumpY` (or the jump), distance from `jumpX`;
+- dash: cells from `speed × duration`; up only with four or eight directions.
+
+### 19.3 The route solver and its move rules (`levelGen/moves.ts`)
+
+The solver (`levelGen/solver.ts`) is now only the search:
+- its states: the cell, keys, levers, crates, and a **mode** (standing, or holding a wall on the left or right);
+- the world those change: doors, plates.
+
+**Moves come from rules.** Each `MoveRule` has an id, the mechanics it judges, and `successors(state, view)`.
+- The arcade rules are the old loop body, moved unchanged and run in the order they always ran. That is why every route and state count is identical.
+- A mode is written into a state's key only when it isn't zero, so a level without wall moves searches exactly as before.
+- **New:** wall jumps and dashes may end in the goal's cell in mid-air, as touching it does in play. The arcade moves don't do this, so their results are unchanged.
+
+**The route bot (`runtime/routeBot.ts`) plays the same move ids:**
+- `BOT_MOVES` lists what it can play, and a route with any other move is skipped, said.
+- New steps: `wall_slide`, `wall_jump` (press into the wall until sliding, jump, steer, press into the next wall) and `dash` (jump, dash near the top the way the target is, steer).
+- When a take-off jump is held back by a ceiling's corner, the bot now lets go and presses again. This only happens when a jump fails, so the Mario-style golden is identical.
+
+### 19.4 Validators (`core/validation/validators.ts`)
+
+Each validator is a `Validator` with a strategy, a cost, what it needs of the reach description, and `validate(target, verdictsSoFar) → Verdict {pass | fail | unknown, covered, problems, evidence}`. They are registered as modules: requires `reach:<need>`, no `pointsTo`.
+
+| Validator | Strategy | Needs | What it is |
+|---|---|---|---|
+| `layout` | static | — | winProblems, layoutProblems, startConflicts |
+| `checker` | analytical | table | levelReachability. "Can't get to" with abilities the table doesn't cover is **unknown**, not fail |
+| `cell_solver` | solver | moves | The route solver with the reach description's moves; gives the route as evidence |
+| `puzzle_needed` | solver | moves | Each lever, key, crate and teleporter needed |
+| `route_bot` | simulation | simulator | Plays the solver's route on the runtime. A bot that can't do a step proves nothing, so that is **unknown**, not fail |
+
+**Choosing them (`chooseValidators`, §8.4):**
+1. `layout` always runs, plus what the builder or the editor requires.
+2. Mechanics the table doesn't cover go to `cell_solver` when the moves cover them and there is a grid.
+3. Mechanics the moves only estimate also go to `route_bot`.
+4. Mechanics nothing can judge here are noted.
+
+**Running them (`runValidators`):** cheapest first.
+- The static and analytical checks report together, and no search runs after a problem (exactly the old checkBuilt-then-solver order).
+- A route through estimated moves that the route bot didn't confirm leaves the level **uncertain**.
+
+**Through the validators now:**
+- **The level builder:**
+  - `generateLevel` runs the generator module's validators (`layout`, `checker`, `cell_solver`, and `puzzle_needed` for puzzles).
+  - The solver's moves come from the player's reach description.
+  - `checkBuilt` is the layout and checker validators.
+- **The editor and the AI:** `levelReachProblems` (diagnose, the AI's playability check).
+  - For a player with wall jumps or dashes, the checker's "can't get to" is replaced by one note: not checked, since the jump checker can't judge those.
+  - Every other game's problems are exactly the old ones; a test compares them for boards, shooters, mining, Boulder Dash and the top-down starters.
+
+**Board and grid games:**
+- Their players (or no player) publish no table or moves, so no reach validator is ever chosen for them (tested).
+- Their validation is the layout check and the checker's top-down walk, as before.
+
+### 19.5 F4 tests
+
+| Test | Where |
+|---|---|
+| Validation of every family, and the classic and puzzle sweeps, identical | `regression/validation.test.ts` |
+| The arcade reach description equals the old jump table and moves; abilities add their moves and coverage; top-down has none | `core/validation/validation.test.ts` |
+| A shaft only wall jumps climb: solvable only with WallJump; the route bot climbs it | same |
+| A pit only a dash crosses: solvable only with Dash; the route bot dashes over it | same |
+| The Celeste-inspired room: solvable only with both (as the regression bot found by playing); validated by solver and route bot | same |
+| A route through estimated moves without the route bot: uncertain | same |
+| Selection: classic levels get only their own validators; abilities with no grid are noted; boards and others get no reach validator | same |
+| The editor: no false "can't get to the Goal" for a player with abilities; still said without them | same |
+| Validators are modules with no `pointsTo`; the bot refuses moves it can't play; routes are reproducible | same |
+
+### 19.6 Still on old code, and limitations
+
+**Still on old code:**
+- **The level checker (`levelReachability`)** still reads the level's objects and computes its own arcs from the same jump table. It doesn't ask the collision world or use the move rules.
+- **The route bot's steps** are written in the bot, one per move id. A new move needs a bot step written beside the others. The step code itself is not plugged in from the move rule.
+
+**Limitations:**
+- **The cell solver needs a cell grid,** which exists for levels the builder makes and for maps (the tests' and the regression suite's). Hand-drawn levels have none yet, so for them, abilities beyond the table are noted as unjudged. **Planned:** a grid from any level (the level map already lists its cells by role; doors, keys and their links still need reading from the objects).
+- **Wall jump and dash moves are estimates in cells:** one dash per jump, no dash from a wall, no dash crystals. The route bot confirms a route before it counts.
+- **The builder still sizes sections from the table only.** It never uses wall jumps or dashes, so its levels never need them. Generating levels that need them is the generator stage (F6) with slice V1.
+- **Seen from above there is no reach description.** The checker walks top-down levels its own way. A `grid` locomotion model (V2) would publish one.
+- **Reproducibility:**
+  - The solver is deterministic.
+  - The route bot steps the runtime at a fixed 1/120 s with no randomness of its own.
+  - A level whose scripts use `rand()` is reproducible only with the same seed. The bot doesn't seed it; the regression suite does.
+
+**Modules still pointing to old code:**
+- camera `follow` (F5);
+- time `turns`, generators `sections` and `dungeon`, progression `stages` (F6).

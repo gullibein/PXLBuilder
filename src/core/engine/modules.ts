@@ -4,6 +4,7 @@
  * moves it). What does go through these modules already: new games (kits), the level builder (generators), the
  * player's movement and the levels' gravity when the profile changes (locomotion, views).
  */
+import { VALIDATORS, type Validator } from '../validation/validators';
 import { GEOMETRY } from './geometry';
 import type { ComponentRegistry } from '../components/registry';
 import { createProject } from '../model/factory';
@@ -66,6 +67,11 @@ export interface GeometryModule extends Module {
   without: string;
 }
 export { GEOMETRY };
+
+export interface ValidatorModule extends Module {
+  kind: 'validator';
+  validator: Validator;
+}
 
 export const modules = new ModuleRegistry();
 
@@ -151,7 +157,8 @@ modules.register<GeneratorModule>({
   },
   build: ({ project, sceneId, blueprint, registry, options }) => {
     const genre = levelProfileOf(project, registry)?.genre.id;
-    return generateLevel(project, sceneId, blueprint, registry, genre && GENRE_BUILDS[genre] ? genre : 'classic', options);
+    const id = genre && GENRE_BUILDS[genre] ? genre : 'classic';
+    return generateLevel(project, sceneId, blueprint, registry, id, { validators: ['layout', 'checker', 'cell_solver', ...(id === 'puzzle' ? ['puzzle_needed'] : [])], ...options });
   },
   pointsTo: { code: 'levelGen/generate.ts (layout, floors, sections), genres.ts', movesIn: 'F6' },
 });
@@ -167,9 +174,6 @@ modules.register<GeneratorModule>({
 });
 modules.register({ kind: 'progression', id: 'stages', version: 1, describe: 'Levels one after another (go_to_level for branches and secret exits)', requires: [], provides: ['progression:stages'], pointsTo: { code: 'runtime next_level / go_to_level, the play view', movesIn: 'F6' } });
 
-// ---------------------------------------------------------------- validators (today's checks)
-modules.register({ kind: 'validator', id: 'layout', version: 1, describe: 'A way to win, the start on safe ground, riders not crushed', requires: [], provides: ['validates:layout'], pointsTo: { code: 'model/reachability.ts winProblems, layoutProblems, startConflicts', movesIn: 'F4' } });
-modules.register({ kind: 'validator', id: 'checker', version: 1, describe: 'Everything needed is reachable with the player\'s jump arcs, ladders, springs', requires: ['reach:table'], provides: ['validates:reach'], pointsTo: { code: 'model/reachability.ts levelReachability', movesIn: 'F4' } });
-modules.register({ kind: 'validator', id: 'cell_solver', version: 1, describe: 'A route to the goal cell by cell, with keys, switches, crates and plates in order', requires: ['reach:moves'], provides: ['validates:route'], pointsTo: { code: 'levelGen/solver.ts solveLevel', movesIn: 'F4' } });
-modules.register({ kind: 'validator', id: 'puzzle_needed', version: 1, describe: 'Every lever, key, crate and teleporter is needed', requires: ['reach:moves'], provides: ['validates:puzzles'], pointsTo: { code: 'levelGen/generate.ts unneededPuzzles', movesIn: 'F4' } });
-modules.register({ kind: 'validator', id: 'route_bot', version: 1, describe: 'Plays the route on the real runtime', requires: ['reach:simulator'], provides: ['validates:play'], pointsTo: { code: 'runtime/routeBot.ts (tests only so far)', movesIn: 'F4' } });
+// ---------------------------------------------------------------- validators (core/validation/validators.ts)
+// (What each needs of the player's reach description: its table, its moves, its simulator.)
+for (const v of VALIDATORS) modules.register<ValidatorModule>({ kind: 'validator', id: v.id, version: 1, describe: v.describe, requires: v.needs.map((n) => `reach:${n}`), provides: [`validates:${v.id}`], validator: v });

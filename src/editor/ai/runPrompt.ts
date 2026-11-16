@@ -34,7 +34,8 @@ import { componentRegistry } from '../../core/components/builtin';
 import { isTopDownScene } from '../../core/model/topDown';
 import { produce } from 'immer';
 import { levelMap, type LevelMap } from '../../core/model/levelMap';
-import { reachabilityProblems, winProblems } from '../../core/model/reachability';
+import { winProblems } from '../../core/model/reachability';
+import { levelReachProblems } from '../../core/validation/levelProblems';
 import { useEditor } from '../store';
 import { parseQuickCommand, QUICK_COMMAND_HELP, type QuickCommand } from '../../core/commands/quickCommands';
 import { runQuickCommand } from '../quickCommands';
@@ -967,7 +968,7 @@ export function applyAIOperations(request: string, message: string, changes: str
  */
 function playability(sceneId: Id, operations: Operation[]): { text: string; map: LevelMap | null } | null {
   const project = useEditor.getState().project;
-  const problems = (pr: Project, id: Id) => [...reachabilityProblems(pr, id, componentRegistry), ...winProblems(pr, id, componentRegistry)];
+  const problems = (pr: Project, id: Id) => [...levelReachProblems(pr, id, componentRegistry), ...winProblems(pr, id, componentRegistry)];
   const before = new Set(problems(project, sceneId).map((p) => p.key));
   let after: Project;
   let created: Id[] = [];
