@@ -103,9 +103,11 @@ modules.register(ability('wall_jump', 'WallJump', 'Slide down walls and jump off
 modules.register(ability('dash', 'Dash', 'A short fast dash the way the keys point, no gravity; refilled on landing'));
 
 // ---------------------------------------------------------------- geometry and camera
-modules.register({ kind: 'geometry', id: 'box', version: 1, describe: 'Square tiles and solid boxes', requires: [], provides: ['geometry:box'], pointsTo: { code: 'runtime/physics.ts moveAndCollide, runtime.ts staticSolids', movesIn: 'F3' } });
-modules.register({ kind: 'geometry', id: 'one_way', version: 1, describe: 'Jump-through platforms', requires: ['view:side'], provides: ['geometry:one_way'], fallback: { 'view:side': 'seen from above, jump-through platforms block like walls' }, pointsTo: { code: 'runtime.ts oneWays', movesIn: 'F3' } });
-modules.register({ kind: 'geometry', id: 'ramp', version: 1, describe: '45° ramps', requires: ['view:side'], provides: ['geometry:ramp'], fallback: { 'view:side': 'seen from above, ramps block like walls' }, pointsTo: { code: 'runtime.ts slopes, onRamp, besideRamps', movesIn: 'F3' } });
+// (All answered by the collision world, runtime/geometry/world.ts, behind the GeometryQuery interface.)
+modules.register({ kind: 'geometry', id: 'box', version: 1, describe: 'Square tiles and solid boxes', requires: [], provides: ['geometry:box'] });
+modules.register({ kind: 'geometry', id: 'one_way', version: 1, describe: 'Jump-through platforms', requires: ['view:side'], provides: ['geometry:one_way'], fallback: { 'view:side': 'seen from above, jump-through platforms block like walls' } });
+modules.register({ kind: 'geometry', id: 'ramp', version: 2, describe: 'Ramps: 45° and gentle (half a square per square)', requires: ['view:side'], provides: ['geometry:ramp'], fallback: { 'view:side': 'seen from above, ramps block like walls' } });
+modules.register({ kind: 'geometry', id: 'cells', version: 1, describe: 'Grid squares: what is in each (boards), tiles dug out that fill in again', requires: [], provides: ['geometry:cells'] });
 modules.register({ kind: 'camera', id: 'follow', version: 1, describe: 'Follows the player (smoothing, look-ahead, dead zone, the level\'s edges)', requires: [], provides: ['camera:follow'], pointsTo: { code: 'runtime/camera.ts CameraController', movesIn: 'F5' } });
 
 // ---------------------------------------------------------------- kits (today's starter sets)

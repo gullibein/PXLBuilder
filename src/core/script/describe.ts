@@ -192,6 +192,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`complete the level${s.by ? ` (won by ${x(s.by)})` : ''}`);
     case 'camera_shake':
       return one(`shake the screen (${x(s.strength)}) for ${x(s.seconds)} s`);
+    case 'dig':
+      return one(`dig out the ${s.tag} tile at ${x(s.x)}, ${x(s.y)} for ${x(s.seconds)} s`);
     case 'menu':
       return one(`show a menu: ${s.items.map((i) => i.replace(/^-/, '')).join(' / ')}${s.title ? ` ("${s.title}")` : ''}`);
     case 'close_menu':

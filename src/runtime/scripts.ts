@@ -792,6 +792,9 @@ export class ScriptSystem {
       case 'camera_shake':
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
         break;
+      case 'dig':
+        this.rt.dig(n(s.x), n(s.y), n(s.seconds), s.tag);
+        break;
       case 'menu': {
         const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
         this.rt.kit.openMenu(e, s.items.map(fill), s.title ? fill(s.title).replace(/\\n/g, '\n') : '', s.cancel, s.at);
@@ -1369,6 +1372,10 @@ export class ScriptSystem {
         return this.rt.fog ? this.rt.fog.explores(n(0), n(1)) || this.rt.fog.sees(n(0), n(1)) : true;
       case 'grid_cell':
         return Math.floor(n(0) / CELL) * CELL + CELL / 2;
+      case 'dug_at':
+        return this.rt.dugAt(n(0), n(1));
+      case 'in_cell':
+        return this.rt.inCell(n(0), n(1), show(v[2]));
       case 'ladder_top':
         return this.rt.ladderHere(self)?.top ?? 0;
       case 'floor_below_ladder':

@@ -2,6 +2,7 @@
  * Scene renderer shared by the editor viewport and (later) the play-mode
  * runtime, so both draw the game identically.
  */
+import { rampOf, wholeRamp } from '../core/model/ramps';
 import { isoShapesOf } from '../core/model/isoShapes';
 import { getEntitySize } from '../core/model/geometry';
 import type { ResolvedEntity } from '../core/model/resolve';
@@ -801,7 +802,8 @@ export function drawEntities(
   const ramps = new Map<string, 1 | -1>();
   for (const e of near) {
     const shape = e.components.Collider?.shape;
-    if (shape === 'slopeRight' || shape === 'slopeLeft') ramps.set(`${Math.round(e.transform.position.x)}|${Math.round(e.transform.position.y)}`, shape === 'slopeRight' ? 1 : -1);
+    const ramp = rampOf(shape);
+    if (ramp) ramps.set(`${Math.round(e.transform.position.x)}|${Math.round(e.transform.position.y)}`, ramp.dir);
   }
   /** Whether the tile at (x, y) is joined on side (dx, dy): a tile of its kind there, or a ramp that carries it on. */
   const joined = (definitionId: string | null, x: number, y: number, dx: number, dy: number, sx: number, sy: number) => {
@@ -983,7 +985,7 @@ export function drawEntities(
       paint(0);
       const band = Math.round(Number(sprite.rampBand) || 0);
       const shape = entity.components.Collider?.shape;
-      if (band > 0 && source && (shape === 'slopeRight' || shape === 'slopeLeft') && rotation % 360 === 0) {
+      if (band > 0 && source && wholeRamp(shape) && rotation % 360 === 0) {
         const sz = imageSize(source);
         const sw = cell?.w ?? sz.w;
         const sh = cell?.h ?? sz.h;

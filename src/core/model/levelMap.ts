@@ -6,6 +6,7 @@
  * is the cell free, is there headroom above the platform, can the player get
  * there from a spot it already reaches.
  */
+import { rampOf, wholeRamp } from './ramps';
 import { onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
@@ -60,6 +61,8 @@ function markOf(r: ResolvedEntity, name: string): Mark {
   if (c.Liquid) return { ch: '~', rank: 4, what: c.Liquid.swim === false ? 'liquid (slows and sinks; not solid)' : 'water (swim in it: Jump strokes up; not solid)' };
   if (c.MovingPlatform) return { ch: '=', rank: 4, what: 'moving platform' };
   const solid = c.Collider && c.Collider.isTrigger !== true && c.PhysicsBody?.bodyType !== 'dynamic';
+  const ramp = solid ? rampOf(c.Collider.shape) : null;
+  if (ramp && !wholeRamp(c.Collider.shape)) return { ch: ramp.dir === 1 ? '/' : '\\', rank: 5, what: `gentle ramp (${ramp.lo ? 'upper' : 'lower'} half of a 2-square slope) rising to the ${ramp.dir === 1 ? 'right' : 'left'}` };
   if (solid && c.Collider.shape === 'slopeRight') return { ch: '/', rank: 5, what: 'ramp rising to the right (walk up and down it)' };
   if (solid && c.Collider.shape === 'slopeLeft') return { ch: '\\', rank: 5, what: 'ramp rising to the left (walk up and down it)' };
   if (solid && c.Collider.oneWay === true) return { ch: '-', rank: 5, what: 'jump-through platform (stand on it; jump up through it from below)' };

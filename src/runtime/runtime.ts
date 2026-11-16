@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { rampOf } from '../core/model/ramps';
 import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
 import { partsOf } from './parts';
 import { moverPath } from '../core/model/movingPath';
@@ -30,6 +31,8 @@ import { TurnKit } from './turns';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
 import { abilitiesFor, locomotionFor, motionStates, movementValues, type MotionSnapshot, type MovementHost } from './movement/index';
 import { DEFAULT_FRICTION } from './movement/grip';
+import { CollisionWorld } from './geometry/world';
+import type { Ladder } from './geometry/types';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
@@ -68,7 +71,7 @@ export interface RuntimeEntity {
   /** Collision box relative to the position (null: no collider). */
   /** oneWay: a jump-through platform (only its top holds, from above); slope: a ramp rising to the right (1) or left (-1). */
   /** ox, oy, hw, hh: the box it collides with (with parts: the box round them all). parts: a collider made of several boxes. */
-  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean; oneWay?: boolean; slope?: 1 | -1; parts?: { ox: number; oy: number; hw: number; hh: number }[] } | null;
+  collider: { ox: number; oy: number; hw: number; hh: number; trigger: boolean; oneWay?: boolean; slope?: 1 | -1; rise?: [number, number]; parts?: { ox: number; oy: number; hw: number; hh: number }[] } | null;
   controller: Controller | null;
   /** Ladders, vines…: things a character can climb. */
   climbable: boolean;
@@ -207,10 +210,10 @@ const FRICTION_DECEL = 1000;
 export { groundGrip } from './movement/grip';
 /** Seconds a spring shows its "sprung" look after it bounces something. */
 const SPRUNG_LOOK = 0.18;
-/** How much of a character must be inside a ladder (horizontally) to climb it. */
-const LADDER_GRIP = 0.5;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
+/** The grid squares cells (digging, boards) are counted in. */
+const CELL = 32;
 /** Isometric heights: the squares heights are looked up on, how high a mover steps up (half a block; a whole block up is a cliff), how fast. */
 const ISO_CELL = 32;
 const ISO_STEP = 8;
@@ -237,24 +240,7 @@ function zoneOf(e: RuntimeEntity): Box {
   return { x: e.x, y: e.y, hw: (size.x * Math.abs(scale.x)) / 2, hh: (size.y * Math.abs(scale.y)) / 2 };
 }
 
-export interface Ladder {
-  x: number;
-  hw: number;
-  top: number;
-  bottom: number;
-}
-
-/** Joins ladder pieces stacked directly on top of each other (same column) into ladders. */
-function ladderColumns(pieces: RuntimeEntity[]): Ladder[] {
-  const zones = pieces.map(zoneOf).sort((a, b) => a.x - b.x || a.y - b.y);
-  const ladders: Ladder[] = [];
-  for (const z of zones) {
-    const above = ladders.find((l) => Math.abs(l.x - z.x) < 1 && Math.abs(l.hw - z.hw) < 1 && z.y - z.hh <= l.bottom + 1 && z.y + z.hh > l.bottom);
-    if (above) above.bottom = Math.max(above.bottom, z.y + z.hh);
-    else ladders.push({ x: z.x, hw: z.hw, top: z.y - z.hh, bottom: z.y + z.hh });
-  }
-  return ladders;
-}
+export type { Ladder } from './geometry/types';
 
 /** Something a script drew on the screen (values already worked out). */
 export interface ScreenDrawing {
@@ -401,8 +387,9 @@ export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedE
     [w, h] = [Math.abs(w * cos) + Math.abs(h * sin), Math.abs(w * sin) + Math.abs(h * cos)];
     [ox, oy] = [ox * cos - oy * sin, ox * sin + oy * cos];
   }
-  const slope = col.shape === 'slopeRight' ? 1 : col.shape === 'slopeLeft' ? -1 : 0;
-  const base = { trigger: col.isTrigger === true, ...(col.oneWay === true && !slope ? { oneWay: true } : {}), ...(slope ? { slope: slope as 1 | -1 } : {}) };
+  const ramp = rampOf(col.shape);
+  const slope = ramp?.dir ?? 0;
+  const base = { trigger: col.isTrigger === true, ...(col.oneWay === true && !slope ? { oneWay: true } : {}), ...(ramp ? { slope: ramp.dir } : {}), ...(ramp && (ramp.lo !== 0 || ramp.hi !== 1) ? { rise: [ramp.lo, ramp.hi] as [number, number] } : {}) };
   // Several boxes (drawn in the sprite editor, or worked out from the picture's pixels): in the object's own pixels,
   // from its sprite's top-left corner; the collider is the box round them all, its parts the boxes.
   const list = col.shape === 'boxes' && Array.isArray(col.boxes) ? (col.boxes as { x: number; y: number; w: number; h: number }[]).filter((b) => b.w > 0 && b.h > 0) : [];
@@ -561,17 +548,10 @@ export class Runtime {
   /** Called for every logged event (the play recorder listens here; it survives restarts). */
   onLog: ((ev: LoggedEvent) => void) | null = null;
   private accumulator = 0;
-  /** Solids that never move: recomputed only when something opens, closes, appears or goes away. */
-  private staticSolids: Box[] = [];
+  /** Everything things collide with, and the questions asked of it (geometry/world.ts). */
+  readonly world = new CollisionWorld();
+  /** Recomputed only when something opens, closes, appears or goes away. */
   private solidsDirty = true;
-  /** Tops of ladders: one-way platforms. */
-  private ladderTops: Box[] = [];
-  /** Jump-through platforms that stay put (only their tops hold, from above). */
-  private oneWays: Box[] = [];
-  /** Ramps that stay put: their box and which way they rise (1 to the right, -1 to the left). */
-  private slopes: (Box & { dir: 1 | -1 })[] = [];
-  /** Ladders: unbroken vertical stacks of climbable pieces. A gap starts a new ladder. */
-  private ladders: Ladder[] = [];
   fallLimit = 0;
   /** Things below the fall line whose own script heard "fell_off" (once per fall). */
   private readonly fallen = new Set<RuntimeEntity>();
@@ -651,6 +631,7 @@ export class Runtime {
     this.kit = this.newKit();
     this.behaviors = new BehaviorSystem(this);
     this.scripts = new ScriptSystem(this, project);
+    this.world.watch(() => this.entities);
     this.load();
   }
 
@@ -715,6 +696,7 @@ export class Runtime {
     this.builtinHidden.add('hearts').add('items');
     this.paused = false;
     this.solidsDirty = true;
+    this.world.clearCells();
     this.rebuildLadders();
 
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
@@ -781,6 +763,8 @@ export class Runtime {
       return;
     }
     this.time += dt;
+    this.world.moved();
+    this.refillCells();
     // A won level stands still while "Level complete!" shows: nothing moves, the player can't be steered.
     // (With the built-in level end hidden, the game goes on: the scripts show their own and go on themselves.)
     if (this.completed !== null && !this.builtinHidden.has('level_end')) return;
@@ -833,12 +817,7 @@ export class Runtime {
       this.fogDirty = true;
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
       const fixed = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none'));
-      // (Jump-through platforms and ramps are surfaces of their own, not walls.)
-      // (A collider of several boxes: each of them is a wall or floor of its own.)
-      this.staticSolids = fixed.filter((e) => !e.collider!.oneWay && !e.collider!.slope).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
-      this.oneWays = fixed.filter((e) => e.collider!.oneWay).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
-      this.slopes = fixed.filter((e) => e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction, dir: e.collider!.slope! }));
-      this.rebuildLadders();
+      this.world.rebuild(fixed, this.ladderZones(), () => this.entities.filter((e) => e.pushable && this.isSolid(e)).map((e) => boxOf(e)!));
       this.solidsDirty = false;
     }
     // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
@@ -862,7 +841,7 @@ export class Runtime {
         if (this.isSolid(e)) (e.collider?.oneWay ? movingOneWays : kinematicSolids).push(...partsOf(e).map((b) => ({ ...b, friction: e.friction })));
       }
     }
-    const solids = kinematicSolids.length ? [...this.staticSolids, ...kinematicSolids] : this.staticSolids;
+    const solids = kinematicSolids.length ? [...this.world.staticSolids, ...kinematicSolids] : this.world.staticSolids;
     const pushables = this.entities.filter((e) => e.pushable && this.isSolid(e));
     // Liquids (water to swim in): what each moving thing's middle is in.
     const liquids = this.entities.filter((e) => e.liquid && e.alive && e.collider);
@@ -931,15 +910,15 @@ export class Runtime {
         const base = others.length ? [...solids, ...others] : solids;
         // Jump-through platforms hold it only from above (not while it drops through them).
         if (e.dropThrough > 0) e.dropThrough = Math.max(0, e.dropThrough - dt);
-        const tops = e.dropThrough > 0 ? [] : [...this.oneWays, ...movingOneWays].filter((t) => prevBottom <= t.y - t.hh + 0.01);
-        let surfaces = e.climbing ? base : [...base, ...this.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01), ...tops];
+        const tops = e.dropThrough > 0 ? [] : [...this.world.oneWays, ...movingOneWays].filter((t) => prevBottom <= t.y - t.hh + 0.01);
+        let surfaces = e.climbing ? base : [...base, ...this.world.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01), ...tops];
         // Isometric: ground more than a block above it is a wall to it.
         const iso = this.cam.camera.iso === true;
         if (iso) surfaces = [...surfaces, ...this.cliffsAround(e).map((b) => ({ ...b, friction: DEFAULT_FRICTION }))];
         const goingDown = e.vy > 0;
         // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at the
         // top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
-        if (this.slopes.length && !e.climbing) surfaces = this.besideRamps(box, surfaces);
+        if (this.world.slopes.length && !e.climbing) surfaces = this.besideRamps(box, surfaces);
         const rising = e.vy < 0;
         const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
         e.x = r.x - e.collider!.ox;
@@ -954,7 +933,7 @@ export class Runtime {
         // Ramps: its feet (under its middle) go on the ramp's surface.
         const wasOnSlope = e.onSlope;
         e.onSlope = false;
-        if (this.slopes.length && !e.climbing && !e.hanging && !this.floats(e)) {
+        if (this.world.slopes.length && !e.climbing && !e.hanging && !this.floats(e)) {
           const ramp = this.onRamp(e, prevBottom, wasOnSlope || e.grounded || (groundedBefore && e.vy >= 0), dt);
           if (ramp) {
             e.y = ramp.y;
@@ -1034,9 +1013,56 @@ export class Runtime {
   /** Something opened, closed, appeared or went away. */
   /** Ladders in play (a hidden ladder can't be climbed or stood on until it appears). */
   private rebuildLadders(): void {
-    this.ladders = ladderColumns(this.entities.filter((e) => e.climbable && e.alive));
-    // The top of each ladder is a one-way platform you can stand on and climb down from.
-    this.ladderTops = this.ladders.map((l) => ({ x: l.x, y: l.top + 1, hw: l.hw, hh: 1 }));
+    this.world.rebuildLadders(this.ladderZones());
+  }
+
+  private ladderZones(): Box[] {
+    return this.entities.filter((e) => e.climbable && e.alive).map(zoneOf);
+  }
+
+  /**
+   * Digs out the tile (tagged `tag`, standing still and solid) in the grid square at (x, y): it is gone (not solid, not
+   * drawn) for `seconds` (≤ 0: for good), then fills in again, and whatever moving thing is inside it then is trapped
+   * (it dies: a character comes back at its start, anything else is gone). Returns whether a tile was dug.
+   */
+  dig(x: number, y: number, seconds: number, tag: string): boolean {
+    const col = Math.floor(x / CELL);
+    const row = Math.floor(y / CELL);
+    if (this.world.isDug(col, row)) return false;
+    const tile = this.entities.find((o) => o.alive && o.tags.includes(tag) && this.isSolid(o) && o.body !== 'dynamic' && !o.pushable && Math.floor(o.x / CELL) === col && Math.floor(o.y / CELL) === row);
+    if (!tile) return false;
+    tile.alive = false;
+    this.world.markDug(col, row, tile.base.id, seconds > 0 ? this.time + seconds : Infinity);
+    this.markSolidsDirty();
+    return true;
+  }
+
+  /** Whether the tile in the grid square at (x, y) is dug out now. */
+  dugAt(x: number, y: number): boolean {
+    return this.world.isDug(Math.floor(x / CELL), Math.floor(y / CELL));
+  }
+
+  /** Something tagged `tag` is in the grid square at (x, y) (its middle in it). */
+  inCell(x: number, y: number, tag: string): boolean {
+    return this.world.hasIn(Math.floor(x / CELL), Math.floor(y / CELL), tag);
+  }
+
+  private refillCells(): void {
+    for (const { id } of this.world.refills(this.time)) {
+      const tile = this.entities.find((o) => o.base.id === id);
+      if (!tile) continue;
+      tile.alive = true;
+      this.markSolidsDirty();
+      const box = boxOf(tile)!;
+      for (const o of this.entities) {
+        if (o === tile || !o.alive || o.body !== 'dynamic' || o.pushable || !o.collider || o.collider.trigger) continue;
+        const ob = boxOf(o)!;
+        // (Its middle inside the tile: caught in the hole, not just brushing its edge.)
+        if (Math.abs(ob.x - box.x) >= box.hw || Math.abs(ob.y - box.y) >= box.hh) continue;
+        // (Dies as a hit that ends its health does: "died", the death look, back at the start for a character.)
+        this.gameplay.die(o, tile);
+      }
+    }
   }
 
   markSolidsDirty(): void {
@@ -1350,8 +1376,7 @@ export class Runtime {
   private wallBeside(e: RuntimeEntity, dir: 1 | -1): boolean {
     const box = boxOf(e);
     if (!box) return false;
-    const probe: Box = { x: box.x + dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh * 0.6 };
-    return this.staticSolids.some((s) => overlaps(probe, s));
+    return this.world.wallBeside(box, dir);
   }
 
   /** Gravity pulls it this step (an ability may hold it off: a dash). */
@@ -1435,14 +1460,14 @@ export class Runtime {
     if (!box) return;
     const face = box.x + dir * box.hw;
     const myTop = box.y - box.hh;
-    for (const s of this.staticSolids) {
+    for (const s of this.world.staticSolids) {
       const wallFace = dir > 0 ? s.x - s.hw : s.x + s.hw;
       if (Math.abs(face - wallFace) > 2) continue;
       const top = s.y - s.hh;
       if (top < myTop - 4 || top > myTop + 14) continue;
       // Room to stand on top of the ledge (also rules out the seam between two stacked tiles).
       const above: Box = { x: wallFace + dir * (box.hw + 1), y: top - box.hh - 0.5, hw: box.hw, hh: box.hh - 0.5 };
-      if (this.staticSolids.some((o) => overlaps(above, o))) continue;
+      if (this.world.staticSolids.some((o) => overlaps(above, o))) continue;
       e.hanging = { side: dir, top, edgeX: wallFace };
       e.y += top - 2 - myTop;
       e.vx = 0;
@@ -1474,8 +1499,7 @@ export class Runtime {
 
   /** Solids (walls, floors, and pushable things where they are now), for behaviors and shots looking at what is in the way. */
   get solids(): readonly Box[] {
-    const pushed = this.entities.filter((e) => e.pushable && this.isSolid(e));
-    return pushed.length ? [...this.staticSolids, ...pushed.map((e) => boxOf(e)!)] : this.staticSolids;
+    return this.world.solids;
   }
 
   /**
@@ -1492,7 +1516,7 @@ export class Runtime {
     if (!mine.length) return share;
     const blockers = (p: RuntimeEntity) => [
       // (A crate on a ramp is pushed on up it: the ground at the ramp's top is no wall to it.)
-      ...(this.slopes.length ? this.besideRamps(boxOf(p)!, [...walls]) : walls),
+      ...(this.world.slopes.length ? this.besideRamps(boxOf(p)!, [...walls]) : walls),
       ...pushables.filter((o) => o !== p).map((o) => boxOf(o)!),
       // Other moving solid things (characters, enemies) are in the way too, but not the pusher.
       ...this.entities.filter((o) => o !== p && o !== e && o.alive && o.body === 'dynamic' && !o.pushable && o.collider && !o.collider.trigger).map((o) => boxOf(o)!),
@@ -1574,18 +1598,7 @@ export class Runtime {
    * the body no lower than its bottom.
    */
   private ladderAt(e: RuntimeEntity): Ladder | null {
-    const me = zoneOf(e);
-    const feet = me.y + me.hh;
-    let best: Ladder | null = null;
-    let bestInside = -1;
-    for (const l of this.ladders) {
-      const inside = Math.min(me.x + me.hw, l.x + l.hw) - Math.max(me.x - me.hw, l.x - l.hw);
-      if (inside >= LADDER_GRIP * me.hw * 2 - 1e-6 && inside > bestInside && feet >= l.top - 1 && me.y <= l.bottom) {
-        best = l;
-        bestInside = inside;
-      }
-    }
-    return best;
+    return this.world.ladderAt(zoneOf(e));
   }
 
   /**
@@ -1687,7 +1700,7 @@ export class Runtime {
     e.crawl ??= { path: [], planned: -Infinity, falling: false, from: null, ambush: null };
     const world: CrawlWorld = {
       solidAt: (x, y) => this.solids.some((b) => Math.abs(x - b.x) < b.hw && Math.abs(y - b.y) < b.hh),
-      ladderAt: (x, y) => this.ladders.some((l) => Math.abs(x - l.x) < l.hw && y > l.top && y < l.bottom),
+      ladderAt: (x, y) => this.world.ladders.some((l) => Math.abs(x - l.x) < l.hw && y > l.top && y < l.bottom),
       canSee: (a, b) => this.canSee(a, b),
       random: () => this.random(),
       time: this.time,
@@ -1705,7 +1718,7 @@ export class Runtime {
   onJumpThrough(e: RuntimeEntity): boolean {
     const box = boxOf(e);
     if (!box) return false;
-    return standingOn(box, this.oneWays) && !standingOn(box, this.solids);
+    return this.world.onJumpThrough(box);
   }
 
   /** `e` (moving up) hit its head: the solid most squarely above it hears it ("hit_from_below"). */
@@ -1731,20 +1744,7 @@ export class Runtime {
    * neither stops it nor holds it up, nor does any low edge it walks over; walls do.
    */
   besideRamps<T extends Box>(box: Box, surfaces: T[]): T[] {
-    const bottom = box.y + box.hh;
-    const under = this.slopes.filter((s) => Math.abs(box.x - s.x) <= s.hw && bottom >= s.y - s.hh - 2 && bottom <= s.y + s.hh + 2);
-    if (!under.length) return surfaces;
-    return surfaces.filter((o) => {
-      // (Under its middle: the floor it is on.)
-      if (o.x - o.hw <= box.x && o.x + o.hw >= box.x) return true;
-      const top = o.y - o.hh;
-      if (top > bottom + 0.5) return true;
-      for (const s of under) {
-        const next = Math.abs(o.x - o.hw - (s.x + s.hw)) < 1 || Math.abs(o.x + o.hw - (s.x - s.hw)) < 1;
-        if (next && (Math.abs(top - (s.y - s.hh)) < 1.5 || Math.abs(top - (s.y + s.hh)) < 1.5)) return false;
-      }
-      return top < bottom - box.hw - 1;
-    });
+    return this.world.besideRamps(box, surfaces);
   }
 
   /**
@@ -1754,21 +1754,9 @@ export class Runtime {
    */
   private onRamp(e: RuntimeEntity, prevBottom: number, stick: boolean, dt: number): { y: number; friction?: number } | null {
     const box = boxOf(e);
-    if (!box || e.vy < 0) return null;
-    const bottom = box.y + box.hh;
-    let best: { surf: number; s: Box } | null = null;
-    for (const s of this.slopes) {
-      // (A little past its ends too, level with them: no hop where it meets the ground.)
-      if (Math.abs(box.x - s.x) > s.hw + box.hw / 2) continue;
-      // Rising to the right: low at its left edge (its bottom), high at its right edge (its top).
-      const t = Math.max(0, Math.min(1, (box.x - (s.x - s.hw)) / (2 * s.hw)));
-      const surf = s.y + s.hh - (s.dir === 1 ? t : 1 - t) * 2 * s.hh;
-      const reach = stick ? Math.abs(e.vx) * dt + 4 : 0;
-      if (bottom < surf - reach || bottom > s.y + s.hh + 1) continue;
-      if (!stick && prevBottom > surf + Math.max(4, e.vy * dt) + 1) continue;
-      if (!best || surf < best.surf) best = { surf, s };
-    }
-    return best ? { y: best.surf - box.hh - (e.collider?.oy ?? 0), friction: best.s.friction } : null;
+    if (!box) return null;
+    const r = this.world.rampUnder(box, e.vx, e.vy, prevBottom, stick, dt);
+    return r ? { y: r.surf - box.hh - (e.collider?.oy ?? 0), friction: r.friction } : null;
   }
 
   /** A wall right in front of it that way (sideways, or up/down): the box a patroller turns at. */
@@ -1836,7 +1824,7 @@ export class Runtime {
 
   /** Floor under this box: something solid, or the top of a ladder. */
   floorIn(box: Box): boolean {
-    return this.solids.some((s) => overlaps(box, s)) || this.ladderTops.some((t) => overlaps(box, t)) || this.oneWays.some((t) => overlaps(box, t)) || this.slopes.some((t) => overlaps(box, t));
+    return this.world.floorIn(box);
   }
 
   /** Whether a character is on a ladder it could climb (or is climbing one). */
@@ -1865,7 +1853,7 @@ export class Runtime {
     const here = this.ladderAt(e);
     if (here && (want < 0 ? feet > here.top + 0.5 : !this.isOnFloorBelowLadder(e) && feet < here.bottom - 0.5)) return { climb: want };
     let best: Ladder | null = null;
-    for (const l of this.ladders) {
+    for (const l of this.world.ladders) {
       // Up: a ladder reaching this floor and going higher. Down: one whose top is this floor.
       const ok = want < 0 ? l.top < feet - 1 && l.bottom >= feet - 1 : l.top <= feet + 2 && l.bottom > feet + 1;
       if (ok && (!best || Math.abs(l.x - e.x) < Math.abs(best.x - e.x))) best = l;
@@ -1875,7 +1863,7 @@ export class Runtime {
 
   /** Standing on solid ground with the ladder going up: pressing down shouldn't start a climb into the floor. */
   private isOnFloorBelowLadder(e: RuntimeEntity): boolean {
-    return e.grounded && !this.ladderTops.some((t) => standingOn(boxOf(e)!, [t]));
+    return e.grounded && this.world.standingOffLadder(boxOf(e)!);
   }
 
   /**

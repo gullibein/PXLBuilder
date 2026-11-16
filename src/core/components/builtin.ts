@@ -138,10 +138,10 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'Collider',
     label: 'Collider',
     description:
-      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (thin bridges, planks, mushroom caps, cloud platforms): things land on its top from above, jump up through it from below and walk through its sides; Down + Jump drops the player through it. Its Collider just the drawn top rows of its 32x32 square (e.g. 32x8, offset 0,-12). shape slopeRight / slopeLeft: a 45 degree ramp filling its square, rising to the right / to the left (◢ / ◣): characters and enemies walk up and down it.',
+      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (bridges, planks, clouds): things land on it from above, jump up through it and walk through its sides; Down + Jump drops through. Its Collider just its drawn top rows (e.g. 32x8, offset 0,-12). shape slopeRight / slopeLeft: a 45° ramp filling its square, rising to the right / left (◢ / ◣): walked up and down. slopeRightLow + slopeRightHigh (or Left): a gentle slope over two squares.',
     category: 'Physics',
     fields: {
-      shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft', 'boxes'], default: 'box', description: 'box, circle, a ramp (slopeRight rises to the right ◢, slopeLeft to the left ◣), or boxes: several boxes (the boxes field), drawn in the sprite editor or worked out from the picture\'s pixels' },
+      shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft', 'slopeRightLow', 'slopeRightHigh', 'slopeLeftLow', 'slopeLeftHigh', 'boxes'], default: 'box', description: 'box, circle, a ramp (above), or boxes: several boxes (the boxes field), drawn in the sprite editor or worked out from the picture\'s pixels' },
       size: { kind: 'vec2', default: { x: 32, y: 32 }, description: 'Box size, or circle diameter in x' },
       offset: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Offset from the entity position' },
       isTrigger: { kind: 'boolean', default: false },

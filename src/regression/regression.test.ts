@@ -16,6 +16,7 @@ import { drMario, tetris } from './games/boards';
 import { mapLevel, marioLevel } from './games/platformers';
 import { body, cellsOf, Player, varOf, withSeed } from './harness';
 import { playPrecision, precisionRoom } from './games/precision';
+import { DIG_CELL, digRoom, playDig, REFILL_SECONDS } from './games/digging';
 import { playScenario, SCENARIOS } from './movement';
 import { createHash } from 'node:crypto';
 
@@ -37,6 +38,8 @@ const GAMES: Record<string, string> = {
   'boulder dash': 'd2262247ae5688ad',
   // (Recorded at F2, when its abilities came in: a baseline for later stages.)
   'celeste-inspired': 'd370c109c9930a7b',
+  // (Recorded at F3, when cells that can be dug came in.)
+  'lode-runner-inspired': '49e7d607b8436a97',
 };
 const MOVES: Record<string, string> = {
   'run and stop': '0de2962d62f36cc2',
@@ -103,6 +106,9 @@ describe('cross-genre regression suite: every family still plays, frame for fram
       // The row filled and cleared; the block above it (column 2, row 18) dropped into row 19.
       expect(varOf(board(), 'cleared')).toBe(1);
       expect(cellsOf(rt, 'locked')).toContain('2,19');
+      // (The board read through the geometry's cells, as boards can: the same squares.)
+      for (const c of cellsOf(rt, 'locked')) expect(rt.inCell(Number(c.split(',')[0]) * 32 + 16, Number(c.split(',')[1]) * 32 + 16, 'locked'), c).toBe(true);
+      expect(rt.inCell(2 * 32 + 16, 17 * 32 + 16, 'locked')).toBe(false);
       golden('tetris', pl.fingerprint(), GAMES.tetris);
     });
   });
@@ -201,6 +207,23 @@ describe('cross-genre regression suite: every family still plays, frame for fram
       expect(outcome(['wall_jump'])).toMatchObject({ won: false, died: true });
       expect(outcome([])).toMatchObject({ won: false, died: true });
       golden('celeste-inspired', both.fingerprint, GAMES['celeste-inspired']);
+    });
+  });
+
+  it('Lode Runner-inspired: Fire digs the brick ahead and down; a guard walks into the hole, and is caught when the brick fills in; the way on is clear', () => {
+    withSeed(9, () => {
+      const p = digRoom(registry);
+      const rt = new Runtime(p, p.startSceneId, registry);
+      const pl = new Player(rt);
+      const guard = () => rt.entities.find((e) => e.tags.includes('enemy'));
+      const hole = { x: DIG_CELL.col * 32 + 16, y: DIG_CELL.row * 32 + 16 };
+      const r = playDig(rt, pl, 15, (r) => [body(r.entities.find((e) => e.controller)), body(guard()), guard()?.alive ? 1 : 0, r.dugAt(hole.x, hole.y) ? 1 : 0]);
+      expect(r).toEqual({ won: true, trapped: true, died: false });
+      // (Dug, the hole stayed open its seconds; the guard fell into it, and was caught where the brick came back.)
+      expect(rt.dugAt(hole.x, hole.y)).toBe(false);
+      expect(Math.floor(guard()!.y / 32)).toBe(DIG_CELL.row);
+      expect(pl.time).toBeGreaterThan(REFILL_SECONDS);
+      golden('lode-runner-inspired', pl.fingerprint(), GAMES['lode-runner-inspired']);
     });
   });
 

@@ -1086,3 +1086,36 @@ Each declares in the module registry what it requires: `locomotion:arcade`. The 
 - **F5:** the camera doesn't read the motion snapshot yet.
 - **Animation:** `SpriteStates` situations don't yet include `dash` or `wallSlide` looks.
 - **Profile systems:** time, geometry, camera and progression are still recorded but not yet acted on (as after F1).
+
+### F3 — done (awaiting review before F4)
+
+**What moved, and what is new:**
+
+| Piece | Where | What it is |
+|---|---|---|
+| Geometry interface | `runtime/geometry/types.ts` | `GeometryQuery` (`solidAt`, `probe`, `wallBeside`, `cell`, `version`), `Surface` (point, normal, angle, curvature, kind, friction), `Slope` (a ramp of any rise: `lo`→`hi` of its square), `Ladder`, `CellInfo` |
+| Collision world | `runtime/geometry/world.ts` | `CollisionWorld`: the shape lists (walls and floors, jump-through tops, slopes, ladders and their tops) moved out of the runtime with every question asked of them: the rebuild, `besideRamps`, `rampUnder` (was `onRamp`), `ladderAt`, `floorIn`, `onJumpThrough`, `wallBeside`, `solids`, `sweep` (`moveAndCollide` behind the interface). New: `probe`, cells |
+| Runtime | `runtime.ts` | `this.world`; the runtime's collision methods are now one-line calls into it; the movement host answers through it |
+| Ramp shapes | `core/model/ramps.ts` | `rampOf(shape)`: each ramp shape's direction and rise, read by the runtime, renderer, level map, level solver, roles and level ideas (no more `shape === 'slopeRight'` checks there) |
+| Gentle slopes | Collider shapes `slopeRightLow`, `slopeRightHigh`, `slopeLeftLow`, `slopeLeftHigh` | Half a square up per square (26.6°); a Low and a High side by side make a slope two squares long. The solver walks ramps that carry on from each other as one slope |
+| Cells | `world.cell(col, row)`, `world.hasIn` | A grid square: solid or not, dug or not (until when), and the tags of what is in it. Boards (falling blocks, matching) can ask a square instead of searching every object |
+| Digging | `Runtime.dig`, statement `dig`, functions `dug_at`, `in_cell` (topics `digging`, `falling_blocks`) | A tile tagged `diggable` is dug out for some seconds (not solid, not drawn), then fills in; whatever is inside dies (a character comes back at its start) |
+| Profile | `engine/modules.ts`, `engine/presets.ts` | Geometry modules `box`, `one_way`, `ramp` (v2: gentle slopes too) no longer point to old code; new module `cells` (any view), in every preset |
+| Regression | `regression/games/digging.ts` | **Lode Runner-inspired**: the player digs as a guard walks at it, the guard falls in and dies when the brick fills in, the player walks over it to the goal (golden `49e7d607b8436a97`) |
+
+**Unchanged:** every F1 and F2 golden (8 games, 17 movements, 5 starters, 3 levels), every existing unit and browser test.
+
+**Decisions to review:**
+1. **Gentle slopes are new ramp shapes, not a new Collider field.** Every Collider stores every field, so a new field would change every saved game and every starter. New enum values change nothing that exists. All ramp checks now go through `rampOf`, so adding a shape (a third of a square, say) is one table entry.
+2. **The collision world keeps boxes and straight slopes.** Curved ground (loops, quarter pipes) is the height-profile geometry of slice V3 (Sonic). It goes behind the same `probe`, whose `Surface.curvature` is 0 until then.
+3. **`probe` marches the ray in half-pixel steps.** That is exact enough for sensors (the hit point is put back on the face), simple, and fine for a few probes a frame. A real raycast replaces it if profiling ever asks.
+4. **Digging lives in cells, not in the tile objects.** A dug tile is taken out of play (as a switch does) and the world remembers which square is dug and until when. A switch or rule that brings the same tile back early is not prevented.
+5. **A hole that fills in kills what it traps through the ordinary `die`** ("died" event, death look, respawn delay), so games react as to any death.
+6. **`cells` is in every preset's geometry.** It costs nothing until asked. The profile's geometry list is still a declaration: the world answers every shape whatever the list says (as after F1 and F2 for systems not yet driven by the profile).
+
+**What still depends on old code** (for the coming stages):
+- **F4:** the route solver and the route bot know nothing of digging, wall jumps or dashes. The level solver (`reachability.ts`) still reads the level's objects itself, not the collision world. Its ramp chains are new, but it doesn't use `probe`.
+- **The level generator** places only 45° ramps. Gentle slopes are made by hand or by the AI.
+- **Ramp looks:** the ground-matching ramp drawing (`rampBand`) is for 45° ramps only. A gentle ramp is drawn by its own sprite.
+- **Scripts' own searches** (`fits`, `count_in`, `thing_at`) keep their spatial index. Boards may use `in_cell`; the regression boards still use the old functions, so their goldens stay identical.
+- **Isometric heights** (`isoGround`) and the top-down crawler (`crawl.ts`) still compute their own squares rather than asking `world.cell`.

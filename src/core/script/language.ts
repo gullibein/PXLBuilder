@@ -123,6 +123,7 @@ export type Stmt =
   | { do: 'set_music'; enabled: string }
   | { do: 'complete_level'; by?: string | null }
   | { do: 'camera_shake'; strength: string; seconds: string }
+  | { do: 'dig'; x: string; y: string; seconds: string; tag: string }
   | { do: 'flip_level'; way: 'upside_down' | 'left_right'; at: string | null; seconds: string; wave: string }
   | { do: 'menu'; items: string[]; title: string | null; cancel: boolean; at: Exclude<DrawAnchor, 'world'> }
   | { do: 'kit_style'; menu_color?: string | null; menu_border?: string | null; menu_text?: string | null; menu_title?: string | null; menu_greyed?: string | null; menu_selected?: string | null; menu_size?: string | null; pointer?: string | null; pointer_color?: string | null; cursor_color?: string | null; cursor_style?: string | null; highlight_alpha?: string | null; popup_size?: string | null; popup_rise?: string | null; popup_seconds?: string | null; popup_style?: string | null; banner?: string | null; banner_seconds?: string | null; banner_color?: string | null; banner_size?: string | null }
@@ -346,6 +347,8 @@ export const FUNCTIONS: Record<string, FunctionInfo> = {
   sees_square: { args: 'x, y', min: 2, max: 2, doc: 'the fog-of-war viewer sees the square at x, y right now (true everywhere without fog)' },
   explored_square: { args: 'x, y', min: 2, max: 2, doc: 'the square at x, y has been seen (now or before) or revealed (true everywhere without fog)' },
   grid_cell: { args: 'v', min: 1, max: 1, doc: 'the middle of the grid square that x (or y) v is in: grid_cell(self.x)' },
+  dug_at: { args: 'x, y', min: 2, max: 2, doc: 'the tile in the square at x, y is dug out now (see dig)' },
+  in_cell: { args: 'x, y, tag', min: 3, max: 3, doc: 'something tagged tag is in the grid square at x, y (its middle in it): a board\'s cells' },
   ladder_top: { args: '', min: 0, max: 0, doc: 'the y of the top of the ladder it is at (0 when there is none): compare self.feet with it' },
   floor_below_ladder: { args: '', min: 0, max: 0, doc: 'it stands on the floor (not on a ladder top): Down there does not climb' },
   inside: { args: 'e', min: 1, max: 1, doc: 'the middle of e is inside self\'s body (standing on it, seen from above: not just brushing its edge)' },
@@ -482,6 +485,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   set_music: { example: '{"do":"set_music","enabled":"not music_on"}', doc: 'music on (true) or off (false) for the whole game (it goes on silently, so it comes back where it is); "music_on" tells which' },
   complete_level: { example: '{"do":"complete_level","by":"other"}', doc: 'the level is won: play goes on to the next level; "by": who won it ("level_completed" happens with it as the subject; null: this entity)' },
   camera_shake: { example: '{"do":"camera_shake","strength":"8","seconds":"0.4"}', doc: 'shake the screen (px, fading out)' },
+  dig: { example: '{"do":"dig","x":"self.x + self.facing * 32","y":"self.y + 32","seconds":"4","tag":"diggable"}', doc: 'digs out the tile tagged tag in the grid square at x, y for seconds (0: for good); filling in, what is inside dies (a character comes back at its start). dug_at(x, y) tells' },
   menu: {
     example: '{"do":"menu","items":["Move","Attack","-Magic","Wait"],"title":null,"cancel":true,"at":"bottom_left"}',
     doc: 'a menu box on the screen (one at a time; this entity owns it): up/down pick, X, Space or E choose, Esc goes back when cancel is true. Then its "menu_chosen" event handlers run (menu_choice: the item\'s text, menu_choice_number: which), or "menu_cancelled". An item starting with "-" is shown greyed and can\'t be chosen (done already). title: a line (or lines, \\n) above the items: also a talk box or question ("Join us?" with Yes / No). {expression} in items and title shows a value. The arrow and action keys only work the menu while it is up',
@@ -688,6 +692,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('set_music'), enabled: expr }),
     z.object({ do: z.literal('complete_level'), by: nexpr.optional() }),
     z.object({ do: z.literal('camera_shake'), strength: expr.default('6'), seconds: expr.default('0.4') }),
+    z.object({ do: z.literal('dig'), x: expr, y: expr, seconds: expr.default('4'), tag: z.string().min(1).default('diggable') }),
     z.object({ do: z.literal('menu'), items: z.array(z.string().min(1).max(120)).min(1).max(12), title: z.string().max(300).nullable().default(null), cancel: z.boolean().default(true), at: z.enum(DRAW_ANCHORS.filter((a) => a !== 'world') as [Exclude<DrawAnchor, 'world'>, ...Exclude<DrawAnchor, 'world'>[]]).default('bottom_left') }),
     z.object({ do: z.literal('kit_style'), menu_color: z.string().max(30).nullable().optional(), menu_border: z.string().max(30).nullable().optional(), menu_text: z.string().max(30).nullable().optional(), menu_title: z.string().max(30).nullable().optional(), menu_greyed: z.string().max(30).nullable().optional(), menu_selected: z.string().max(30).nullable().optional(), menu_size: expr.nullable().optional(), pointer: z.string().max(60).nullable().optional(), pointer_color: z.string().max(30).nullable().optional(), cursor_color: z.string().max(30).nullable().optional(), cursor_style: z.string().max(30).nullable().optional(), highlight_alpha: expr.nullable().optional(), popup_size: expr.nullable().optional(), popup_rise: expr.nullable().optional(), popup_seconds: expr.nullable().optional(), popup_style: z.string().max(30).nullable().optional(), banner: z.string().max(60).nullable().optional(), banner_seconds: expr.nullable().optional(), banner_color: z.string().max(30).nullable().optional(), banner_size: expr.nullable().optional() }),
     z.object({ do: z.literal('set_game'), var: z.string().min(1).max(60), value: expr }),
@@ -901,6 +906,8 @@ export function exprSlots(s: Stmt): string[] {
       return [];
     case 'camera_shake':
       return [s.strength, s.seconds];
+    case 'dig':
+      return [s.x, s.y, s.seconds];
     case 'flip_level':
       return [...(s.at ? [s.at] : []), s.seconds, s.wave];
     case 'menu':
@@ -1105,7 +1112,8 @@ export const SCRIPT_TOPICS: Record<string, { statements: string[]; functions: st
     functions: ['room_count', 'room_x', 'room_y', 'room_w', 'room_h', 'sees_square', 'explored_square'],
     names: ['dungeon_seed', 'fog_radius'],
   },
-  falling_blocks: { statements: ['move_group', 'turn_group'], functions: ['fits', 'fits_turned', 'count_in'], names: [] },
+  falling_blocks: { statements: ['move_group', 'turn_group'], functions: ['fits', 'fits_turned', 'count_in', 'in_cell'], names: [] },
+  digging: { statements: ['dig'], functions: ['dug_at'], names: [] },
   enemies: { statements: ['crawl'], functions: [], names: [] },
   levels: { statements: ['flip_level'], functions: [], names: ['level_flipping', 'level_flipped'] },
 };

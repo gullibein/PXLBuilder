@@ -7,6 +7,7 @@
  * other levels, so a new level is something else. The AI follows the idea
  * unless the user asked for something specific.
  */
+import { rampOf } from '../model/ramps';
 import type { ComponentRegistry } from '../components/registry';
 import { getEntitySize } from '../model/geometry';
 import { resolveEntity, type ResolvedEntity } from '../model/resolve';
@@ -183,7 +184,7 @@ export function levelStats(project: Project, scene: Scene, registry: ComponentRe
   const hurts = (r: ResolvedEntity) => r.scripts.some((sc) => JSON.stringify(sc.handlers).includes('"damage"') && sc.handlers.some((h) => h.when.on === 'contact'));
   const pieces: [string, boolean][] = [
     ['ladders', has((r) => r.components.Climbable)],
-    ['ramps', has((r) => r.components.Collider?.shape === 'slopeRight' || r.components.Collider?.shape === 'slopeLeft')],
+    ['ramps', has((r) => !!rampOf(r.components.Collider?.shape))],
     ['jump-through platforms', has((r) => r.components.Collider?.oneWay === true)],
     ['water to swim', has((r) => r.components.Liquid && r.components.Liquid.swim !== false)],
     ['lava', has((r) => r.components.Liquid && r.components.Liquid.swim === false)],

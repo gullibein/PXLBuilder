@@ -10,6 +10,7 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
+import { rampOf } from './ramps';
 import { hurtsOnTouch, onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
@@ -235,19 +236,39 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
     i += pieces.length - 1;
   }
 
-  // Ramps: walked up and down, from the ground at the foot to the ground at the top (whatever the jump).
+  // Ramps: walked up and down, from the ground at the foot to the ground at the top (whatever the jump). Ramps that
+  // carry on from each other (a gentle slope's lower and upper halves; ramps stacked up a hill) are walked as one.
   const rampLinks: [number, number][] = [];
+  const ends = new Map<string, string>();
+  const root = (k: string): string => {
+    let r = k;
+    while (ends.get(r) !== r) r = ends.get(r)!;
+    ends.set(k, r);
+    return r;
+  };
+  const endKey = (x: number, y: number) => `${Math.round(x)},${Math.round(y)}`;
+  const rampEnds: { x: number; y: number }[] = [];
   for (const r of solids) {
-    const shape = r.components.Collider?.shape;
-    if (shape !== 'slopeRight' && shape !== 'slopeLeft') continue;
+    const ramp = rampOf(r.components.Collider?.shape);
+    if (!ramp) continue;
     const b = boxOf(r);
-    const highX = shape === 'slopeRight' ? b.right : b.left;
-    const lowX = shape === 'slopeRight' ? b.left : b.right;
-    const near = (top: number, x: number) => spans.findIndex((s) => Math.abs(s.top - top) <= EDGE + 2 && x >= s.left - EDGE - 1 && x <= s.right + EDGE + 1);
-    const high = near(b.top, highX);
-    const low = near(b.bottom, lowX);
-    if (high >= 0 && low >= 0 && high !== low) rampLinks.push([low, high], [high, low]);
+    const h = b.bottom - b.top;
+    const lowEnd = { x: ramp.dir === 1 ? b.left : b.right, y: b.bottom - ramp.lo * h };
+    const highEnd = { x: ramp.dir === 1 ? b.right : b.left, y: b.bottom - ramp.hi * h };
+    const [k1, k2] = [endKey(lowEnd.x, lowEnd.y), endKey(highEnd.x, highEnd.y)];
+    for (const k of [k1, k2]) if (!ends.has(k)) ends.set(k, k);
+    ends.set(root(k1), root(k2));
+    rampEnds.push(lowEnd, highEnd);
   }
+  const groups = new Map<string, Set<number>>();
+  for (const p of rampEnds) {
+    const i = spans.findIndex((s) => Math.abs(s.top - p.y) <= EDGE + 2 && p.x >= s.left - EDGE - 1 && p.x <= s.right + EDGE + 1);
+    if (i < 0) continue;
+    const g = root(endKey(p.x, p.y));
+    if (!groups.has(g)) groups.set(g, new Set());
+    groups.get(g)!.add(i);
+  }
+  for (const set of groups.values()) for (const a of set) for (const c of set) if (a !== c) rampLinks.push([a, c]);
 
   // Water to swim in: from anywhere in a pool (its floor, ledges under water) up to the banks round its surface, and back.
   const pools: Box[] = [];
@@ -317,7 +338,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   }
   // What the head hits jumping up: solids that block from below (not jump-through platforms or ramps; doors count
   // as open: getting what opens them is checked on its own).
-  const ceilings = boxes.filter(({ r }) => !r.components.Openable && r.components.Collider?.oneWay !== true && r.components.Collider?.shape !== 'slopeRight' && r.components.Collider?.shape !== 'slopeLeft').map(({ b }) => b);
+  const ceilings = boxes.filter(({ r }) => !r.components.Openable && r.components.Collider?.oneWay !== true && !rampOf(r.components.Collider?.shape)).map(({ b }) => b);
   const blocked = (left: number, right: number, top: number, bottom: number) => left < right && top < bottom && ceilings.some((c) => c.left < right && c.right > left && c.top < bottom && c.bottom > top);
   /**
    * Jumping UP (or across, level) onto a surface takes room: somewhere on the floor to jump from with nothing just over the player's

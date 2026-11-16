@@ -7,6 +7,7 @@
  * An object is found by what it is (its components, its collider, its scripts), not by its name, so renamed and
  * redrawn objects still count. When several fit, the one placed most often in the game wins, then the starter's.
  */
+import { rampOf } from '../model/ramps';
 import type { ComponentRegistry } from '../components/registry';
 import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
@@ -65,7 +66,7 @@ const scriptNames = (d: ObjectDefinition) => (d.scripts ?? []).map((s) => s.name
 const collider = (i: Info) => i.c.Collider as { shape?: string; oneWay?: boolean; isTrigger?: boolean } | undefined;
 const solidBox = (i: Info) => {
   const col = collider(i);
-  return !!col && !col.isTrigger && !col.oneWay && (col.shape ?? 'box') !== 'slopeRight' && col.shape !== 'slopeLeft' && (i.c.PhysicsBody as { bodyType?: string } | undefined)?.bodyType !== 'dynamic';
+  return !!col && !col.isTrigger && !col.oneWay && !rampOf(col.shape) && (i.c.PhysicsBody as { bodyType?: string } | undefined)?.bodyType !== 'dynamic';
 };
 const hurts = (i: Info) => i.scripts.includes('Hurts on touch') || i.tags.includes('hazard');
 const moves = (i: Info) => !!(i.c.Patrol || i.c.Wander || i.c.MovingPlatform || i.c.Shooter) || i.scripts.some((s) => /walker|chaser|hopper|flyer|swooper/i.test(s));
