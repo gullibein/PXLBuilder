@@ -894,3 +894,163 @@ That is the "no new features, real work" part of the foundation: Mario and puzzl
 - **Kits added to an existing game:** objects that repeat a name or a part already in the game are left out. A kit taken away doesn't remove objects.
 - **Size:** the editor page grows by about 27 KB (3.571 → 3.598 MB). The exported player is unchanged in what it carries. A first build pulled every starter set into the player through the migration; recognising kits by name fixed it.
 - **AI cost:** the profile line adds about 230 characters to each request's context. The instructions sent with every request stay under their 120,000-character budget: the new operation's description was paid for by trimming wordy examples elsewhere.
+
+---
+
+# Part III: a general-purpose engine — principles, the cross-genre regression suite, and F2
+
+## 14. Principle: a general-purpose engine, with no regression in any genre
+
+Platformers are a test family, not the shape of the engine. These principles apply to **every** later stage:
+
+1. **No genre gets worse.** Games PXLBuilder already makes keep working as before:
+   - platformers;
+   - top-down adventures, RPGs, roguelikes, isometric games;
+   - space shooters;
+   - falling-block puzzles (Tetris, Columns, Dr. Mario);
+   - mining games (Motherload-like);
+   - grid physics puzzles (Boulder Dash-like).
+2. **No abstraction assumes a platformer.** Nothing may assume there is a player, that it walks on platforms, that there is gravity, or that levels are made of floors. Each system must allow "nothing of this kind here":
+   - **Movement:** many games have no engine-moved player at all. A Tetris board moves *groups* of blocks; a Boulder Dash hero steps a square at a time by script.
+   - **Time:** realtime, turns, or fixed ticks (`every 0.1 s` handlers).
+   - **Geometry:** boxes, or cells on a board.
+   - **Camera:** following, or still.
+   - **Level generation:** none (the AI or the user makes the board), or a random dungeon, or sections.
+3. **Fundamentally different games get their own implementations** where they need them, rather than being forced into shared shapes for uniformity. A falling-block game's movement *is* its script statements (`spawn … tag`, `fits`, `move_group`, `turn_group`, `count_in`). The profile names that model; it doesn't pretend the board is a character.
+4. **Refactoring a shared system means regression tests for every genre that depends on it.** In particular, the cross-genre regression suite (§15) runs unchanged before and after.
+5. **Representative games of every genre are in the golden and acceptance tests,** not only platformers.
+6. **The categories are kept under review.** Each stage asks whether the systems and interfaces still describe every game PXLBuilder makes.
+
+**How the games outside platformers are actually made today** (and so what the architecture must keep supporting):
+
+| Game | Made from | What "moves" it |
+|---|---|---|
+| Space shooter | Top-down starter; the ship's Shooter (key) and StayOnScreen; enemies with Health, Shooter (auto) and the ready-made Swooper script; moving stars | The top-down controls (the ship); scripts (enemy flights) |
+| Tetris / Columns / Dr. Mario | Top-down starter (no gravity); a Board object whose script spawns groups of blocks, checks `fits`, `move_group`, `turn_group`, locks them, clears full rows (`count_in`) | Script statements on groups; ticks (`every`) |
+| Boulder Dash | Top-down starter; the player's grid-move script (`key`, `glide_to`, `thing_at`; Character Controller speed 0); dirt dug by script; boulders that fall by script | Scripts, one square at a time |
+| Motherload-like mining | A side view with gravity; the player's own digging script (`thing_at` below and beside, `remove`), fuel and cargo as script variables | The platformer controls plus a digging script |
+| RPG, roguelike, tactics | Their starters; turn scripts (`start_turns`, `end_turn`); RPG battles in a level of their own | Turn scripts; the top-down controls between turns |
+
+**Review of the system categories against these:**
+- **Scripts and rules are a system in their own right.** For most non-platformer games, the gameplay *is* the scripts. The profile gets a `scripted` locomotion model: the engine doesn't move the player, its scripts do. The engine's ready-made scripts are part of the object kits.
+- **"Board" games:** falling blocks, matching, Boulder Dash. They need a cell-based geometry kind (`cells`: a board of squares that scripts read and change), separate from platformer tiles. It is planned with F3's stateful cells, and serves Lode Runner too.
+- **Time also has `ticks`:** fixed-rate updates driven by scripts. Today these games are realtime with `every` handlers, and that stays valid.
+- **A rules / HUD system** (score, lives, game over) is shared by nearly every genre. Today it is scripts and the built-in display. It's noted here as a possible later module; there's no change in F2.
+
+## 15. The cross-genre regression suite
+
+A permanent set of representative games (`src/regression/`), run with every unit-test run and every stage. Each game is:
+- built the way PXLBuilder builds it: the starter or preset, the guide's way of making it, the level builder where there is one;
+- then **played**: inputs over time on the real runtime.
+
+Each game checks its *defining mechanics*, not just that it loads. Each also records a **trace**: the positions of what moves, and the game's key variables, over the play. The trace's fingerprint is golden: a refactor must leave it identical, or the change must be explained and approved.
+
+| Family | Game | Built as | Defining mechanics checked | Status |
+|---|---|---|---|---|
+| Traditional platformer | Mario-style | The platformer preset; a level from the classic level builder | Running, jumping a gap, stomping an enemy, ? block coin, reaching the goal (route bot) | Playable now |
+| Momentum platformer | Sonic-inspired | (needs `surface` movement, V3) | Speed builds downhill, loop at speed | **Pending**: marked to-do, with the checks written out |
+| Precision platformer | Celeste-inspired | The platformer preset + WallJump + Dash (F2) | A gap only a dash crosses; a shaft only wall jumps climb; the dash refills on landing | Playable after F2 |
+| Grid puzzle | Tetris | Top-down starter; the falling-block Board script (guide recipe) | A piece moves as one, stops at walls, locks, a full row clears and what is above drops | Playable now |
+| Matching puzzle | Dr. Mario | Top-down starter; a Board script: viruses, a two-colour pill, four in a line clears | The pill falls and is steered; four of a colour in a column clears (viruses too); the rest stays | Playable now |
+| Shooter | Space shooter | Top-down starter as the shooters guide builds it | Holding fire keeps firing; a shot destroys a saucer; saucers fire back; the ship stays on screen | Playable now |
+| Mining | Motherload-inspired | Platformer preset; a digging script; fuel and cargo variables | Digging down through dirt; rock can't be dug; ore collected adds cargo; fuel runs down | Playable now |
+| Physics puzzle | Boulder Dash | Top-down starter; the grid-move script; boulders that fall by script; diamonds | Digging dirt; a boulder falls when the dirt under it goes; diamonds collected; walls stop the player | Playable now |
+| (Existing starters) | Top-down, RPG, roguelike, isometric | Their presets (F1 fixtures) | Load, run, move; the RPG's and roguelike's own tests (battles, turns) | Covered by F1 fixtures and the existing runtime tests |
+
+**Growing the suite:**
+- The hybrid acceptance games (§9) join it as their slices land.
+- Each reference game (Lode Runner, Donkey Kong, Mega Man, Hollow Knight) joins as soon as it is playable.
+- A pending entry stays visible as a to-do test, never silently absent.
+
+## 16. F2: movement models and abilities — design
+
+**Goal:** the engine's movement code becomes **locomotion models** behind one interface, with **abilities** composed on top. The architecture must take later models without being rewritten:
+- `surface` (momentum, ground-following),
+- `committed` (fixed jump arcs),
+- `grid` (cell-to-cell),
+- `scripted` (scripts move it),
+- models nobody has thought of yet.
+
+### 16.1 The interfaces (as code)
+
+```ts
+/** What a model may ask of the world and the runtime: nothing else. (F3 replaces the collision questions with GeometryQuery.) */
+interface MovementHost {
+  ladderAt(e): Ladder | null;  isOnFloorBelowLadder(e): boolean;  standOn(e, ladder): void;
+  onJumpThrough(e): boolean;
+  tryGrabLedge(e, dir): void;  hang(e, input, dir): boolean;
+  wallBeside(e, dir): boolean;                 // solid right beside it (wall slide / wall jump)
+  isoView(): boolean;                          // keys follow the screen in an isometric view
+  ownsPart(e, part): boolean;                  // a script took this part over (engine parts)
+}
+
+interface MovementContext { e: RuntimeEntity; input: InputView; dt: number; host: MovementHost }
+
+interface LocomotionModel {
+  id: string;                                  // the Character Controller's `movement` value it answers to
+  step(ctx: MovementContext, abilities: AbilityHooks): void;
+}
+
+/** Abilities hook into a model at named points; a model calls the points it has. */
+interface Ability {
+  id: string;
+  component: string;                           // the component that gives it (DoubleJump, LedgeGrab, WallJump, Dash)
+  worksWith: string[];                         // locomotion ids
+  /** Before the model's own movement: may take over this step entirely (a dash in progress). */
+  override?(ctx): boolean;
+  /** Jump pressed with no ground jump possible: may do its own (double jump, wall jump). */
+  airJump?(ctx): boolean;
+  /** After the step's movement and jumping (ledge grab, wall slide). */
+  after?(ctx): void;
+  /** On the ground: refill (dashes, air jumps). */
+  grounded?(ctx): void;
+  /** The states it adds to the motion snapshot ('dashing', 'wallSliding'…). */
+  states?(e): string[];
+}
+
+/** What every model publishes, whatever its insides: for the camera, animation, scripts, enemies, validation. */
+interface MotionSnapshot {
+  velocity: Vec2; facing: 1 | -1; heading: Vec2 | null;
+  states: string[];   // grounded | airborne | climbing | hanging | swimming | wallSliding | dashing | …
+  intent: { x: number; y: number; jump: boolean };
+}
+```
+
+- **The model registry:** the runtime looks the model up by the Character Controller's `movement` value (`platformer` → `arcade`, `topdown` → `topdown`). A new model is a registered object plus a new value for that field. Nothing in the runtime changes.
+- **Abilities** are the existing components (DoubleJump, LedgeGrab) and new ones (WallJump, Dash). An object has an ability by having its component, the same way it is edited today. The profile's `movement.abilities` lists the game's abilities. Adding one in the profile gives the player its component; removing it takes the component away.
+- **Script take-over** (`takesOver`: running, jumping, climbing, ledge_grab) works exactly as now: the models ask `host.ownsPart`.
+- **The motion snapshot** is published by the runtime for every moving entity (`runtime.motion(e)`). F2 doesn't change how the camera or animation read it (F5 and later); it tests what it says.
+
+### 16.2 New abilities in F2
+
+- **WallJump** (arcade): sliding down a wall while pressing toward it, slower (`slideSpeed`); Jump pushes off the wall, up and away (`jumpX`, `jumpY`), with a short lock-out of steering back toward the wall (`lockTime`).
+- **Dash** (arcade): press Dash (the `fire` action, or a key of its own via Controls) to shoot in the held direction (`directions`: 8, 4 or horizontal) at `speed` for `duration` seconds, gravity off meanwhile. It has `charges` in the air and refills on landing (`refillOnGround`). States: `dashing`.
+
+Each declares in the module registry what it requires: `locomotion:arcade`. The profile's compatibility check therefore refuses a top-down game with WallJump, with the reason.
+
+### 16.3 F2 tests (requirements for "done")
+
+1. **Movement unchanged:** golden traces recorded **before** the refactor, for:
+   - running and stopping;
+   - jumps (full and short);
+   - coyote time and jump buffer;
+   - double jump;
+   - ledge grab and climbing up;
+   - ladders up, down and off the top;
+   - swimming strokes and leaving the water;
+   - drop-through platforms;
+   - ramps up and down;
+   - springs;
+   - walking top-down, including isometric keys;
+   - scripts that took over running or jumping.
+
+   Each is replayed after the refactor and must match frame for frame.
+2. **The cross-genre regression suite (§15):** every playable game's trace is identical before and after.
+3. **All existing tests unchanged** (unit and browser).
+4. **New abilities through the architecture:**
+   - wall slide, wall jump and dash tested in play, including the dash refill and a script reading their states;
+   - the Celeste-inspired regression game playable;
+   - compatibility: WallJump with top-down movement is refused;
+   - profile edits add and remove the ability's component.
+5. **Extensibility:** a test-only locomotion model is registered and selected by an object's `movement` value, and a test-only ability hooks in. Neither needs a change to the runtime.
+6. **The motion snapshot:** states and velocity are correct across models and abilities.
