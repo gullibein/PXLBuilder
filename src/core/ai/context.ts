@@ -7,7 +7,7 @@
  * The model never receives the raw project file.
  */
 import { generateDungeon } from '../model/dungeon';
-import { describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
+import { checkGame, describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
 import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { EnginePart } from '../script/language';
@@ -210,7 +210,7 @@ export interface AIPayload {
    * The game's profile (engine/profile.ts): which module of each system it uses, in a line; with requests about the
    * whole game, also what each system can be and the presets (set_game_profile changes it).
    */
-  game?: { profile: string; stored: boolean; choices?: Record<string, string[]>; presets?: string[] };
+  game?: { profile: string; stored: boolean; works?: string[]; choices?: Record<string, string[]>; presets?: string[] };
   level: {
     id: Id;
     name: string;
@@ -492,7 +492,9 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         : SCOPE_NOTES[ctx.kind],
     game: (() => {
       const p = profileOf(project, registry);
-      return { profile: describeProfile(p), stored: !!storedGameProfile(project), ...(ctx.kind === 'project' ? profileChoices() : {}) };
+      // (What the game uses that its profile doesn't give, and what happens instead: only when there is something.)
+      const check = checkGame(project, registry);
+      return { profile: describeProfile(p), stored: !!storedGameProfile(project), ...(check.state === 'degraded' ? { works: check.notes } : check.state === 'incompatible' ? { works: check.reasons } : {}), ...(ctx.kind === 'project' ? profileChoices() : {}) };
     })(),
     ...(editor ? { editor } : {}),
     ...(connection ? { connection: { id: connection.id, text: describeRelationship(project, scene, connection), type: connection.type, source: connection.source, target: connection.target, params: connection.params, conditions: connection.conditions } } : {}),

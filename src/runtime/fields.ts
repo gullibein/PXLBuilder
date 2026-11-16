@@ -152,7 +152,7 @@ export function setTag(e: RuntimeEntity, tag: string, on: boolean): void {
  * added or removed).
  */
 function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: string | null): void {
-  const fresh = entityFrom(rt.project, e.base);
+  const fresh = entityFrom(rt.project, e.base, rt.geometry);
   switch (component) {
     case 'Collider':
       rt.refreshCollider(e);

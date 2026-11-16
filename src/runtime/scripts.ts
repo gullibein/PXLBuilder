@@ -62,6 +62,8 @@ const STEP_BUDGET = 150_000;
 const MAX_EACH = 2000;
 const MAX_STATE_CHAIN = 10;
 const MAX_ERRORS = 30;
+/** Cells used by a game whose profile doesn't make them active (engine/geometry.ts): refused, said. */
+const NO_CELLS = 'dig, dug_at and in_cell need the "cells" geometry, which this game\'s profile doesn\'t select (set_game_profile with geometry including "cells")';
 
 /** A script as built for one entity at Play time. */
 export function instantiateScripts(scripts: BehaviorScript[]): ScriptInstance[] {
@@ -793,7 +795,8 @@ export class ScriptSystem {
         this.rt.cam.startShake(n(s.strength), n(s.seconds));
         break;
       case 'dig':
-        this.rt.dig(n(s.x), n(s.y), n(s.seconds), s.tag);
+        if (!this.rt.geometry.has('cells')) this.report(e, ctx.inst, NO_CELLS);
+        else this.rt.dig(n(s.x), n(s.y), n(s.seconds), s.tag, s.fill ?? 'trap');
         break;
       case 'menu': {
         const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
@@ -1373,9 +1376,12 @@ export class ScriptSystem {
       case 'grid_cell':
         return Math.floor(n(0) / CELL) * CELL + CELL / 2;
       case 'dug_at':
-        return this.rt.dugAt(n(0), n(1));
       case 'in_cell':
-        return this.rt.inCell(n(0), n(1), show(v[2]));
+        if (!this.rt.geometry.has('cells')) {
+          this.report(self, ctx.inst, NO_CELLS);
+          return false;
+        }
+        return fn === 'dug_at' ? this.rt.dugAt(n(0), n(1)) : this.rt.inCell(n(0), n(1), show(v[2]));
       case 'ladder_top':
         return this.rt.ladderHere(self)?.top ?? 0;
       case 'floor_below_ladder':

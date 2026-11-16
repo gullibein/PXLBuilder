@@ -195,7 +195,7 @@ export const TOPICS: Record<string, Topic> = {
     title: 'Digging holes (Lode Runner-like)',
     scopes: [],
     words: /\bdig|lode ?runner|holes? (that )?(fill|close)|burrow|tunnel/i,
-    text: `- DIGGING: tiles tagged "diggable" (bricks; leave hard ones like concrete untagged) can be dug out by a script: dig {"x", "y", "seconds", "tag"} takes the tile in that grid square out (not solid, not drawn) for seconds, then it fills in again and what is inside dies (the player comes back at its start; an enemy is gone). The player digs beside and below itself: a key handler with dig at self.x + self.facing * 32, self.y + 32 (seconds 4). dug_at(x, y) tells whether a square is dug out (enemies fall into holes by gravity; a guard can climb out with a script). Lode Runner-like: ladders, bars, gold to collect, guards that chase (Patrol or a chase script), holes to trap them.`,
+    text: `- DIGGING: tiles tagged "diggable" (bricks; leave hard ones like concrete untagged) can be dug out by a script: dig {"x", "y", "seconds", "tag"} takes the tile in that grid square out (not solid, not drawn) for seconds, then it fills in again; with fill "trap" (the default) anything moving inside dies (the player comes back at its start; an enemy is gone), with "wait" it waits until the square is empty. The player digs beside and below itself: a key handler with dig at self.x + self.facing * 32, self.y + 32 (seconds 4). dug_at(x, y) tells whether a square is dug out (enemies fall into holes by gravity; a guard can climb out with a script). Lode Runner-like: ladders, bars, gold to collect, guards that chase (Patrol or a chase script), holes to trap them.`,
   },
   backgrounds: {
     title: "Backgrounds: set_background, parallax, images",

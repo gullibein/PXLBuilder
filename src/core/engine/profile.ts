@@ -3,6 +3,7 @@
  * together, a new game made from one, and changing one (by hand or by the AI's set_game_profile). See
  * docs/engine-architecture-proposal.md §3, §10, §12.
  */
+import { geometryNotes } from './geometry';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
 import { ModelError } from '../model/mutations';
@@ -77,6 +78,8 @@ export function checkProfile(p: GameProfile): Compatibility {
     else mods.push(m);
   }
   if (new Set(p.kits).size !== p.kits.length) reasons.push('a kit is listed twice');
+  // (Every game has walls and floors: without boxes nothing would be solid.)
+  if (!p.geometry.includes('box')) reasons.push('geometry "box" (walls and floors) is needed by every game');
   const provided = new Set(mods.flatMap((m) => m.provides));
   for (const m of mods)
     for (const tag of m.requires) {
@@ -86,6 +89,19 @@ export function checkProfile(p: GameProfile): Compatibility {
       else reasons.push(`${m.kind} "${m.id}" needs ${tag.split('|').join(' or ')}, which nothing selected gives`);
     }
   if (reasons.length) return { state: 'incompatible', reasons };
+  return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
+}
+
+/**
+ * Compatibility of a game: its profile's, and then what its objects use against what the profile makes active
+ * (engine/geometry.ts: the runtime does exactly what these notes say).
+ */
+export function checkGame(project: Project, registry: ComponentRegistry): Compatibility {
+  const p = profileOf(project, registry);
+  const base = checkProfile(p);
+  if (base.state === 'incompatible') return base;
+  const provided = new Set(selected(p).flatMap((s) => modules.get(s.kind, s.id)?.provides ?? []));
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided)];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 

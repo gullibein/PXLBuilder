@@ -193,8 +193,8 @@ describe('format v2 -> v3', () => {
     const v13 = { formatVersion: 13, id: 'p', name: 'G', settings: { gridSize: 16 }, scenes: [{ id: 's', name: 'L' }], definitions: [], assets: [] };
     expect(migrateProject(structuredClone(v13), MIGRATIONS, 14)).toEqual({ ...v13, formatVersion: 14 });
     // (And on to today's: a game that chose no profile gets none written.)
-    expect(migrateProject(structuredClone(v13))).toEqual({ ...v13, formatVersion: 15 });
-    expect(() => migrateProject({ ...v13, formatVersion: 16 })).toThrow(MigrationError);
+    expect(migrateProject(structuredClone(v13))).toEqual({ ...v13, formatVersion: FORMAT_VERSION });
+    expect(() => migrateProject({ ...v13, formatVersion: FORMAT_VERSION + 1 })).toThrow(MigrationError);
   });
   it('v12 -> v13: Stompable and Damage become the Stomp and Hurts on touch scripts, with the same values and victims', async () => {
     const { migrateProject } = await import('./migrations');

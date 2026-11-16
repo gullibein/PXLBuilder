@@ -392,6 +392,18 @@ function migrateV14toV15(raw: Raw): Raw {
   return project;
 }
 
+/**
+ * v15 -> v16
+ * - The game's profile chooses the geometry the runtime uses (engine/geometry.ts). Profiles stored before cells
+ *   existed (the grid squares boards and digging ask) get them, as every preset now has them: nothing changes in how
+ *   those games play.
+ */
+function migrateV15toV16(raw: Raw): Raw {
+  const profile = raw.settings?.profile;
+  if (!profile || !Array.isArray(profile.geometry) || profile.geometry.includes('cells')) return raw;
+  return { ...raw, settings: { ...raw.settings, profile: { ...profile, geometry: [...profile.geometry, 'cells'] } } };
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -418,6 +430,7 @@ export const MIGRATIONS: Migration[] = [
     migrate: (p) => p,
   },
   { from: 14, to: 15, migrate: migrateV14toV15 },
+  { from: 15, to: 16, migrate: migrateV15toV16 },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

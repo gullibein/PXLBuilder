@@ -1119,3 +1119,93 @@ Each declares in the module registry what it requires: `locomotion:arcade`. The 
 - **Ramp looks:** the ground-matching ramp drawing (`rampBand`) is for 45° ramps only. A gentle ramp is drawn by its own sprite.
 - **Scripts' own searches** (`fits`, `count_in`, `thing_at`) keep their spatial index. Boards may use `in_cell`; the regression boards still use the old functions, so their goldens stay identical.
 - **Isometric heights** (`isoGround`) and the top-down crawler (`crawl.ts`) still compute their own squares rather than asking `world.cell`.
+
+---
+
+# Part IV: geometry for every kind of game, and F4
+
+## 18. Geometry after F3 review
+
+### 18.1 Registered, selected, supported, active
+
+A game's geometry is decided in four steps. One small table answers all four (`core/engine/geometry.ts`, data only, so the runtime and the exported player read it too):
+
+| Step | Meaning | Where |
+|---|---|---|
+| **Registered** | A geometry module exists | `GEOMETRY`, registered as modules in `engine/modules.ts` |
+| **Selected** | The game's profile lists it | `profile.geometry` |
+| **Supported** | Selected, and what it requires is given by the profile's other modules (ramps and jump-through platforms need a side view) | `geometryStatus(profile)` |
+| **Active** | What the runtime and the level checker actually do: exactly the supported ones | `activeGeometry`, `gameGeometry(project)` |
+
+**The rule:** no game silently uses geometry its profile doesn't make active.
+
+**What a shape does when its geometry isn't active:** it works in its module's stated lesser way (`without`), in play and in the level checker alike.
+
+| Geometry | When not active |
+|---|---|
+| `ramp` | A ramp is a box that blocks like a wall |
+| `one_way` | A jump-through platform blocks like a wall, from below too |
+| `cells` | `dig`, `dug_at` and `in_cell` are refused with a script error |
+| `box` | Can't be left out: a profile without it is refused |
+
+**The compatibility report says the same thing.** `checkGame(project)` is the profile check plus `geometryNotes`, which lists what the game's objects use that isn't active and what happens instead. It is shown in the Game profile dialog and given to the AI (`context.game.works`). Tests check that the runtime, the level checker and the report agree, for ramps, jump-through platforms and cells.
+
+**Two answers that must match:**
+- The light answer uses the convention that a module provides `kind:id`.
+- The registry's answer uses the tags each module really provides.
+
+A test compares the two for every preset and several variants.
+
+**Old games:**
+- Format v16 adds `cells` to profiles stored before cells existed.
+- Games with no stored profile get it from their preset.
+- So no existing game changes how it plays.
+
+**One deliberate behaviour change:** before this, a ramp or jump-through platform in a top-down game blocked nothing. It now blocks like a wall, which is what the compatibility check had always said.
+
+**Still a declaration only:** geometry is now enforced. The other systems are still only declared and checked: time, camera and progression, until F5 and F6.
+
+### 18.2 Boards and other grid games
+
+Falling-block and matching games (Tetris, Dr. Mario, Columns), Boulder Dash, Sokoban-like and tactics boards need from geometry:
+
+- **The grid:** squares of 32 px on the level's grid, addressed by column and row.
+- **What is in a square:** by tag (`cell(col, row).things`, `in_cell(x, y, tag)`), without searching every object.
+- **What is solid in a square:** walls of the well (`cell().solid`).
+- **Square states:** dug, until when (later: crumbling, filled, claimed).
+- **No movement or physics assumed:** a board's pieces have no Collider or PhysicsBody and move by script, a square at a time. Nothing in the cell interface needs a side view, gravity, a locomotion model or a reach description.
+  - `cells` requires nothing.
+  - Presets for boards are top-down and select `box` and `cells`.
+  - A board game's validation is the layout check only. Reach validators are never chosen for it (§19.4).
+
+**How it relates to the scripts' own searches:**
+- `fits`, `fits_turned` and `count_in` keep their own spatial index for now.
+- They ask the same thing a board asks of cells: is a square free, and how many of a tag are in a row.
+- **Planned:** answer them through `world.cell` (with the occupancy index the world already builds each step), once the regression boards' goldens can be compared before and after. This is listed under shared spatial queries below.
+- The Tetris regression already checks that `in_cell` agrees with the pieces' squares.
+
+### 18.3 Dug tiles: the refill rule
+
+A dug tile comes back **only through its square**: its own time running out, or the level starting again.
+- A switch or rule that shows or hides things never touches it (it isn't hidden by a switch).
+- A `respawn` aimed at it is refused.
+
+When the time is up, the `dig` statement's `fill` decides what happens. It is the same for every thing: the player, enemies, crates.
+
+| `fill` | What happens |
+|---|---|
+| `trap` (the default, Lode Runner's rule) | Anything moving and solid with its middle inside the square dies, as a hit that ends its health does: the `died` event, the death look, a character back at its start, anything else gone. Pick-ups and things that don't block are left alone |
+| `wait` | The square fills in only once nothing moving and solid is inside. No one is caught |
+
+No other path kills something with a filling square.
+
+### 18.4 Geometry work still open (tracked)
+
+| Work | Where it belongs | State |
+|---|---|---|
+| Curved surfaces and loops (height profiles, `Surface.curvature`) | V3 (momentum) | Not started; behind `probe` |
+| The level generator placing gentle slopes | F6 (generator interface) | Not started; patterns use 45° ramps only |
+| Ramp rendering: ground-matching drawing for gentle ramps | Renderer, with V3 | Not started; gentle ramps use their own sprite |
+| Shared spatial queries: `fits`, `count_in` and `thing_at` through `world.cell` and one index | After F4, with the board goldens | Planned (§18.2) |
+| Isometric heights (`isoGround`) and the top-down crawler (`crawl.ts`) asking `world.cell` | F5–F6, or with a grid locomotion model (V2) | Not started |
+| Crumbling and other stateful cells | V1 | Not started; `cells` holds the state |

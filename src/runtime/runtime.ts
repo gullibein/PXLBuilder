@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { GEOMETRY, gameGeometry } from '../core/engine/geometry';
 import { rampOf } from '../core/model/ramps';
 import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
 import { partsOf } from './parts';
@@ -419,15 +420,35 @@ export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedE
   return { ox, oy, hw: w / 2, hh: h / 2, ...base };
 }
 
-function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry): RuntimeEntity {
-  return entityFrom(project, resolveEntity(project, instance, registry));
+function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry, geometry: ReadonlySet<string>): RuntimeEntity {
+  return entityFrom(project, resolveEntity(project, instance, registry), geometry);
+}
+
+/** Every geometry (a runtime entity made outside a game's runtime: tools, tests). */
+const ALL_GEOMETRY: ReadonlySet<string> = new Set(GEOMETRY.map((g) => g.id));
+
+/**
+ * The collider as the game's active geometry has it (engine/geometry.ts): a ramp whose geometry isn't active is a
+ * plain box (it blocks like a wall), and so is a jump-through platform; as the compatibility report says.
+ */
+export function gatedCollider(col: RuntimeEntity['collider'], geometry: ReadonlySet<string>): RuntimeEntity['collider'] {
+  if (!col) return col;
+  if (col.slope && !geometry.has('ramp')) {
+    const { slope: _s, rise: _r, ...box } = col;
+    return box;
+  }
+  if (col.oneWay && !geometry.has('one_way')) {
+    const { oneWay: _o, ...box } = col;
+    return box;
+  }
+  return col;
 }
 
 /** The runtime entity for a resolved entity (also used to re-read one component's values during play). */
-export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
+export function entityFrom(project: Project, r: ResolvedEntity, geometry: ReadonlySet<string> = ALL_GEOMETRY): RuntimeEntity {
   const c = r.components;
   const pb = c.PhysicsBody;
-  const collider = colliderOf(c, r.transform);
+  const collider = gatedCollider(colliderOf(c, r.transform), geometry);
   const cc = c.CharacterController;
   const vel = (pb?.velocity as Vec2 | undefined) ?? { x: 0, y: 0 };
   const objectName = project.definitions.find((d) => d.id === r.definitionId)?.name ?? r.name;
@@ -550,6 +571,8 @@ export class Runtime {
   private accumulator = 0;
   /** Everything things collide with, and the questions asked of it (geometry/world.ts). */
   readonly world = new CollisionWorld();
+  /** The geometry the game's profile makes active (engine/geometry.ts); the rest works in its lesser way. */
+  readonly geometry: ReadonlySet<string>;
   /** Recomputed only when something opens, closes, appears or goes away. */
   private solidsDirty = true;
   fallLimit = 0;
@@ -623,6 +646,7 @@ export class Runtime {
     /** The game's own variables so far (another level's): a random level is built for the floor they say. */
     game?: Map<string, number | string | boolean>,
   ) {
+    this.geometry = gameGeometry(project);
     this.baseScene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.scene = this.baseScene;
     if (game) this.game = game;
@@ -674,7 +698,7 @@ export class Runtime {
       this.scene = built.scene;
       this.dungeon = built.dungeon;
     }
-    this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry));
+    this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry, this.geometry));
     // Fog of war, seen by whoever has it (the player).
     const viewer = this.entities.find((e) => e.base.components.FogOfWar);
     this.fog = viewer ? new Fog(viewer, this.entities, viewer.base.components.FogOfWar) : null;
@@ -996,7 +1020,7 @@ export class Runtime {
 
   /** Its collision box after its size, scale or rotation changed. */
   refreshCollider(e: RuntimeEntity): void {
-    e.collider = colliderOf(e.base.components, e.base.transform, e.angle);
+    e.collider = gatedCollider(colliderOf(e.base.components, e.base.transform, e.angle), this.geometry);
     if (e.body !== 'dynamic') this.solidsDirty = true;
   }
 
@@ -1025,14 +1049,15 @@ export class Runtime {
    * drawn) for `seconds` (≤ 0: for good), then fills in again, and whatever moving thing is inside it then is trapped
    * (it dies: a character comes back at its start, anything else is gone). Returns whether a tile was dug.
    */
-  dig(x: number, y: number, seconds: number, tag: string): boolean {
+  dig(x: number, y: number, seconds: number, tag: string, fill: 'trap' | 'wait' = 'trap'): boolean {
+    if (!this.geometry.has('cells')) return false;
     const col = Math.floor(x / CELL);
     const row = Math.floor(y / CELL);
     if (this.world.isDug(col, row)) return false;
     const tile = this.entities.find((o) => o.alive && o.tags.includes(tag) && this.isSolid(o) && o.body !== 'dynamic' && !o.pushable && Math.floor(o.x / CELL) === col && Math.floor(o.y / CELL) === row);
     if (!tile) return false;
     tile.alive = false;
-    this.world.markDug(col, row, tile.base.id, seconds > 0 ? this.time + seconds : Infinity);
+    this.world.markDug(col, row, tile.base.id, seconds > 0 ? this.time + seconds : Infinity, fill);
     this.markSolidsDirty();
     return true;
   }
@@ -1047,21 +1072,37 @@ export class Runtime {
     return this.world.hasIn(Math.floor(x / CELL), Math.floor(y / CELL), tag);
   }
 
+  /**
+   * What a tile filling in catches: anything moving and solid (a character, an enemy, a crate) with its middle
+   * inside the tile's square; pick-ups and other things that don't block are left. The same for everyone.
+   */
+  private caughtIn(tile: RuntimeEntity): RuntimeEntity[] {
+    const box = boxOf(tile)!;
+    return this.entities.filter((o) => {
+      if (o === tile || !o.alive || o.body !== 'dynamic' || !o.collider || o.collider.trigger) return false;
+      const ob = boxOf(o)!;
+      return Math.abs(ob.x - box.x) < box.hw && Math.abs(ob.y - box.y) < box.hh;
+    });
+  }
+
+  /**
+   * Dug tiles whose time is up fill in (only so: a switch, a rule or a respawn doesn't bring one back early). With
+   * fill "trap", what it catches dies (as a hit that ends its health: "died", the death look, a character back at
+   * its start; a crate is gone); with "wait", a square with something inside fills in once it is empty.
+   */
   private refillCells(): void {
-    for (const { id } of this.world.refills(this.time)) {
-      const tile = this.entities.find((o) => o.base.id === id);
+    const tileAt = (id: string) => this.entities.find((o) => o.base.id === id);
+    const occupied = (col: number, row: number) => {
+      const tile = this.entities.find((o) => Math.floor(o.x / CELL) === col && Math.floor(o.y / CELL) === row && this.world.holdsTile(o.base.id));
+      return !!tile && this.caughtIn(tile).length > 0;
+    };
+    for (const { id, fill } of this.world.refills(this.time, occupied)) {
+      const tile = tileAt(id);
       if (!tile) continue;
+      const caught = fill === 'trap' ? this.caughtIn(tile) : [];
       tile.alive = true;
       this.markSolidsDirty();
-      const box = boxOf(tile)!;
-      for (const o of this.entities) {
-        if (o === tile || !o.alive || o.body !== 'dynamic' || o.pushable || !o.collider || o.collider.trigger) continue;
-        const ob = boxOf(o)!;
-        // (Its middle inside the tile: caught in the hole, not just brushing its edge.)
-        if (Math.abs(ob.x - box.x) >= box.hw || Math.abs(ob.y - box.y) >= box.hh) continue;
-        // (Dies as a hit that ends its health does: "died", the death look, back at the start for a character.)
-        this.gameplay.die(o, tile);
-      }
+      for (const o of caught) this.gameplay.die(o, tile);
     }
   }
 
@@ -1296,7 +1337,7 @@ export class Runtime {
     // (By id, or by name: a ready-made script names the object it gives, "Coin".)
     const def = this.project.definitions.find((d) => d.id === definitionId) ?? this.project.definitions.find((d) => d.name === definitionId);
     if (!def) return null;
-    const e = buildEntity(this.project, instantiateDefinition(def, at), this.registry);
+    const e = buildEntity(this.project, instantiateDefinition(def, at), this.registry, this.geometry);
     this.entities.push(e);
     this.solidsDirty = true;
     return e;
@@ -1572,7 +1613,7 @@ export class Runtime {
           Collider: this.registry.createDefault('Collider', { shape: 'circle', size: { x: size, y: size }, isTrigger: true }),
         });
     from.shotAt = this.time;
-    const e = buildEntity(this.project, instance, this.registry);
+    const e = buildEntity(this.project, instance, this.registry, this.geometry);
     // A shot flies straight and is never solid, whatever the object says.
     e.body = 'kinematic';
     if (e.collider) e.collider.trigger = true;
@@ -1910,6 +1951,8 @@ export class Runtime {
 
   /** Puts an entity back at its start with full health (after falling out of the level or dying). */
   respawn(e: RuntimeEntity, reason: 'fell' | 'died' | 'rule' | 'script' = 'rule'): void {
+    // (A dug-out tile comes back only when its square fills in.)
+    if (this.world.holdsTile(e.base.id)) return;
     e.dying = 0;
     // Keys held now don't move it until they are let go: it comes back standing still.
     const held = this.lastInput ? ALL_ACTIONS.filter((a) => this.lastInput!.isDown(a)) : [];

@@ -10,7 +10,8 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
-import { rampOf } from './ramps';
+import { gameGeometry } from '../engine/geometry';
+import { rampOf as rampShape } from './ramps';
 import { hurtsOnTouch, onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
 import type { Id, Project, Vec2 } from '../types';
@@ -167,6 +168,11 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const player = all.find((r) => r.components.CharacterController);
   if (!player) return { status: 'no-player' };
   if (isTopDownScene(project, scene, registry)) return topDownReachability(scene, all, player);
+  // (Ramps and jump-through platforms count as such only when the game's geometry has them; else they are walls, as
+  // in play: engine/geometry.ts.)
+  const geometry = gameGeometry(project);
+  const rampOf = (shape: unknown) => (geometry.has('ramp') ? rampShape(shape) : null);
+  const oneWay = (r: ResolvedEntity) => geometry.has('one_way') && r.components.Collider?.oneWay === true;
 
   const isSolid = (r: ResolvedEntity) => {
     const col = r.components.Collider;
@@ -338,7 +344,7 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   }
   // What the head hits jumping up: solids that block from below (not jump-through platforms or ramps; doors count
   // as open: getting what opens them is checked on its own).
-  const ceilings = boxes.filter(({ r }) => !r.components.Openable && r.components.Collider?.oneWay !== true && !rampOf(r.components.Collider?.shape)).map(({ b }) => b);
+  const ceilings = boxes.filter(({ r }) => !r.components.Openable && !oneWay(r) && !rampOf(r.components.Collider?.shape)).map(({ b }) => b);
   const blocked = (left: number, right: number, top: number, bottom: number) => left < right && top < bottom && ceilings.some((c) => c.left < right && c.right > left && c.top < bottom && c.bottom > top);
   /**
    * Jumping UP (or across, level) onto a surface takes room: somewhere on the floor to jump from with nothing just over the player's

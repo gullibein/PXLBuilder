@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { checkProfile, profileChoices, profileOf, setGameProfile, storedGameProfile, type ProfileChange } from '../../core/engine/profile';
+import { checkGame, profileChoices, profileOf, setGameProfile, storedGameProfile, type ProfileChange } from '../../core/engine/profile';
 import { modules } from '../../core/engine/modules';
 import type { ModuleKind } from '../../core/engine/module';
 import { PRESETS } from '../../core/engine/presets';
@@ -41,7 +41,7 @@ export function GameProfileDialog() {
   if (!open) return null;
   const profile = profileOf(project, componentRegistry);
   const stored = !!storedGameProfile(project);
-  const check = checkProfile(profile);
+  const check = checkGame(project, componentRegistry);
   const { choices } = profileChoices();
   const close = () => {
     setProblem(null);

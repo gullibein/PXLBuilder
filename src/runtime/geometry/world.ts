@@ -211,7 +211,7 @@ export class CollisionWorld implements GeometryQuery {
   // ---------------------------------------------------------------- cells (grid squares; tiles that can be dug)
 
   /** Tiles dug out, by their cell ("col,row"): which entity, and when it comes back (Infinity: never). */
-  private readonly dug = new Map<string, { id: string; until: number }>();
+  private readonly dug = new Map<string, { id: string; until: number; fill: 'trap' | 'wait' }>();
 
   /** What is where, by square, for this step (made when first asked; things move, so it is dropped every step). */
   private occupancy: Map<string, string[][]> | null = null;
@@ -262,22 +262,32 @@ export class CollisionWorld implements GeometryQuery {
   }
 
   /** Records a tile dug out of its cell until `until` (or for good); the runtime takes the tile out of play meanwhile. */
-  markDug(col: number, row: number, id: string, until: number): void {
-    this.dug.set(`${col},${row}`, { id, until });
+  markDug(col: number, row: number, id: string, until: number, fill: 'trap' | 'wait' = 'trap'): void {
+    this.dug.set(`${col},${row}`, { id, until, fill });
     this._version++;
   }
 
-  /** The cells whose time is up (their tiles come back now), taken off the list. */
-  refills(now: number): { col: number; row: number; id: string }[] {
-    const out: { col: number; row: number; id: string }[] = [];
+  /**
+   * The cells whose time is up (their tiles come back now), taken off the list. A "wait" cell with something inside
+   * (`occupied`) waits on.
+   */
+  refills(now: number, occupied: (col: number, row: number) => boolean = () => false): { col: number; row: number; id: string; fill: 'trap' | 'wait' }[] {
+    const out: { col: number; row: number; id: string; fill: 'trap' | 'wait' }[] = [];
     for (const [k, d] of this.dug)
       if (d.until <= now) {
         const [col, row] = k.split(',').map(Number);
-        out.push({ col, row, id: d.id });
+        if (d.fill === 'wait' && occupied(col, row)) continue;
+        out.push({ col, row, id: d.id, fill: d.fill });
         this.dug.delete(k);
       }
     if (out.length) this._version++;
     return out;
+  }
+
+  /** The tile (by entity id) is the one dug out of some square now. */
+  holdsTile(id: string): boolean {
+    for (const d of this.dug.values()) if (d.id === id) return true;
+    return false;
   }
 
   isDug(col: number, row: number): boolean {
