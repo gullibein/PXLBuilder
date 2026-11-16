@@ -9,7 +9,7 @@ import { ModelError } from '../model/mutations';
 import type { ObjectDefinition, Project } from '../types';
 import { KIT_ROLES } from './kitRoles';
 import { tagMet, type Module, type ModuleKind } from './module';
-import { modules, type GeneratorModule, type KitModule, type LocomotionModule, type ViewModule } from './modules';
+import { modules, type AbilityModule, type GeneratorModule, type KitModule, type LocomotionModule, type ViewModule } from './modules';
 import { presetById, PRESETS } from './presets';
 import { gameProfileSchema, type GameProfile } from './profileSchema';
 import { inferProfileFromObjects, kitOfObjects } from './infer';
@@ -208,6 +208,19 @@ export function setGameProfile(project: Project, change: ProfileChange, registry
     applyMovement(project, next);
     done.push(`the player moves by ${next.movement.model}`);
   }
+  // Abilities: the player-controlled objects get the components of those added, and lose those of those taken away.
+  const added = next.movement.abilities.filter((a) => !before.movement.abilities.includes(a));
+  const removed = before.movement.abilities.filter((a) => !next.movement.abilities.includes(a));
+  for (const id of [...added, ...removed]) {
+    const ab = modules.get<AbilityModule>('ability', id)!;
+    for (const d of project.definitions) {
+      if (!d.components.CharacterController) continue;
+      if (added.includes(id) && !d.components[ab.component]) d.components[ab.component] = registry.createDefault(ab.component, {});
+      if (removed.includes(id)) delete d.components[ab.component];
+    }
+  }
+  if (added.length) done.push(`the player can now ${added.join(', ')}`);
+  if (removed.length) done.push(`the player no longer has ${removed.join(', ')}`);
   if (next.view !== before.view) {
     const view = modules.get<ViewModule>('view', next.view)!;
     for (const s of project.scenes) s.world.gravity = { ...view.gravity };

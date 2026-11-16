@@ -23,6 +23,7 @@ import type { InputState, InputView } from './input';
 
 import { overlaps, type Box } from './physics';
 import { feetOf, groundGrip, STEP, type Runtime, type RuntimeEntity } from './runtime';
+import { motionStates } from './movement/index';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
 
@@ -1459,7 +1460,7 @@ function show(v: Value): string {
 }
 
 function member(e: RuntimeEntity | null, name: string): Value {
-  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'climbing' || name === 'open' || name === 'on' ? false : 0;
+  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'climbing' || name === 'dashing' || name === 'wall_sliding' || name === 'open' || name === 'on' ? false : 0;
   switch (name) {
     case 'x':
       return e.x;
@@ -1475,6 +1476,10 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.collider ? e.collider.hh * 2 : 0;
     case 'grounded':
       return e.grounded;
+    case 'dashing':
+      return motionStates(e).includes('dashing');
+    case 'wall_sliding':
+      return motionStates(e).includes('wallSliding');
     case 'climbing':
       return e.climbing;
     case 'hanging':

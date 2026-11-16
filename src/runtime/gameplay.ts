@@ -98,7 +98,7 @@ export class Gameplay {
    * onto, whatever its collider says: also an exit made before this, or by hand, with a solid one.)
    */
   private standsOn(player: RuntimeEntity, _goal: RuntimeEntity): boolean {
-    return player.controller?.movement === 'topdown' || this.rt.floats(player);
+    return this.rt.floats(player);
   }
 
   private standOnGoals(): void {

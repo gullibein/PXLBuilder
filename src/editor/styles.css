@@ -408,3 +408,4 @@
 .profile-state.degraded { color: #e0b44a; }
 .profile-state.incompatible, .profile-problem { color: var(--warn, #e5534b); margin: 0; }
 .profile-kits .chip { padding: 3px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12px; font-weight: 600; }
+.profile-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }

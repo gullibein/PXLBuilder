@@ -242,6 +242,8 @@ export const MEMBERS: Record<string, string> = {
   grounded: 'standing on something',
   climbing: 'on a ladder, climbing or holding on',
   hanging: 'hanging from a ledge (LedgeGrab)',
+  dashing: 'mid-dash (Dash)',
+  wall_sliding: 'sliding down a wall (WallJump)',
   bumped: 'the side it bumped into a wall on in the last step (-1 left, 1 right, 0 none)',
   following: 'being steered by a "follows" connection right now',
   blinking: 'blinking after a hit (it can\'t be hurt meanwhile)',

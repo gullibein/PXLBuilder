@@ -1054,3 +1054,35 @@ Each declares in the module registry what it requires: `locomotion:arcade`. The 
    - profile edits add and remove the ability's component.
 5. **Extensibility:** a test-only locomotion model is registered and selected by an object's `movement` value, and a test-only ability hooks in. Neither needs a change to the runtime.
 6. **The motion snapshot:** states and velocity are correct across models and abilities.
+
+## 17. Progress
+
+### F2 — done (awaiting review before F3)
+
+**What moved, and what is new:**
+
+| Piece | Where | What it is |
+|---|---|---|
+| Movement interfaces | `runtime/movement/types.ts` | `MovementHost`, `MovementContext`, `LocomotionModel` (`step`, `states`, `floats`, the `movement` values it answers to), `Ability` (hooks `override`, `grounded`, `steer`, `airJump`, `after`, `states`, `gravity`), `MotionSnapshot` |
+| `arcade` model | `runtime/movement/arcade.ts` | The engine's platformer movement, moved out of `Runtime.control`: running, jumps (coyote time, buffer, short hops), ladders, swimming, drop-through, hanging; abilities called at its hook points |
+| `topdown` model | `runtime/movement/topdown.ts` | Top-down and isometric walking, moved out of `Runtime.walkTopDown` |
+| Abilities | `runtime/movement/abilities.ts` | **Double jump** and **ledge grab** (moved out of the movement code); **wall jump** (with wall slide) and **dash** (new components WallJump, Dash) |
+| Registries | `runtime/movement/index.ts` | `registerLocomotion`, `registerAbility`; a model is chosen by the Character Controller's `movement` value, abilities by the components a character has |
+| Runtime | `runtime.ts` | `control()` is now a lookup (model and abilities); the movement host; `motion(e)` (the snapshot); gravity and "floats" asked of the model and abilities, not of `movement === 'topdown'` |
+| Scripts | `scripts.ts`, `language.ts` | `self.dashing`, `self.wall_sliding` (read from the motion states) |
+| Profile | `engine/modules.ts`, `engine/profile.ts`, `engine/infer.ts` | Ability modules `double_jump`, `ledge_grab`, `wall_jump`, `dash`, each requiring `locomotion:arcade`; adding or removing one in the profile adds or removes the player's component; a game's worked-out profile lists the abilities its player has |
+| Editor and AI | Game profile dialog; topic `precision_moves` | Abilities as checkboxes; the AI is told about WallJump and Dash when a request is about them (the instructions sent with every request carry only a pointer) |
+
+**Decisions to review:**
+1. **Ladders, swimming, drop-through and hanging stay part of `arcade`,** not separate abilities. They are what that model has always done, and they read the model's own state. They could become abilities later, when another model needs them (a `grid` model climbing ladders, for example).
+2. **Abilities are components, as before.** DoubleJump and LedgeGrab already were; WallJump and Dash follow. The profile's ability list and the components are kept in step by `setGameProfile`. A component added by hand outside the profile shows in the worked-out profile only while the profile isn't stored.
+3. **Time `turns` moved to F6** (it was listed for F2). The turn kit is time and progression, not movement.
+4. **The Dash key defaults to X (`fire`),** the same key a player's Shooter uses. A game with both should set the dash to E (`key: "interact"`) or change its Controls. Nothing resolves the clash automatically yet.
+5. **The new abilities can't yet be taken over by a script** (the engine-part mechanism has no ready-made "Wall jump" or "Dash" script). Scripts can read their states and change their settings.
+
+**What still depends on old code** (for the coming stages):
+- **F3:** the movement host still answers through the runtime's own collision code: `ladderAt`, `hang`, `tryGrabLedge`, `standOn`, `onJumpThrough`, `wallBeside`, the box lists. F3 puts these behind `GeometryQuery`.
+- **F4:** the route solver and the route bot know nothing of wall jumps or dashes. Generated levels never use them yet, and the Celeste-inspired room is played by its own snapshot-reading bot.
+- **F5:** the camera doesn't read the motion snapshot yet.
+- **Animation:** `SpriteStates` situations don't yet include `dash` or `wallSlide` looks.
+- **Profile systems:** time, geometry, camera and progression are still recorded but not yet acted on (as after F1).

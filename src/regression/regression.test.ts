@@ -15,6 +15,7 @@ import { boulderDash, mining, spaceShooter } from './games/action';
 import { drMario, tetris } from './games/boards';
 import { mapLevel, marioLevel } from './games/platformers';
 import { body, cellsOf, Player, varOf, withSeed } from './harness';
+import { playPrecision, precisionRoom } from './games/precision';
 import { playScenario, SCENARIOS } from './movement';
 import { createHash } from 'node:crypto';
 
@@ -34,6 +35,8 @@ const GAMES: Record<string, string> = {
   'space shooter': '37309329ca55e9b3',
   'mining': 'b31e47b6a0ff3cec',
   'boulder dash': 'd2262247ae5688ad',
+  // (Recorded at F2, when its abilities came in: a baseline for later stages.)
+  'celeste-inspired': 'd370c109c9930a7b',
 };
 const MOVES: Record<string, string> = {
   'run and stop': '0de2962d62f36cc2',
@@ -179,6 +182,25 @@ describe('cross-genre regression suite: every family still plays, frame for fram
       expect(rt.entities.filter((e) => e.alive && e.name === 'Coin')).toHaveLength(0);
       expect(cellsOf(rt, 'dirt')).not.toContain('6,1');
       golden('boulder dash', pl.fingerprint(), GAMES['boulder dash']);
+    });
+  });
+
+  it('Celeste-inspired: a pit only a dash crosses and a shaft only wall jumps climb; each ability needed, both win the room', () => {
+    withSeed(8, () => {
+      const outcome = (abilities: string[]) => {
+        const p = precisionRoom(registry, abilities);
+        const rt = new Runtime(p, p.startSceneId, registry);
+        const pl = new Player(rt);
+        const r = playPrecision(rt, pl, 12, (q) => body(q.entities.find((e) => e.controller)));
+        return { ...r, fingerprint: pl.fingerprint() };
+      };
+      const both = outcome(['wall_jump', 'dash']);
+      expect(both).toMatchObject({ won: true, died: false });
+      // Only the dash: across the pit, stuck at the bottom of the shaft. Only wall jumps, or neither: into the spikes.
+      expect(outcome(['dash'])).toMatchObject({ won: false, died: false });
+      expect(outcome(['wall_jump'])).toMatchObject({ won: false, died: true });
+      expect(outcome([])).toMatchObject({ won: false, died: true });
+      golden('celeste-inspired', both.fingerprint, GAMES['celeste-inspired']);
     });
   });
 

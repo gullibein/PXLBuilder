@@ -28,12 +28,14 @@ import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts
 import { ALL_ACTIONS, InputState, type Action, type InputView } from './input';
 import { TurnKit } from './turns';
 import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
+import { abilitiesFor, locomotionFor, motionStates, movementValues, type MotionSnapshot, type MovementHost } from './movement/index';
+import { DEFAULT_FRICTION } from './movement/grip';
 
 export type BodyKind = 'static' | 'dynamic' | 'kinematic' | 'none';
 
 export interface Controller {
-  /** platformer: run, jump and climb with gravity; topdown: walk in every direction, seen from above. */
-  movement: 'platformer' | 'topdown';
+  /** Which locomotion model moves it (runtime/movement): platformer (arcade: run, jump, climb with gravity), topdown (walk in every direction, seen from above), or another model's value. */
+  movement: string;
   speed: number;
   acceleration: number;
   jumpForce: number;
@@ -161,6 +163,8 @@ export interface RuntimeEntity {
   hanging: { side: 1 | -1; top: number; edgeX: number } | null;
   /** A script moved it itself this step (onto a ladder's top, up onto a ledge): its controls do nothing more until the next step. */
   controlsDone: boolean;
+  /** Each movement ability's own state (runtime/movement/abilities.ts: dashes left, a wall it slides down…). */
+  ability: Record<string, unknown>;
   /** Seconds before it can grab a ledge again (after letting go). */
   grabCooldown: number;
   /** A shot: who fired it, the tags of its side (it never hurts them), and how far it may still fly. */
@@ -193,33 +197,18 @@ const MAX_STEPS_PER_FRAME = 12;
 /** The fastest anything sinks in a liquid (px/s), and the speed above which a stroke up slows quickly. */
 const SINK_SPEED = 90;
 const SWIM_RISE = 160;
-/** Seconds jump-through platforms let it through after Down + Jump. */
-const DROP_THROUGH = 0.25;
 const MAX_FALL_SPEED = 1400;
 const MIN_MASS = 0.01;
 /** A Pushable this many times heavier than its pusher can't be moved by it. */
 export const TOO_HEAVY = 10;
 /** Friction 1 takes this much speed away per second (px/s²); 0.2 takes a fifth of it. */
 const FRICTION_DECEL = 1000;
-/** PhysicsBody.friction when none is set: on such ground, grip is exactly as without friction at all. */
-const DEFAULT_FRICTION = 0.2;
-/**
- * How much grip a character has on the ground, from its own friction and the surface's, each relative to the
- * default (both at the default: 1, as it always was). Its acceleration on the ground (speeding up, stopping,
- * turning) is scaled by this: an icy floor (0.05) or icy shoes make it slow to start and stop; a sticky floor
- * makes it snappier. Never quite nothing (it can still get going on ice) and at most 4 times.
- */
-export function groundGrip(own: number, surface: number): number {
-  return Math.min(4, Math.max(0.15, (own / DEFAULT_FRICTION) * (surface / DEFAULT_FRICTION)));
-}
-const COYOTE_TIME = 0.1;
-const JUMP_BUFFER = 0.12;
+// (Ground grip lives with the movement models now; kept here by name for the runtime's other users.)
+export { groundGrip } from './movement/grip';
 /** Seconds a spring shows its "sprung" look after it bounces something. */
 const SPRUNG_LOOK = 0.18;
 /** How much of a character must be inside a ladder (horizontally) to climb it. */
 const LADDER_GRIP = 0.5;
-/** How quickly a climbing character eases to the ladder's middle (per second, exponential). */
-const LADDER_CENTERING = 10;
 /** How far below the lowest object counts as "fell out of the level". */
 const FALL_MARGIN = 800;
 /** Isometric heights: the squares heights are looked up on, how high a mover steps up (half a block; a whole block up is a cliff), how fast. */
@@ -479,7 +468,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     speedFactor: 1,
     collider,
-    controller: cc ? { movement: cc.movement === 'topdown' ? 'topdown' : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
+    controller: cc ? { movement: movementValues().includes(String(cc.movement)) ? String(cc.movement) : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
     liquid: c.Liquid
       ? {
@@ -535,6 +524,7 @@ export function entityFrom(project: Project, r: ResolvedEntity): RuntimeEntity {
     beh: readBehaviors(c, r.transform.position),
     hanging: null,
     controlsDone: false,
+    ability: {},
     grabCooldown: 0,
     projectile: null,
     hiddenBySwitch: false,
@@ -920,7 +910,7 @@ export class Runtime {
       }
       if (e.controller && !e.dying) this.control(e, this.inputFor(e, steer), dt);
       else if ((e.climbing || e.climbDir !== 0) && !this.floats(e)) this.climbAlong(e, dt);
-      if (!e.climbing && !e.hanging && e.controller?.movement !== 'topdown') {
+      if (!e.climbing && !e.hanging && !this.modelFloats(e) && this.gravityOn(e)) {
         // (In a liquid: pulled down less, and it sinks slowly; it can't pick up a great speed in it either way.)
         const pull = e.gravityScale * (e.inLiquid ? e.inLiquid.sink : 1);
         e.vx += this.gravity.x * pull * dt;
@@ -1317,7 +1307,7 @@ export class Runtime {
    * fall or land on things; it moves in every direction.
    */
   floats(e: RuntimeEntity): boolean {
-    return e.controller?.movement === 'topdown' || e.gravityScale === 0 || (this.gravity.x === 0 && this.gravity.y === 0);
+    return this.modelFloats(e) || e.gravityScale === 0 || (this.gravity.x === 0 && this.gravity.y === 0);
   }
 
   /** The input as this entity hears it: keys held since it respawned count as up until they are let go. */
@@ -1333,148 +1323,68 @@ export class Runtime {
   }
 
   /** Player-style movement for entities with a CharacterController. */
+  /**
+   * The step's movement of a player-controlled character: its locomotion model (by its Character Controller's
+   * movement), with the abilities its components give (runtime/movement: F2 of the architecture).
+   */
   private control(e: RuntimeEntity, input: InputView, dt: number): void {
-    const c = e.controller!;
-    // Running (and walking, seen from above) done by a script of its own instead (its "Running" script): the engine
-    // leaves its speed and which way it faces to it.
-    const ownRun = ownPart(e, 'running');
-    if (c.movement === 'topdown') return this.walkTopDown(e, input, dt, ownRun);
-    if (e.controlsDone) {
-      e.controlsDone = false;
-      return;
-    }
-    const dir = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
-    // Climbing and hanging from ledges done by scripts of its own instead ("Climbing", "Ledge grab"): while it
-    // climbs or hangs, the engine leaves it to them (and doesn't run or jump it either, as when it does them itself).
-    const ownClimb = ownPart(e, 'climbing');
-    const ownLedge = ownPart(e, 'ledge_grab');
-    if (ownClimb && e.climbing) return;
-    const ladder = ownClimb ? null : this.ladderAt(e);
+    const model = locomotionFor(e.controller!.movement);
+    model.step({ e, input, dt, host: this.host }, abilitiesFor(e, model));
+  }
 
-    // Climbing: Up/Down on a ladder (at least half of you inside it, by width), at running speed.
-    // Left/Right moves you along it; once less than half of you is on it you let go. Up does nothing
-    // when you already stand on the ladder's top; Down there climbs down. Jumping lets go; reaching
-    // the floor ends the climb. A ladder above a gap is out of reach until you jump up to it.
-    const me = zoneOf(e);
-    const atTop = ladder !== null && me.y + me.hh <= ladder.top + 0.5;
-    if (ladder && !e.climbing && ((input.isDown('up') && !atTop) || (input.isDown('down') && !this.isOnFloorBelowLadder(e)))) {
-      e.climbing = true;
-      e.vx = 0;
-    }
-    if (e.climbing && input.wasPressed('jump')) e.climbing = false;
-    else if (e.climbing && !ladder) {
-      // Let go (moved off the side, or climbed down off its bottom): no climbing speed is kept.
-      e.climbing = false;
-      e.vy = 0;
-    }
-    if (e.climbing && ladder) {
-      const vertical = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
-      e.vy = vertical * c.speed * e.speedFactor;
-      e.vx = dir * c.speed * e.speedFactor;
-      // Climbing straight up or down eases you into the middle of the ladder; Left/Right overrides it.
-      if (vertical !== 0 && dir === 0) e.x += (ladder.x - e.x) * Math.min(1, dt * LADDER_CENTERING);
-      e.grounded = false;
-      // Reaching the top: stop there, standing on it.
-      if (vertical < 0 && me.y + me.hh + e.vy * dt <= ladder.top) this.standOn(e, ladder);
-      return;
-    }
+  /** What movement models and abilities may ask of the world (and nothing else). */
+  private readonly host: MovementHost = {
+    ladderAt: (e) => this.ladderAt(e),
+    isOnFloorBelowLadder: (e) => this.isOnFloorBelowLadder(e),
+    standOn: (e, ladder) => this.standOn(e, ladder),
+    onJumpThrough: (e) => this.onJumpThrough(e),
+    tryGrabLedge: (e, dir) => this.tryGrabLedge(e, dir),
+    hang: (e, input, dir) => this.hang(e, input, dir),
+    wallBeside: (e, dir) => this.wallBeside(e, dir),
+    zone: (e) => zoneOf(e),
+    isoView: () => this.cam.camera.iso === true,
+    ownsPart: (e, part) => ownPart(e, part),
+  };
 
-    if (dir !== 0 && !ownRun) e.facing = dir as 1 | -1;
-    // Jumping done by a script of its own instead (its "Jumping" script, which took it over): the engine leaves it.
-    const ownJump = ownPart(e, 'jumping');
-    if (e.grounded && e.beh.doubleJump) e.beh.doubleJump.left = e.beh.doubleJump.extra;
-    if (e.grabCooldown > 0) e.grabCooldown = Math.max(0, e.grabCooldown - dt);
-    if (e.hanging && (ownLedge || this.hang(e, input, dir))) return;
+  /** Something solid right beside it on that side, along most of its height (a wall to slide down or jump off). */
+  private wallBeside(e: RuntimeEntity, dir: 1 | -1): boolean {
+    const box = boxOf(e);
+    if (!box) return false;
+    const probe: Box = { x: box.x + dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh * 0.6 };
+    return this.staticSolids.some((s) => overlaps(probe, s));
+  }
 
-    if (!ownRun) {
-      // (The ready-made Running script does exactly this: engineParts.ts.)
-      const target = dir * c.speed * e.speedFactor * (e.inLiquid ? e.inLiquid.slow : 1);
-      // On the ground, as much as its grip there allows (its own friction and the floor's); in the air, its air control.
-      const rate = c.acceleration * (e.grounded ? groundGrip(e.friction, e.groundFriction) : c.airControl);
-      const diff = target - e.vx;
-      e.vx += Math.sign(diff) * Math.min(Math.abs(diff), rate * dt);
-    }
+  /** Gravity pulls it this step (an ability may hold it off: a dash). */
+  private gravityOn(e: RuntimeEntity): boolean {
+    if (!e.controller) return true;
+    const model = locomotionFor(e.controller.movement);
+    return abilitiesFor(e, model).every((a) => a.gravity?.(e) !== false);
+  }
 
-    if (ownJump) {
-      if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
-      return;
-    }
-    // Swimming: each Jump is a stroke up (at the surface it takes it out of the water).
-    if (e.inLiquid?.swim && input.wasPressed('jump')) {
-      // (Its head out of the water: a whole jump, onto the bank.)
-      const head = zoneOf(e).y - zoneOf(e).hh;
-      e.vy = -c.jumpForce * (e.inLiquid.top !== undefined && head < e.inLiquid.top ? 1 : e.inLiquid.stroke);
-      e.grounded = false;
-      e.jumpBuffer = 0;
-      return;
-    }
-    // Down + Jump on a jump-through platform: drops through it instead of jumping.
-    if (e.grounded && input.isDown('down') && input.wasPressed('jump') && this.onJumpThrough(e)) {
-      e.dropThrough = DROP_THROUGH;
-      e.grounded = false;
-      e.coyote = 0;
-      e.jumpBuffer = 0;
-      return;
-    }
-    // Forgiving jumps: a short buffer before landing and a short grace period after walking off a ledge.
-    // Only the jump button jumps; Up is for climbing. (The ready-made Jumping script does exactly this: engineParts.ts.)
-    if (e.grounded) e.launched = false;
-    if (input.wasPressed('jump')) e.jumpBuffer = JUMP_BUFFER;
-    else e.jumpBuffer = Math.max(0, e.jumpBuffer - dt);
-    e.coyote = e.grounded ? COYOTE_TIME : Math.max(0, e.coyote - dt);
-    if (e.jumpBuffer > 0 && e.coyote > 0) {
-      e.vy = -c.jumpForce;
-      e.jumpBuffer = 0;
-      e.coyote = 0;
-      e.grounded = false;
-    } else if (input.wasPressed('jump') && !e.grounded && e.coyote <= 0 && e.beh.doubleJump && e.beh.doubleJump.left > 0) {
-      // Double jump: another full jump in the air.
-      e.beh.doubleJump.left--;
-      e.vy = -c.jumpForce;
-      e.launched = false;
-      e.jumpBuffer = 0;
-    }
-    if (e.beh.ledgeGrab && !ownLedge && !e.grounded && e.vy >= 0 && dir !== 0 && e.grabCooldown <= 0) this.tryGrabLedge(e, dir as 1 | -1);
-    // Releasing jump early makes a shorter hop (not a swim stroke).
-    // (Not a bounce off a spring or a stomp: that rise is the bounce's own.)
-    if (input.wasReleased('jump') && e.vy < 0 && !e.inLiquid?.swim && !e.launched) e.vy *= 0.5;
+  /** It moves without gravity (its model floats: seen from above). */
+  private modelFloats(e: RuntimeEntity): boolean {
+    return !!e.controller && locomotionFor(e.controller.movement).floats;
   }
 
   /**
-   * Top-down walking: the arrow keys (or WASD) move it in eight directions at
-   * the same speed (diagonals aren't faster), speeding up and slowing down by
-   * its acceleration. Walls stop it; nothing pulls it down.
+   * What a character's movement is doing now, the same for every model: its velocity, which way it faces and is
+   * heading, its states (grounded, airborne, climbing, hanging, swimming, wallSliding, dashing…) and what the keys
+   * ask. For the camera, animation, scripts and validation, which never need a model's insides.
    */
-  private walkTopDown(e: RuntimeEntity, input: InputView, dt: number, scripted = false): void {
-    e.grounded = false;
-    e.climbing = false;
-    e.hanging = null;
-    if (scripted) return;
-    const c = e.controller!;
-    const sx = (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0);
-    const sy = (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0);
-    // Seen at an angle (isometric), the keys go the way they point on the screen: up is up the screen (north-west
-    // and north-east of the level's grid at once), right is right across it.
-    const iso = this.cam.camera.iso === true;
-    const dx = iso ? Math.sign(sx + sy) : sx;
-    const dy = iso ? Math.sign(sy - sx) : sy;
-    if (sx !== 0) e.facing = sx as 1 | -1;
-    if (dx !== 0 || dy !== 0) e.heading = { x: dx, y: dy };
-    const len = Math.hypot(dx, dy) || 1;
-    const tx = (dx / len) * c.speed * e.speedFactor;
-    const ty = (dy / len) * c.speed * e.speedFactor;
-    // Toward the wanted velocity, at most `acceleration` per second (as one vector, so turning is smooth).
-    const ex = tx - e.vx;
-    const ey = ty - e.vy;
-    const off = Math.hypot(ex, ey);
-    const step = c.acceleration * dt;
-    if (off <= step) {
-      e.vx = tx;
-      e.vy = ty;
-    } else {
-      e.vx += (ex / off) * step;
-      e.vy += (ey / off) * step;
-    }
+  motion(e: RuntimeEntity): MotionSnapshot | null {
+    if (!e.controller) return null;
+    const model = locomotionFor(e.controller.movement);
+    const input = this.lastInput;
+    return {
+      model: model.id,
+      velocity: { x: e.vx, y: e.vy },
+      facing: e.facing,
+      heading: model.floats ? { ...e.heading } : null,
+      states: motionStates(e),
+      intent: input
+        ? { x: (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0), y: (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0), jump: input.isDown('jump') }
+        : { x: 0, y: 0, jump: false },
+    };
   }
 
   /**
@@ -1981,7 +1891,7 @@ export class Runtime {
 
   /** A player's fire key: X, or Space too for one that can't jump (seen from above, or without gravity). */
   fireHeld(e: RuntimeEntity, input: InputView): boolean {
-    return input.isDown('fire') || ((e.controller?.movement === 'topdown' || this.floats(e)) && input.isDown('jump'));
+    return input.isDown('fire') || ((this.modelFloats(e) || this.floats(e)) && input.isDown('jump'));
   }
 
   /** Things with Stay On Screen never leave what the camera shows: its edges stop them as walls do. */
@@ -2018,6 +1928,7 @@ export class Runtime {
     e.heldBlock = held.length ? new Set(held) : null;
     e.hanging = null;
     e.controlsDone = false;
+    e.ability = {};
     e.coyote = 0;
     e.jumpBuffer = 0;
     // What scripts did to how it looks, and the states they put it in (dying…), start over; their variables stay.

@@ -23,8 +23,14 @@ export interface ViewModule extends Module {
 
 export interface LocomotionModule extends Module {
   kind: 'locomotion';
-  /** The Character Controller's movement setting it is today (F2 moves the movement code itself behind the model). */
-  controller: 'platformer' | 'topdown';
+  /** The Character Controller's movement value that selects its runtime model (runtime/movement). */
+  controller: string;
+}
+
+export interface AbilityModule extends Module {
+  kind: 'ability';
+  /** The component that gives a character the ability (its runtime ability: runtime/movement/abilities.ts). */
+  component: string;
 }
 
 export interface KitModule extends Module {
@@ -68,7 +74,7 @@ modules.register({
   requires: ['kit:turns'],
   provides: ['time:turns'],
   fallback: { 'kit:turns': 'nothing in the game takes turns yet (no turn scripts): it plays in real time' },
-  pointsTo: { code: 'runtime/turns.ts (TurnKit), driven by the turn scripts', movesIn: 'F2' },
+  pointsTo: { code: 'runtime/turns.ts (TurnKit), driven by the turn scripts', movesIn: 'F6' },
 });
 
 // ---------------------------------------------------------------- movement
@@ -80,7 +86,6 @@ modules.register<LocomotionModule>({
   requires: ['view:side', 'time:realtime'],
   provides: ['locomotion:arcade', 'reach:table', 'reach:moves', 'reach:simulator'],
   controller: 'platformer',
-  pointsTo: { code: "runtime/runtime.ts Runtime.control (movement 'platformer')", movesIn: 'F2' },
 });
 modules.register<LocomotionModule>({
   kind: 'locomotion',
@@ -90,10 +95,12 @@ modules.register<LocomotionModule>({
   requires: ['view:top|view:iso'],
   provides: ['locomotion:topdown'],
   controller: 'topdown',
-  pointsTo: { code: "runtime/runtime.ts Runtime.control / walkTopDown (movement 'topdown')", movesIn: 'F2' },
 });
-modules.register({ kind: 'ability', id: 'double_jump', version: 1, describe: 'Extra jumps in the air (DoubleJump)', requires: ['locomotion:arcade'], provides: ['ability:double_jump'], pointsTo: { code: 'DoubleJump component, read by the jumping engine part', movesIn: 'F2' } });
-modules.register({ kind: 'ability', id: 'ledge_grab', version: 1, describe: 'Catch ledges and climb up (LedgeGrab)', requires: ['locomotion:arcade'], provides: ['ability:ledge_grab'], pointsTo: { code: 'LedgeGrab component, runtime.ts tryGrabLedge/hang', movesIn: 'F2' } });
+const ability = (id: string, component: string, describe: string): AbilityModule => ({ kind: 'ability', id, version: 1, describe, requires: ['locomotion:arcade'], provides: [`ability:${id}`], component });
+modules.register(ability('double_jump', 'DoubleJump', 'Extra jumps in the air'));
+modules.register(ability('ledge_grab', 'LedgeGrab', 'Catch ledges and climb up'));
+modules.register(ability('wall_jump', 'WallJump', 'Slide down walls and jump off them'));
+modules.register(ability('dash', 'Dash', 'A short fast dash the way the keys point, no gravity; refilled on landing'));
 
 // ---------------------------------------------------------------- geometry and camera
 modules.register({ kind: 'geometry', id: 'box', version: 1, describe: 'Square tiles and solid boxes', requires: [], provides: ['geometry:box'], pointsTo: { code: 'runtime/physics.ts moveAndCollide, runtime.ts staticSolids', movesIn: 'F3' } });

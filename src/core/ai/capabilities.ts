@@ -43,6 +43,7 @@ export const COMPONENT_TOPICS: Record<string, { fields: string[]; components: st
   autotiling: { fields: ['Sprite.autotile', 'Sprite.autotileSheet'], components: [] },
   rounded_corners: { fields: ['Sprite.roundCorners'], components: [] },
   random: { fields: [], components: ['FogOfWar', 'Light'] },
+  precision_moves: { fields: [], components: ['WallJump', 'Dash'] },
 };
 const fieldTopic = (comp: string, field: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.fields.includes(`${comp}.${field}`))?.[0];
 const componentTopic = (comp: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.components.includes(comp))?.[0];

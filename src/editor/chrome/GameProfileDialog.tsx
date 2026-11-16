@@ -115,6 +115,25 @@ export function GameProfileDialog() {
               </select>
             </label>
           )}
+          <div className="profile-row" data-testid="profile-abilities">
+            <span className="profile-label">Abilities</span>
+            <span className="profile-kits">
+              {choices.abilities.map((id) => {
+                const on = profile.movement.abilities.includes(id);
+                return (
+                  <label key={id} className="profile-check" title={describe('ability', id)}>
+                    <input
+                      type="checkbox"
+                      data-testid={`profile-ability-${id}`}
+                      checked={on}
+                      onChange={() => change({ abilities: on ? profile.movement.abilities.filter((a) => a !== id) : [...profile.movement.abilities, id] }, `${on ? 'no' : ''} ${id.replace('_', ' ')}`.trim())}
+                    />
+                    {id.replace('_', ' ')}
+                  </label>
+                );
+              })}
+            </span>
+          </div>
           <label className="profile-row" data-testid="profile-theme">
             <span className="profile-label">Look</span>
             <select value={profile.theme ?? ''} onChange={(e) => change({ theme: e.target.value || null }, `look ${e.target.value || 'not chosen'}`)}>
@@ -150,7 +169,6 @@ export function GameProfileDialog() {
             <span className="profile-label">Also</span>
             <span>
               geometry {profile.geometry.join(', ')} · camera {profile.camera.join(', ')} · progression {profile.progression.model}
-              {profile.movement.abilities.length ? ` · abilities ${profile.movement.abilities.join(', ')}` : ''}
             </span>
           </div>
         </div>

@@ -16,7 +16,10 @@ const SIGNATURES: [string, string[]][] = [
   ['platformer', ['Platform', 'Stone', 'Ramp', 'Ramp left', 'Bridge', 'Spring', 'Question block', 'Brick', 'Pipe top', 'Pressure plate']],
 ];
 
-type Def = { name: string; metadata?: Record<string, unknown> };
+type Def = { name: string; metadata?: Record<string, unknown>; components?: Record<string, unknown> };
+
+/** The movement abilities by the component that gives them (engine/modules.ts ability modules; a test checks they agree). */
+export const ABILITY_COMPONENTS: Record<string, string> = { DoubleJump: 'double_jump', LedgeGrab: 'ledge_grab', WallJump: 'wall_jump', Dash: 'dash' };
 const starterName = (d: Def) => (typeof d.metadata?.starter === 'string' ? d.metadata.starter : d.name);
 
 /** The kit a game was made from, or null when none of its objects are a kit's. */
@@ -36,5 +39,10 @@ export function kitOfObjects(definitions: Def[], gameType: GameType | undefined)
 /** The profile of a game that has none stored: its kit's preset (never written by this). */
 export function inferProfileFromObjects(project: { definitions: Def[]; settings: { gameType?: GameType } }): GameProfile {
   const kit = kitOfObjects(project.definitions, project.settings.gameType) ?? (project.settings.gameType === 'topdown' ? 'topdown' : 'platformer');
-  return JSON.parse(JSON.stringify((presetById(kit) ?? presetById('platformer')!).profile)) as GameProfile;
+  const profile = JSON.parse(JSON.stringify((presetById(kit) ?? presetById('platformer')!).profile)) as GameProfile;
+  // (The abilities its player-controlled objects have, in the order the components are listed above.)
+  const players = project.definitions.filter((d) => d.components?.CharacterController);
+  const have = Object.entries(ABILITY_COMPONENTS).filter(([c]) => players.some((d) => d.components?.[c])).map(([, id]) => id);
+  if (have.length && profile.movement.model === 'arcade') profile.movement.abilities = have;
+  return profile;
 }
