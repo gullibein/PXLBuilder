@@ -22,7 +22,8 @@ export const gameProfileSchema = z.object({
   /** The object kits the game was made from (the first is its base). */
   kits: z.array(z.string()).min(1),
   /** What builds its levels (null: none: levels made by hand or by the AI), with its settings (sections: genre). */
-  generator: z.object({ id: z.string().nullable(), settings: z.record(z.string(), z.unknown()) }),
+  /** `also`: other generators the game uses beside its level builder (one that builds at play: random levels). */
+  generator: z.object({ id: z.string().nullable(), settings: z.record(z.string(), z.unknown()), also: z.array(z.string()).optional() }),
   /** How its levels hang together. */
   progression: z.object({ model: z.string().min(1) }),
   /** Its look (a theme id: levelGen/profile.ts THEMES), null: not chosen. */

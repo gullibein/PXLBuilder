@@ -2858,8 +2858,12 @@ try {
     await check(async () => (await dlg.getByTestId('profile-camera-follow').isChecked()) && !(await dlg.getByTestId('profile-camera-rooms').isChecked()), "the profile shows the camera's behaviours (following; no rooms yet)");
     await dlg.getByTestId('profile-camera-rooms').check();
     await check(async () => (await dlg.getByTestId('profile-camera-rooms').isChecked()) && (await dlg.getByTestId('profile-camera-follow').isChecked()) && (await dlg.getByTestId('profile-problem').count()) === 0, 'a camera behaviour is switched on in the profile (rooms: camera zones), following kept');
+    await check(async () => !(await dlg.getByTestId('profile-random-dungeon').isChecked()), 'the profile shows the generators that build at play (random levels: not in this game)');
+    await dlg.getByTestId('profile-random-dungeon').check();
+    await check(async () => (await dlg.getByTestId('profile-random-dungeon').isChecked()) && (await dlg.getByTestId('profile-generator').locator('select').inputValue()) === 'sections' && (await dlg.getByTestId('profile-problem').count()) === 0, 'the random-level generator is selected beside the level builder (which stays)');
     await page.keyboard.press('Escape');
     await check(async () => (await dlg.count()) === 0, '(Esc closes it)');
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();

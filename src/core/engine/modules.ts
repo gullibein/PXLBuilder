@@ -4,6 +4,8 @@
  * moves it). What does go through these modules already: new games (kits), the level builder (generators), the
  * player's movement and the levels' gravity when the profile changes (locomotion, views).
  */
+import { GENERATORS } from './generators';
+import { playGeneratorById, type PlayGenerator } from '../generation/playGenerators';
 import { CAMERA_BEHAVIORS } from './camera';
 import { VALIDATORS, type Validator } from '../validation/validators';
 import { GEOMETRY } from './geometry';
@@ -58,6 +60,12 @@ export interface GeneratorModule extends Module {
   validators: (project: Project, registry: ComponentRegistry) => string[];
   /** Builds a level (New level, Regenerate, Variation, more levels, generate_level). Missing: levels made otherwise. */
   build?(req: GeneratorRequest): GenerateResult;
+  /** When it builds: while editing, or anew at each play. */
+  when: 'edit' | 'play';
+  /** What happens to what a game has of it when it isn't active. */
+  without: string;
+  /** Its play-time builder (when: play). */
+  atPlay?: PlayGenerator;
   /** A short name for what it builds in this game ("classic", "puzzle"…), or null when it can't build here. */
   label?(project: Project, registry: ComponentRegistry): string | null;
 }
@@ -151,13 +159,13 @@ modules.register(topKit('roguelike', 'Roguelike objects: monsters that answer ea
 modules.register(topKit('isometric', 'Isometric blocks: floors, walls and water with height, a hero', (r, n) => createIsometricProject(r, n), ['view:iso']));
 
 // ---------------------------------------------------------------- level generation and progression
+// Generators (declared in engine/generators.ts; only the ones active in a game build: at edit time through
+// levelGen/build.ts, at play through core/generation/playGenerators.ts).
+const generatorKind = (id: string) => GENERATORS.find((g) => g.id === id)!;
 modules.register<GeneratorModule>({
   kind: 'generator',
-  id: 'sections',
-  version: 1,
-  describe: 'Levels of floors, each a run of sections (patterns) sized from the player\'s jump; a genre setting (classic, puzzle) picks the patterns',
-  requires: ['view:side', 'reach:table', 'role:player', 'role:ground', 'role:goal'],
-  provides: ['generator:levels'],
+  ...generatorKind('sections'),
+  provides: ['generator:sections', 'generator:levels'],
   validators: (project, registry) => ['layout', 'checker', 'cell_solver', ...(levelProfileOf(project, registry)?.genre.id === 'puzzle' ? ['puzzle_needed'] : [])],
   label: (project, registry) => {
     const genre = levelProfileOf(project, registry)?.genre.id;
@@ -168,17 +176,14 @@ modules.register<GeneratorModule>({
     const id = genre && GENRE_BUILDS[genre] ? genre : 'classic';
     return generateLevel(project, sceneId, blueprint, registry, id, { validators: ['layout', 'checker', 'cell_solver', ...(id === 'puzzle' ? ['puzzle_needed'] : [])], ...options });
   },
-  pointsTo: { code: 'levelGen/generate.ts (layout, floors, sections), genres.ts', movesIn: 'F6' },
 });
 modules.register<GeneratorModule>({
   kind: 'generator',
-  id: 'dungeon',
-  version: 1,
-  describe: 'Random dungeon floors, built anew each time a level with a recipe is played (rooms, corridors, monsters, loot)',
-  requires: ['view:top'],
-  provides: ['generator:at_play'],
+  ...generatorKind('dungeon'),
+  provides: ['generator:dungeon', 'generator:at_play'],
+  // (Built anew at each play, from a seed: nothing to validate ahead; what didn't work out is in its example's problems.)
   validators: () => [],
-  pointsTo: { code: 'model/dungeon.ts generateDungeon (Scene.generator)', movesIn: 'F6' },
+  atPlay: playGeneratorById('dungeon')!,
 });
 modules.register({ kind: 'progression', id: 'stages', version: 1, describe: 'Levels one after another (go_to_level for branches and secret exits)', requires: [], provides: ['progression:stages'], pointsTo: { code: 'runtime next_level / go_to_level, the play view', movesIn: 'F6' } });
 

@@ -37,12 +37,14 @@ export function kitOfObjects(definitions: Def[], gameType: GameType | undefined)
 }
 
 /** The profile of a game that has none stored: its kit's preset (never written by this). */
-export function inferProfileFromObjects(project: { definitions: Def[]; settings: { gameType?: GameType } }): GameProfile {
+export function inferProfileFromObjects(project: { definitions: Def[]; settings: { gameType?: GameType }; scenes?: readonly { generator?: unknown }[] }): GameProfile {
   const kit = kitOfObjects(project.definitions, project.settings.gameType) ?? (project.settings.gameType === 'topdown' ? 'topdown' : 'platformer');
   const profile = JSON.parse(JSON.stringify((presetById(kit) ?? presetById('platformer')!).profile)) as GameProfile;
   // (The abilities its player-controlled objects have, in the order the components are listed above.)
   const players = project.definitions.filter((d) => d.components?.CharacterController);
   const have = Object.entries(ABILITY_COMPONENTS).filter(([c]) => players.some((d) => d.components?.[c])).map(([, id]) => id);
   if (have.length && profile.movement.model === 'arcade') profile.movement.abilities = have;
+  // (A level with a recipe is a random level: the generator that builds it at play is part of the game.)
+  if (project.scenes?.some((s) => s.generator) && profile.generator.id !== 'dungeon') profile.generator = { ...profile.generator, also: ['dungeon'] };
   return profile;
 }

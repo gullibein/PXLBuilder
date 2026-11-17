@@ -1508,3 +1508,45 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 | V5 | Bosses, arenas with doors, stage select |
 | V6 | Worlds, ability gates |
 | Not tied to a slice | A cell grid for hand-drawn levels (T4); the geometry work in §18.4 |
+
+### 22.5 F6a — done (awaiting review before F6b)
+
+**Goldens recorded first** (`regression/generators.test.ts`), identical after:
+- seven dungeons from fixed seeds: rooms on floors 1, 2 and 3 (with the locked door and its key), caves, a maze, a big one with loops and wide corridors, and one with a room template;
+- the roguelike starter as play builds it, on floors 1 and 4;
+- the editor's example and play building the same level for the same seed.
+
+**What moved, and what is new:**
+
+| Piece | Where | What it is |
+|---|---|---|
+| Generator declarations | `core/engine/generators.ts` | One table: each generator's id, when it builds (`edit` or `play`), what it requires, and what happens without it. Data only, so the runtime reads it. `selectedGenerators`, `generatorStatus` (registered, selected, supported, active), `generatorNotes`, `gamePlayGenerators` |
+| Play-time interface | `core/generation/playGenerators.ts` | `PlayGenerator`: `applies(scene)`, `build` (the level as played: floor, the scripts' changes to the recipe, the seed), `example` (what the editor shows). `playGeneratorFor(project, scene)` gives a level's generator only when it is active in the game. The dungeon generator is the first, its code as it was |
+| Generator modules | `engine/modules.ts` | Built from the declarations: `sections` (edit: `build`, `label`, `validators`) and `dungeon` (play: `atPlay`). Neither points to old code |
+| Callers | `runtime.ts`, `DungeonPanel.tsx`, `Viewport.tsx`, `ai/context.ts`, `mutations.ts` (keep the example) | All through `playGeneratorFor`. A test scans the source: nothing outside the generators' own files and modules calls them |
+| Profile | `engine/profileSchema.ts`, `profile.ts` | `generator.also`: generators the game uses beside its level builder (optional, so every stored profile stays valid). `set_game_profile` takes `alsoGenerators`. The Game profile dialog has a Random levels row |
+
+**Controlled by the profile now:**
+- **At play:** a level with a recipe is built only by a generator active in the game. Otherwise it plays as it is placed by hand; the editor shows no example, the dungeon panel says why, the AI is told, and the compatibility report names the level. A test checks that all of these agree.
+- **While editing:** a profile with no level builder builds nothing and says why. The old fallback, which used the `sections` builder whatever the profile said, is gone.
+
+**Existing games keep their random levels:**
+- **No stored profile:** the generator is worked out from the game (a level with a recipe means `dungeon`). Tested: such a roguelike builds exactly what the one with a profile builds.
+- **A stored profile:** format v18 adds `dungeon` beside the level builder when the game has a random level.
+- **Making a level random** (the dungeon panel, `set_generator`) selects the generator in a stored profile at the same step.
+
+**Decisions to review:**
+1. **Two kinds of generator, and a game may use both.** The profile's `generator.id` stays "the level builder"; `also` lists the rest. The alternative, turning `generator` into a list, would have changed every stored profile and everything that reads the builder's genre.
+2. **`dungeon` requires nothing of the profile** (it required a view from above). Whether a level is seen from above is the level's own (its gravity), not the game's: a platformer may have one top-down random level. Refusing it by the game's view would have stopped such a game's level from being built. Its description says what it is for.
+3. **A level's recipe is the dungeon's recipe** (`scene.generator`, typed as such). A second play-time generator says which levels are its own with `applies` (the test one goes by the level's name). A general "which generator, with what recipe" field on a level comes with the first real second generator (V1's challenge rooms, V2's grid stages).
+4. **What a play-time generator returns** is the dungeon's description (rooms, start, way on, problems), since scripts read it (`room_x`, `room_count`). Another generator fills what it has.
+5. **The level-built signal and the scripts' recipe changes** (`set_generator` in play) stay in the runtime and are passed to the generator as a patch.
+
+**Still on old code:**
+- Time `turns` and progression `stages` (F6c).
+- `nextLevel` and room templates' "not played on their own" rule live in `model/dungeon.ts` (progression: F6c).
+- The dungeon panel edits the dungeon's recipe directly: it is that generator's own editor, not a general one.
+
+**Limitations:**
+- The `sections` builder still sizes from the jump table only, and no generator places camera zones (both F6b).
+- A play-time generator's levels are not validated ahead (a new one each play); what didn't work out is in the example's problems, as before.

@@ -404,6 +404,19 @@ function migrateV15toV16(raw: Raw): Raw {
   return { ...raw, settings: { ...raw.settings, profile: { ...profile, geometry: [...profile.geometry, 'cells'] } } };
 }
 
+/**
+ * v17 -> v18
+ * - The game's profile chooses the generators that build its levels (engine/generators.ts), the one that builds a
+ *   random level anew at each play too. A game with a random level (a level with a recipe) whose stored profile
+ *   doesn't select the dungeon generator gets it, beside its level builder: its random levels are built as before.
+ */
+function migrateV17toV18(raw: Raw): Raw {
+  const profile = raw.settings?.profile;
+  const random = Array.isArray(raw.scenes) && raw.scenes.some((s: Raw) => s && s.generator);
+  if (!random || !profile || !profile.generator || profile.generator.id === 'dungeon' || (Array.isArray(profile.generator.also) && profile.generator.also.includes('dungeon'))) return raw;
+  return { ...raw, settings: { ...raw.settings, profile: { ...profile, generator: { ...profile.generator, also: [...(Array.isArray(profile.generator.also) ? profile.generator.also : []), 'dungeon'] } } } };
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -438,6 +451,7 @@ export const MIGRATIONS: Migration[] = [
     to: 17,
     migrate: (p) => p,
   },
+  { from: 17, to: 18, migrate: migrateV17toV18 },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

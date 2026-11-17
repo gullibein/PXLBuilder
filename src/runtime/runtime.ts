@@ -6,6 +6,8 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { gamePlayGenerators } from '../core/engine/generators';
+import { playGeneratorFor } from '../core/generation/playGenerators';
 import { gameCamera } from '../core/engine/camera';
 import type { CameraZone } from './cameraBehaviors';
 import { GEOMETRY, gameGeometry } from '../core/engine/geometry';
@@ -14,8 +16,7 @@ import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
 import { partsOf } from './parts';
 import { moverPath } from '../core/model/movingPath';
 import { Fog } from './fog';
-import { buildLevel, newSeed, type Dungeon } from '../core/model/dungeon';
-import { patchGenerator } from '../core/model/mutations';
+import type { Dungeon } from '../core/model/dungeon';
 import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
 import { createStandaloneEntity, instantiateDefinition } from '../core/model/factory';
@@ -577,6 +578,8 @@ export class Runtime {
   readonly geometry: ReadonlySet<string>;
   /** The camera behaviours the game's profile makes active, in order (engine/camera.ts). */
   readonly cameraBehaviors: readonly string[];
+  /** The generators that may build a level at play (the active ones: engine/generators.ts). */
+  readonly playGenerators: ReadonlySet<string>;
   /** Recomputed only when something opens, closes, appears or goes away. */
   private solidsDirty = true;
   fallLimit = 0;
@@ -652,6 +655,7 @@ export class Runtime {
   ) {
     this.geometry = gameGeometry(project);
     this.cameraBehaviors = gameCamera(project);
+    this.playGenerators = gamePlayGenerators(project);
     this.baseScene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.scene = this.baseScene;
     if (game) this.game = game;
@@ -688,20 +692,15 @@ export class Runtime {
   private load(): void {
     if (this.kit) this.kit = this.newKit();
     // A random level: built anew (each restart too, "the next floor"), for the floor the game is on.
-    const gen = this.baseScene.generator;
+    // (By the generator the game's profile makes active for it; a recipe whose generator isn't is not built.)
+    const gen = playGeneratorFor(this.project, this.baseScene, this.playGenerators);
     if (gen) {
-      // (With what scripts changed of the recipe; a change that doesn't check out was said when it was made.)
-      let recipe = gen;
-      try {
-        recipe = patchGenerator(this.project, gen, this.generatorPatch);
-      } catch {
-        this.generatorPatch = {};
-      }
-      this.dungeonSeed = recipe.seed ?? newSeed();
       const floor = Number(this.game.get('floor') ?? 1) || 1;
-      const built = buildLevel(this.project, { ...this.baseScene, generator: recipe }, this.registry, this.dungeonSeed, floor);
+      const built = gen.build({ project: this.project, scene: this.baseScene, registry: this.registry, floor, patch: this.generatorPatch });
+      if (built.patchRefused) this.generatorPatch = {};
+      this.dungeonSeed = built.seed;
       this.scene = built.scene;
-      this.dungeon = built.dungeon;
+      this.dungeon = built.built;
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry, this.geometry));
     // Fog of war, seen by whoever has it (the player).

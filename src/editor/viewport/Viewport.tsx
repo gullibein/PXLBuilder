@@ -9,7 +9,7 @@ import { instantiateDefinition } from '../../core/model/factory';
 import { addEntity, moveEntities, removeEntities, setBackground, setPlatformPath } from '../../core/model/mutations';
 import { cellAt, cellCenter, cellKey, cellSize, cellsOnLine, constrainToAxis, snapToCell, type Cell } from '../../core/model/placement';
 import { resolveEntity, type ResolvedEntity } from '../../core/model/resolve';
-import { generateDungeon } from '../../core/model/dungeon';
+import { playGeneratorFor } from '../../core/generation/playGenerators';
 import { componentRegistry } from '../../core/components/builtin';
 import type { EntityInstance, Id, ObjectDefinition, Project, Scene, Vec2 } from '../../core/types';
 import { resolveRef } from '../../core/logic/refs';
@@ -2313,8 +2313,7 @@ function dungeonPreview(project: Project, scene: Scene): (ResolvedEntity & { alp
   if (!scene.generator) return [];
   const had = previews.get(scene);
   if (had && had.project.definitions === project.definitions && had.project.assets === project.assets) return had.list;
-  const g = scene.generator;
-  const list = generateDungeon(project, scene, componentRegistry, g.preview, g.previewFloor).entities.map((e) => ({ ...resolveEntity(project, e, componentRegistry), alpha: 0.55 }));
+  const list = (playGeneratorFor(project, scene)?.example({ project, scene, registry: componentRegistry }).entities ?? []).map((e) => ({ ...resolveEntity(project, e, componentRegistry), alpha: 0.55 }));
   previews.set(scene, { project, list });
   return list;
 }

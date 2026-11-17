@@ -13,11 +13,10 @@ import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type 
 import { patternById } from './patterns/index';
 import { findRoles } from './roles';
 import { fingerprintOfScene } from './fingerprint';
-import type { GenerateOptions, GenerateResult } from './generate';
+import { LevelGenError, type GenerateOptions, type GenerateResult } from './generate';
 import { GENRE_BUILDS } from './genres';
 import { levelProfileOf } from './profile';
 import { generatorOf } from '../engine/profile';
-import { modules, type GeneratorModule } from '../engine/modules';
 
 /**
  * What builds this game's levels, by name ("classic", "puzzle", or another generator's id), or null: the game's
@@ -100,11 +99,12 @@ export function themeAvoids(project: Project, registry: ComponentRegistry): Mech
 
 /** Builds a level of the game (checked, not applied), leaving out what its look rules out. */
 export function buildLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, options: GenerateOptions = {}): GenerateResult {
-  // The game's level builder (its profile's generator). (A game whose profile has none is built as a platformer,
-  // as before profiles: generate_level and "more levels" asked for anyway get the sections builder's answer.)
+  // The game's level builder: the generator its profile selects that builds while editing. None: nothing is built,
+  // and why is said (no other builder steps in).
   const gen = generatorOf(project, registry);
-  const builder = gen?.build ? gen : modules.get<GeneratorModule>('generator', 'sections')!;
-  return builder.build!({ project, sceneId, blueprint, registry, options: { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), ...themeAvoids(project, registry)] } });
+  const build = gen?.build;
+  if (!build) throw new LevelGenError(noBuilderReason(project, registry) ?? "This game's profile has no level builder (Game profile, or set_game_profile with generator \"sections\")");
+  return build({ project, sceneId, blueprint, registry, options: { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), ...themeAvoids(project, registry)] } });
 }
 
 /** Puts a built level into a project being edited: its operations, and the record of how it was made. */

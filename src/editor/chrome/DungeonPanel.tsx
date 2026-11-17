@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { generateDungeon, newSeed } from '../../core/model/dungeon';
+import { newSeed } from '../../core/model/dungeon';
+import { playGeneratorFor } from '../../core/generation/playGenerators';
 import { keepDungeon, setGenerator } from '../../core/model/mutations';
 import type { DungeonGenerator, DungeonSpawn, Project, Scene } from '../../core/types';
 import { NumberInput } from '../panels/FieldEditor';
@@ -22,7 +23,9 @@ export function DungeonPanel() {
   const g = scene.generator;
   const set = (label: string, patch: Partial<Record<keyof DungeonGenerator, unknown>> | null, key?: string) =>
     edit(label, (p) => setGenerator(p, scene.id, patch as Record<string, unknown> | null), key ? { coalesceKey: `${scene.id}.generator.${key}` } : undefined);
-  const example = g ? generateDungeon(project, scene, componentRegistry, g.preview, g.previewFloor) : null;
+  // (Built by the generator the game's profile makes active for the level; none: the recipe isn't built.)
+  const builder = g ? playGeneratorFor(project, scene) : null;
+  const example = builder ? builder.example({ project, scene, registry: componentRegistry }) : null;
   const objects = [...project.definitions].sort((a, b) => a.name.localeCompare(b.name));
   const pickObject = (value: string | null, onPick: (id: string | null) => void, testId: string, none = true) => (
     <select value={value ?? ''} data-testid={testId} onChange={(e) => onPick(e.target.value || null)}>
@@ -110,6 +113,11 @@ export function DungeonPanel() {
             </button>
           </div>
           {many && <Thumbnails project={project} scene={scene} onPick={(seed) => set('Random level: example', { preview: seed })} />}
+          {!builder && (
+            <p className="small dg-problem" data-testid="dungeon-inactive">
+              ⚠ Not built in play: the game's profile doesn't select the random-level generator (Game profile → Random levels).
+            </p>
+          )}
           {example && (
             <p className={`small${example.problems.length ? ' dg-problem' : ' muted'}`} data-testid="dungeon-report">
               {example.problems.length ? `⚠ ${example.problems.join('; ')}` : `${example.rooms ? `${example.rooms} rooms, ` : ''}${example.entities.length} things placed${example.locked ? ', a locked door and its key' : ''}.`}
@@ -212,10 +220,10 @@ function Thumbnails({ project, scene, onPick }: { project: Project; scene: Scene
 function Thumb({ project, scene, seed, onPick }: { project: Project; scene: Scene; seed: number; onPick: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const g = scene.generator!;
-  const d = generateDungeon(project, scene, componentRegistry, seed, g.previewFloor);
+  const d = playGeneratorFor(project, scene)?.example({ project, scene, registry: componentRegistry, seed }) ?? null;
   useEffect(() => {
     const c = ref.current;
-    if (!c) return;
+    if (!c || !d) return;
     const px = 3;
     c.width = g.width * px;
     c.height = g.height * px;
@@ -233,10 +241,10 @@ function Thumb({ project, scene, seed, onPick }: { project: Project; scene: Scen
     }
   });
   return (
-    <button className="dg-thumb" title={`Seed ${seed}${d.problems.length ? `: ${d.problems.join('; ')}` : ''}`} onClick={onPick}>
+    <button className="dg-thumb" title={`Seed ${seed}${d?.problems.length ? `: ${d.problems.join('; ')}` : ''}`} onClick={onPick}>
       <canvas ref={ref} />
       <span className="small">
-        {d.problems.length ? '⚠ ' : ''}
+        {d?.problems.length ? '⚠ ' : ''}
         {seed}
       </span>
     </button>

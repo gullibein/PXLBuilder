@@ -118,6 +118,8 @@ describe('F1: game profiles and the module registry', () => {
       id: 'test_flat',
       version: 1,
       describe: 'a flat test level',
+      when: 'edit',
+      without: 'nothing is built',
       requires: ['view:side'],
       provides: [],
       validators: () => ['layout'],

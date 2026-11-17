@@ -6,7 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
-import { generateDungeon } from '../model/dungeon';
+import { playGeneratorFor } from '../generation/playGenerators';
 import { checkGame, describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
 import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
@@ -527,8 +527,9 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
             const g = scene.generator;
             const name = (id: string | null) => (id ? (project.definitions.find((d) => d.id === id)?.name ?? '?') : null);
             const spawn = (list: typeof g.monsters) => list.map((s) => ({ object: name(s.object), weight: s.weight, fromFloor: s.fromFloor }));
-            const example = generateDungeon(project, scene, registry, g.preview, g.previewFloor);
-            return { generator: { ...g, wall: name(g.wall), floor: name(g.floor), stairs: name(g.stairs), monsters: spawn(g.monsters), loot: spawn(g.loot), example: { rooms: example.rooms, things: example.entities.length, problems: example.problems } } };
+            // (Its example, by the generator the game's profile makes active for it; none: said, it isn't built.)
+            const example = playGeneratorFor(project, scene)?.example({ project, scene, registry }) ?? null;
+            return { generator: { ...g, wall: name(g.wall), floor: name(g.floor), stairs: name(g.stairs), monsters: spawn(g.monsters), loot: spawn(g.loot), example: example ? { rooms: example.rooms, things: example.entities.length, problems: example.problems } : { problems: ['not built: the game\'s profile doesn\'t select the generator "dungeon" (see game.works)'] } } };
           })()
         : {}),
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),

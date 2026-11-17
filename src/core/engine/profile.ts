@@ -4,6 +4,7 @@
  * docs/engine-architecture-proposal.md §3, §10, §12.
  */
 import { cameraNotes } from './camera';
+import { generatorNotes, selectedGenerators } from './generators';
 import { geometryNotes } from './geometry';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
@@ -57,7 +58,7 @@ function selected(p: GameProfile): { kind: ModuleKind; id: string; system: strin
     ...p.geometry.map((id) => ({ kind: 'geometry' as const, id, system: 'geometry' })),
     ...p.camera.map((id) => ({ kind: 'camera' as const, id, system: 'camera' })),
     ...p.kits.map((id) => ({ kind: 'kit' as const, id, system: 'kits' })),
-    ...(p.generator.id ? [{ kind: 'generator' as const, id: p.generator.id, system: 'generator' }] : []),
+    ...selectedGenerators(p).map((id) => ({ kind: 'generator' as const, id, system: 'generator' })),
     { kind: 'progression', id: p.progression.model, system: 'progression' },
   ];
 }
@@ -102,7 +103,9 @@ export function checkGame(project: Project, registry: ComponentRegistry): Compat
   const base = checkProfile(p);
   if (base.state === 'incompatible') return base;
   const provided = new Set(selected(p).flatMap((s) => modules.get(s.kind, s.id)?.provides ?? []));
-  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided)];
+  // (Generators: every one registered, the engine's and any added, with what each requires.)
+  const generators = modules.list<GeneratorModule>('generator').map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators)];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 
@@ -176,6 +179,7 @@ export const profileChangeSchema = z
     camera: z.array(z.string()),
     addKits: z.array(z.string()),
     generator: z.string().nullable(),
+    alsoGenerators: z.array(z.string()),
     genre: z.string().nullable(),
     theme: z.string().nullable(),
   })
@@ -199,7 +203,13 @@ export function changedProfile(base: GameProfile, c: ProfileChange): GameProfile
   if (c.geometry) p.geometry = [...c.geometry];
   if (c.camera) p.camera = [...c.camera];
   if (c.addKits) p.kits = [...p.kits, ...c.addKits.filter((k) => !p.kits.includes(k))];
-  if (c.generator !== undefined) p.generator = { id: c.generator, settings: c.generator === p.generator.id ? p.generator.settings : {} };
+  // (The level builder changes; the other generators the game uses stay, without the one that became the builder.)
+  if (c.generator !== undefined) p.generator = { ...p.generator, id: c.generator, settings: c.generator === p.generator.id ? p.generator.settings : {} };
+  if (c.alsoGenerators) p.generator = { ...p.generator, also: [...c.alsoGenerators] };
+  if (p.generator.also) {
+    const also = [...new Set(p.generator.also)].filter((id) => id !== p.generator.id);
+    p.generator = also.length ? { ...p.generator, also } : { id: p.generator.id, settings: p.generator.settings };
+  }
   if (c.genre !== undefined) {
     const { genre: _g, ...rest } = p.generator.settings;
     p.generator = { ...p.generator, settings: c.genre ? { ...rest, genre: c.genre } : rest };
@@ -286,7 +296,7 @@ export function profileChoices(): { presets: string[]; choices: Record<string, s
 
 /** The profile in a line per system (the AI's context, the profile panel's summary). */
 export function describeProfile(p: GameProfile): string {
-  const gen = p.generator.id ? `${p.generator.id}${p.generator.settings.genre ? ` (${String(p.generator.settings.genre)})` : ''}` : 'none';
+  const gen = `${p.generator.id ? `${p.generator.id}${p.generator.settings.genre ? ` (${String(p.generator.settings.genre)})` : ''}` : 'none'}${p.generator.also?.length ? `, also ${p.generator.also.join(', ')}` : ''}`;
   return [
     p.preset ? `preset ${p.preset}` : 'own profile',
     `view ${p.view}`,

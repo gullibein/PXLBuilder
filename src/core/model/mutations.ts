@@ -4,7 +4,9 @@
  * validation in one place regardless of who calls it: the inspector today, the
  * command/transaction system and AI operations later.
  */
-import { defaultGenerator, withDungeon } from './dungeon';
+import { defaultGenerator } from './dungeon';
+import { playGeneratorFor } from '../generation/playGenerators';
+import { selectedGenerators } from '../engine/generators';
 import type { DungeonGenerator } from '../types';
 import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
@@ -202,6 +204,10 @@ export function setGenerator(project: Project, sceneId: Id, patch: Record<string
     return;
   }
   const g = (scene.generator = patchGenerator(project, scene.generator ?? defaultGenerator(project), patch));
+  // A random level is built by the dungeon generator: the game's profile selects it (a game with no stored profile
+  // has it worked out from its levels).
+  const stored = project.settings.profile;
+  if (stored && !selectedGenerators(stored).includes('dungeon')) stored.generator = { ...stored.generator, also: [...(stored.generator.also ?? []), 'dungeon'] };
   // A locked door and its key: the door needs the key (a "requires" connection for the door's object), used up.
   if (g.door && g.key && !scene.relationships.some((r) => r.type === 'requires' && r.source.kind === 'object' && r.source.id === g.door && r.target.kind === 'object' && r.target.id === g.key))
     scene.relationships.push({ id: generateId('rel'), type: 'requires', source: { kind: 'object', id: g.door }, target: { kind: 'object', id: g.key }, params: { consume: true }, conditions: [] });
@@ -302,7 +308,9 @@ export function patchGenerator(project: Project, base: DungeonGenerator, patch: 
 export function keepDungeon(project: Project, sceneId: Id, registry: ComponentRegistry): void {
   const scene = getScene(project, sceneId);
   if (!scene.generator) throw new ModelError('This level is not random: nothing to keep');
-  const built = withDungeon(project, scene, registry, scene.generator.preview, scene.generator.previewFloor);
+  const gen = playGeneratorFor(project, scene);
+  if (!gen) throw new ModelError("This level's recipe isn't built in this game: its profile doesn't select the generator (Game profile, or set_game_profile)");
+  const built = gen.build({ project, scene, registry, seed: scene.generator.preview, floor: scene.generator.previewFloor }).scene;
   // (New ids of their own, as anything placed.)
   scene.entities = built.entities.map((e) => (e.id.startsWith('gen_') ? { ...e, id: generateId('ent') } : e));
   delete scene.generator;

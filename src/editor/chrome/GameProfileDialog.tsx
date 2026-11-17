@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { checkGame, profileChoices, profileOf, setGameProfile, storedGameProfile, type ProfileChange } from '../../core/engine/profile';
-import { modules } from '../../core/engine/modules';
+import { modules, type GeneratorModule } from '../../core/engine/modules';
 import type { ModuleKind } from '../../core/engine/module';
 import { PRESETS } from '../../core/engine/presets';
 import { GENRES, THEMES } from '../../core/levelGen/profile';
@@ -132,6 +132,31 @@ export function GameProfileDialog() {
                   </label>
                 );
               })}
+            </span>
+          </div>
+          <div className="profile-row" data-testid="profile-random">
+            <span className="profile-label">Random levels</span>
+            <span className="profile-kits">
+              {modules
+                .list<GeneratorModule>('generator')
+                .filter((g) => g.when === 'play')
+                .map((g) => {
+                  // (Selected as the level builder itself, or beside it.)
+                  const main = profile.generator.id === g.id;
+                  const on = main || (profile.generator.also ?? []).includes(g.id);
+                  const also = (profile.generator.also ?? []).filter((x) => x !== g.id);
+                  return (
+                    <label key={g.id} className="profile-check" title={`${g.describe}. Off: ${g.without}`}>
+                      <input
+                        type="checkbox"
+                        data-testid={`profile-random-${g.id}`}
+                        checked={on}
+                        onChange={() => change(on ? (main ? { generator: null } : { alsoGenerators: also }) : { alsoGenerators: [...also, g.id] }, `random levels ${on ? 'without' : 'with'} ${g.id}`)}
+                      />
+                      {g.id}
+                    </label>
+                  );
+                })}
             </span>
           </div>
           <div className="profile-row" data-testid="profile-camera">
