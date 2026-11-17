@@ -231,12 +231,9 @@ describe('F1: game profiles and the module registry', () => {
     expect(Object.keys(KIT_ROLES.platformer).length).toBe(Object.keys(roles).length);
   });
 
-  it('modules that only point to old code say where it is and which stage moves it (F1 starts the modularization)', () => {
-    const kinds = ['view', 'time', 'locomotion', 'ability', 'geometry', 'camera', 'kit', 'generator', 'progression', 'validator'] as const;
+  it('no module only points to old code any more (F1 started with most of them pointing; F6 moved the last)', () => {
+    const kinds = ['view', 'time', 'turns', 'locomotion', 'ability', 'geometry', 'camera', 'kit', 'generator', 'progression', 'validator'] as const;
     const pointing = kinds.flatMap((k) => modules.list(k)).filter((m) => m.pointsTo);
-    expect(pointing.length).toBeGreaterThan(0);
-    // (F2 moved movement, F3 geometry and F4 validation behind their interfaces: none of theirs points to old code any more.)
-    for (const k of ['locomotion', 'ability', 'geometry', 'validator'] as const) expect(modules.list(k).filter((m) => m.pointsTo).map((m) => m.id), k).toEqual([]);
-    for (const m of pointing) expect(m.pointsTo!.movesIn, `${m.kind} ${m.id}`).toMatch(/^F[2-6]$/);
+    expect(pointing.map((m) => `${m.kind} ${m.id}`)).toEqual([]);
   });
 });

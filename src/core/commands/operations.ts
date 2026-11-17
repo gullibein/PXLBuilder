@@ -311,7 +311,7 @@ export const operationSchema = z.union([
   }),
   z.object({
     op: z.literal('set_game_profile'),
-    changeJson: z.string().describe('JSON of what to change (context.game): preset, view, time, movement, abilities, geometry, camera, addKits, generator, alsoGenerators, genre, theme'),
+    changeJson: z.string().describe('JSON of what to change (context.game): preset, view, time, turns, movement, abilities, geometry, camera, addKits, generator, alsoGenerators, genre, theme'),
   }),
   z.object({
     op: z.literal('build_path'),

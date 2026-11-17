@@ -1,5 +1,4 @@
 import { resolutionZoom } from '../../core/model/camera';
-import { nextLevel } from '../../core/model/dungeon';
 import { usesMenuKey } from '../../core/script/language';
 import { useEffect, useMemo, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
@@ -12,7 +11,8 @@ import { instrumentsOf, playSong, songAsset, type SongPlayer } from '../audio/mu
 import { browserPads, GamepadReader, InputState, type Action } from '../../runtime/input';
 import { controlsOf, keyLabel, keyMap } from '../../core/model/controls';
 import { PlayRecorder } from '../../runtime/recorder';
-import { Runtime } from '../../runtime/runtime';
+import { GameSession } from '../../runtime/session';
+import type { Runtime } from '../../runtime/runtime';
 import { imageLookup } from '../images';
 import type { PlayReport } from '../../core/debug/playReport';
 import type { Project } from '../../core/types';
@@ -134,11 +134,26 @@ export function PlayView(props: PlayViewProps) {
     };
     playMusic(scene.music);
     // The level's own camera settings decide the zoom (not how far the editor is zoomed).
-    let runtime = new Runtime(project, scene.id, componentRegistry);
-    // The game's own variables (set_game), kept across levels; and the levels left for a visit (visit_level), each
-    // kept as it was to come back to.
-    let game = runtime.game;
-    let visits: { scene: typeof scene; runtime: Runtime; startCamera: { x: number; y: number } }[] = [];
+    // The game across its levels (what follows a won level, visits and back, the game's own variables) is the
+    // session's (runtime/session.ts); here is what the screen does when the level changes.
+    const session = new GameSession(project, scene.id, componentRegistry, {
+      leave: () => recorder.stop(),
+      enter: (next, entered, how) => {
+        scene = next;
+        runtime = entered;
+        playMusic(scene.music, how.musicFromStart);
+        recorder = new PlayRecorder(runtime);
+        look();
+        measure();
+        if (how.back) startCamera = startCameras.get(runtime) ?? startCamera;
+        else {
+          runtime.cam.snap();
+          startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
+          startCameras.set(runtime, startCamera);
+        }
+      },
+    });
+    let runtime: Runtime = session.runtime;
     // What happens is recorded for the Debug tab and the AI ("why did the player die?").
     let recorder = new PlayRecorder(runtime);
     let hasSwitches = false;
@@ -152,8 +167,6 @@ export function PlayView(props: PlayViewProps) {
     look();
     // What the HUD shows when play starts (the first frame then shows the game's own: switches, top-down…).
     let shown: Hud = { health: null, items: [], messages: [], hasSwitches: false, canShoot: false, topDown: false, choosing: false, banner: null };
-    /** The game is finished: the last level was won (play stops, the banner stays). */
-    let finished = false;
     const input = new InputState();
     inputRef.current = input;
 
@@ -210,23 +223,8 @@ export function PlayView(props: PlayViewProps) {
     runtime.cam.snap();
     // Where the camera starts: a placed background is exactly where it was put then.
     let startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
-    /** On to another level (the next one, or the first again): sound and music stay as the game set them. */
-    const enterLevel = (next: typeof scene, musicFromStart: boolean, visiting = false) => {
-      const { soundOn, musicOn } = runtime;
-      recorder.stop();
-      if (visiting) visits.push({ scene, runtime, startCamera });
-      else visits = [];
-      scene = next;
-      runtime = new Runtime(project, scene.id, componentRegistry, game);
-      runtime.soundOn = soundOn;
-      runtime.musicOn = musicOn;
-      playMusic(scene.music, musicFromStart);
-      recorder = new PlayRecorder(runtime);
-      look();
-      measure();
-      runtime.cam.snap();
-      startCamera = { x: runtime.cam.frame().x, y: runtime.cam.frame().y };
-    };
+    /** Where the camera started in each level played (a level come back to from a visit has its own again). */
+    const startCameras = new WeakMap<Runtime, { x: number; y: number }>([[runtime, startCamera]]);
     const ro = new ResizeObserver(measure);
     ro.observe(canvas);
 
@@ -238,8 +236,7 @@ export function PlayView(props: PlayViewProps) {
         e.preventDefault();
         input.press(action);
       } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
-        runtime.restart();
-        finished = false;
+        session.restart();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -263,75 +260,12 @@ export function PlayView(props: PlayViewProps) {
       const pad = pads.read(browserPads());
       input.holdOnly(pad.actions, 'pad');
       canvas.dataset.pads = String(pad.connected);
-      if (pad.restart) {
-        runtime.restart();
-        finished = false;
-      }
-      if (!finished) {
-        runtime.update(dt, input);
-        recorder.sample();
-      }
-      // A won level: a moment to see it, then the next level (or the end of the game).
-      let banner: string | null = null;
-      if (runtime.completed !== null && !runtime.builtinHidden.has('level_end')) {
-        const nextScene = nextLevel(project, scene.id);
-        banner = nextScene ? 'Level complete!' : 'You finished the game!';
-        if (nextScene && runtime.time - runtime.completed > 1.5) {
-          enterLevel(nextScene, false);
-          banner = null;
-        } else if (!nextScene) finished = true;
-      }
-      // A script started the whole game again: its first level, its music from the start, its variables anew.
-      if (runtime.restartGameRequested) {
-        game = new Map();
-        enterLevel(project.scenes.find((s) => s.id === project.startSceneId) ?? project.scenes[0], true);
-        finished = false;
-      }
-      // go_to_level: on to that level (by name), as after winning one; the game's variables go along.
-      if (runtime.goRequest) {
-        const go = runtime.goRequest;
-        runtime.goRequest = null;
-        const want = go.level.trim().toLowerCase();
-        const target = project.scenes.find((s) => s.id === go.level || s.name.trim().toLowerCase() === want);
-        if (target) {
-          input.releaseAll();
-          enterLevel(target, false);
-          finished = false;
-        } else runtime.gameplay.emit('script_error', go.by, null, { script: 'go_to_level', message: `there is no level "${go.level}" (levels: ${project.scenes.map((s) => s.name).join(', ')})` });
-      }
-      // A visit to another level (a battle, a house's inside), and back to the one left, as it was.
-      if (runtime.visitRequest) {
-        const want = runtime.visitRequest.level.trim().toLowerCase();
-        const target = project.scenes.find((s) => s.id === runtime.visitRequest!.level || s.name.trim().toLowerCase() === want);
-        if (target) {
-          input.releaseAll();
-          runtime.paused = true;
-          enterLevel(target, false, true);
-        } else {
-          runtime.gameplay.emit('script_error', runtime.visitRequest.by, null, { script: 'visit_level', message: `there is no level "${runtime.visitRequest.level}" (levels: ${project.scenes.map((s) => s.name).join(', ')})` });
-          runtime.visitRequest = null;
-        }
-      }
-      if (runtime.returnRequest) {
-        const result = runtime.returnRequest.result;
-        runtime.returnRequest = null;
-        const back = visits.pop();
-        if (back) {
-          const { soundOn, musicOn } = runtime;
-          input.releaseAll();
-          recorder.stop();
-          scene = back.scene;
-          runtime = back.runtime;
-          runtime.soundOn = soundOn;
-          runtime.musicOn = musicOn;
-          playMusic(scene.music);
-          recorder = new PlayRecorder(runtime);
-          look();
-          measure();
-          startCamera = back.startCamera;
-          runtime.returned(result);
-        }
-      }
+      if (pad.restart) session.restart();
+      if (session.update(dt, input)) recorder.sample();
+      // A won level (a moment to see it, then the next one or the end of the game) and what scripts asked: another
+      // level, a visit and back, the whole game again.
+      session.progress(input);
+      const banner = session.banner;
       canvas.dataset.level = scene.name;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;

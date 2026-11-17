@@ -104,7 +104,7 @@ function boxOf(r: ResolvedEntity): Box {
 const KEEPS_MOVEMENT = new Set([
   'set', 'if', 'each', 'repeat', 'face', 'shoot', 'spawn', 'damage', 'kill', 'heal', 'give_item', 'take_item', 'set_switch', 'set_health',
   'invincible', 'respawn_after', 'defeated', 'state', 'signal', 'emit', 'message', 'alpha', 'tag', 'draw', 'erase', 'builtin_display',
-  'go_to_level', 'play_sound', 'play_music', 'stop_music', 'respawn', 'restart_level', 'restart_game', 'pause', 'resume', 'set_sound',
+  'go_to_level', 'play_sound', 'play_music', 'stop_music', 'respawn', 'set_checkpoint', 'restart_level', 'restart_game', 'pause', 'resume', 'set_sound',
   'set_music', 'complete_level', 'camera_shake',
 ]);
 

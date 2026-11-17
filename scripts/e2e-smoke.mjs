@@ -274,6 +274,33 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('checkpoint flag and a side room')) {
+    // Two new levels: one with a checkpoint flag and a door to a visit of the other, which has a door back.
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const thing = (ref, name, extra) => ({ op: 'create_definition', ref, name, description: name, category: 'Gameplay', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":32,"color":"#e8c34a"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":28},"isTrigger":true}' }, ...extra] });
+    const touched = (name, vars, cond, steps) => JSON.stringify({ name, description: name, vars, handlers: [{ when: { on: 'contact' }, if: cond, do: steps }] });
+    return {
+      kind: 'apply',
+      message: 'Made a level with a checkpoint flag and a side room.',
+      changes: ['Flag Run: a checkpoint flag, a door to the side room', 'Side Room: a door back'],
+      operations: [
+        thing('flag', 'Flag', [{ component: 'Checkpoint', propsJson: '{}' }]),
+        thing('sidedoor', 'Side door', []),
+        thing('backdoor', 'Back door', []),
+        { op: 'set_script', target: 'definition', id: 'sidedoor', scriptJson: touched('Visit', [{ name: 'used', value: 0 }], "has_tag(other, 'player') and used == 0", [{ do: 'set', var: 'used', value: '1' }, { do: 'visit_level', level: 'Side Room' }]) },
+        { op: 'set_script', target: 'definition', id: 'backdoor', scriptJson: touched('Back', [], "has_tag(other, 'player')", [{ do: 'return_level', result: "'done'" }]) },
+        { op: 'create_level', ref: 'run', name: 'Flag Run' },
+        { op: 'draw_tiles', sceneId: 'run', definitionRef: lib('Platform'), rects: [{ col: -3, row: 1, width: 15, height: 1 }] },
+        { op: 'place_instance', sceneId: 'run', definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId: 'run', definitionRef: 'flag', x: 144, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId: 'run', definitionRef: 'sidedoor', x: 272, y: 16, name: null, ref: null },
+        { op: 'create_level', ref: 'side', name: 'Side Room' },
+        { op: 'draw_tiles', sceneId: 'side', definitionRef: lib('Platform'), rects: [{ col: -3, row: 1, width: 10, height: 1 }] },
+        { op: 'place_instance', sceneId: 'side', definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null },
+        { op: 'place_instance', sceneId: 'side', definitionRef: 'backdoor', x: 112, y: 16, name: null, ref: null },
+      ],
+    };
+  }
   if (req.includes('with three levels')) {
     // Two new levels, each with its own player, a route and a goal.
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
@@ -2818,6 +2845,54 @@ try {
     void levelsBefore;
   }
 
+  step = 'checkpoints and visits';
+  {
+    // A checkpoint, a visit to another level and the way back, in the real play screen (the game session carries
+    // them out; the screen follows: the level's name, the camera, the keys let go).
+    await page.getByTestId('global-prompt-toggle').click();
+    const gp = page.getByTestId('global-prompt');
+    await gp.getByTestId('prompt-input').fill('Make a level with a checkpoint flag and a side room');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await page.keyboard.press('Escape');
+    await page.getByTestId('scene-selector').click();
+    const menu = page.getByTestId('scene-menu');
+    await menu.getByRole('menuitem', { name: 'Flag Run' }).click();
+    await page.getByTestId('play').click();
+    const pc = page.getByTestId('play-canvas');
+    const playerX = async () => Number(((await pc.getAttribute('data-player')) ?? '0').split(',')[0]);
+    const events = async () => (await pc.getAttribute('data-events')) ?? '';
+    const holdRight = async () => {
+      await page.keyboard.up('ArrowRight');
+      await page.keyboard.down('ArrowRight');
+    };
+    await holdRight();
+    await check(async () => (await pc.getAttribute('data-level')) === 'Side Room', 'played: past the flag and on to the door, a visit to the Side Room (visit_level)');
+    await check(async () => (await playerX()) < 60, '(there the player is at that level\'s start, standing still: the keys were let go)');
+    await holdRight();
+    await check(async () => (await pc.getAttribute('data-level')) === 'Flag Run', 'its door leads back (return_level): the level left');
+    const backAt = await playerX();
+    await check(backAt > 200 && backAt < 300, `as it was: the player stands at the door it went through (x ${backAt}), not at the start`);
+    await check(async () => (await events()).includes('level_returned:'), '(and hears "level_returned")');
+    await check(async () => (await events()).includes('checkpoint_reached:Player>Flag'), 'the flag it walked through is its checkpoint ("checkpoint_reached")');
+    // On, off the end of the floor: back at the flag.
+    await holdRight();
+    // (The walk to the end of the floor and the fall take about two seconds.)
+    await page.waitForTimeout(1500);
+    await check(async () => (await events()).includes('respawned:Player'), 'walking off the end of the floor, the player falls out of the level');
+    await check(async () => Math.abs((await playerX()) - 144) < 2, 'and comes back at the checkpoint flag, not at the start');
+    await page.keyboard.up('ArrowRight');
+    // R: the level from its very start (this flag does not keep on restart).
+    await page.keyboard.press('KeyR');
+    await check(async () => Math.abs((await playerX()) - 16) < 2, 'R starts the level again from its very start (Checkpoint.keepOnRestart is off)');
+    await page.screenshot({ path: `${OUT}/12j-checkpoint.png` });
+    await page.getByTestId('play').click();
+    await page.getByTestId('undo').click();
+    await page.getByTestId('scene-selector').click();
+    await check(async () => !(await menu.innerText()).includes('Flag Run') && !(await menu.innerText()).includes('Side Room'), '(one Undo takes the test levels away)');
+    await page.keyboard.press('Escape');
+  }
+
   step = 'controls';
   {
     await page.getByTestId('project-menu').click();
@@ -2858,6 +2933,7 @@ try {
     await check(async () => (await dlg.getByTestId('profile-camera-follow').isChecked()) && !(await dlg.getByTestId('profile-camera-rooms').isChecked()), "the profile shows the camera's behaviours (following; no rooms yet)");
     await dlg.getByTestId('profile-camera-rooms').check();
     await check(async () => (await dlg.getByTestId('profile-camera-rooms').isChecked()) && (await dlg.getByTestId('profile-camera-follow').isChecked()) && (await dlg.getByTestId('profile-problem').count()) === 0, 'a camera behaviour is switched on in the profile (rooms: camera zones), following kept');
+    await check(async () => !(await dlg.getByTestId('profile-turns-team_turns').isChecked()) && (await dlg.getByTestId('profile-time').locator('select').inputValue()) === 'realtime', 'the profile shows the clock (real time) and turn-taking beside it (none in this game)');
     await check(async () => !(await dlg.getByTestId('profile-random-dungeon').isChecked()), 'the profile shows the generators that build at play (random levels: not in this game)');
     await dlg.getByTestId('profile-random-dungeon').check();
     await check(async () => (await dlg.getByTestId('profile-random-dungeon').isChecked()) && (await dlg.getByTestId('profile-generator').locator('select').inputValue()) === 'sections' && (await dlg.getByTestId('profile-problem').count()) === 0, 'the random-level generator is selected beside the level builder (which stays)');

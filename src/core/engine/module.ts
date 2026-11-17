@@ -4,7 +4,7 @@
  * capability tags ("view:side", "reach:table"); the compatibility check (profile.ts) reads only those, so a new
  * module or capability needs no change anywhere else.
  */
-export type ModuleKind = 'view' | 'time' | 'locomotion' | 'ability' | 'geometry' | 'camera' | 'kit' | 'generator' | 'progression' | 'validator';
+export type ModuleKind = 'view' | 'time' | 'turns' | 'locomotion' | 'ability' | 'geometry' | 'camera' | 'kit' | 'generator' | 'progression' | 'validator';
 
 export interface Module {
   kind: ModuleKind;

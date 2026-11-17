@@ -413,6 +413,16 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   {
+    type: 'Checkpoint',
+    label: 'Checkpoint',
+    description: 'A place to come back to: the player who touches it comes back here, not at its start, when it dies or falls out of the level (in any kind of game: a flag in a platformer, a save stone seen from above).',
+    category: 'Gameplay',
+    fields: {
+      heal: { kind: 'boolean', default: false, description: 'Reaching it gives full health' },
+      keepOnRestart: { kind: 'boolean', default: false, description: 'The level started again (R, restart_level) starts the player here, everything else as at the start; off: from the very start' },
+    },
+  },
+  {
     type: 'StartsHidden',
     label: 'Starts Hidden',
     description: 'Not in play at the start: a rule (action show) or a switch brings it in. A ladder that appears when all coins are collected, a hidden bridge.',

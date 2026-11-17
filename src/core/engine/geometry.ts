@@ -56,7 +56,7 @@ export interface GeometryStatus {
  * registry's own tags may say more (engine/modules.ts); a test checks the geometry answer is the same either way.
  */
 export function profileTags(p: GameProfile): Set<string> {
-  return new Set([`view:${p.view}`, `time:${p.time}`, `locomotion:${p.movement.model}`, ...p.movement.abilities.map((a) => `ability:${a}`), ...p.geometry.map((g) => `geometry:${g}`), ...p.camera.map((c) => `camera:${c}`), ...p.kits.map((k) => `kit:${k}`)]);
+  return new Set([`view:${p.view}`, `time:${p.time}`, `locomotion:${p.movement.model}`, ...p.movement.abilities.map((a) => `ability:${a}`), ...p.geometry.map((g) => `geometry:${g}`), ...p.camera.map((c) => `camera:${c}`), ...(p.turns ?? []).map((t) => `turns:${t}`), ...p.kits.map((k) => `kit:${k}`)]);
 }
 
 const met = (tag: string, provided: ReadonlySet<string>) => tag.split('|').some((t) => provided.has(t.trim()));

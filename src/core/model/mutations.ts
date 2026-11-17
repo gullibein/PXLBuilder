@@ -7,6 +7,7 @@
 import { defaultGenerator } from './dungeon';
 import { buildForPlay, playGeneratorFor } from '../generation/playGenerators';
 import { selectedGenerators } from '../engine/generators';
+import { selectTurnsFor } from '../engine/infer';
 import type { DungeonGenerator } from '../types';
 import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
@@ -537,6 +538,8 @@ export function addDefinition(project: Project, def: ObjectDefinition, registry:
     if (errors.length) throw new ModelError(`${type}.${errors[0].field} ${errors[0].message}`);
   }
   project.definitions.push(cloneValue({ ...def, tags: normalizeTags(def.tags) }));
+  // (An object that comes with scripts that take turns: the game's profile selects turn-taking.)
+  selectTurnsFor(project, def.scripts);
 }
 
 export function renameDefinition(project: Project, definitionId: Id, name: string): void {

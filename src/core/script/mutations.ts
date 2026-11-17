@@ -10,6 +10,7 @@ import { getDefinition, ModelError } from '../model/mutations';
 import type { BehaviorScript, Condition, EntityRef, Id, Project } from '../types';
 import { itemNameOf } from '../graph/graph';
 import { checkScript } from './language';
+import { selectTurnsFor } from '../engine/infer';
 
 export type ScriptOwner = { target: 'definition' | 'instance'; id: Id };
 
@@ -38,6 +39,9 @@ export function setScript(project: Project, owner: ScriptOwner, raw: unknown): I
   const o = ownerOf(project, owner);
   const i = o.scripts.findIndex((s) => s.id === checked.script.id);
   o.set(i >= 0 ? o.scripts.map((s, j) => (j === i ? checked.script : s)) : [...o.scripts, checked.script]);
+  // A script that takes turns: the game's profile selects turn-taking (a game with no stored profile has it worked
+  // out from its scripts).
+  selectTurnsFor(project, [checked.script]);
   return checked.script.id;
 }
 

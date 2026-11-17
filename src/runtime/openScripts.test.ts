@@ -1,7 +1,8 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../core/components/builtin';
-import { generateDungeon, nextLevel } from '../core/model/dungeon';
+import { generateDungeon } from '../core/model/dungeon';
+import { nextLevel } from '../core/progression/progression';
 import { createDefinition, createProject, createScene, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { createRoguelikeProject } from '../core/model/roguelikeStarter';
@@ -309,6 +310,6 @@ describe('room templates', () => {
       }
       for (const e of d.entities.filter((x) => x.definitionId !== wall && x.definitionId !== scene.generator!.floor)) expect(seen.has(`${at(e.transform.position.x)},${at(e.transform.position.y)}`)).toBe(true);
     }
-    expect(nextLevel(project, scene.id)).toBeUndefined();
+    expect(nextLevel(project, scene.id)).toBeNull();
   });
 });

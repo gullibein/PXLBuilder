@@ -36,14 +36,33 @@ export function kitOfObjects(definitions: Def[], gameType: GameType | undefined)
   return top > side ? 'topdown' : 'platformer';
 }
 
+/** The statements that take turns (what a script uses of the turn capability: engine/turns.ts). */
+export const TURN_STATEMENTS = ['start_turns', 'give_turn', 'done', 'end_turn', 'turn_order'];
+const USES_TURNS = new RegExp(`"do":"(${TURN_STATEMENTS.join('|')})"`);
+/** Whether scripts (as stored) take turns. */
+export const takesTurns = (scripts: unknown): boolean => !!scripts && USES_TURNS.test(JSON.stringify(scripts));
+
+/**
+ * Scripts were added to a game: if they take turns, its stored profile selects turn-taking (a game with no stored
+ * profile has it worked out from its scripts). Adding something that takes turns is choosing turn-taking; taking it
+ * out of the profile afterwards switches it off (and that is reported).
+ */
+export function selectTurnsFor(project: { settings: { profile?: { turns?: string[] } } }, scripts: unknown): void {
+  const stored = project.settings.profile;
+  if (stored && !stored.turns?.length && takesTurns(scripts)) stored.turns = ['team_turns'];
+}
+
 /** The profile of a game that has none stored: its kit's preset (never written by this). */
-export function inferProfileFromObjects(project: { definitions: Def[]; settings: { gameType?: GameType }; scenes?: readonly { generator?: unknown }[] }): GameProfile {
+export function inferProfileFromObjects(project: { definitions: Def[]; settings: { gameType?: GameType }; scenes?: readonly { generator?: unknown; entities?: readonly { scripts?: unknown }[] }[] }): GameProfile {
   const kit = kitOfObjects(project.definitions, project.settings.gameType) ?? (project.settings.gameType === 'topdown' ? 'topdown' : 'platformer');
   const profile = JSON.parse(JSON.stringify((presetById(kit) ?? presetById('platformer')!).profile)) as GameProfile;
   // (The abilities its player-controlled objects have, in the order the components are listed above.)
   const players = project.definitions.filter((d) => d.components?.CharacterController);
   const have = Object.entries(ABILITY_COMPONENTS).filter(([c]) => players.some((d) => d.components?.[c])).map(([, id]) => id);
   if (have.length && profile.movement.model === 'arcade') profile.movement.abilities = have;
+  // (Scripts that take turns: the game has team turns, beside its real time.)
+  const scripted = [...project.definitions, ...(project.scenes ?? []).flatMap((s) => s.entities ?? [])] as { scripts?: unknown }[];
+  if (!profile.turns?.length && scripted.some((x) => takesTurns(x.scripts))) profile.turns = ['team_turns'];
   // (A level with a recipe is a random level: the generator that builds it at play is part of the game.)
   if (project.scenes?.some((s) => s.generator) && profile.generator.id !== 'dungeon') profile.generator = { ...profile.generator, also: ['dungeon'] };
   return profile;

@@ -6,6 +6,8 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { gameTurns } from '../core/engine/turns';
+import { makeTurnSystem, type TurnSystem } from './turnSystem';
 import { gamePlayGenerators } from '../core/engine/generators';
 import { buildForPlay, playGeneratorFor } from '../core/generation/playGenerators';
 import { gameCamera } from '../core/engine/camera';
@@ -97,6 +99,8 @@ export interface RuntimeEntity {
   coyote: number;
   jumpBuffer: number;
   spawn: Vec2;
+  /** The Checkpoint it reached last (its id), null: none, or a place a script set. */
+  checkpoint: Id | null;
   /** How many times it was put back at its start (fell out of the level, or died). */
   respawns: number;
   /**
@@ -498,6 +502,7 @@ export function entityFrom(project: Project, r: ResolvedEntity, geometry: Readon
     coyote: 0,
     jumpBuffer: 0,
     spawn: { ...r.transform.position },
+    checkpoint: null,
     respawns: 0,
     dying: 0,
     vanishing: 0,
@@ -560,6 +565,10 @@ export class Runtime {
   readonly gameplay: Gameplay;
   /** Menus, the grid cursor, highlighted squares, walking along paths and turns (turns.ts). */
   kit: TurnKit;
+  /** What takes turns in this game: the turn system its profile makes active (engine/turns.ts), or null: nothing does. */
+  turns: TurnSystem | null = null;
+  /** The turn systems active in the game (by id). */
+  readonly turnSystems: readonly string[];
   /** No keys: what steers things while a menu or the cursor has the keys. */
   private readonly noKeys = new InputState();
   /** What things do on their own (patrol, shoot, move…). */
@@ -635,6 +644,8 @@ export class Runtime {
   private visitor: Id | null = null;
   /** A script asked to start the whole game again (the play view goes back to the first level). */
   restartGameRequested = false;
+  /** Checkpoints kept for a level started again: by the entity's id in the level, where it starts then. */
+  private readonly kept = new Map<Id, { x: number; y: number; by: Id | null }>();
   /** The input of the step being run (what is held when something respawns). */
   private lastInput: InputState | null = null;
   /** Sounds to play (the play view plays and empties it every frame; the runtime itself makes no sound). */
@@ -656,12 +667,14 @@ export class Runtime {
     this.geometry = gameGeometry(project);
     this.cameraBehaviors = gameCamera(project);
     this.playGenerators = gamePlayGenerators(project);
+    this.turnSystems = gameTurns(project);
     this.baseScene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.scene = this.baseScene;
     if (game) this.game = game;
     this.gravity = { ...this.scene.world.gravity };
     this.gameplay = new Gameplay(this, project, this.scene);
     this.kit = this.newKit();
+    this.turns = makeTurnSystem(this.turnSystems, this.kit);
     this.behaviors = new BehaviorSystem(this);
     this.scripts = new ScriptSystem(this, project);
     this.world.watch(() => this.entities);
@@ -690,7 +703,10 @@ export class Runtime {
 
   /** (Re)builds the level from the project: everything back at its start. */
   private load(): void {
-    if (this.kit) this.kit = this.newKit();
+    if (this.kit) {
+      this.kit = this.newKit();
+      this.turns = makeTurnSystem(this.turnSystems, this.kit);
+    }
     // A random level: built anew (each restart too, "the next floor"), for the floor the game is on.
     // (By the generator the game's profile makes active for it; a recipe whose generator isn't is not built.)
     const gen = playGeneratorFor(this.project, this.baseScene, this.playGenerators);
@@ -704,6 +720,17 @@ export class Runtime {
       this.dungeon = built.built;
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry, this.geometry));
+    // Checkpoints kept for a level started again: who reached one starts there (a level built anew has other places:
+    // none is kept).
+    if (gen) this.kept.clear();
+    for (const [id, at] of this.kept) {
+      const e = this.entities.find((x) => x.base.id === id);
+      if (!e) continue;
+      e.x = at.x;
+      e.y = e.prevY = at.y;
+      e.spawn = { x: at.x, y: at.y };
+      e.checkpoint = at.by;
+    }
     // Fog of war, seen by whoever has it (the player).
     const viewer = this.entities.find((e) => e.base.components.FogOfWar);
     this.fog = viewer ? new Fog(viewer, this.entities, viewer.base.components.FogOfWar) : null;
@@ -2019,6 +2046,33 @@ export class Runtime {
     e.vz = 0;
     if (this.cam.camera.iso) e.z = Math.max(e.z, this.groundHeight(e.x, e.y));
     this.gameplay.emit('respawned', e, null, { reason });
+  }
+
+  /**
+   * A new place for an entity to come back to (when it dies, falls out of the level or is respawned), in any kind of
+   * game: `by` the Checkpoint reached (null: a script set it). With `keep`, a level started again starts it there too
+   * (everything else as at the start); without, a restart is from the very start. Another level, or the game begun
+   * again, knows nothing of it: a level left for a visit keeps its own.
+   */
+  setCheckpoint(e: RuntimeEntity, at: Vec2, by: RuntimeEntity | null, keep: boolean): void {
+    // (The same place again, the same way: nothing new, and nothing said.)
+    if (e.spawn.x === at.x && e.spawn.y === at.y && e.checkpoint === (by?.id ?? null) && this.kept.has(e.base.id) === keep) return;
+    e.spawn = { x: at.x, y: at.y };
+    e.checkpoint = by?.id ?? null;
+    if (keep) this.kept.set(e.base.id, { x: at.x, y: at.y, by: by?.id ?? null });
+    else this.kept.delete(e.base.id);
+    this.gameplay.emit('checkpoint_reached', e, by, { x: Math.round(at.x), y: Math.round(at.y) });
+  }
+
+  /** A Checkpoint touched: who touched it comes back there (once per checkpoint, until another is reached). */
+  reachCheckpoint(e: RuntimeEntity, checkpoint: RuntimeEntity): void {
+    if (e.checkpoint === checkpoint.id) return;
+    const c = checkpoint.base.components.Checkpoint as { heal?: unknown; keepOnRestart?: unknown } | undefined;
+    // On the checkpoint: its middle, or standing on its ground where things fall (feet at its bottom edge).
+    const [own, its] = [boxOf(e), boxOf(checkpoint)];
+    const y = !this.floats(e) && own && its ? its.y + its.hh - (own.y + own.hh - e.y) : checkpoint.y;
+    this.setCheckpoint(e, { x: checkpoint.x, y }, checkpoint, c?.keepOnRestart === true);
+    if (c?.heal === true && e.health) e.health.current = e.health.max;
   }
 
   /** Where the camera is (without shake). */

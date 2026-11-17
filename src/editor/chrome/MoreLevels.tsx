@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { templateLevels } from '../../core/model/dungeon';
+import { partLevels } from '../../core/generation/playGenerators';
 import { winProblems } from '../../core/model/reachability';
 import type { Project } from '../../core/types';
 import { startJob, stopJob, useJobs, type PromptJob } from '../ai/jobs';
@@ -19,7 +19,7 @@ export const MORE_LEVELS_REQUEST = `Build ${MORE} more levels for this game, aft
  * random levels, not an endless one with nothing to finish).
  */
 export function wantsMoreLevels(project: Project): boolean {
-  const templates = templateLevels(project);
+  const templates = partLevels(project);
   // (Levels made at random as it is played: no levels to build.)
   if (templates.size || project.scenes.some((s) => s.generator)) return false;
   const levels = project.scenes.filter((s) => !templates.has(s.id));

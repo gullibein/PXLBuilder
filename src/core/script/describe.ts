@@ -176,6 +176,8 @@ function stmtLines(s: Stmt, indent: string): string[] {
       return one(`${who(s.on)}spin at ${x(s.speed)}°/s`);
     case 'respawn':
       return one(`respawn ${s.target ? x(s.target) : 'self'}`);
+    case 'set_checkpoint':
+      return one(`${s.target ? x(s.target) : 'self'} comes back ${s.x && s.y ? `at ${x(s.x)}, ${x(s.y)}` : 'here'} from now on${s.keep ? ' (after a level restart too)' : ''}`);
     case 'restart_level':
       return one('restart the level');
     case 'restart_game':

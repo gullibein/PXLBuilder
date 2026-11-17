@@ -134,6 +134,25 @@ export function GameProfileDialog() {
               })}
             </span>
           </div>
+          <div className="profile-row" data-testid="profile-turns">
+            <span className="profile-label">Turns</span>
+            <span className="profile-kits">
+              {choices.turns.map((id) => {
+                const on = (profile.turns ?? []).includes(id);
+                return (
+                  <label key={id} className="profile-check" title={describe('turns', id)}>
+                    <input
+                      type="checkbox"
+                      data-testid={`profile-turns-${id}`}
+                      checked={on}
+                      onChange={() => change({ turns: choices.turns.filter((t) => (t === id ? !on : (profile.turns ?? []).includes(t))) }, `${on ? 'no ' : ''}${id.replace(/_/g, ' ')}`)}
+                    />
+                    {id.replace(/_/g, ' ')}
+                  </label>
+                );
+              })}
+            </span>
+          </div>
           <div className="profile-row" data-testid="profile-random">
             <span className="profile-label">Random levels</span>
             <span className="profile-kits">

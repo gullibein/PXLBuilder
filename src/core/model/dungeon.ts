@@ -430,17 +430,6 @@ function templateLayout(project: Project, scene: Scene, registry: ComponentRegis
   return { w: i1 - i0 + 1, h: j1 - j0 + 1, things: things.map((e) => ({ thing: e, dx: e.transform.position.x - i0 * LEVEL_CELL, dy: e.transform.position.y - j0 * LEVEL_CELL })), solid };
 }
 
-/** The levels used as room templates by random levels (they are not played as levels of their own). */
-export function templateLevels(project: Project): Set<Id> {
-  return new Set(project.scenes.flatMap((s) => s.generator?.templates ?? []));
-}
-
-/** The level played after this one (in the game's order; room templates are skipped). */
-export function nextLevel(project: Project, sceneId: Id): Scene | undefined {
-  const skip = templateLevels(project);
-  return project.scenes.slice(project.scenes.findIndex((s) => s.id === sceneId) + 1).find((s) => !skip.has(s.id));
-}
-
 /**
  * The level as it is played with this seed: what is placed by hand, the player moved to the start, and the
  * generated dungeon around it (under what is placed by hand).

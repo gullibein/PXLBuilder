@@ -43,8 +43,8 @@ const PRESET_LIST: (Omit<Preset, 'profile'> & { profile: Omit<GameProfile, 'pres
   { id: 'classic-platformer', name: 'Classic platformer', describe: 'Running and jumping: gaps, blocks, pipes, enemies to stomp, springs, moving platforms', profile: side(['platformer'], 'classic') },
   { id: 'puzzle-platformer', name: 'Puzzle platformer', describe: 'The way on worked out: levers, keys, pressure plates and crates, teleporters', profile: side(['platformer'], 'puzzle') },
   { id: 'topdown', name: 'Top-down game', describe: 'Walk in every direction, seen from above', profile: top(['topdown']) },
-  { id: 'rpg', name: 'RPG', describe: 'Seen from above, with a party, monsters and turn-based battles, shops', profile: top(['rpg']) },
-  { id: 'roguelike', name: 'Roguelike', describe: 'A dungeon a step at a time: monsters answer each step; random floors', profile: { ...top(['roguelike'], 'top', 'turns'), generator: { id: 'dungeon', settings: {} } } },
+  { id: 'rpg', name: 'RPG', describe: 'Seen from above, with a party, monsters and turn-based battles, shops', profile: { ...top(['rpg']), turns: ['team_turns'] } },
+  { id: 'roguelike', name: 'Roguelike', describe: 'A dungeon a step at a time: monsters answer each step; random floors', profile: { ...top(['roguelike']), generator: { id: 'dungeon', settings: {} } } },
   { id: 'isometric', name: 'Isometric game', describe: 'Seen at an angle, blocks with height', profile: top(['isometric'], 'iso') },
 ];
 

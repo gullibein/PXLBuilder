@@ -481,6 +481,8 @@ export class Gameplay {
       // A Goal wins the level for the player who reaches it (seen from above: who stands on it, see standOnGoals).
       // (A goal whose "Goal" script took reaching it over is won by that script.)
       if (touched.base.components.Goal && toucher.controller && !ownPart(touched, 'goal') && !this.standsOn(toucher, touched)) this.rt.completeLevel(toucher);
+      // A Checkpoint: the player who touches it comes back there from now on.
+      if (touched.base.components.Checkpoint && toucher.controller && touched.alive) this.rt.reachCheckpoint(toucher, touched);
       // "Door requires Key": opens for whoever touches it carrying the item.
       for (const r of this.relationships('requires')) {
         if (!refMatches(r.source, touched) || touched.open || ownPart(touched, 'unlocking')) continue;

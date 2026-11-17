@@ -1,9 +1,11 @@
 /**
- * The engine's modules, as they are today, registered (F1 of docs/engine-architecture-proposal.md). Most only
- * describe and point to code that hasn't moved behind its interface yet (`pointsTo`: where it is, and the stage that
- * moves it). What does go through these modules already: new games (kits), the level builder (generators), the
- * player's movement and the levels' gravity when the profile changes (locomotion, views).
+ * The engine's modules, registered (docs/engine-architecture-proposal.md). Each describes a part of the engine that
+ * is behind its interface (movement, geometry, validation, camera, generators, turns, progression: stages F2 to F6
+ * moved them there), with what it requires and provides: a game's profile selects among them, and the compatibility
+ * check works from these declarations alone. (`pointsTo` marked the ones that only described old code: none is left.)
  */
+import { TURN_SYSTEMS } from './turns';
+import { PROGRESSIONS } from '../progression/progression';
 import { GENERATORS } from './generators';
 import { playGeneratorById, type PlayGenerator } from '../generation/playGenerators';
 import { CAMERA_BEHAVIORS } from './camera';
@@ -77,6 +79,12 @@ export interface GeometryModule extends Module {
 }
 export { GEOMETRY };
 
+export interface TurnsModule extends Module {
+  kind: 'turns';
+  /** What happens to scripts that take turns when it isn't active. */
+  without: string;
+}
+
 export interface CameraModule extends Module {
   kind: 'camera';
   /** What happens when a game uses it without it being active. */
@@ -94,17 +102,10 @@ export const modules = new ModuleRegistry();
 modules.register<ViewModule>({ kind: 'view', id: 'side', version: 1, describe: 'Seen from the side: gravity pulls down, "up" is jumping', requires: [], provides: ['view:side'], gravity: { x: 0, y: 980 } });
 modules.register<ViewModule>({ kind: 'view', id: 'top', version: 1, describe: 'Seen from above: no gravity, walking in every direction', requires: [], provides: ['view:top'], gravity: { x: 0, y: 0 } });
 modules.register<ViewModule>({ kind: 'view', id: 'iso', version: 1, describe: 'Seen at an angle (isometric): blocks with height', requires: [], provides: ['view:iso'], gravity: { x: 0, y: 0 } });
-modules.register({ kind: 'time', id: 'realtime', version: 1, describe: 'Everything moves all the time', requires: [], provides: ['time:realtime'] });
-modules.register({
-  kind: 'time',
-  id: 'turns',
-  version: 1,
-  describe: 'Turn by turn: the world answers each of the player\'s steps',
-  requires: ['kit:turns'],
-  provides: ['time:turns'],
-  fallback: { 'kit:turns': 'nothing in the game takes turns yet (no turn scripts): it plays in real time' },
-  pointsTo: { code: 'runtime/turns.ts (TurnKit), driven by the turn scripts', movesIn: 'F6' },
-});
+// (The engine's clock: fixed steps of real time, runtime.ts update. The one time model there is.)
+modules.register({ kind: 'time', id: 'realtime', version: 1, describe: 'Real time: everything moves all the time (turn-taking is chosen beside it)', requires: [], provides: ['time:realtime'] });
+// Turn-taking: a capability beside the clock (engine/turns.ts; the turn system itself: runtime/turns.ts).
+for (const t of TURN_SYSTEMS) modules.register<TurnsModule>({ kind: 'turns', ...t, provides: [`turns:${t.id}`] });
 
 // ---------------------------------------------------------------- movement
 modules.register<LocomotionModule>({
@@ -155,7 +156,7 @@ modules.register<KitModule>({
 modules.register(topKit('topdown', 'Top-down objects: hero, walls, floors, enemies, coins, keys and doors, switches, teleporters, a goal', (r, n) => createProject(r, n, 'topdown'), ['view:top|view:iso']));
 // (The RPG's objects are scripts and pictures: they work seen from the side too, so it needs no view.)
 modules.register(topKit('rpg', 'RPG objects: a party, monsters, battles, towns people and shops (on top of the top-down objects)', (r, n) => createRpgProject(r, n), []));
-modules.register(topKit('roguelike', 'Roguelike objects: monsters that answer each step, gold, potions, stairs down, random floors', (r, n) => createRoguelikeProject(r, n), ['view:top'], ['kit:turns']));
+modules.register(topKit('roguelike', 'Roguelike objects: monsters that answer each step, gold, potions, stairs down, random floors', (r, n) => createRoguelikeProject(r, n), ['view:top']));
 modules.register(topKit('isometric', 'Isometric blocks: floors, walls and water with height, a hero', (r, n) => createIsometricProject(r, n), ['view:iso']));
 
 // ---------------------------------------------------------------- level generation and progression
@@ -185,7 +186,8 @@ modules.register<GeneratorModule>({
   validators: () => [],
   atPlay: playGeneratorById('dungeon')!,
 });
-modules.register({ kind: 'progression', id: 'stages', version: 1, describe: 'Levels one after another (go_to_level for branches and secret exits)', requires: [], provides: ['progression:stages'], pointsTo: { code: 'runtime next_level / go_to_level, the play view', movesIn: 'F6' } });
+// (Progression: core/progression/progression.ts has the models; the game session, runtime/session.ts, asks the game's.)
+for (const g of PROGRESSIONS) modules.register({ kind: 'progression', ...g, provides: [`progression:${g.id}`] });
 
 // ---------------------------------------------------------------- validators (core/validation/validators.ts)
 // (What each needs of the player's reach description: its table, its moves, its simulator.)

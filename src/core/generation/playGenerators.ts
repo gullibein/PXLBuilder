@@ -10,7 +10,7 @@ import type { ComponentRegistry } from '../components/registry';
 import { gamePlayGenerators } from '../engine/generators';
 import { buildLevel, generateDungeon, newSeed, type Dungeon } from '../model/dungeon';
 import { patchGenerator } from '../model/mutations';
-import type { EntityInstance, Project, Scene } from '../types';
+import type { EntityInstance, Id, Project, Scene } from '../types';
 import { gameCamera } from '../engine/camera';
 
 /** What was built, for scripts and tools: its rooms, where it starts, the way on, what didn't work out. */
@@ -36,6 +36,8 @@ export interface PlayGenerator {
    * as ordinary objects (its preview seed and floor).
    */
   build(req: { project: Project; scene: Scene; registry: ComponentRegistry; floor: number; patch?: Record<string, unknown>; seed?: number }): PlayBuild;
+  /** The levels it uses as parts of the levels it builds (room templates): they are not played on their own. */
+  parts?(project: Project): Id[];
   /** The example the editor shows of a level (its recipe's preview seed and floor, or the seed given). */
   example(req: { project: Project; scene: Scene; registry: ComponentRegistry; seed?: number }): BuiltAtPlay;
 }
@@ -58,6 +60,7 @@ const dungeon: PlayGenerator = {
     const built = buildLevel(project, { ...scene, generator: recipe }, registry, used, floor);
     return { scene: built.scene, built: built.dungeon, seed: used, patchRefused };
   },
+  parts: (project) => project.scenes.flatMap((s) => s.generator?.templates ?? []),
   example({ project, scene, registry, seed }) {
     const g = scene.generator!;
     return generateDungeon(project, scene, registry, seed ?? g.preview, g.previewFloor);
@@ -109,6 +112,11 @@ export function registerPlayGenerator(g: PlayGenerator): void {
 export function unregisterPlayGenerator(id: string): void {
   REGISTERED.delete(id);
 }
+/** The levels generators use as parts (not played on their own, whatever the game's progression). */
+export function partLevels(project: Project): Set<Id> {
+  return new Set([...REGISTERED.values()].flatMap((g) => g.parts?.(project) ?? []));
+}
+
 export const playGeneratorById = (id: string): PlayGenerator | undefined => REGISTERED.get(id);
 export const playGeneratorIds = (): string[] => [...REGISTERED.keys()];
 

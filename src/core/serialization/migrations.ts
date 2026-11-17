@@ -1,5 +1,5 @@
 import { componentRegistry } from '../components/builtin';
-import { inferProfileFromObjects } from '../engine/infer';
+import { inferProfileFromObjects, takesTurns } from '../engine/infer';
 import { generateId } from '../ids';
 import { defaultCamera } from '../model/camera';
 import { createHeartAsset, createStarterAssets, createStarterDefinitions, ENEMY_PATROL, heartDefinition, SPIKES_ART_V8_ROWS } from '../model/factory';
@@ -417,6 +417,24 @@ function migrateV17toV18(raw: Raw): Raw {
   return { ...raw, settings: { ...raw.settings, profile: { ...profile, generator: { ...profile.generator, also: [...(Array.isArray(profile.generator.also) ? profile.generator.also : []), 'dungeon'] } } } };
 }
 
+/**
+ * v18 -> v19
+ * - Turn-taking is a capability a game's profile selects beside the engine's clock (profile.turns: engine/turns.ts),
+ *   not a time mode: the engine has one clock, real time. A stored profile that said time "turns" (the roguelike,
+ *   whose step-by-step world is its scripts' own) says "realtime", as it always played. A game whose scripts take
+ *   turns (start_turns, give_turn, done, end_turn, turn_order: tactics, RPG battles) and whose stored profile
+ *   doesn't select turn-taking gets it: its turns go on as before.
+ */
+function migrateV18toV19(raw: Raw): Raw {
+  const profile = raw.settings?.profile;
+  if (!profile) return raw;
+  const next = { ...profile };
+  if (next.time === 'turns') next.time = 'realtime';
+  const scripted = [...(Array.isArray(raw.definitions) ? raw.definitions : []), ...(Array.isArray(raw.scenes) ? raw.scenes.flatMap((s: Raw) => (Array.isArray(s?.entities) ? s.entities : [])) : [])];
+  if (!(Array.isArray(next.turns) && next.turns.length) && scripted.some((x: Raw) => takesTurns(x?.scripts))) next.turns = ['team_turns'];
+  return { ...raw, settings: { ...raw.settings, profile: next } };
+}
+
 export const MIGRATIONS: Migration[] = [
   { from: 1, to: 2, migrate: migrateV1toV2 },
   { from: 2, to: 3, migrate: migrateV2toV3 },
@@ -452,6 +470,7 @@ export const MIGRATIONS: Migration[] = [
     migrate: (p) => p,
   },
   { from: 17, to: 18, migrate: migrateV17toV18 },
+  { from: 18, to: 19, migrate: migrateV18toV19 },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

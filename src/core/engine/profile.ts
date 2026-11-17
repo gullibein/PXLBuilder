@@ -5,6 +5,8 @@
  */
 import { cameraNotes } from './camera';
 import { generatorNotes, selectedGenerators } from './generators';
+import { turnNotes } from './turns';
+import { progressionIds } from '../progression/progression';
 import { geometryNotes } from './geometry';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
@@ -12,7 +14,7 @@ import { ModelError } from '../model/mutations';
 import type { ObjectDefinition, Project } from '../types';
 import { KIT_ROLES } from './kitRoles';
 import { tagMet, type Module, type ModuleKind } from './module';
-import { modules, type AbilityModule, type GeneratorModule, type KitModule, type LocomotionModule, type ViewModule } from './modules';
+import { modules, type AbilityModule, type GeneratorModule, type KitModule, type LocomotionModule, type TurnsModule, type ViewModule } from './modules';
 import { presetById, PRESETS } from './presets';
 import { gameProfileSchema, type GameProfile } from './profileSchema';
 import { inferProfileFromObjects, kitOfObjects } from './infer';
@@ -53,6 +55,7 @@ function selected(p: GameProfile): { kind: ModuleKind; id: string; system: strin
   return [
     { kind: 'view', id: p.view, system: 'view' },
     { kind: 'time', id: p.time, system: 'time' },
+    ...(p.turns ?? []).map((id) => ({ kind: 'turns' as const, id, system: 'turns' })),
     { kind: 'locomotion', id: p.movement.model, system: 'movement' },
     ...p.movement.abilities.map((id) => ({ kind: 'ability' as const, id, system: 'movement' })),
     ...p.geometry.map((id) => ({ kind: 'geometry' as const, id, system: 'geometry' })),
@@ -103,9 +106,10 @@ export function checkGame(project: Project, registry: ComponentRegistry): Compat
   const base = checkProfile(p);
   if (base.state === 'incompatible') return base;
   const provided = new Set(selected(p).flatMap((s) => modules.get(s.kind, s.id)?.provides ?? []));
+  const kindsOf = (kind: ModuleKind) => modules.list<TurnsModule>(kind).map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
   // (Generators: every one registered, the engine's and any added, with what each requires.)
   const generators = modules.list<GeneratorModule>('generator').map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
-  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators)];
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators), ...turnNotes(p, project, provided, kindsOf('turns')), ...(progressionIds().includes(p.progression.model) ? [] : [`progression '${p.progression.model}': nothing carries it out, so a won level is followed by nothing: the game stops there`])];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 
@@ -173,6 +177,7 @@ export const profileChangeSchema = z
     preset: z.string().nullable(),
     view: z.string(),
     time: z.string(),
+    turns: z.array(z.string()),
     movement: z.string(),
     abilities: z.array(z.string()),
     geometry: z.array(z.string()),
@@ -198,6 +203,10 @@ export function changedProfile(base: GameProfile, c: ProfileChange): GameProfile
   const touched = Object.keys(c).some((k) => k !== 'preset');
   if (c.view) p.view = c.view;
   if (c.time) p.time = c.time;
+  if (c.turns) {
+    if (c.turns.length) p.turns = [...new Set(c.turns)];
+    else delete p.turns;
+  }
   if (c.movement) p.movement = { ...p.movement, model: c.movement };
   if (c.abilities) p.movement = { ...p.movement, abilities: [...c.abilities] };
   if (c.geometry) p.geometry = [...c.geometry];
@@ -290,7 +299,7 @@ export function profileChoices(): { presets: string[]; choices: Record<string, s
   const ids = (k: ModuleKind) => modules.list(k).map((m) => m.id);
   return {
     presets: PRESETS.map((p) => p.id),
-    choices: { view: ids('view'), time: ids('time'), movement: ids('locomotion'), abilities: ids('ability'), geometry: ids('geometry'), camera: ids('camera'), kits: ids('kit'), generator: ids('generator'), progression: ids('progression') },
+    choices: { view: ids('view'), time: ids('time'), turns: ids('turns'), movement: ids('locomotion'), abilities: ids('ability'), geometry: ids('geometry'), camera: ids('camera'), kits: ids('kit'), generator: ids('generator'), progression: ids('progression') },
   };
 }
 
@@ -301,6 +310,7 @@ export function describeProfile(p: GameProfile): string {
     p.preset ? `preset ${p.preset}` : 'own profile',
     `view ${p.view}`,
     `time ${p.time}`,
+    `turns ${p.turns?.join(', ') || 'none'}`,
     `movement ${p.movement.model}${p.movement.abilities.length ? ` + ${p.movement.abilities.join(', ')}` : ''}`,
     `geometry ${p.geometry.join(', ') || 'none'}`,
     `camera ${p.camera.join(', ') || 'still'}`,

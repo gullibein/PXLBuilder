@@ -1502,7 +1502,7 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 | Slice | What it brings |
 |---|---|
 | V1 | Ability patterns in breadth; one registration per ability (T1, T2) |
-| V2 | A grid movement model, with the cell-based reach for top-down levels |
+| V2 | A grid movement model, with the cell-based reach for top-down levels; a stepped time model, if grid games need one in the engine (§22.7) |
 | V3 | Momentum, curved ground, and the momentum platformer's regression game (today a to-do) |
 | V4 | Fixed-arc jumps, spawners |
 | V5 | Bosses, arenas with doors, stage select |
@@ -1624,4 +1624,97 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 - **`sections` places no camera zones** (its levels scroll). Arenas with doors are V5.
 - **Zones are for rooms only:** a generator says where its rooms are. Caves and mazes get none.
 - **The probe's floors are simple** (a cliff on open ground, a level gap): what the player gets over in other shapes is the solver's to find on the level itself, which the needs check does.
-- **Time `turns` and progression `stages`** still point to old code (F6c).
+- **Time `turns` and progression `stages`** still pointed to old code (moved in F6c, §22.7).
+
+### 22.7 F6c — done (F6 complete; awaiting review before V1)
+
+**What changed against the plan (§22.3), and why:**
+- **There is one time model, `realtime`, not two.** The plan kept `turns` as a second time model for the roguelike. Reading the code, the engine never had one: the roguelike's "nothing moves until the hero steps" is its own scripts (the hero sends the signal `world_turn`; the monsters act on it), on the real-time clock. A time module named `turns` that nothing implemented would have been a pointer to nothing, so it is gone. The roguelike's profile says `realtime`, which is what runs. A time model that steps the whole world belongs with grid movement (V2), if the engine needs one then.
+- **Roguelike floors are not the session's.** The stairs restart the level, and a random level is built anew for the floor it is on when it starts. That stays in the runtime (through the play generator, §22.5); the session only keeps playing.
+
+**Turn-taking is a capability** (`core/engine/turns.ts`, `runtime/turnSystem.ts`):
+- **`profile.turns`** lists the turn systems a game has, beside its clock. `team_turns` is the engine's: teams take turns, each unit has its go (tactics, RPG battles).
+- **The same four states** as geometry, camera and generators: registered, selected, supported, active.
+- **The runtime makes the active one** behind the `TurnSystem` interface (start, give, done, end turn, order; whose turn, the round, over). The kit's code is the implementation, unchanged. With none active, `rt.turns` is null.
+- **Refused, and said.** In a game whose profile doesn't make turn-taking active, `start_turns`, `give_turn`, `done`, `end_turn` and `turn_order` are refused with a script error, and the compatibility report names the objects using them.
+- **The rest of the kit is for any game:** menus, the cursor, highlights and walking paths need no turn-taking.
+- **No game breaks:**
+  - The RPG preset selects `team_turns`; a profile worked out from a game selects it when its scripts take turns.
+  - A stored profile gets it when a script that takes turns is set on an object or comes with a new object.
+  - Format 19 migrates saved games: time `turns` becomes `realtime`, and `team_turns` is added when the game's scripts take turns.
+
+**Real time and turns in one game** (tested, `runtime/turnCapability.test.ts`):
+- An RPG: the map runs in real time (the hero walks, an enemy wanders), the battle level takes turns, with one profile.
+- One level: a battle in turns starts, goes on and ends while something else keeps moving in real time; then the player walks again.
+- The roguelike: nothing moves until the hero steps (its golden).
+- A platformer without the capability: turn statements refused, said in the report.
+
+**Progression is behind an interface** (`core/progression/progression.ts`, `runtime/session.ts`):
+- **`ProgressionModel`** says what follows a won level: `next(project, sceneId)`. The profile's `progression.model` selects it. `stages` is the engine's: the levels in their order.
+- **Which levels are stages** is asked of the generators: a level a generator uses as a part (a room template) is not played on its own (`PlayGenerator.parts`). The dungeon file no longer knows what follows a level.
+- **`GameSession`** is a game being played across its levels, with no screen: the level played, the game's variables, the levels left for a visit, whether the game is finished. It asks the progression model after a won level, and carries out what scripts ask, the same for every model: `go_to_level`, `visit_level` and `return_level`, `restart_game`.
+- **The play screen only follows.** It is told when a level is left or entered and does the screen's part: music, the recording, the camera, the HUD. It starts no level and reads no script request (checked by a test on its source). The exported player uses the same screen.
+- **A model that isn't there:** the compatibility check says so, and a won level is followed by nothing. What scripts ask still works.
+- **Another model plugs in** by registration (a test's model plays the levels backwards).
+- **No module points to old code any more.** `stages` was the last (`profile.test`).
+
+**Checkpoints** (component `Checkpoint`, statement `set_checkpoint`, event `checkpoint_reached`):
+- **A place to come back to, in any kind of game.** The player who touches a Checkpoint comes back there when it dies, falls out or is respawned. Where things fall it stands on the checkpoint's ground; where nothing falls (from above, a flying thing) it is on its middle. The last one touched counts.
+- **Scripts make their own:** `set_checkpoint` for any target, where it is or at a place.
+- **`heal`:** reaching it gives full health.
+- **What comes back and what is reset:**
+
+  | What happens | Where the player is | The world |
+  |---|---|---|
+  | Dies or falls out (a respawn) | The checkpoint | As it is (coins taken stay taken) |
+  | The level starts again (R, `restart_level`), `keepOnRestart` off | The level's start | As at the start |
+  | The level starts again, `keepOnRestart` on | The checkpoint | As at the start |
+  | A level built anew when it starts (random levels) | Its start: nothing is kept, the places are other ones | Built anew |
+  | The next level, `go_to_level` | That level's start | That level's |
+  | Back from a visit (`return_level`) | Where it was; its checkpoint still holds | As it was left |
+  | The game begun again (`restart_game`) | The first level's start | New, with new game variables |
+
+- **It needs nothing from the profile** and assumes no view: the same component works in a side view and from above (tested in both, with a stored and a worked-out profile).
+- **By hand and by prompt:** an ordinary component (the inspector lists it; `add_component` adds it). Its guidance is in the topic `checkpoints`.
+
+**Non-regression:**
+
+| Suite | Result |
+|---|---|
+| The 9 games' goldens and the 17 movement traces | Unchanged |
+| Profile fingerprints (5 definitions, 3 levels) | Unchanged |
+| 14 validation snapshots, both sweeps | Unchanged |
+| 18 camera goldens, 9 dungeon goldens | Unchanged |
+| 6 turn goldens (tactics with a stored and a worked-out profile, RPG battle, RPG map, the RPG starter's battle, roguelike), recorded before the change | Unchanged |
+| 3 session goldens (stages, a branch, an RPG visit and back) | New, see below |
+
+**How the port of progression was verified, honestly:**
+- The play screen's logic could not be played without a browser, so no headless golden of it could be recorded before it moved.
+- The session is a line-by-line port (same order, same rules), and its goldens are recorded with it: they pin it from here on.
+- That it plays as the screen did rests on the browser tests: a won level, the banner, the next level (as before), and new ones for a visit, the way back with the level as it was, a checkpoint, and R.
+- The exported game is opened and played in the browser tests (the player runs, no errors): it is the same screen and session. A level change inside an exported game is not tested on its own.
+
+**Tests** (`runtime/turnCapability.test.ts`, 12; `runtime/session.test.ts`, 17; `runtime/checkpoints.test.ts`, 12; `regression/turns.test.ts`, 5):
+
+| What | How it is tested |
+|---|---|
+| One clock | `realtime` is the only time model; no preset says otherwise |
+| Real time and turns together | The RPG map and its battle; one level with a battle beside something moving |
+| Profile control of turns | Selected: works. Not selected: refused, a script error, the report names the object. An unknown system: incompatible |
+| No game breaks | Tactics with a stored and a worked-out profile; the migration; a script set on an object selects the capability |
+| Another turn system | A test's system plugs in and is used |
+| Stages | Three levels won one after another; the last ends the game; R goes on |
+| Scripts | A branch by `go_to_level`; a level that isn't there is a script error; `restart_game` |
+| Visits | The RPG: into the battle, won in turns, back where the hero stood; the level left stands still while away |
+| The profile's model | `stages`; room templates are no stages; a missing model; a test's model |
+| Where the code is | The play screen, the dungeon file and the session, by their source |
+| Checkpoints | Side view and from above; the last one counts; heal; restart both ways; a script's; other levels; a visit; a random level |
+
+**Limitations:**
+- **T1 is open** (due in V1): a new ability still needs its route-bot step written in the bot.
+- **`stages` is the only progression model.** Worlds of connected rooms and ability gates are V6; stage select and bosses V5.
+- **A checkpoint is for one level.** Nothing is saved between plays of the game, and no state is kept across levels beyond the game's variables.
+- **A Checkpoint is touched by the player.** For anything else, a script sets it.
+- **The momentum platformer** is still a to-do (V3), never counted as passing.
+- **No stepped time model.** The roguelike's world turns are its scripts'.
+- **The turn system's interface covers taking turns.** Menus, the cursor and paths are the kit's, for any game.

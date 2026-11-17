@@ -16,7 +16,7 @@ import { CELL } from './turns';
 import { parseExpr, type Expr } from '../core/script/expr';
 import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
-import { nextLevel } from '../core/model/dungeon';
+import { nextLevel } from '../core/progression/progression';
 import { patchGenerator } from '../core/model/mutations';
 import type { GameEvent } from './gameplay';
 import type { InputState, InputView } from './input';
@@ -62,6 +62,8 @@ const STEP_BUDGET = 150_000;
 const MAX_EACH = 2000;
 const MAX_STATE_CHAIN = 10;
 const MAX_ERRORS = 30;
+/** Turns taken in a game whose profile doesn't make them active (engine/turns.ts): refused, said. */
+const NO_TURNS = 'start_turns, give_turn, done, end_turn and turn_order need turn-taking, which this game\'s profile doesn\'t select (set_game_profile with turns ["team_turns"])';
 /** Cells used by a game whose profile doesn't make them active (engine/geometry.ts): refused, said. */
 const NO_CELLS = 'dig, dug_at and in_cell need the "cells" geometry, which this game\'s profile doesn\'t select (set_game_profile with geometry including "cells")';
 
@@ -770,6 +772,11 @@ export class ScriptSystem {
         if (t) this.rt.respawn(t, 'script');
         break;
       }
+      case 'set_checkpoint': {
+        const t = ent(s.target);
+        if (t) this.rt.setCheckpoint(t, s.x && s.y ? { x: n(s.x), y: n(s.y) } : { x: t.x, y: t.y }, null, s.keep);
+        break;
+      }
       case 'restart_level':
         this.rt.restart();
         break;
@@ -836,7 +843,8 @@ export class ScriptSystem {
         break;
       case 'turn_order': {
         const t = ent(s.on);
-        if (t) this.rt.kit.priority.set(t, n(s.value));
+        if (!this.rt.turns) this.report(e, ctx.inst, NO_TURNS);
+        else if (t) this.rt.turns.setOrder(t, n(s.value));
         break;
       }
       case 'walk_rules': {
@@ -919,19 +927,23 @@ export class ScriptSystem {
       case 'start_turns': {
         // ({team} in a name: a variable's value, so a ready-made script names its own side.)
         const fill = (text: string) => text.replace(/\{([^{}]+)\}/g, (_, x: string) => show(this.eval(x, ctx)));
-        this.rt.kit.startTurns(s.teams.map(fill), s.pick.map(fill));
+        if (!this.rt.turns) this.report(e, ctx.inst, NO_TURNS);
+        else this.rt.turns.start(s.teams.map(fill), s.pick.map(fill));
         break;
       }
       case 'give_turn': {
         const t = ent(s.to);
-        if (t) this.rt.kit.giveTurn(t);
+        if (!this.rt.turns) this.report(e, ctx.inst, NO_TURNS);
+        else if (t) this.rt.turns.give(t);
         break;
       }
       case 'done':
-        this.rt.kit.done(e);
+        if (!this.rt.turns) this.report(e, ctx.inst, NO_TURNS);
+        else this.rt.turns.done(e);
         break;
       case 'end_turn':
-        this.rt.kit.endTurn();
+        if (!this.rt.turns) this.report(e, ctx.inst, NO_TURNS);
+        else this.rt.turns.endTurn();
         break;
       case 'popup': {
         const t = ent(s.on);
@@ -1072,16 +1084,17 @@ export class ScriptSystem {
         const at = this.rt.kit.cursorAt();
         return at ? this.rt.kit.thingAt(at.x, at.y) : null;
       }
+      // (From the game's turn system; with none, as before any turns began.)
       case 'turn_team':
-        return this.rt.kit.team()?.tag ?? '';
+        return this.rt.turns?.team() ?? '';
       case 'turns_over':
-        return this.rt.kit.turns?.over ?? false;
+        return this.rt.turns?.over() ?? false;
       case 'turn_number':
-        return this.rt.kit.turns?.number ?? 0;
+        return this.rt.turns?.round() ?? 0;
       case 'my_turn':
-        return this.rt.kit.isActing(ctx.self);
+        return this.rt.turns?.isActing(ctx.self) ?? false;
       case 'turn_done':
-        return this.rt.kit.hasActed(ctx.self);
+        return this.rt.turns?.hasActed(ctx.self) ?? false;
       case 'walking_path':
         return this.rt.kit.walking(ctx.self);
       case 'next_level': {

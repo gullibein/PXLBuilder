@@ -11,8 +11,10 @@ export const gameProfileSchema = z.object({
   preset: z.string().nullable(),
   /** How the world is seen: side, top, iso. */
   view: z.string().min(1),
-  /** How time passes: realtime, turns. */
+  /** How the engine's clock runs: realtime (the one there is). */
   time: z.string().min(1),
+  /** Turn-taking the game uses beside it (engine/turns.ts: team_turns); absent: none. */
+  turns: z.array(z.string()).optional(),
   /** How the player moves: a locomotion model, and abilities on top of it. */
   movement: z.object({ model: z.string().min(1), abilities: z.array(z.string()) }),
   /** The kinds of collision geometry the game's levels use. */

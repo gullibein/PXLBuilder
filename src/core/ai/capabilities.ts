@@ -45,6 +45,7 @@ export const COMPONENT_TOPICS: Record<string, { fields: string[]; components: st
   random: { fields: [], components: ['FogOfWar', 'Light'] },
   precision_moves: { fields: [], components: ['WallJump', 'Dash'] },
   camera: { fields: [], components: ['CameraZone'] },
+  checkpoints: { fields: [], components: ['Checkpoint'] },
 };
 const fieldTopic = (comp: string, field: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.fields.includes(`${comp}.${field}`))?.[0];
 const componentTopic = (comp: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.components.includes(comp))?.[0];
@@ -84,7 +85,7 @@ export function describeLogic(): string {
     .list()
     .map((t) => {
       const params = Object.entries(t.params).map(([n, f]) => describeField(n, f).trim());
-      return `  ${t.type}${t.simulated ? '' : ' (recorded in the design only; NOT simulated in play yet)'}: ${t.description}${params.length ? ` Params: ${params.join('; ')}` : ''}`;
+      return `  ${t.type}${t.simulated ? '' : ' (design only: NOT simulated in play)'}: ${t.description}${params.length ? ` Params: ${params.join('; ')}` : ''}`;
     })
     .join('\n');
   const events = eventRegistry

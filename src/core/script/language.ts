@@ -115,6 +115,7 @@ export type Stmt =
   | { do: 'play_music'; music: string }
   | { do: 'stop_music' }
   | { do: 'respawn'; target: string | null }
+  | { do: 'set_checkpoint'; target: string | null; x: string | null; y: string | null; keep: boolean }
   | { do: 'restart_level' }
   | { do: 'restart_game' }
   | { do: 'pause' }
@@ -474,6 +475,7 @@ export const STATEMENTS: Record<Stmt['do'], StatementInfo> = {
   rotate: { example: '{"do":"rotate","by":"180","to":null,"seconds":"0.3"}', doc: 'turn it (degrees, clockwise): "by" turns from where it is, "to" turns to an angle (0 = upright as placed); over seconds (0 = at once). Only how it is drawn: it still collides as an upright box' },
   spin: { example: '{"do":"spin","speed":"360"}', doc: 'keep turning at degrees per second (negative = the other way, 0 stops; its angle stays where it is)' },
   respawn: { example: '{"do":"respawn","target":"other"}', doc: 'put it back at its start, full health (null = self)' },
+  set_checkpoint: { example: '{"do":"set_checkpoint","target":"other","x":null,"y":null,"keep":false}', doc: 'from now on target (null = self) comes back here when it dies, falls out or is respawned: at x, y, or where it is now (both null). keep true: a level started again (restart_level, R) starts it there too, everything else as at the start. Emits "checkpoint_reached"' },
   restart_level: { example: '{"do":"restart_level"}', doc: 'start the level again' },
   restart_game: { example: '{"do":"restart_game"}', doc: 'start the whole game again, from its first level' },
   pause: {
@@ -684,6 +686,7 @@ const stmt: z.ZodType<Stmt> = z.lazy(() => {
     z.object({ do: z.literal('play_music'), music: z.string().min(1) }),
     z.object({ do: z.literal('stop_music') }),
     z.object({ do: z.literal('respawn'), target: nexpr }),
+    z.object({ do: z.literal('set_checkpoint'), target: nexpr.default(null), x: nexpr.default(null), y: nexpr.default(null), keep: z.boolean().default(false) }),
     z.object({ do: z.literal('restart_level') }),
     z.object({ do: z.literal('restart_game') }),
     z.object({ do: z.literal('pause') }),
@@ -852,6 +855,8 @@ export function exprSlots(s: Stmt): string[] {
     case 'remove':
     case 'respawn':
       return s.target ? [s.target] : [];
+    case 'set_checkpoint':
+      return [s.target, s.x, s.y].filter((v): v is string => !!v);
     case 'damage':
     case 'heal':
       return [s.target, s.amount];
@@ -1116,6 +1121,7 @@ export const SCRIPT_TOPICS: Record<string, { statements: string[]; functions: st
   digging: { statements: ['dig'], functions: ['dug_at'], names: [] },
   enemies: { statements: ['crawl'], functions: [], names: [] },
   levels: { statements: ['flip_level'], functions: [], names: ['level_flipping', 'level_flipped'] },
+  checkpoints: { statements: ['set_checkpoint'], functions: [], names: [] },
 };
 
 const inTopic = (kind: 'statements' | 'functions' | 'names', name: string) => Object.values(SCRIPT_TOPICS).some((t) => t[kind].includes(name));

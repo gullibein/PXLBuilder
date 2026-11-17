@@ -321,7 +321,7 @@ describe('logic operations (the relationships proof of concept, without a model)
   it('the system prompt lists relationship types, events, conditions and actions', () => {
     const prompt = buildSystemPrompt(registry);
     for (const t of ['controls', 'requires', 'damages', 'collects', 'switch_activated', 'touch_started', 'has_item', 'restart_level', 'show_message']) expect(prompt).toContain(`  ${t}`);
-    expect(prompt).toMatch(/targets \(recorded in the design only; NOT simulated/);
+    expect(prompt).toMatch(/targets \(design only: NOT simulated/);
   });
 });
 
