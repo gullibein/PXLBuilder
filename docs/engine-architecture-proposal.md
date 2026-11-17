@@ -1432,3 +1432,79 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 - **Generators don't place zones** (§7.5): F6.
 - **Seen at an angle, rooms don't work:** the isometric view has no flat limits.
 - **A look at something** (`camera_focus`) uses the level's limits, not the room's, as before.
+
+## 22. F6: the plan (three stages, each reviewed on its own)
+
+**What F6 is:** the remaining systems that are declared but not yet real behind an interface: level generators (`sections`, `dungeon`), time (`turns`) and progression (`stages`). F6 is architecture. Gameplay content stays in the slices: a broad set of ability patterns is V1, momentum is V3, worlds and gates are V5 and V6.
+
+**Standing rules for every stage (T5–T8):**
+- Goldens for whatever moves are recorded first.
+- Every family is tested: Mario-style, Celeste-inspired, Lode Runner-inspired, Tetris, Dr. Mario, space shooter, mining, Boulder Dash, and the five starters.
+- The momentum platformer is a future requirement (V3). Its placeholder in the suite is a to-do, never counted as a passing test.
+- Working code is moved behind an interface and gated by the profile, not rewritten.
+- Anything unsupported is reported, never silently replaced.
+
+### 22.1 F6a: generators behind one interface
+
+**Today:**
+- `sections` is called through its module (`generatorOf(...).build`), but the module still points at `generate.ts`.
+- `dungeon` isn't called through its module at all. The runtime, the editor's dungeon panel and preview, and the AI context each call `model/dungeon.ts` directly, and whether a level is random is decided by `scene.generator` alone, whatever the profile says.
+
+| | |
+|---|---|
+| **Moved behind interfaces** | A `Generator` interface with two kinds of build: **at edit time** (operations that make a level: `sections`) and **at play time** (a level built anew from a recipe and seed each time: `dungeon`). Each generator declares what it requires of the profile (`sections`: side view, a reach table, player/ground/goal roles; `dungeon`: a view from above, cells) and the validators its levels go through. The runtime, the dungeon panel, the viewport preview and the AI context call the profile's generator through the interface. `pointsTo` removed from both |
+| **Becomes profile-controlled** | Which generator builds levels, at edit time and at play time. A level with a dungeon recipe in a game whose profile doesn't select `dungeon` isn't built at play; the compatibility report says so and names the level. The same registered / selected / supported / active steps as geometry and camera |
+| **Game types affected** | Roguelike starter (dungeon at play). Classic and puzzle platformers (sections). Every other family only through "no generator selected: nothing changes" |
+| **Goldens first** | Dungeon goldens, which don't exist today: for fixed seeds and floors 1–3, each style (rooms, caves, maze), with a locked door and key, and with room templates: the full entity list and room list. The roguelike starter built at play with a fixed seed. The existing classic and puzzle sweeps stay |
+| **New acceptance tests** | Both generators run only through the interface (no other caller of `generateDungeon` or `generateLevel` remains outside their modules). A test-only generator registers and is selected by a profile without changes elsewhere. Report and play agree when a recipe's generator isn't active. Tetris, Dr. Mario, shooter, mining and Boulder Dash: no generator runs, goldens unchanged |
+| **Deferred** | New generators (`challenge_rooms` V1, `grid_stage` V2, `track` V3, `arena`/`room_stage` V4–V5, `world` V6). Gentle slopes in `sections` patterns (§18.4) |
+| **Risks and how they're tested** | (1) An old roguelike saved without a stored profile must still get `dungeon`: its inferred preset selects it; tested with a saved fixture. (2) A hand-made game that added a dungeon recipe to a non-roguelike profile would stop being random: the migration to the next format adds `dungeon` to a stored profile when any level has a recipe, so no existing game changes; tested. (3) Editor preview and play must build the same dungeon for the same seed: one golden compares them |
+
+### 22.2 F6b: generation that asks the player's reach; generated camera zones
+
+**Today:** `sections` sizes every pattern from the jump table's limits. It never asks what else the player can do, so it never builds anything that needs a wall jump or a dash (the F4 limitation, T3). No generator places camera zones.
+
+| | |
+|---|---|
+| **Moved behind interfaces** | Patterns get the **reach description**, not only the limits. A pattern declares the mechanics it needs (`needs: ['wall_jump']`) and sizes itself from the reach's own numbers for that mechanic (the wall kick's rise and distance, the dash's cells), published by the move rules that F4 added. The generator picks patterns whose needs the reach covers. Nothing in the generator names an ability |
+| **Proof it is general, not two special cases** | Two patterns, `wall_shaft` and `dash_gap`, written only against the pattern interface. Tests: (a) with a player who lacks the ability, the pattern is never chosen; (b) changing the ability's settings (a longer dash, a weaker kick) changes the section's size; (c) a **test-only third mechanic** with its own move rule and pattern is picked up with no change to the generator, the solver or the validators |
+| **Validation** | A level using estimated moves goes through `cell_solver` and then `route_bot`, as §8.4 already chooses. The solver must find the route; the bot must play it. New: a **time budget** per build for the bot. Past it, the level is reported uncertain, not validated. Classic and puzzle levels use no estimated moves, so they never run the bot and stay as fast as today |
+| **Becomes profile-controlled** | The profile's abilities now change what levels are built, not only whether they are judged. **Generated camera zones:** a generator that knows its rooms places Camera Zone objects when the profile's camera has `rooms` active, and none otherwise. First user: `dungeon`, one zone for each room, seen from above. `sections` places none (its levels scroll) |
+| **Game types affected** | Platformers with abilities (new sections become possible). Roguelike (zones, only when `rooms` is selected; the starter doesn't select it, so it is unchanged). Others: none |
+| **New acceptance tests** | The classic and puzzle sweeps identical (a player without abilities gets exactly the levels it got). A sweep with wall jump and dash: every level solved and bot-confirmed, each ability needed in at least one section (removing the ability makes the level unsolvable). Dungeon with `rooms`: one zone per room, the camera locks to the start room and slides to the next in play; without `rooms`: byte-identical to the F6a dungeon goldens |
+| **Deferred** | A broad pattern set for advanced movement, climbing with stamina, dash crystals, crumbling blocks: V1. T1 (one registration per ability, bot steps included): V1. Zones from `sections`, arenas with doors: V5 |
+| **Risks and how they're tested** | (1) Bot time making generation slow: the budget, plus a measured test of seconds per generated level. (2) Patterns changing existing levels by shifting the random sequence: new patterns are only eligible when their mechanic is present, and the unchanged sweeps prove it. (3) Estimated moves producing sections the bot can't play: such builds are discarded and rebuilt, as failed builds are today; the rate is measured and reported |
+
+### 22.3 F6c: time and progression
+
+**Today:**
+- **Time.** The turn kit (`runtime/turns.ts`) is a real implementation, started by scripts (`start_turns`). The profile's `time` is one value for the whole game: the roguelike says `turns`, the RPG and tactics games say `realtime` though their battles are turn-based. So the profile is wrong about them, and nothing reads it.
+- **Progression.** What level comes next, `go_to_level`, visiting a level and coming back are decided inside the play screen (`editor/play/PlayView.tsx`), in interface code that can't be tested without a browser. `nextLevel` lives in `model/dungeon.ts`.
+
+| | |
+|---|---|
+| **Time, represented correctly** | Two things, not one. The **time model** says how the world runs: `realtime` (everything moves all the time) or `turns` (the world answers each of the player's steps: the roguelike). **Turn-based actions** are a capability a game selects beside either: the turn kit (teams, turns, menus, the cursor). An RPG is `realtime` with the turn capability: its map runs in real time and its battles take turns. The turn kit stays as it is, behind a `TurnSystem` interface |
+| **Becomes profile-controlled** | The turn capability. In a game whose profile doesn't select it, turn statements are refused with a script error, and the report names the objects using them (as `cells` does). Progression: which model decides what follows a level |
+| **Profiles corrected without breaking games** | The RPG preset gains the turn capability; so do games inferred as RPG or roguelike. The format migration adds it to any stored profile whose game has turn scripts (found the way `cells` use is found). So no existing game or script changes; tested with saved fixtures of an RPG, a tactics game and a roguelike |
+| **Mixed real-time and turns, tested explicitly** | (1) RPG: on the map things move in real time; touching a monster starts a battle that takes turns; back on the map, real time again, the map as it was. (2) A real-time level in which a turn-based battle starts and ends while something else keeps moving outside the turns. (3) Roguelike: nothing moves until the player steps. (4) A platformer without the capability: `start_turns` refused, said |
+| **Progression behind an interface** | A `Progression` controller in the runtime (not the play screen): what follows a completed level, `go_to_level`, `visit_level` and `return_level`, a random level's next floor. `stages` is today's behaviour moved there; the play screen and the exported player only carry out what it says. New shared piece: **checkpoints** (a Checkpoint component: touching one moves where the player comes back to; the level again resets it). `pointsTo` removed from `turns` and `stages`: with F6a, **no module points to old code any more** |
+| **Game types affected** | RPG and roguelike starters, tactics games (time). Every game with more than one level (progression). Platformers (checkpoints, only when placed) |
+| **Goldens first** | Progression traces, recorded through the play screen's logic before it moves: level order, a branch by `go_to_level`, an RPG visit and return with state kept, roguelike floors, a won last level. Turn traces: an RPG battle and a tactics round, frame by frame. The existing roguelike golden stays |
+| **Deferred** | Connected rooms and worlds, a map, persistent state across rooms: V6. Ability gates and the progression validator: V6. Stage select, bosses: V5. Board-game progression (rounds, levels of speed) stays in scripts as today |
+| **Risks and how they're tested** | (1) Moving progression out of the play screen changes what a player sees between levels: the browser tests already play through level ends, visits and floors, and the new headless goldens pin the order. (2) The exported player uses the same code: one browser test exports a two-level game and plays it through. (3) Refusing turn statements could break a game the migration missed: the finder is tested against every ready-made script that uses turns, and a refused statement says exactly what to select |
+
+### 22.4 After F6
+
+**Every system is then behind an interface and chosen by the profile:** view, time, movement, geometry, camera, kits, generators, progression, validators.
+
+**Still open after F6, by slice:**
+
+| Slice | What it brings |
+|---|---|
+| V1 | Ability patterns in breadth; one registration per ability (T1, T2) |
+| V2 | A grid movement model, with the cell-based reach for top-down levels |
+| V3 | Momentum, curved ground, and the momentum platformer's regression game (today a to-do) |
+| V4 | Fixed-arc jumps, spawners |
+| V5 | Bosses, arenas with doors, stage select |
+| V6 | Worlds, ability gates |
+| Not tied to a slice | A cell grid for hand-drawn levels (T4); the geometry work in §18.4 |
