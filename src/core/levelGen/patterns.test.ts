@@ -27,6 +27,14 @@ describe('the pattern library', () => {
     const failures: string[] = [];
     for (const pat of allPatterns()) {
       if (['start', 'goal', 'key_end', 'locked_goal'].includes(pat.id)) continue;
+      // (A pattern that requires a capability the starter's player lacks is never built for it, even asked for by
+      // name: another section takes its place. With the capability: core/levelGen/reachAware.test.ts.)
+      if (pat.requires?.length) {
+        const r = generateLevel(p, p.scenes[0].id, { difficulty: 3, structure: 'run', length: 'short', seed: 1, sections: [{ pattern: pat.id }] }, registry);
+        const built = (r.madeBy.fingerprint as { sections: string[] }).sections;
+        if (built.some((x) => x.includes(`:${pat.id}/`))) failures.push(`${pat.id} was built for a player without ${pat.requires.join(', ')}`);
+        continue;
+      }
       for (const v of pat.variants) {
         const difficulty = Math.max(3, v.minDifficulty ?? 1);
         for (const seed of [1, 2, 3]) {

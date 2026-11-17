@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from './editor/App';
 import { restoreAutosave, startAutosave } from './editor/persistence';
 import { useEditor } from './editor/store';
+// (The route bot: levels the engine builds that need wall jumps or dashes are played by it before they count.)
+import './runtime/routeBot';
 import './editor/editor.css';
 import './editor/styles.css';
 

@@ -5,7 +5,7 @@
  * command/transaction system and AI operations later.
  */
 import { defaultGenerator } from './dungeon';
-import { playGeneratorFor } from '../generation/playGenerators';
+import { buildForPlay, playGeneratorFor } from '../generation/playGenerators';
 import { selectedGenerators } from '../engine/generators';
 import type { DungeonGenerator } from '../types';
 import { readControls } from './controls';
@@ -310,9 +310,10 @@ export function keepDungeon(project: Project, sceneId: Id, registry: ComponentRe
   if (!scene.generator) throw new ModelError('This level is not random: nothing to keep');
   const gen = playGeneratorFor(project, scene);
   if (!gen) throw new ModelError("This level's recipe isn't built in this game: its profile doesn't select the generator (Game profile, or set_game_profile)");
-  const built = gen.build({ project, scene, registry, seed: scene.generator.preview, floor: scene.generator.previewFloor }).scene;
+  // (As play has it: with its rooms' camera zones when the game's camera has rooms, to edit like the rest.)
+  const built = buildForPlay(gen, { project, scene, registry, seed: scene.generator.preview, floor: scene.generator.previewFloor }).scene;
   // (New ids of their own, as anything placed.)
-  scene.entities = built.entities.map((e) => (e.id.startsWith('gen_') ? { ...e, id: generateId('ent') } : e));
+  scene.entities = built.entities.map((e) => (e.id.startsWith('gen_') || e.id.startsWith('zone_') ? { ...e, id: generateId('ent') } : e));
   delete scene.generator;
 }
 

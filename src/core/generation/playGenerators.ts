@@ -10,7 +10,8 @@ import type { ComponentRegistry } from '../components/registry';
 import { gamePlayGenerators } from '../engine/generators';
 import { buildLevel, generateDungeon, newSeed, type Dungeon } from '../model/dungeon';
 import { patchGenerator } from '../model/mutations';
-import type { Project, Scene } from '../types';
+import type { EntityInstance, Project, Scene } from '../types';
+import { gameCamera } from '../engine/camera';
 
 /** What was built, for scripts and tools: its rooms, where it starts, the way on, what didn't work out. */
 export type BuiltAtPlay = Dungeon;
@@ -62,6 +63,42 @@ const dungeon: PlayGenerator = {
     return generateDungeon(project, scene, registry, seed ?? g.preview, g.previewFloor);
   },
 };
+
+/** One cell: a room's zone takes in the walls round it. */
+const WALL = 32;
+
+/**
+ * Camera zones for the rooms a generator built: one for each room, its inside and the walls round it, as ordinary
+ * Camera Zone objects (invisible; the camera's "rooms" behaviour does the rest: runtime/cameraBehaviors.ts). The
+ * corridors between rooms are in no zone: there the camera follows as usual, and slides into the next room.
+ */
+export function roomZones(built: BuiltAtPlay | null, registry: ComponentRegistry): EntityInstance[] {
+  return (built?.roomList ?? []).map((r, i) => ({
+    id: `zone_${i}`,
+    name: `Room ${i + 1}`,
+    definitionId: null,
+    transform: { position: { x: r.x, y: r.y }, rotation: 0, scale: { x: 1, y: 1 } },
+    components: {
+      Sprite: registry.createDefault('Sprite', { width: r.w + 2 * WALL, height: r.h + 2 * WALL, visible: false }),
+      CameraZone: registry.createDefault('CameraZone', { transition: 'slide' }),
+    },
+    removedComponents: [],
+    tags: ['camera_zone'],
+    metadata: { generated: true },
+  }));
+}
+
+/**
+ * A level built for play by its generator, as the game has it: with camera zones for its rooms when the game's
+ * camera has the "rooms" behaviour active (engine/camera.ts), and exactly what the generator built when not. Zones
+ * placed by hand in the level stay as they are.
+ */
+export function buildForPlay(gen: PlayGenerator, req: Parameters<PlayGenerator['build']>[0]): PlayBuild {
+  const out = gen.build(req);
+  if (!gameCamera(req.project).includes('rooms')) return out;
+  const zones = roomZones(out.built, req.registry);
+  return zones.length ? { ...out, scene: { ...out.scene, entities: [...zones, ...out.scene.entities] } } : out;
+}
 
 const REGISTERED = new Map<string, PlayGenerator>([[dungeon.id, dungeon]]);
 

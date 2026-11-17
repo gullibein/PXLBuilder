@@ -20,11 +20,13 @@ import type { Id, LevelMadeBy, Project } from '../types';
 import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
 import { GENRE_BUILDS, type GenreBuild } from './genres';
 import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
+import { movesWithout, reachMeasure } from '../reach/probe';
 import { playerReach, type ReachDescription } from '../reach/reach';
-import { runValidators, unneededPuzzles, type Validation, type ValidationTarget } from '../validation/validators';
+import { solveLevel } from './solver';
+import { chooseValidators, runValidators, unneededPuzzles, type Validation, type ValidationTarget } from '../validation/validators';
 import { GridError, LevelGrid, type Placed } from './grid';
 import type { Limits } from './limits';
-import { PatternError, type Band, type Pattern, type SectionCtx } from './pattern';
+import { PatternError, patternFits, type Band, type Capabilities, type Pattern, type SectionCtx } from './pattern';
 import { patternById } from './patterns/index';
 import { makeRandom, newLevelSeed, type Random } from './random';
 import { findRoles, type Role, type Roles } from './roles';
@@ -47,6 +49,12 @@ export interface GenerateResult {
 
 /** Builds tried before giving up. */
 const ATTEMPTS = 12;
+/**
+ * The route bot's budget for one call: so many builds played, each for at most so many seconds of play (the game's
+ * own time: the same on every machine). Past it, a level that needs playing is uncertain, not validated.
+ */
+const BOT_RUNS = 8;
+const BOT_SECONDS = 120;
 /** Checked builds compared against the game's other levels (the least alike is kept). */
 export const CANDIDATES = 3;
 /** More alike than this (0..1) to another level of the game: more builds are tried (up to MAX_CANDIDATES). */
@@ -160,6 +168,8 @@ interface Pick {
   rnd: Random;
   lim: Limits;
   roles: Roles;
+  /** What the player can do beyond its jump (its reach description's capabilities). */
+  caps: Capabilities;
   build: GenreBuild;
   bp: Blueprint;
   used: Built[];
@@ -177,14 +187,15 @@ function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number,
   const avoid = k.avoid;
   const named0 = slot.spec?.pattern ? patternById(slot.spec.pattern) : undefined;
   // (A named pattern the game lacks the parts for can't be built: another is picked, and that is said.)
-  if (named0 && (!named0.needs.every((r) => k.roles[r]) || failed.has(named0.id))) return null;
+  if (named0 && (!patternFits(named0, k.roles, k.caps) || failed.has(named0.id))) return null;
   const named = named0;
   const pool: Pattern[] = named
     ? [named]
     : Object.entries(k.build.weights)
         .filter(([, w]) => (w[slot.role] ?? 0) > 0)
         .map(([id]) => patternById(id)!)
-        .filter((p) => p && p.needs.every((r) => k.roles[r]) && !p.mechanics.some((m) => avoid.has(m) && m !== 'coins') && !failed.has(p.id));
+        // (Only what the game has the parts for, and the player the reach for: its capabilities.)
+        .filter((p) => p && patternFits(p, k.roles, k.caps) && !p.mechanics.some((m) => avoid.has(m) && m !== 'coins') && !failed.has(p.id));
   const options: { p: Pattern; w: number }[] = [];
   for (const p of pool) {
     let w = named ? 1 : (k.build.weights[p.id]?.[slot.role] ?? 0);
@@ -213,7 +224,7 @@ function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number,
     // (A variant the level used already is less likely.)
     const variant = wanted.length ? k.rnd.weighted(wanted, (v) => (k.used.some((u) => u.pattern === p.id && u.variant === v) ? 0.3 : 1)) : null;
     if (variant) {
-      const [lo, hi] = p.width(k.lim, d, variant);
+      const [lo, hi] = p.width(k.lim, d, variant, k.caps);
       if (lo <= room) return { pattern: p, variant, width: k.rnd.int(lo, Math.min(hi, room)), difficulty: d };
     }
     pick.w = 0;
@@ -309,23 +320,23 @@ const STRUCTURE_LEAN: Partial<Record<Mechanic, Partial<Record<Structure, number>
 };
 
 /** The mechanics this game's patterns can build (with their parts, not left out). */
-function buildableMechanics(build: GenreBuild, roles: Roles, avoid: Set<Mechanic>): Mechanic[] {
+function buildableMechanics(build: GenreBuild, roles: Roles, avoid: Set<Mechanic>, caps: Capabilities): Mechanic[] {
   const out = new Set<Mechanic>();
   for (const id of Object.keys(build.weights)) {
     const p = patternById(id);
-    if (!p || !p.needs.every((r) => roles[r])) continue;
+    if (!p || !patternFits(p, roles, caps)) continue;
     for (const m of p.mechanics) if (m !== 'coins' && !avoid.has(m)) out.add(m);
   }
   return [...out];
 }
 
-function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach: Limits, build: GenreBuild, notes: string[], opts: GenerateOptions = {}): { grid: LevelGrid; built: Built[]; structure: Structure; length: string; signature: Mechanic | null } {
+function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach: Limits, caps: Capabilities, without: SectionCtx['without'], build: GenreBuild, notes: string[], opts: GenerateOptions = {}): { grid: LevelGrid; built: Built[]; structure: Structure; length: string; signature: Mechanic | null } {
   const avoidStructures = opts.avoidStructures ?? [];
   const avoid = new Set<Mechanic>([...(bp.avoid ?? []), ...(opts.avoidMechanics ?? [])]);
   // A level the blueprint says nothing about is still about something: one mechanic, picked from the seed (another
   // than the game's last levels were about, when there are others), comes up more than the rest.
   const signature = !bp.focus?.length && !bp.sections?.length ? (() => {
-    const all = buildableMechanics(build, roles, avoid);
+    const all = buildableMechanics(build, roles, avoid, caps);
     const core = all.filter((m) => build.core?.includes(m));
     const can = core.length ? core : all;
     return can.length ? rnd.weighted(can, (m) => (opts.recentSignatures?.includes(m) ? 0.15 : 1)) : null;
@@ -345,7 +356,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
   const pacing = rnd.pick(build.pacings);
   const counter = { i: 0 };
   const specs = bp.sections ? [...bp.sections] : null;
-  const k: Pick = { rnd, lim, roles, build, bp, used: [], seen: new Map(), avoid, signature };
+  const k: Pick = { rnd, lim, roles, caps, build, bp, used: [], seen: new Map(), avoid, signature };
   // Two ways through (a choice, a risky shortcut): sections of their own in place of tests and twists.
   const twoWays = bp.routes === 'choice' || bp.routes === 'risky_shortcut' ? bp.routes : null;
   let routes = twoWays && roles.oneway ? (length === 'long' ? 2 : 1) : 0;
@@ -386,7 +397,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
     };
     const buildSlot = (slot: Slot, room: number, isEnding: boolean): boolean => {
       const ctxBase = (width: number, difficulty: number, variant: string): SectionCtx => ({
-        g: grid, rnd: rnd.fork(), lim, reach, roles, difficulty, variant, dir: run.dir, start: run.start + run.dir * used, width, band: run.band, entry,
+        g: grid, rnd: rnd.fork(), lim, reach, caps, without, roles, difficulty, variant, dir: run.dir, start: run.start + run.dir * used, width, band: run.band, entry,
         ref: (p) => `${p}${++refs}`,
       });
       if (slot.spec?.custom) {
@@ -484,7 +495,7 @@ interface Check {
 }
 
 /** A level built by these operations, validated by these validators (on a copy: the project is not changed). */
-function validateBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps: Operation[] | null, registry: ComponentRegistry, ids: readonly string[], rest: Omit<ValidationTarget, 'project' | 'sceneId' | 'registry' | 'judged'>): Validation {
+function validateBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps: Operation[] | null, registry: ComponentRegistry, ids: readonly string[], rest: Omit<ValidationTarget, 'project' | 'sceneId' | 'registry' | 'judged'>, notes: readonly string[] = []): Validation & { target?: ValidationTarget } {
   let after: Project;
   try {
     after = produce(project, (d) => void applyOperations(d, ops, registry));
@@ -499,7 +510,8 @@ function validateBuilt(project: Project, sceneId: Id, ops: Operation[], stillOps
       return { state: 'invalid', problems: [`its still version couldn't be made: ${(e as Error).message}`], verdicts: {}, uncertain: [] };
     }
   }
-  return runValidators(ids, { project: after, sceneId, registry, judged, ...rest });
+  const target: ValidationTarget = { project: after, sceneId, registry, judged, ...rest };
+  return { ...runValidators(ids, target, notes), target };
 }
 
 /**
@@ -574,6 +586,8 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
   // puzzles), as given; the generator's own section check sits between the route search and the puzzle check.
   const validators = options.validators ?? ['layout', 'checker', 'cell_solver', ...(build.id === 'puzzle' ? ['puzzle_needed'] : [])];
   const before = validators.filter((id) => id !== 'puzzle_needed');
+  // (How many builds of this call the route bot has played: its budget.)
+  let botRuns = 0;
   const after = validators.filter((id) => id === 'puzzle_needed');
   const seed = bp.seed ?? newLevelSeed();
   const notes: string[] = [];
@@ -594,7 +608,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
     try {
-      out = buildOnce(bp, rnd, roles, lim, reach, build, tried, options);
+      out = buildOnce(bp, rnd, roles, lim, reach, description.capabilities, (ids) => reachMeasure(description, ids), build, tried, options);
     } catch (e) {
       if (e instanceof LevelGenError) throw e;
       if (!(e instanceof GridError)) throw e;
@@ -606,10 +620,29 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     // The layout, the level checker, then the route solver (walls, ceilings and doors in the way, keys before the
     // doors they open, every coin).
     const still = moving ? asStill(out.grid, roles) : out.grid;
-    const checked = validateBuilt(project, sceneId, ops, moving ? [...ops.filter((o) => o.op === 'erase_area'), ...asStill(out.grid, roles).toOperations(sceneId)] : null, registry, before, { reach: description, mechanics: [], grid: still });
+    // What the level needs of the player beyond its jump: the capabilities its sections require. Moves that are only
+    // estimated are judged by the route solver and then played by the route bot (chosen by coverage: §8.4).
+    const needs = [...new Set(out.built.flatMap((b) => patternById(b.pattern)?.requires ?? []))];
+    const chosen = chooseValidators(before, { reach: description, mechanics: needs, grid: still });
+    const target = { reach: description, mechanics: needs, grid: still, botSeconds: botRuns < BOT_RUNS ? BOT_SECONDS : 0 };
+    let checked = validateBuilt(project, sceneId, ops, moving ? [...ops.filter((o) => o.op === 'erase_area'), ...asStill(out.grid, roles).toOperations(sceneId)] : null, registry, chosen.ids, target, chosen.notes);
+    if (checked.verdicts.route_bot) botRuns++;
     if (checked.state === 'invalid') {
       lastProblems = checked.problems;
       continue;
+    }
+    // What a section says it needs, the level does need: without that capability's moves there is no way to the goal
+    // (else the section asks for nothing: built again).
+    const spare = needs.filter((c) => solveLevel(still, { limits: reach, moves: movesWithout(description, [c]) }).goal);
+    if (spare.length) {
+      lastProblems = [`it can be won without the player's ${spare.join(' and ')}, which a section was built to need`];
+      continue;
+    }
+    // (The solver's route took an estimated move no section asked for, a dash over an ordinary gap: played too.)
+    if (checked.state === 'uncertain' && checked.target && !checked.verdicts.route_bot && checked.verdicts.cell_solver?.state === 'pass' && description.simulator) {
+      const again = runValidators(['route_bot'], { ...checked.target, botSeconds: botRuns < BOT_RUNS ? BOT_SECONDS : 0 }, chosen.notes, checked.verdicts);
+      botRuns++;
+      if (again.state === 'validated') checked = { ...again, target: checked.target };
     }
     const check: { state: 'validated' | 'uncertain'; problems: string[] } = checked.state === 'uncertain' ? { state: 'uncertain', problems: checked.uncertain } : { state: 'validated', problems: [] };
     const route = checked.verdicts.cell_solver?.evidence?.route ?? [];
@@ -641,7 +674,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       ops,
       rows,
       state: check.state,
-      notes: [...notes, ...tried, `the route solver got to the goal in ${route.length - 1} moves`, ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
+      notes: [...notes, ...tried, `the route solver got to the goal in ${route.length - 1} moves`, ...(needs.length ? [`it needs the player's ${needs.join(' and ')}`] : []), ...(checked.verdicts.route_bot?.state === 'pass' ? ['the route bot played it to the goal'] : []), ...(moving && check.state === 'validated' ? ['moving platforms were checked as bridges along their paths'] : [])],
       attempts: attempt + 1,
       madeBy: {
         generator: build.id,

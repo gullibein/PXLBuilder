@@ -5,6 +5,7 @@
 import type { Pattern } from '../pattern';
 import { CLASSIC_PATTERNS } from './classic';
 import { PUZZLE_PATTERNS } from './puzzle';
+import { ABILITY_PATTERNS } from './abilities';
 
 const REGISTRY = new Map<string, Pattern>();
 
@@ -13,7 +14,12 @@ export function registerPattern(p: Pattern): void {
   REGISTRY.set(p.id, p);
 }
 
-for (const p of [...CLASSIC_PATTERNS, ...PUZZLE_PATTERNS]) registerPattern(p);
+for (const p of [...CLASSIC_PATTERNS, ...PUZZLE_PATTERNS, ...ABILITY_PATTERNS]) registerPattern(p);
+
+/** Takes a pattern out again (tests registering their own). */
+export function unregisterPattern(id: string): void {
+  REGISTRY.delete(id);
+}
 
 export function patternById(id: string): Pattern | undefined {
   return REGISTRY.get(id);

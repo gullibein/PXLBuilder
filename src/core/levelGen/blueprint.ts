@@ -22,7 +22,7 @@ export const STRUCTURE_INFO: Record<Structure, string> = {
   hub: 'the start in the middle: the key at one end, the locked goal at the other',
 };
 
-export const MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins', 'ramp', 'water', 'ladder', 'switch', 'key', 'crate', 'teleporter'] as const;
+export const MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins', 'ramp', 'water', 'ladder', 'switch', 'key', 'crate', 'teleporter', 'wall_jump', 'dash'] as const;
 export type Mechanic = (typeof MECHANICS)[number];
 
 /** How many ways there are through: one; a bonus route up above; a choice of two ways; a risky shortcut beside a slow safe way. */

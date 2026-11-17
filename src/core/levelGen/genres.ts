@@ -41,6 +41,9 @@ export const CLASSIC_BUILD: GenreBuild = {
     pool: { teach: 1, test: 1, twist: 1 },
     cliff: { teach: 0.8, test: 1, twist: 0.8, rest: 0.5 },
     split: { test: 0.4, twist: 0.7 },
+    // (Built only for a player with the capability each requires: patterns/abilities.ts.)
+    dash_gap: { teach: 1.5, test: 2, twist: 1.5 },
+    wall_shaft: { teach: 1.5, test: 1.5, twist: 1.5 },
     goal: { finale: 1 },
   },
   pacings: [

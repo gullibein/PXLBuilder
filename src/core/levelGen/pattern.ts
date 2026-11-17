@@ -27,10 +27,28 @@ export interface Band {
   bottom: boolean;
 }
 
+/**
+ * What the player can do beyond running and jumping, in numbers (cells, rows), by capability id: the reach
+ * description's (core/reach). A pattern that requires one sizes itself from its numbers.
+ */
+export type Capabilities = Readonly<Record<string, Readonly<Record<string, number>>>>;
+
+/** Whether a pattern can be built for this game: it has its parts, and the player has the capabilities it requires. */
+export function patternFits(p: Pattern, roles: Roles, caps: Capabilities): boolean {
+  return p.needs.every((r) => roles[r]) && (p.requires ?? []).every((c) => caps[c]);
+}
+
 export interface SectionCtx {
   g: LevelGrid;
   rnd: Random;
   lim: Limits;
+  /** What the player can do beyond its jump (see Capabilities). */
+  caps: Capabilities;
+  /**
+   * What the player gets over without the capabilities named (the highest cliff, the widest level gap), as its
+   * reach's own moves have it (core/reach/probe.ts). A section that is to need a capability is built beyond this.
+   */
+  without(capabilities: readonly string[]): { rise: number; gap: number };
   /** The player's whole reach (no margin for the difficulty): what a puzzle must be beyond, to be needed. */
   reach: Limits;
   roles: Roles;
@@ -60,11 +78,16 @@ export interface Pattern {
   fits: SectionRole[];
   /** The parts it needs (patterns whose parts the game lacks are left out). */
   needs: Role[];
+  /**
+   * Capabilities of the player it requires (ids a reach description publishes: "wall_jump", "dash"…): it is built
+   * only for a player that has them all, and the level then needs them. None: it needs only the jump.
+   */
+  requires?: string[];
   /** Variants, each a different construction; with extra parts some need. */
   variants: { id: string; needs?: Role[]; bottomOnly?: boolean; minDifficulty?: number }[];
   difficulty: [number, number];
   /** How wide (cells) it can be, at this difficulty, for this variant. */
-  width(lim: Limits, difficulty: number, variant: string): [number, number];
+  width(lim: Limits, difficulty: number, variant: string, caps: Capabilities): [number, number];
   /** Builds the section; returns the ground's top row where the player leaves it. Throws GridError when it can't. */
   build(ctx: SectionCtx): number;
 }

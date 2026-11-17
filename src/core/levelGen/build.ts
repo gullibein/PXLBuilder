@@ -10,7 +10,9 @@ import * as m from '../model/mutations';
 import type { Id, Project, Scene } from '../types';
 import { produce } from 'immer';
 import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
-import { patternById } from './patterns/index';
+import { allPatterns, patternById } from './patterns/index';
+import { patternFits } from './pattern';
+import { playerReach } from '../reach/reach';
 import { findRoles } from './roles';
 import { fingerprintOfScene } from './fingerprint';
 import { LevelGenError, type GenerateOptions, type GenerateResult } from './generate';
@@ -135,9 +137,13 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
   if (!genre) return null;
   const roles = findRoles(project, registry);
   const build = GENRE_BUILDS[genre];
-  const patterns = Object.keys(build.weights)
+  // (Only what can be built for this game: it has the parts, and its player the reach, the capabilities a pattern requires.)
+  const caps = (roles.player && project.scenes[0] ? playerReach(project, project.scenes[0].id, roles.player.id, registry)?.capabilities : null) ?? {};
+  const fitting = Object.keys(build.weights)
     .map((id) => patternById(id))
-    .filter((p): p is NonNullable<typeof p> => !!p && p.needs.every((r) => roles[r]))
+    .filter((p): p is NonNullable<typeof p> => !!p && patternFits(p, roles, caps));
+  const required = new Set(allPatterns().flatMap((p) => (patternFits(p, roles, caps) ? [] : (p.requires ?? []))));
+  const patterns = fitting
     .map((p) => {
       const vs = p.variants.filter((v) => (v.needs ?? []).every((r) => roles[r])).map((v) => v.id);
       return `${p.id} (${vs.join(', ')}): ${p.name}`;
@@ -147,7 +153,8 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
     genre,
     theme: profile.theme?.id ?? null,
     structures: STRUCTURE_INFO,
-    mechanics: MECHANICS.filter((m) => !themeAvoids(project, registry).includes(m)).join(', '),
+    // (Not the mechanics of abilities the player doesn't have.)
+    mechanics: MECHANICS.filter((m) => !themeAvoids(project, registry).includes(m) && !required.has(m)).join(', '),
     // (The game's levels, briefly, so a new one is something else: the engine checks that too.)
     levels: project.scenes.flatMap((s) => {
       const f = fingerprintOfScene(project, s, registry);

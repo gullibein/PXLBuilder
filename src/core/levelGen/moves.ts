@@ -62,6 +62,11 @@ export interface MoveRule {
   id: string;
   /** The mechanics it judges (what a reach description's coverage lists). */
   mechanics: string[];
+  /**
+   * What it adds to the player's reach, in numbers (cells, rows), for whoever builds levels: a level pattern that
+   * requires the capability sizes itself from these (levelGen/pattern.ts).
+   */
+  capability?: { id: string; numbers: Record<string, number> };
   successors(s: SolverState, v: SolverView): void;
 }
 
@@ -186,6 +191,8 @@ export function wallJumpMove(riseRows: number, awayCells: number): MoveRule {
   return {
     id: 'wall_jump',
     mechanics: ['wall_jump'],
+    // (rise: rows a kick gains; away: cells it carries across, so how wide a shaft it climbs.)
+    capability: { id: 'wall_jump', numbers: { rise: riseRows, away: awayCells } },
     successors(s, v) {
       const { c, r, kh, so, cr, mode, id, w } = s;
       const toWall = (side: -1 | 1) => (tc: number, tr: number, ww: World) => onWall(tc, tr, side, ww, v) && !v.supportAt(tc, tr + 1, ww);
@@ -226,6 +233,8 @@ export function dashMove(cells: number, upRows: number): MoveRule {
   return {
     id: 'dash',
     mechanics: ['dash'],
+    // (cells: how much further than a jump it carries across; up: rows higher.)
+    capability: { id: 'dash', numbers: { cells, up: upRows } },
     successors(s, v) {
       if (!standing(s, v) || cells <= 0) return;
       const { c, r, kh, so, cr, id } = s;

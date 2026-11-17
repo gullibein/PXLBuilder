@@ -7,7 +7,7 @@
  * separate demo logic. Rendering uses the shared renderer.
  */
 import { gamePlayGenerators } from '../core/engine/generators';
-import { playGeneratorFor } from '../core/generation/playGenerators';
+import { buildForPlay, playGeneratorFor } from '../core/generation/playGenerators';
 import { gameCamera } from '../core/engine/camera';
 import type { CameraZone } from './cameraBehaviors';
 import { GEOMETRY, gameGeometry } from '../core/engine/geometry';
@@ -696,7 +696,8 @@ export class Runtime {
     const gen = playGeneratorFor(this.project, this.baseScene, this.playGenerators);
     if (gen) {
       const floor = Number(this.game.get('floor') ?? 1) || 1;
-      const built = gen.build({ project: this.project, scene: this.baseScene, registry: this.registry, floor, patch: this.generatorPatch });
+      // (With camera zones for its rooms, when the game's camera has rooms.)
+      const built = buildForPlay(gen, { project: this.project, scene: this.baseScene, registry: this.registry, floor, patch: this.generatorPatch });
       if (built.patchRefused) this.generatorPatch = {};
       this.dungeonSeed = built.seed;
       this.scene = built.scene;

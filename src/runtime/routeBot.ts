@@ -32,7 +32,7 @@ export const BOT_MOVES: readonly Move[] = ['start', 'walk', 'fall', 'jump', 'cli
 const STEP_TIME = 4;
 
 /** Plays the level `sceneId` along `path` (the cells the player stands in, from the solver, with how it gets there). */
-export function playRoute(project: Project, sceneId: Id, path: { col: number; row: number; move: Move; mode?: number }[], registry: ComponentRegistry, onTick?: (step: number, p: { x: number; y: number; vx: number; vy: number; grounded: boolean }, held: string[]) => void): BotResult {
+export function playRoute(project: Project, sceneId: Id, path: { col: number; row: number; move: Move; mode?: number }[], registry: ComponentRegistry, onTick?: (step: number, p: { x: number; y: number; vx: number; vy: number; grounded: boolean }, held: string[]) => void, maxSeconds = Infinity): BotResult {
   const unknown = path.find((p) => !BOT_MOVES.includes(p.move));
   if (unknown) return { won: false, skipped: `it can't play a ${unknown.move} move`, steps: 0, of: path.length - 1, seconds: 0 };
   const rt = new Runtime(project, sceneId, registry);
@@ -91,6 +91,8 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
     let done = false;
     const began = t;
     const hold = (a: 'left' | 'right' | 'up' | 'down' | 'jump', on: boolean) => (on ? input.press(a) : input.release(a));
+    // (Its time budget, in the game's own seconds: the same on every machine, so the same level every time.)
+    if (t > maxSeconds) return { won: false, skipped: `over its time budget (${maxSeconds} s of play)`, steps: i - 1, of: path.length - 1, seconds: t };
     while (t - began < STEP_TIME) {
       if (rt.completed !== null) return { won: true, steps: i, of: path.length - 1, seconds: t };
       const p = player();
@@ -190,8 +192,12 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
           hold('up', false);
           const toSide = wallOf(to.mode);
           const busy = !!dashState && dashState.t > 0;
-          hold('right', !busy && ((toSide > 0) || (toSide === 0 && dir > 0 && Math.abs(toX - p.x) > 3)));
-          hold('left', !busy && ((toSide < 0) || (toSide === 0 && dir < 0 && Math.abs(toX - p.x) > 3)));
+          // (Onto a wall: pressing into it only once level with the cell to hold it in, not above the wall's top,
+          // where it would go over; until then, steering to stay beside it.)
+          const level = here.row >= to.row;
+          const beside = dir !== 0 && Math.abs(toX - p.x) > 3;
+          hold('right', !busy && (toSide > 0 ? level || (beside && dir > 0) : toSide === 0 && dir > 0 && Math.abs(toX - p.x) > 3));
+          hold('left', !busy && (toSide < 0 ? level || (beside && dir < 0) : toSide === 0 && dir < 0 && Math.abs(toX - p.x) > 3));
         }
         tick();
         continue;
@@ -305,4 +311,4 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
 }
 
 // The route bot is the route_bot validator's simulator (core/validation/validators.ts): it plays a route there too.
-setRouteBot((project, sceneId, route, registry) => playRoute(project, sceneId, route, registry));
+setRouteBot((project, sceneId, route, registry, maxSeconds) => playRoute(project, sceneId, route, registry, undefined, maxSeconds));

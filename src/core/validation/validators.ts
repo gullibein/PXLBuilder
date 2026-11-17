@@ -23,6 +23,8 @@ export interface Verdict {
   state: 'pass' | 'fail' | 'unknown';
   /** The mechanics it judged. */
   covered: string[];
+  /** Unknown only because it doesn't judge these mechanics (a stronger validator that does may settle them). */
+  unjudged?: string[];
   problems: string[];
   /** A route (cell by cell) the editor or another validator can use. */
   evidence?: { route?: SolveResult['path'] };
@@ -40,6 +42,11 @@ export interface ValidationTarget {
   reach: ReachDescription | null;
   /** The mechanics the level uses (its sections', its player's abilities). */
   mechanics: string[];
+  /**
+   * The simulator's time budget for this level, in seconds of play (the game's own time, so the same on every
+   * machine); 0: none left (the level is then not played, and stays uncertain). Absent: no limit.
+   */
+  botSeconds?: number;
 }
 
 export interface Validator {
@@ -84,7 +91,7 @@ const checker: Validator = {
       if (!r.unreachable.things.length) return pass(covered);
       // (Out of reach by jump arcs alone, with abilities the arcs don't know: not proof, so not judged.)
       const beyond = mechanics.filter((m) => !covered.includes(m));
-      if (reach?.table && beyond.length) return { state: 'unknown', covered, problems: [`the jump checker doesn't judge ${beyond.join(' and ')}`] };
+      if (reach?.table && beyond.length) return { state: 'unknown', covered, unjudged: beyond, problems: [`the jump checker doesn't judge ${beyond.join(' and ')}`] };
       return { state: 'fail', covered, problems: [`the player can't get to ${r.unreachable.things.map((t) => t.name).join(', ')}`] };
     }
     if (r.status === 'uncertain') return { state: 'unknown', covered: [], problems: [r.why] };
@@ -147,7 +154,7 @@ const puzzleNeeded: Validator = {
 };
 
 /** The route bot's runner: set by the runtime side (runtime/routeBot.ts) so core code needn't load the runtime. */
-let botRunner: ((project: Project, sceneId: Id, route: SolveResult['path'], registry: ComponentRegistry) => { won: boolean; skipped?: string; stuck?: { move: string } }) | null = null;
+let botRunner: ((project: Project, sceneId: Id, route: SolveResult['path'], registry: ComponentRegistry, maxSeconds?: number) => { won: boolean; skipped?: string; stuck?: { move: string } }) | null = null;
 export function setRouteBot(run: typeof botRunner): void {
   botRunner = run;
 }
@@ -158,11 +165,12 @@ const routeBot: Validator = {
   cost: 'expensive',
   needs: ['simulator'],
   describe: 'Plays the route solver\'s route on the real runtime, with a player\'s controls',
-  validate({ project, sceneId, registry, reach }, before) {
+  validate({ project, sceneId, registry, reach, botSeconds }, before) {
     const route = before.cell_solver?.evidence?.route;
     if (!botRunner) return { state: 'unknown', covered: [], problems: ['the route bot is not loaded here'] };
     if (!route) return { state: 'unknown', covered: [], problems: ['no route to play (the route solver found none)'] };
-    const r = botRunner(project, sceneId, route, registry);
+    if (botSeconds !== undefined && botSeconds <= 0) return { state: 'unknown', covered: [], problems: ["the route bot's time budget for this build is used up"] };
+    const r = botRunner(project, sceneId, route, registry, botSeconds);
     if (r.won) return pass(reach?.covers.simulator ?? []);
     // (A bot that couldn't do a step proves nothing about a player: not judged.)
     return { state: 'unknown', covered: [], problems: [r.skipped ? `the route bot didn't play it: ${r.skipped}` : `the route bot couldn't do a ${r.stuck?.move ?? 'step'} on the way`] };
@@ -212,10 +220,13 @@ export interface Validation {
  * analytical ones before it, are the level's). A route through moves only estimated, not confirmed by the route bot,
  * leaves the level uncertain.
  */
-export function runValidators(ids: readonly string[], t: ValidationTarget, notes: readonly string[] = []): Validation {
-  const verdicts: Record<string, Verdict> = {};
+export function runValidators(ids: readonly string[], t: ValidationTarget, notes: readonly string[] = [], before: Readonly<Record<string, Verdict>> = {}): Validation {
+  // (`before`: verdicts already given, for a validator run afterwards: the route bot on the solver's route.)
+  const verdicts: Record<string, Verdict> = { ...before };
   const problems: string[] = [];
   const uncertain = [...notes];
+  /** Unknowns that only say "I don't judge these mechanics": settled below, if a stronger validator judged them. */
+  const waiting: { mechanics: string[]; problems: string[] }[] = [];
   const searches = (v: Validator) => v.strategy === 'solver' || v.strategy === 'simulation';
   for (const id of ids) {
     const v = validatorById(id)!;
@@ -226,12 +237,23 @@ export function runValidators(ids: readonly string[], t: ValidationTarget, notes
     if (verdict.state === 'fail') {
       problems.push(...verdict.problems);
       if (searches(v)) break;
-    } else if (verdict.state === 'unknown') uncertain.push(...verdict.problems);
+    } else if (verdict.state === 'unknown') {
+      if (verdict.unjudged?.length) waiting.push({ mechanics: verdict.unjudged, problems: verdict.problems });
+      else uncertain.push(...verdict.problems);
+    }
   }
   if (problems.length) return { state: 'invalid', problems, verdicts, uncertain };
   // (Estimated moves the level needs, or that the solver's route took.)
   const taken = new Set((verdicts.cell_solver?.evidence?.route ?? []).map((p) => (p.move === 'wall_slide' ? 'wall_jump' : p.move)));
   const estimated = t.reach?.approximate.filter((m) => t.mechanics.includes(m) || taken.has(m as never)) ?? [];
-  if (estimated.length && verdicts.cell_solver?.state === 'pass' && verdicts.route_bot?.state !== 'pass') uncertain.push(`the route through ${estimated.join(' and ')} is only estimated (not played)`);
+  const solved = verdicts.cell_solver?.state === 'pass';
+  const played = verdicts.route_bot?.state === 'pass';
+  if (estimated.length && solved && !played) uncertain.push(`the route through ${estimated.join(' and ')} is only estimated (not played)`);
+  // What a cheaper validator couldn't judge is settled when the route solver covers it and found the way (and, for
+  // estimated moves, the route was played); else it stays unjudged.
+  for (const w of waiting) {
+    const settled = solved && w.mechanics.every((m) => verdicts.cell_solver!.covered.includes(m)) && (played || !w.mechanics.some((m) => t.reach?.approximate.includes(m)));
+    if (!settled) uncertain.push(...w.problems);
+  }
   return { state: uncertain.length ? 'uncertain' : 'validated', problems: [], verdicts, uncertain };
 }

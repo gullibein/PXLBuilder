@@ -1550,3 +1550,78 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 **Limitations:**
 - The `sections` builder still sizes from the jump table only, and no generator places camera zones (both F6b).
 - A play-time generator's levels are not validated ahead (a new one each play); what didn't work out is in the example's problems, as before.
+
+### 22.6 F6b — done (awaiting review before F6c)
+
+**Unchanged:** every earlier golden, with the classic and puzzle sweeps (a player without abilities gets exactly the levels it got) and the dungeon goldens (a game without `rooms` gets exactly the dungeon it got).
+
+**How the builder consumes the reach description:**
+
+| Step | Where | What happens |
+|---|---|---|
+| Abilities register with the reach model | `core/reach/reach.ts` `registerReachAbility` | One registration for each ability: when a character has it, the move rule it adds, whether its moves are estimates, whether the route bot plays them. `reachOf` loops over the registrations. Wall jump and dash are two of them; the two hard-coded `if` blocks are gone |
+| A move rule publishes a capability | `levelGen/moves.ts` `MoveRule.capability` | An id and numbers in cells and rows: a dash's `cells` and `up`, a wall kick's `rise` and `away`, worked out from the ability's own component settings |
+| The reach description lists capabilities | `ReachDescription.capabilities` | By id, from the move rules. A player without abilities has none. Seen from above there is no reach, so none |
+| The reach can be measured | `core/reach/probe.ts` `reachMeasure(reach, without)` | The route solver, run on small test floors with the reach's own moves, says the highest cliff and the widest gap the player gets over, with everything or without the capabilities named |
+| Patterns say what they require | `levelGen/pattern.ts` `Pattern.requires`, `patternFits` | Capability ids. The builder builds a pattern only for a player whose reach has them all, asked for by name or not; the AI is told only of patterns that fit |
+| Patterns size themselves | `SectionCtx.caps`, `SectionCtx.without(ids)` | From the capability's numbers, and beyond what the player does without it |
+| The level's needs are checked | `generate.ts` | For each capability a built section requires, the level is solved without that capability's moves. If there is a way, the build is rejected ("can be won without…") |
+| Validators are chosen by coverage | `chooseValidators` (F4) | The level's mechanics are the capabilities its sections require. Estimated ones go to the route solver and then the route bot |
+
+**Is it general, or two special cases?** The builder, the solver, the validators and the probe name no ability. What names one:
+- its registration in `reach.ts` (how its numbers follow from its component);
+- its move rule in `moves.ts`;
+- its pattern in `patterns/abilities.ts`, and that pattern's weights in the classic genre;
+- its bot step in `routeBot.ts` (T1: still one hand-written step for each move).
+
+**Proof:** a test registers a third ability (a glide), its move rule and a pattern, with no change anywhere else. The reach lists it, the builder builds its pattern only for a player that has it, the solver routes through it, and, since the bot can't play a glide, the level is reported **uncertain**, never validated.
+
+**The two patterns** (`patterns/abilities.ts`):
+- `dash_gap`: a gap wider than the player crosses without its dash, as wide as the dash carries (a cell less below the top difficulty); plain, or over a spiked trench.
+- `wall_shaft`: a cliff higher than the player gets up without its wall jump, with a hanging wall facing it; as wide inside as a kick carries, two cells at most.
+
+**What "without" caught.** A player with both abilities climbs three rows with an upward dash. The first version built the shaft three rows high for everyone, so that player dashed up it and the note "needs the player's wall jump" was false. Now the shaft is four rows for that player and two for one with wall jumps alone, and the needs check rejects any build whose claim is false.
+
+**Validation of generated routes:**
+- **Solved, then played.** The route solver must find the route; the route bot must play it on the real runtime. A level whose route uses an estimated move, required by a section or just taken by the solver, is validated only when the bot wins.
+- **Not confirmed means not validated.** A bot that gets stuck, isn't loaded, can't play a move or is over budget leaves the level **uncertain**, with the reason in its notes. Tested for each.
+- **Settling the checker's "don't know".** The jump checker says it can't judge these abilities. That is settled when the solver covers them and the route was played; otherwise the level stays uncertain.
+- **The budget is in seconds of play:** at most 8 builds played in one call, each for at most 120 s of the game's own time. A wall-clock budget would give different levels on a slow and a fast machine for the same seed. Measured: a medium level with two ability sections, built, solved and played, takes about 0.3 s here; a short one with one section, 0.05 to 0.2 s.
+- **Repeatable:** the same seed gives the same level, verdict and notes (tested).
+- **The bot is loaded in the app** (`main.tsx`), so levels built there are played too.
+- **Bot fix:** dashing up onto a wall, it now presses into the wall only once level with the cell it aims for. Before, it went over the wall's top.
+
+**Generated camera zones** (`core/generation/playGenerators.ts`):
+- **`roomZones`** makes one Camera Zone object for each room a generator built: the room's inside and the walls round it, invisible, not solid, sliding.
+- **`buildForPlay`** adds them when the game's camera has `rooms` active, and returns exactly what the generator built when not. The runtime and "keep this dungeon" both use it.
+- **Nothing new in the camera:** the zones are the same objects a user places, read by the same `rooms` behaviour.
+- **Corridors are in no zone:** there the camera follows as usual, and slides into the next room.
+- **Caves and mazes have no rooms,** so no zones.
+- **Zones placed by hand** stay as they are, beside the generated ones (tested).
+
+**Tests** (`levelGen/reachAware.test.ts`, 15; `generation/zones.test.ts`, 6):
+
+| What | How it is tested |
+|---|---|
+| Capabilities and their numbers | Per ability; they follow the component's settings; none from above |
+| The probe | A plain player's measure equals its jump table; a dash adds its cells; without a capability the measure drops to what the rest does |
+| Never built without the ability | 12 free levels for a plain player; asked for by name (another section takes its place); a dash-only player never gets the shaft |
+| Used with the abilities | 16 free levels for a player with both: all validated; some have a dash gap and some a wall shaft, each of those played by the bot |
+| Sized from the numbers | A longer dash gives a wider gap; a weaker kick gives a shaft one cell wide |
+| Solved, played, needed | Each pattern (the dash gap plain and over spikes, the shaft), four seeds: the route goes through the ability's move, the bot wins on the level as built, and a player without the ability has no route |
+| Abilities with geometry | One level with a wall shaft, ramps and a dash over a spiked trench: validated; each ability alone isn't enough |
+| Unconfirmed is never validated | A stuck bot, no bot, a move the bot can't play |
+| Zones match rooms | One for each room, the room's rectangle plus its walls |
+| From above; next door; one above the other | The view is centred on the hero's room; it slides to the room next door, and to a room above or below; in a corridor it follows |
+| Without `rooms` | No zones; the other objects are exactly the plain dungeon's |
+| By hand | A hand-placed zone keeps its id, place and transition, and works |
+
+**Still on old code, and limitations:**
+- **T1 is open:** a new ability's bot step is still written in the bot. An ability the bot can't play is built for and solved, but its levels stay uncertain.
+- **Two ability patterns only,** in the classic genre. A broad set is V1. The puzzle genre lists none.
+- **The moves are estimates in cells:** one dash for each jump, no dash from a wall. The bot's play is what counts.
+- **The wall shaft needs a tall floor:** four free rows above the ground for a player with both abilities. On stacked floors (climb, descent) it often doesn't fit, and another section is built.
+- **`sections` places no camera zones** (its levels scroll). Arenas with doors are V5.
+- **Zones are for rooms only:** a generator says where its rooms are. Caves and mazes get none.
+- **The probe's floors are simple** (a cliff on open ground, a level gap): what the player gets over in other shapes is the solver's to find on the level itself, which the needs check does.
+- **Time `turns` and progression `stages`** still point to old code (F6c).

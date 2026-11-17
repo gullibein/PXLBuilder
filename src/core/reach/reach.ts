@@ -34,12 +34,73 @@ export interface ReachDescription {
   covers: { table: string[]; moves: string[]; simulator: string[] };
   /** Mechanics the moves cover only approximately: a route through them counts once simulation confirms it. */
   approximate: string[];
+  /**
+   * What the player can do beyond running and jumping, in numbers (cells, rows): by capability id, from the move
+   * rules that give them. Level builders ask this: a pattern that requires a capability is built only for a player
+   * that has it, sized from its numbers.
+   */
+  capabilities: Record<string, Record<string, number>>;
 }
+
+/**
+ * An ability's part in a player's reach: when a character has it (by its components), the move rule it adds (with
+ * its capability numbers), and whether that rule is exact or an estimate to be confirmed by simulation. Registered
+ * once for each ability; the reach description, the route solver, the validators and the level builder find it
+ * from there.
+ */
+export interface ReachAbility {
+  id: string;
+  has(components: ResolvedEntity['components']): boolean;
+  move(components: ResolvedEntity['components'], base: { jumpForce: number; gravity: number; speed: number }): MoveRule;
+  /** Its moves are estimated in cells (true: a route through them is confirmed by the simulator before it counts). */
+  estimated: boolean;
+  /** The simulator plays its moves (false: levels that need it are never proven playable here, and that is said). */
+  simulated: boolean;
+}
+
+const ABILITIES: ReachAbility[] = [];
+
+export function registerReachAbility(a: ReachAbility): void {
+  if (ABILITIES.some((x) => x.id === a.id)) throw new Error(`Two reach abilities with the id "${a.id}"`);
+  ABILITIES.push(a);
+}
+export function unregisterReachAbility(id: string): void {
+  const i = ABILITIES.findIndex((x) => x.id === id);
+  if (i >= 0) ABILITIES.splice(i, 1);
+}
+export const reachAbilityIds = (): string[] => ABILITIES.map((a) => a.id);
 
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 /** Kept under the estimate, as the jump table is: what a player can count on. */
 const MARGIN = 0.92;
 const CELL = 32;
+
+// A kick off the wall: up as fast as its jumpY (0: the player's jump), away at jumpX until its top.
+registerReachAbility({
+  id: 'wall_jump',
+  has: (c) => !!c.WallJump,
+  move(c, base) {
+    const w = c.WallJump!;
+    const vy = num(w.jumpY, 0) || base.jumpForce;
+    const rise = Math.floor(((vy * vy) / (2 * base.gravity)) * MARGIN / CELL);
+    const away = Math.max(1, Math.floor((num(w.jumpX, 260) * (vy / base.gravity) * MARGIN) / CELL));
+    return wallJumpMove(Math.max(1, rise), away);
+  },
+  estimated: true,
+  simulated: true,
+});
+// A dash: its speed for its duration; up too, unless it only goes sideways.
+registerReachAbility({
+  id: 'dash',
+  has: (c) => !!c.Dash,
+  move(c) {
+    const d = c.Dash!;
+    const cells = Math.floor((num(d.speed, 520) * num(d.duration, 0.16) * MARGIN) / CELL);
+    return dashMove(cells, d.directions === 'horizontal' ? 0 : cells);
+  },
+  estimated: true,
+  simulated: true,
+});
 
 /** The reach of a character with these components, in a world with this gravity (null: it has no controller). */
 export function reachOf(components: ResolvedEntity['components'], gravityY: number): ReachDescription | null {
@@ -49,29 +110,25 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
   const base = characterReach(components, gravityY);
   if (movement !== 'platformer' || !base) {
     // Seen from above, or without gravity: no jumps to tabulate and no moves (the level checker walks it its own way).
-    return { model: movement === 'platformer' ? 'arcade' : 'topdown', abilities: [], table: null, limits: null, moves: null, simulator: null, covers: { table: [], moves: [], simulator: [] }, approximate: [] };
+    return { model: movement === 'platformer' ? 'arcade' : 'topdown', abilities: [], table: null, limits: null, moves: null, simulator: null, covers: { table: [], moves: [], simulator: [] }, approximate: [], capabilities: {} };
   }
   const table = jumpTable(components, gravityY)!;
   const abilities = [...(components.DoubleJump ? ['double_jump'] : []), ...(components.LedgeGrab ? ['ledge_grab'] : [])];
   const moves: MoveRule[] = [...ARCADE_MOVES];
-  const extra: string[] = [];
-  if (components.WallJump) {
-    // A kick off the wall: up as fast as its jumpY (0: the player's jump), away at jumpX until its top.
-    const w = components.WallJump;
-    const vy = num(w.jumpY, 0) || base.jumpForce;
-    const rise = Math.floor(((vy * vy) / (2 * base.gravity)) * MARGIN / CELL);
-    const away = Math.max(1, Math.floor((num(w.jumpX, 260) * (vy / base.gravity) * MARGIN) / CELL));
-    moves.push(wallJumpMove(Math.max(1, rise), away));
-    abilities.push('wall_jump');
-    extra.push('wall_jump');
-  }
-  if (components.Dash) {
-    const d = components.Dash;
-    const cells = Math.floor((num(d.speed, 520) * num(d.duration, 0.16) * MARGIN) / CELL);
-    const up = d.directions === 'horizontal' ? 0 : cells;
-    moves.push(dashMove(cells, up));
-    abilities.push('dash');
-    extra.push('dash');
+  // The abilities registered with the reach model that this character has: each adds its move rule.
+  const byMoves: string[] = [];
+  const bySimulator: string[] = [];
+  const approximate: string[] = [];
+  const capabilities: ReachDescription['capabilities'] = {};
+  for (const a of ABILITIES) {
+    if (!a.has(components)) continue;
+    const move = a.move(components, base);
+    moves.push(move);
+    abilities.push(a.id);
+    byMoves.push(...move.mechanics);
+    if (a.simulated) bySimulator.push(...move.mechanics);
+    if (a.estimated) approximate.push(...move.mechanics);
+    if (move.capability) capabilities[move.capability.id] = { ...move.capability.numbers };
   }
   return {
     model: 'arcade',
@@ -81,13 +138,14 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
     moves,
     simulator: 'route_bot',
     covers: {
-      // (The table has no closed form for wall jumps or dashes.)
+      // (The table has no closed form for these abilities.)
       table: ARCADE_MECHANICS,
-      moves: [...ARCADE_MECHANICS, ...extra],
+      moves: [...ARCADE_MECHANICS, ...byMoves],
       // (The route bot doesn't ride moving platforms.)
-      simulator: [...ARCADE_MECHANICS, ...extra],
+      simulator: [...ARCADE_MECHANICS, ...bySimulator],
     },
-    approximate: extra,
+    approximate,
+    capabilities,
   };
 }
 
