@@ -3,6 +3,7 @@
  * together, a new game made from one, and changing one (by hand or by the AI's set_game_profile). See
  * docs/engine-architecture-proposal.md §3, §10, §12.
  */
+import { cameraNotes } from './camera';
 import { geometryNotes } from './geometry';
 import { z } from 'zod';
 import type { ComponentRegistry } from '../components/registry';
@@ -101,7 +102,7 @@ export function checkGame(project: Project, registry: ComponentRegistry): Compat
   const base = checkProfile(p);
   if (base.state === 'incompatible') return base;
   const provided = new Set(selected(p).flatMap((s) => modules.get(s.kind, s.id)?.provides ?? []));
-  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided)];
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided)];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 

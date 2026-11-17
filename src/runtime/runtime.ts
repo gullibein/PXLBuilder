@@ -6,6 +6,8 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { gameCamera } from '../core/engine/camera';
+import type { CameraZone } from './cameraBehaviors';
 import { GEOMETRY, gameGeometry } from '../core/engine/geometry';
 import { rampOf } from '../core/model/ramps';
 import { crawlStep, type CrawlState, type CrawlWorld } from './crawl';
@@ -573,6 +575,8 @@ export class Runtime {
   readonly world = new CollisionWorld();
   /** The geometry the game's profile makes active (engine/geometry.ts); the rest works in its lesser way. */
   readonly geometry: ReadonlySet<string>;
+  /** The camera behaviours the game's profile makes active, in order (engine/camera.ts). */
+  readonly cameraBehaviors: readonly string[];
   /** Recomputed only when something opens, closes, appears or goes away. */
   private solidsDirty = true;
   fallLimit = 0;
@@ -647,6 +651,7 @@ export class Runtime {
     game?: Map<string, number | string | boolean>,
   ) {
     this.geometry = gameGeometry(project);
+    this.cameraBehaviors = gameCamera(project);
     this.baseScene = project.scenes.find((s) => s.id === sceneId) ?? project.scenes[0];
     this.scene = this.baseScene;
     if (game) this.game = game;
@@ -741,7 +746,11 @@ export class Runtime {
     // Isometric heights: what moves starts on the ground of its square (a raised floor: up there).
     this.isoGround = null;
     if (this.cam.camera.iso) for (const e of this.entities) if (e.body === 'dynamic') e.z = Math.max(e.z, this.groundHeight(e.x, e.y));
-    this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level);
+    // The camera's behaviours: the ones the game's profile makes active (engine/camera.ts), in its order.
+    this.cam.reset(this.scene.camera ?? defaultCamera(false), target, typeof fs === 'number' ? fs : 0.15, level, this.cameraBehaviors, {
+      zones: () => this.cameraZones(),
+      motionOf: (e) => ({ vx: e.vx, vy: e.vy, floats: this.floats(e) }),
+    });
     this.scripts.reset();
     this.gameplay.reset();
     // Scripts can add to what was built (a key in a room, a boss before the stairs): the signal "level_built".
@@ -1104,6 +1113,21 @@ export class Runtime {
       this.markSolidsDirty();
       for (const o of caught) this.gameplay.die(o, tile);
     }
+  }
+
+  /** The level's camera zones now: each object with a Camera Zone, its area (its size and scale, where it is). */
+  private cameraZones(): CameraZone[] {
+    const out: CameraZone[] = [];
+    for (const e of this.entities) {
+      const z = e.base.components.CameraZone;
+      if (!z || !e.alive) continue;
+      const size = getEntitySize(e.base);
+      const scale = e.base.transform.scale;
+      const hw = (size.x * Math.abs(scale.x)) / 2;
+      const hh = (size.y * Math.abs(scale.y)) / 2;
+      out.push({ id: e.id, rect: { minX: e.x - hw, minY: e.y - hh, maxX: e.x + hw, maxY: e.y + hh }, transition: z.transition === 'cut' ? 'cut' : 'slide' });
+    }
+    return out;
   }
 
   markSolidsDirty(): void {

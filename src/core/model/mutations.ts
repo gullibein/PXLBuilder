@@ -10,7 +10,7 @@ import { readControls } from './controls';
 import { DEFAULT_SPRITE_RESOLUTION, setSpriteResolution, SPRITE_RESOLUTIONS, type SpriteResolution } from './spriteResolution';
 import type { ComponentRegistry } from '../components/registry';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDownStarterAssets } from './topDownStarters';
-import { checkCamera, type CameraSettings } from './camera';
+import { CAMERA_HELP, checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
 import { generateId } from '../ids';
 import { createImageAsset, createPixelArtAsset, createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
@@ -169,7 +169,8 @@ export function setBackground(project: Project, sceneId: Id, patch: Partial<Back
 /** Changes some camera settings of a level; the result is checked as a whole. */
 export function setCameraSettings(project: Project, sceneId: Id, patch: Partial<CameraSettings>): void {
   const scene = getScene(project, sceneId);
-  const unknown = Object.keys(patch).find((k) => !(k in scene.camera));
+  // (Settings a level may not have yet, like a fit or a speed look-ahead, are settings all the same.)
+  const unknown = Object.keys(patch).find((k) => !(k in scene.camera) && !(k in CAMERA_HELP));
   if (unknown) throw new ModelError(`Camera has no setting "${unknown}"`);
   const checked = checkCamera({ ...scene.camera, ...cloneValue(patch) });
   if ('error' in checked) throw new ModelError(checked.error);

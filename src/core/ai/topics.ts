@@ -93,7 +93,7 @@ export const TOPICS: Record<string, Topic> = {
   camera: {
     title: 'The camera',
     scopes: [],
-    words: /camera|zoom|screen|scroll|follow|shake|flash|\bview\b|look.?ahead|\bfit\b|frame (the|this)/i,
+    words: /camera|zoom|screen|scroll|follow|shake|flash|\bview\b|look.?ahead|\bfit\b|frame (the|this)|\brooms?\b|arena|mega ?man/i,
     text: CAMERA_GUIDE,
   },
   random: {

@@ -1,14 +1,17 @@
 /**
- * The camera during play: follows its target (smoothing, look-ahead, dead
- * zone), or stays still; keeps inside the level's limits; and runs effects
- * that scripts and rules start (shake, flash, zoom over time, a short look at
- * something, following something else).
+ * The camera during play: a pipeline of behaviours (cameraBehaviors.ts: follow,
+ * velocity look-ahead, rooms; the ones the game's profile makes active) says
+ * where it wants to look and inside what; this keeps that inside the limits
+ * and moves there (eased, slid or cut), and runs the effects that scripts and
+ * rules start (shake, flash, zoom over time, a short look at something,
+ * following something else).
  *
  * `camera` is where the camera is; `view()` adds the shake, for drawing.
  */
 import { cameraLimits, clampCamera, fitZoom, startCamera, type CameraBounds, type CameraSettings } from '../core/model/camera';
 import type { Vec2 } from '../core/types';
 import { worldBoundsOfView, type Camera } from '../render/renderer';
+import { makePipeline, type CameraBehavior, type CameraContext, type CameraPlan, type CameraZone } from './cameraBehaviors';
 import type { RuntimeEntity } from './runtime';
 
 /** Used until Play tells the camera how big the screen is (tests, the first frame). */
@@ -21,8 +24,14 @@ export class CameraController {
   private level: CameraBounds | null = null;
   private target: RuntimeEntity | null = null;
   private strength = 0.15;
-  /** Current look-ahead offset (eases toward facing × lookAhead). */
-  private look = 0;
+  /** The behaviours in play, in order (a fresh pipeline at every start). */
+  private pipeline: CameraBehavior[] = makePipeline(['follow']);
+  private behaviorIds: readonly string[] = ['follow'];
+  /** The level's camera zones now, and how the target moves (given by the runtime). */
+  private zones: () => readonly CameraZone[] = () => [];
+  private motionOf: (e: RuntimeEntity) => CameraContext['motion'] = (e) => ({ vx: e.vx, vy: e.vy, floats: false });
+  /** A slide into another zone under way: from where, and how far along. */
+  private slide: { from: Vec2; left: number; total: number } | null = null;
   private shake = { strength: 0, left: 0, total: 0 };
   private flashFx = { color: '#ffffff', left: 0, total: 0 };
   private zoomFx: { from: number; to: number; left: number; total: number } | null = null;
@@ -30,13 +39,22 @@ export class CameraController {
   /** For tests: the shake offset is random; this makes it repeatable. */
   random: () => number = Math.random;
 
-  /** A fresh start (Play started or the level restarted). */
-  reset(settings: CameraSettings, target: RuntimeEntity | null, strength: number, level: CameraBounds | null): void {
+  /**
+   * A fresh start (Play started or the level restarted). `behaviors`: the camera behaviours active in the game, in
+   * order (by default: follow, the camera as it always was); `world`: the level's zones and how things move.
+   */
+  reset(settings: CameraSettings, target: RuntimeEntity | null, strength: number, level: CameraBounds | null, behaviors: readonly string[] = ['follow'], world?: { zones: () => readonly CameraZone[]; motionOf: (e: RuntimeEntity) => CameraContext['motion'] }): void {
     this.settings = settings;
     this.target = target;
     this.strength = strength;
     this.level = level;
-    this.look = 0;
+    this.behaviorIds = behaviors;
+    this.pipeline = makePipeline(behaviors);
+    if (world) {
+      this.zones = world.zones;
+      this.motionOf = world.motionOf;
+    }
+    this.slide = null;
     this.shake = { strength: 0, left: 0, total: 0 };
     this.flashFx = { color: '#ffffff', left: 0, total: 0 };
     this.zoomFx = null;
@@ -47,10 +65,28 @@ export class CameraController {
 
   /** Jumps straight to where it should be now (no easing): used at the start. */
   snap(): void {
-    const t = this.target?.alive ? this.target : null;
-    const at = startCamera({ ...this.settings, zoom: this.camera.zoom }, t ? { x: t.x, y: t.y } : null, this.level, this.view);
+    const plan: CameraPlan = { goal: null, limits: cameraLimits(this.settings, this.level), transition: null };
+    const ctx = this.context(0, 1);
+    for (const b of this.pipeline) b.start?.(plan, ctx);
+    const at = clampCamera(plan.goal ?? this.stillPoint(), plan.limits, this.view, this.camera.zoom);
     this.camera.x = at.x;
     this.camera.y = at.y;
+    this.slide = null;
+  }
+
+  /** Where a still camera looks: its fixed point, or the middle of the level. */
+  private stillPoint(): Vec2 {
+    return this.settings.fixedAt ?? (this.level ? { x: (this.level.minX + this.level.maxX) / 2, y: (this.level.minY + this.level.maxY) / 2 } : { x: 0, y: 0 });
+  }
+
+  private context(dt: number, k: number): CameraContext {
+    const t = this.target;
+    return { settings: this.settings, camera: this.camera, view: this.view, target: t, motion: t ? this.motionOf(t) : null, zones: this.zones(), dt, k };
+  }
+
+  /** The behaviours in play (their ids, in order). */
+  get behaviors(): readonly string[] {
+    return this.behaviorIds;
   }
 
   /** The screen size in CSS pixels (Play calls this when the window changes). */
@@ -94,31 +130,44 @@ export class CameraController {
 
     const k = 1 - Math.pow(1 - Math.min(0.999, Math.max(0.001, this.strength)), dt * 60);
     let goal: Vec2;
+    const plan: CameraPlan = { goal: null, limits: cameraLimits(this.settings, this.level), transition: null };
     if (this.focus && this.focus.left > 0) {
+      // A look at something: the behaviours wait (and the level's own limits hold).
       this.focus.left -= dt;
       goal = { x: this.focus.on.x, y: this.focus.on.y };
     } else {
       this.focus = null;
-      const t = this.target;
-      if (t?.alive) {
-        this.look += (t.facing * this.settings.lookAhead - this.look) * k;
-        goal = this.deadZone({ x: t.x + this.look, y: t.y });
-      } else if (t) {
-        // What it followed is gone: hold still where it is.
-        goal = { x: this.camera.x, y: this.camera.y };
-      } else goal = startCamera(this.settings, null, this.level, this.view);
+      const ctx = this.context(dt, k);
+      for (const b of this.pipeline) b.apply(plan, ctx);
+      // (Nothing to look at: where a still camera looks.)
+      goal = plan.goal ?? startCamera(this.settings, null, this.level, this.view);
     }
     // (Seen at an angle, the screen shows a diamond of the level: the flat limits don't apply.)
-    if (!this.camera.iso) goal = clampCamera(goal, cameraLimits(this.settings, this.level), this.view, this.camera.zoom);
+    if (!this.camera.iso) goal = clampCamera(goal, plan.limits, this.view, this.camera.zoom);
+    if (plan.transition === 'cut') {
+      this.slide = null;
+      this.camera.x = goal.x;
+      this.camera.y = goal.y;
+      return;
+    }
+    if (plan.transition) this.slide = { from: { x: this.camera.x, y: this.camera.y }, left: plan.transition.slide, total: plan.transition.slide };
+    if (this.slide) {
+      // Sliding into another zone: from where it was to where it wants to be there, in a fixed time.
+      const s = this.slide;
+      s.left = Math.max(0, s.left - dt);
+      const t = smooth(s.total > 0 ? 1 - s.left / s.total : 1);
+      this.camera.x = s.from.x + (goal.x - s.from.x) * t;
+      this.camera.y = s.from.y + (goal.y - s.from.y) * t;
+      if (s.left <= 0) this.slide = null;
+      return;
+    }
     this.camera.x += (goal.x - this.camera.x) * k;
     this.camera.y += (goal.y - this.camera.y) * k;
   }
 
-  /** Inside the dead zone the camera holds still; outside it, it keeps the target at the zone's edge. */
-  private deadZone(p: Vec2): Vec2 {
-    const dz = this.settings.deadZone;
-    const axis = (want: number, at: number, half: number) => (want - at > half ? want - half : want - at < -half ? want + half : at);
-    return { x: axis(p.x, this.camera.x, dz.x), y: axis(p.y, this.camera.y, dz.y) };
+  /** Sliding into another zone now. */
+  get sliding(): boolean {
+    return this.slide !== null;
   }
 
   /** The camera to draw with (shake included). */
@@ -162,7 +211,7 @@ export class CameraController {
   /** Follows something else from now on (null: stay where it is). */
   follow(e: RuntimeEntity | null): void {
     this.target = e;
-    this.look = 0;
+    for (const b of this.pipeline) b.retarget?.();
     if (!e) this.settings = { ...this.settings, fixedAt: { x: this.camera.x, y: this.camera.y } };
   }
 }

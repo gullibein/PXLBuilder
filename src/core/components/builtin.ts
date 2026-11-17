@@ -138,15 +138,15 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     type: 'Collider',
     label: 'Collider',
     description:
-      'Collision shape. A trigger detects overlaps without blocking movement. oneWay: a jump-through platform (bridges, planks, clouds): things land on it from above, jump up through it and walk through its sides; Down + Jump drops through. Its Collider just its drawn top rows (e.g. 32x8, offset 0,-12). shape slopeRight / slopeLeft: a 45° ramp filling its square, rising to the right / left (◢ / ◣): walked up and down. slopeRightLow + slopeRightHigh (or Left): a gentle slope over two squares.',
+      'Collision shape. A trigger detects overlaps without blocking. oneWay: a jump-through platform (bridges, planks, clouds): things land on it from above, jump up through it and walk through its sides; Down + Jump drops through. Its Collider just its drawn top rows (e.g. 32x8, offset 0,-12). shape slopeRight / slopeLeft: a 45° ramp filling its square, rising to the right / left (◢ / ◣): walked up and down. slopeRightLow + slopeRightHigh (or Left): a gentle slope over two squares.',
     category: 'Physics',
     fields: {
       shape: { kind: 'enum', options: ['box', 'circle', 'slopeRight', 'slopeLeft', 'slopeRightLow', 'slopeRightHigh', 'slopeLeftLow', 'slopeLeftHigh', 'boxes'], default: 'box', description: 'box, circle, a ramp (above), or boxes: several boxes (the boxes field), drawn in the sprite editor or worked out from the picture\'s pixels' },
       size: { kind: 'vec2', default: { x: 32, y: 32 }, description: 'Box size, or circle diameter in x' },
       offset: { kind: 'vec2', default: { x: 0, y: 0 }, description: 'Offset from the entity position' },
       isTrigger: { kind: 'boolean', default: false },
-      oneWay: { kind: 'boolean', default: false, description: 'A jump-through platform: only its top holds, and only from above (jump up through it; Down + Jump drops through)' },
-      matchSprite: { kind: 'boolean', default: true, description: 'Keep the collider the same size as the sprite (changing either changes both)' },
+      oneWay: { kind: 'boolean', default: false, description: 'A jump-through platform (above)' },
+      matchSprite: { kind: 'boolean', default: true, description: 'Keep the collider the sprite\'s size (changing either changes both)' },
       boxes: { kind: 'boxList', default: [], description: 'shape "boxes": the boxes it is made of, in the object\'s own pixels from its sprite\'s top-left corner ({x, y, w, h}). Walls and floors are each box; touching (hurting, picking up, shots) counts each box; a thing that moves on its own (a character) moves as the box round them all' },
       fromPixels: { kind: 'boolean', default: false, description: 'shape "boxes": pixel-perfect, the boxes cover exactly the picture\'s visible pixels, worked out again whenever the picture changes' },
     },
@@ -420,9 +420,19 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   {
+    type: 'CameraZone',
+    label: 'Camera Zone',
+    description:
+      'A camera zone (a room, a screen, a boss arena): while the camera\'s target is inside this object\'s area (its Sprite\'s size and scale), the view is held inside it; going into another zone the camera slides or cuts there. Needs the camera behaviour "rooms" in the game\'s profile. Give it an invisible Sprite as big as the room (it shows faintly in the editor), no Collider.',
+    category: 'Camera',
+    fields: {
+      transition: { kind: 'enum', options: ['slide', 'cut'], default: 'slide', description: 'How the camera gets into this zone from another: slide (half a second) or cut (at once)' },
+    },
+  },
+  {
     type: 'CameraTarget',
     label: 'Camera Target',
-    description: 'The camera follows this entity during play.',
+    description: 'The camera follows it in play.',
     category: 'Camera',
     fields: {
       followStrength: { kind: 'number', default: 0.15, min: 0, max: 1, step: 0.05 },

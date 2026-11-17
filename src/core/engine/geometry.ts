@@ -56,26 +56,31 @@ export interface GeometryStatus {
  * registry's own tags may say more (engine/modules.ts); a test checks the geometry answer is the same either way.
  */
 export function profileTags(p: GameProfile): Set<string> {
-  return new Set([`view:${p.view}`, `time:${p.time}`, `locomotion:${p.movement.model}`, ...p.movement.abilities.map((a) => `ability:${a}`), ...p.geometry.map((g) => `geometry:${g}`), ...p.kits.map((k) => `kit:${k}`)]);
+  return new Set([`view:${p.view}`, `time:${p.time}`, `locomotion:${p.movement.model}`, ...p.movement.abilities.map((a) => `ability:${a}`), ...p.geometry.map((g) => `geometry:${g}`), ...p.camera.map((c) => `camera:${c}`), ...p.kits.map((k) => `kit:${k}`)]);
 }
 
 const met = (tag: string, provided: ReadonlySet<string>) => tag.split('|').some((t) => provided.has(t.trim()));
 
-/** The four steps for a profile (`provided`: the capability tags its modules give; by default, profileTags). */
-export function geometryStatus(p: GameProfile, provided: ReadonlySet<string> = profileTags(p)): GeometryStatus {
-  const registered = GEOMETRY.map((g) => g.id);
-  const selected = [...p.geometry];
+/** The four steps for one system's kinds (geometry, camera): what of the selected ids is supported, so active. */
+export function statusOf(kinds: readonly GeometryKind[], selectedIds: readonly string[], provided: ReadonlySet<string>): GeometryStatus {
+  const registered = kinds.map((g) => g.id);
+  const selected = [...selectedIds];
   const unknown = selected.filter((id) => !registered.includes(id));
   const unsupported: { id: string; why: string }[] = [];
   const supported: string[] = [];
   for (const id of selected) {
-    const g = GEOMETRY.find((x) => x.id === id);
+    const g = kinds.find((x) => x.id === id);
     if (!g) continue;
     const missing = g.requires.filter((t) => !met(t, provided));
     if (missing.length) unsupported.push({ id, why: missing.map((t) => g.fallback?.[t] ?? `it needs ${t}`).join('; ') });
     else supported.push(id);
   }
   return { registered, selected, supported, active: supported, unsupported, unknown };
+}
+
+/** The four steps for a profile's geometry (`provided`: the capability tags its modules give; by default, profileTags). */
+export function geometryStatus(p: GameProfile, provided: ReadonlySet<string> = profileTags(p)): GeometryStatus {
+  return statusOf(GEOMETRY, p.geometry, provided);
 }
 
 /** The geometry the runtime and the level checker use for a profile. */

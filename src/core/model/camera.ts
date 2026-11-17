@@ -35,6 +35,8 @@ export interface CameraSettings {
   fit?: 'none' | 'height' | 'width';
   /** The level pixels that fit (with fit height or width); null = the whole level's height or width. */
   fitSize?: number | null;
+  /** With the camera behaviour velocity_look_ahead: how far (px) it looks ahead at full speed (absent: 160). */
+  speedLookAhead?: number;
 }
 
 export const ZOOM_RANGE = { min: 0.25, max: 4 };
@@ -57,6 +59,7 @@ export const cameraSchema = z.object({
   fixedAt: vec2.nullable(),
   fit: z.enum(['none', 'height', 'width']).optional(),
   fitSize: z.number().min(16).max(100000).nullable().optional(),
+  speedLookAhead: z.number().min(0).max(600).optional(),
 });
 
 /** What each setting means (inspector hints and the AI). */
@@ -68,6 +71,7 @@ export const CAMERA_HELP: Record<keyof CameraSettings, string> = {
   customBounds: '{minX, minY, maxX, maxY} in level pixels, or null (for bounds "custom")',
   fixedAt: '{x, y} where a still camera looks when nothing has a CameraTarget, or null = the middle of the level',
   fit: '"height": in Play the screen shows exactly fitSize level pixels top to bottom, whatever the window size (its width follows the window); "width": exactly fitSize across (the height follows); "none": the zoom as set. With a fit, zoom is worked out from the window',
+  speedLookAhead: 'px (0–600) the camera looks ahead at full speed, growing with how fast the followed entity moves; only with the camera behaviour "velocity_look_ahead" in the game\'s profile (absent: 160)',
   fitSize: 'level pixels that fit the screen\'s height or width (one tile = 32; e.g. 384 = 12 tiles), or null = the whole level\'s height or width',
 };
 

@@ -134,6 +134,26 @@ export function GameProfileDialog() {
               })}
             </span>
           </div>
+          <div className="profile-row" data-testid="profile-camera">
+            <span className="profile-label">Camera</span>
+            <span className="profile-kits">
+              {choices.camera.map((id) => {
+                const on = profile.camera.includes(id);
+                return (
+                  <label key={id} className="profile-check" title={describe('camera', id)}>
+                    <input
+                      type="checkbox"
+                      data-testid={`profile-camera-${id}`}
+                      checked={on}
+                      // (Kept in the behaviours' own order: follow, then looking ahead, then rooms.)
+                      onChange={() => change({ camera: choices.camera.filter((c) => (c === id ? !on : profile.camera.includes(c))) }, `camera ${on ? 'without' : 'with'} ${id.replace(/_/g, ' ')}`)}
+                    />
+                    {id.replace(/_/g, ' ')}
+                  </label>
+                );
+              })}
+            </span>
+          </div>
           <label className="profile-row" data-testid="profile-theme">
             <span className="profile-label">Look</span>
             <select value={profile.theme ?? ''} onChange={(e) => change({ theme: e.target.value || null }, `look ${e.target.value || 'not chosen'}`)}>

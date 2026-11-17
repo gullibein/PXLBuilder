@@ -489,6 +489,9 @@ function CameraSection({ scene }: { scene: Scene }) {
       <Row label="look ahead" hint={CAMERA_HELP.lookAhead}>
         <NumberInput value={c.lookAhead} step={16} testId="camera-lookahead" onCommit={(lookAhead) => set('Camera look-ahead', { lookAhead }, 'lookAhead')} />
       </Row>
+      <Row label="speed look" hint={CAMERA_HELP.speedLookAhead}>
+        <NumberInput value={c.speedLookAhead ?? 160} step={16} testId="camera-speedlook" onCommit={(speedLookAhead) => set('Camera speed look-ahead', { speedLookAhead }, 'speedLookAhead')} />
+      </Row>
       <Row label="dead zone" hint={CAMERA_HELP.deadZone}>
         <Vec2Input value={c.deadZone} step={8} testId="camera-deadzone" onCommit={(deadZone) => set('Camera dead zone', { deadZone })} />
       </Row>

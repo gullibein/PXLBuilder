@@ -431,6 +431,13 @@ export const MIGRATIONS: Migration[] = [
   },
   { from: 14, to: 15, migrate: migrateV14toV15 },
   { from: 15, to: 16, migrate: migrateV15toV16 },
+  {
+    // Nothing changes: games may now have camera zones (the Camera Zone component) and a speed look-ahead in a
+    // level's camera. The version goes up so an older editor refuses such a game instead of dropping them.
+    from: 16,
+    to: 17,
+    migrate: (p) => p,
+  },
 ];
 
 /** What opening a game saved in format `from` changes in it (the notes of the updates it goes through). */

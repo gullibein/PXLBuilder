@@ -1327,3 +1327,108 @@ Each validator is a `Validator` with a strategy, a cost, what it needs of the re
 **Modules still pointing to old code:**
 - camera `follow` (F5);
 - time `turns`, generators `sections` and `dungeon`, progression `stages` (F6).
+
+---
+
+# Part V: tracked acceptance criteria, and F5
+
+## 20. Tracked for the remaining stages (from the F4 review)
+
+These are acceptance criteria for the stages named. Each stage's report says where each stands.
+
+| # | Requirement | Where it is met | State |
+|---|---|---|---|
+| T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | Open |
+| T2 | **The jump checker and the route bot consume shared interfaces.** The checker computes its own arcs; the bot has its own step per move. Unify where a concrete feature needs it, not for its own sake | V1 (bot steps with T1); the checker when hand-drawn grids arrive (T4) | Open |
+| T3 | **The generator uses the player's real abilities.** It sizes sections from the jump table only, so it never makes a level that needs a wall jump or a dash. It should build sections that use the abilities the player has, and those routes must be confirmed by the route bot. The bot costs real time for each level and the generator makes several attempts, so this needs a time budget; confirmation stays required only for routes through estimated moves | F6 (generator interface) with V1 (patterns) | Open |
+| T4 | **Hand-drawn levels get a cell grid.** Converting what is seen into cells is not enough: doors, keys, levers, plates, teleporters and their links must be read from the objects. A level that doesn't fit cells (off the grid, scripted objects) is reported as unjudged, never guessed | After F6 | Open |
+| T5 | **Every family in every stage.** Tetris, Dr. Mario, space shooters, mining and Boulder Dash are tested beside the platformers in every stage, with validation appropriate to each. No platformer assumption goes into a system other genres use | Every stage | Standing rule; met in F5 (§21.5) |
+| T6 | **No rewrite for purity.** Systems move to shared interfaces when a concrete improvement needs it; existing behaviour is preserved | Every stage | Standing rule |
+| T7 | **Goldens before a refactor.** Whatever a stage moves is pinned by goldens for every family first | Every stage | Met in F5 (camera goldens) |
+| T8 | **The AI's per-request prompt stays inside its budget.** New guidance goes into topics | Every stage | Met in F5 (camera guidance is in the camera topic) |
+
+Geometry work still open is tracked in §18.4.
+
+## 21. F5: the camera as a pipeline of behaviours
+
+### 21.1 What F5 must not change
+
+`regression/camera.test.ts` pinned, before any camera code moved:
+- **The camera's path in a game of every family,** played with the same keys: Mario-style generated, Tetris, Dr. Mario, space shooter, mining, Boulder Dash, Celeste-inspired, Lode Runner-inspired, and the platformer, top-down, RPG, roguelike and isometric starters.
+- **Every camera setting:** look-ahead with a dead zone, custom bounds, no bounds zoomed out, fit to height.
+- **Every effect in turn:** shake, flash, zoom over time, a look at something, following something else, following nothing, a new screen size, a restart.
+
+Each trace samples the camera's position and zoom, what is drawn (shake included) and the flash. All are identical after F5, with every earlier golden.
+
+### 21.2 The pipeline (`runtime/cameraBehaviors.ts`, `runtime/camera.ts`)
+
+A camera behaviour changes a **plan** each step:
+- `goal`: where the camera wants to look;
+- `limits`: what it keeps inside;
+- `transition`: eased as ever, slid over a moment, or cut.
+
+Each behaviour may implement `start` (the snap at the start), `apply` (every step) and `retarget` (a script changed what is followed). It gets a context: the level's camera settings, the camera, the screen, the target, how the target moves, and the level's zones.
+
+The controller runs the active behaviours in the profile's order, keeps the goal inside the limits, and moves. It keeps what isn't a behaviour:
+- the effects (shake, flash, zoom, a look at something);
+- the fit to the screen;
+- the isometric view.
+
+| Behaviour | State | What it does |
+|---|---|---|
+| `follow` | **Implemented** (the old camera, moved unchanged) | Follows the object with a Camera Target: smoothing, look-ahead the way it faces, a dead zone; holds still when the target is gone |
+| `velocity_look_ahead` | **Implemented** (new) | An offset the way the target moves, growing with its speed up to the level's `speedLookAhead` (default 160 px at 480 px/s), eased. Sideways always; up and down only for a target that moves freely that way, so jumps don't bob the view |
+| `rooms` | **Implemented** (new) | While the target is in a camera zone, the view is held inside it (a zone smaller than the screen is centred). Going into another zone slides there in half a second, or cuts, as the zone says. Outside every zone the camera is as without rooms |
+| Vertical lag, auto-scroll, arena lock with doors, zone-specific behaviour lists | **Not registered, not implemented** | Listed in §2.3; they come with the slices that need them |
+
+Nothing is registered without being implemented: a test checks that the declared behaviours and the runtime's are the same set.
+
+**A new behaviour** is one `registerCameraBehavior` call plus one row in `core/engine/camera.ts`. A test plugs one in without touching the controller.
+
+### 21.3 Camera zones
+
+A zone is an ordinary object with the **Camera Zone** component. Its area is its Sprite's size and scale, where it is placed. With an invisible Sprite it shows faintly in the editor and not in play.
+
+So zones are placed, moved and resized by hand with the existing tools, and by prompt with the existing operations. No new editor tool, operation or level format was needed.
+
+- **`transition`:** `slide` or `cut`.
+- **Overlapping zones:** the smallest one the target is in counts.
+- **The target dies:** the view stays on its room.
+- **Play goes on during a slide.** Freezing play, as some games do, is left to a script.
+
+### 21.4 The profile controls the camera
+
+The same four steps as geometry (`core/engine/camera.ts`): registered, selected (`profile.camera`), supported (requirements met), active (what play uses, in order).
+
+| Case | In play | In the compatibility report |
+|---|---|---|
+| No `follow` in the profile | The camera stays still, though something has a Camera Target | Said, naming the object |
+| Zones, but no `rooms` | Zones are not used | Said, naming the zone objects |
+| `rooms` seen at an angle (isometric) | Not active | Said (isometric limits don't apply) |
+| `velocity_look_ahead` without `follow` | Does nothing | Said |
+| An unknown behaviour | — | The profile is refused |
+
+Tests check that play and the report agree. The Game profile dialog has a Camera row (one checkbox per behaviour). The AI changes it with `set_game_profile` and is told about behaviours and rooms in the camera topic.
+
+**Old games:** every preset selects `follow`, and games without a stored profile get their preset's, so every existing game's camera is unchanged. Format v17 changes nothing in a game; the version goes up so an older editor refuses a newer game instead of dropping its zones.
+
+### 21.5 Not for platformers only
+
+- **Rooms seen from above** (a dungeon's rooms, up and down) are tested.
+- **Velocity look-ahead** looks ahead up and down for a target that moves freely that way.
+- **Boards and shooters:** their camera goldens (Tetris, Dr. Mario, space shooter, mining, Boulder Dash) are unchanged.
+- Nothing in a behaviour reads gravity, jumping or a locomotion model. "Moves freely" comes from the movement model's own `floats`.
+
+### 21.6 Still on old code, and limitations
+
+**Still on old code:**
+- Time `turns`, generators `sections` and `dungeon`, progression `stages` still point to old code (F6).
+- The level's camera settings (`model/camera.ts`) and the editor's camera frame are as they were. The frame shows the level's camera, not a zone's.
+
+**Limitations and deferred work:**
+- **The camera doesn't read the full motion snapshot** (§7.2). It reads the target's speed and whether it floats. Vertical lag would read the grounded state.
+- **Behaviours have no settings of their own in the profile.** The one setting, `speedLookAhead`, is the level's. A profile-level settings block comes when a behaviour needs one.
+- **A zone can't change the behaviour list** (a boss arena with its own camera), lock doors, or set its own zoom. A zone only limits the view and chooses its transition.
+- **Generators don't place zones** (§7.5): F6.
+- **Seen at an angle, rooms don't work:** the isometric view has no flat limits.
+- **A look at something** (`camera_focus`) uses the level's limits, not the room's, as before.

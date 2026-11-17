@@ -4,6 +4,7 @@
  * moves it). What does go through these modules already: new games (kits), the level builder (generators), the
  * player's movement and the levels' gravity when the profile changes (locomotion, views).
  */
+import { CAMERA_BEHAVIORS } from './camera';
 import { VALIDATORS, type Validator } from '../validation/validators';
 import { GEOMETRY } from './geometry';
 import type { ComponentRegistry } from '../components/registry';
@@ -68,6 +69,12 @@ export interface GeometryModule extends Module {
 }
 export { GEOMETRY };
 
+export interface CameraModule extends Module {
+  kind: 'camera';
+  /** What happens when a game uses it without it being active. */
+  without: string;
+}
+
 export interface ValidatorModule extends Module {
   kind: 'validator';
   validator: Validator;
@@ -120,7 +127,8 @@ modules.register(ability('dash', 'Dash', 'A short fast dash the way the keys poi
 // (All answered by the collision world, runtime/geometry/world.ts, behind the GeometryQuery interface; the runtime
 // and the level checker use only the active ones: engine/geometry.ts, where they are declared.)
 for (const g of GEOMETRY) modules.register<GeometryModule>({ kind: 'geometry', ...g, provides: [`geometry:${g.id}`] });
-modules.register({ kind: 'camera', id: 'follow', version: 1, describe: 'Follows the player (smoothing, look-ahead, dead zone, the level\'s edges)', requires: [], provides: ['camera:follow'], pointsTo: { code: 'runtime/camera.ts CameraController', movesIn: 'F5' } });
+// Camera behaviours (runtime/camera: a pipeline in the profile's order; declared in engine/camera.ts).
+for (const b of CAMERA_BEHAVIORS) modules.register<CameraModule>({ kind: 'camera', ...b, provides: [`camera:${b.id}`] });
 
 // ---------------------------------------------------------------- kits (today's starter sets)
 const topKit = (id: string, describe: string, create: KitModule['create'], requires: string[], provides: string[] = []): KitModule => ({

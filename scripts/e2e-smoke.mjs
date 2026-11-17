@@ -2855,8 +2855,12 @@ try {
     await check(async () => (await dlg.getByTestId('profile-problem').innerText()).includes('needs view:top or view:iso') && (await dlg.getByTestId('profile-movement').locator('select').inputValue()) === 'arcade', "a change that doesn't go together is refused, saying why (walking from above in a side view)");
     await dlg.getByTestId('profile-ability-wall_jump').check();
     await check(async () => (await dlg.getByTestId('profile-done').innerText()).includes('wall_jump'), 'an ability is switched on in the profile (wall jump): the player gets it');
+    await check(async () => (await dlg.getByTestId('profile-camera-follow').isChecked()) && !(await dlg.getByTestId('profile-camera-rooms').isChecked()), "the profile shows the camera's behaviours (following; no rooms yet)");
+    await dlg.getByTestId('profile-camera-rooms').check();
+    await check(async () => (await dlg.getByTestId('profile-camera-rooms').isChecked()) && (await dlg.getByTestId('profile-camera-follow').isChecked()) && (await dlg.getByTestId('profile-problem').count()) === 0, 'a camera behaviour is switched on in the profile (rooms: camera zones), following kept');
     await page.keyboard.press('Escape');
     await check(async () => (await dlg.count()) === 0, '(Esc closes it)');
+    await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('undo').click();
     await page.getByTestId('project-menu').click();
