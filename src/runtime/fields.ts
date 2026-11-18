@@ -11,7 +11,7 @@ import type { FieldSchema } from '../core/components/schema';
 import type { Value } from './scripts';
 import { entityFrom, readBehaviors, type Runtime, type RuntimeEntity } from './runtime';
 
-const BEHAVIOR_COMPONENTS = new Set(['Patrol', 'Jumper', 'Shooter', 'MovingPlatform', 'Timer', 'DoubleJump', 'LedgeGrab', 'Wander']);
+const BEHAVIOR_COMPONENTS = new Set(['Patrol', 'Jumper', 'Shooter', 'MovingPlatform', 'Timer', 'Wander']);
 
 /** The value of "Component.field" (or "Transform.x"); null when it doesn't have that component. */
 export function readField(rt: Runtime, e: RuntimeEntity, component: string, path: string): Value | { error: string } {
@@ -223,8 +223,6 @@ function rederiveBehaviors(e: RuntimeEntity): void {
     shooter: now.shooter && (old.shooter ? { ...now.shooter, t: old.shooter.t, need: old.shooter.need } : now.shooter),
     mover: now.mover && (old.mover ? { ...now.mover, originX: old.mover.originX, originY: old.mover.originY, next: Math.min(old.mover.next, now.mover.path.length - 1), dir: old.mover.dir, wait: old.mover.wait } : now.mover),
     timer: now.timer && (old.timer ? { ...now.timer, t: old.timer.t, done: old.timer.done } : now.timer),
-    doubleJump: now.doubleJump && (old.doubleJump ? { ...now.doubleJump, left: Math.min(old.doubleJump.left, now.doubleJump.extra) } : now.doubleJump),
-    ledgeGrab: now.ledgeGrab,
     wander: now.wander && (old.wander ? { ...now.wander, dx: old.wander.dx, dy: old.wander.dy, t: old.wander.t } : now.wander),
   };
 }

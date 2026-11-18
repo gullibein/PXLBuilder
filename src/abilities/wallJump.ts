@@ -88,6 +88,8 @@ export const wallJump: AbilityDefinition = {
   id: 'wall_jump',
   describe: 'Slide down walls and jump off them',
   plural: 'wall jumps',
+  noun: 'wall jumps',
+  askedBy: /wall[- ]?(jump|slide|climb|kick)/i,
   component: {
     type: 'WallJump',
     label: 'Wall Jump',

@@ -75,7 +75,9 @@ export function componentDocsFor(registry: ComponentRegistry, topic: string): st
   if (!t) return '';
   const out: string[] = [];
   for (const c of registry.list()) {
-    if (t.components.includes(c.type) || abilityOfComponent(c.type)?.topic === topic) out.push([`  ${c.type}: ${c.description}`, ...Object.entries(c.fields).map(([n, f]) => describeField(n, f))].join('\n'));
+    const ability = abilityOfComponent(c.type);
+    // (An ability described here: its component, and what scripts read of it.)
+    if (t.components.includes(c.type) || ability?.topic === topic) out.push([`  ${c.type}: ${c.description}`, ...Object.entries(c.fields).map(([n, f]) => describeField(n, f)), ...Object.entries((ability?.topic === topic && ability.scriptNames) || {}).map(([n, s]) => `    scripts read self.${n}: ${s.doc}`)].join('\n'));
     else for (const [n, f] of Object.entries(c.fields)) if (t.fields.includes(`${c.type}.${n}`)) out.push(`  ${c.type}.${n}:\n${describeField(n, f)}`);
   }
   return out.length ? `Components for this:\n${out.join('\n')}` : '';

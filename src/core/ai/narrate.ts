@@ -4,6 +4,7 @@
  * soon as it is complete ("Drawing Ember", "Giving Dust Bunny the Walker behavior"). Made by the app from the answer
  * itself: it costs the AI nothing.
  */
+import { abilityOfComponent } from '../../abilities/index';
 
 /** The answer's message (as far as it has come) and the lines of its "changes" that are complete. */
 export function answerPreview(text: string): { message: string; changes: string[] } {
@@ -43,8 +44,6 @@ function unescapePartial(s: string): string {
 }
 
 const COMPONENT_WORDS: Record<string, string> = {
-  LedgeGrab: 'the ability to grab ledges',
-  DoubleJump: 'a double jump',
   Health: 'health (hearts)',
   Inventory: 'a bag for what it picks up',
   MovingPlatform: 'movement back and forth (a moving platform)',
@@ -100,7 +99,7 @@ export function narrateOperation(op: Record<string, unknown>, names: Map<string,
     }
     case 'add_component': {
       const c = str(op.component);
-      return `Giving ${name(op.id)} ${COMPONENT_WORDS[c] ?? c.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}`;
+      return `Giving ${name(op.id)} ${COMPONENT_WORDS[c] ?? abilityOfComponent(c)?.noun ?? c.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}`;
     }
     case 'remove_component':
       return `Taking ${str(op.component).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()} away from ${name(op.id)}`;

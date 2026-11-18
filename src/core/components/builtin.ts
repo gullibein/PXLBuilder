@@ -1,4 +1,4 @@
-import { abilityDefinitions, onAbilities } from '../../abilities/index';
+import { abilityDefinitions } from '../../abilities/index';
 import { ComponentRegistry } from './registry';
 import type { ComponentDefinition } from './schema';
 
@@ -365,22 +365,6 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     },
   },
   {
-    type: 'DoubleJump',
-    label: 'Double Jump',
-    description: 'A player-controlled character can jump again in the air.',
-    category: 'Behavior',
-    fields: {
-      extraJumps: { kind: 'number', default: 1, min: 1, max: 5, step: 1, integer: true, description: 'Jumps allowed in the air before landing' },
-    },
-  },
-  {
-    type: 'LedgeGrab',
-    label: 'Ledge Grab',
-    description: 'A player-controlled character catches the top edge of a wall it jumps or falls against while pressing toward it, and hangs there; Up or Jump climbs onto the ledge, Down or away lets go.',
-    category: 'Behavior',
-    fields: {},
-  },
-  {
     type: 'Goal',
     label: 'Goal',
     description: 'Reaching it wins the level: when the player touches it, play goes on to the next level (or the game is finished). An exit flag, the top of an escape ladder, a portal.',
@@ -427,21 +411,14 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
 
 /**
  * A registry of the engine's components: these, and the component of every ability there is (each ability's
- * definition has its own: src/abilities), listed among the behaviours.
+ * definition has its own: src/abilities), listed among the behaviours. The abilities' are read whenever the registry
+ * is asked, so it has the ones there are now, whenever it was made.
  */
 export function createBuiltinRegistry(): ComponentRegistry {
-  const registry = new ComponentRegistry();
-  for (const def of BUILTIN_COMPONENTS) {
-    if (def.type === 'Goal') for (const a of abilityDefinitions()) registry.register(a.component);
-    registry.register(def);
-  }
+  const registry = new ComponentRegistry({ list: () => abilityDefinitions().map((a) => a.component), before: 'Goal' });
+  for (const def of BUILTIN_COMPONENTS) registry.register(def);
   return registry;
 }
 
 /** Shared default registry used by the editor. */
 export const componentRegistry = createBuiltinRegistry();
-// (An ability registered or taken out later: the editor's registry follows.)
-onAbilities((def, change) => {
-  if (change === 'removed') componentRegistry.unregister(def.component.type);
-  else if (!componentRegistry.has(def.component.type)) componentRegistry.register(def.component);
-});

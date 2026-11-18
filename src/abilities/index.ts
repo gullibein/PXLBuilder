@@ -4,12 +4,18 @@
  * registerAbility).
  */
 import { dash } from './dash';
+import { dodgeRoll } from './dodgeRoll';
+import { doubleJump } from './doubleJump';
+import { ledgeGrab } from './ledgeGrab';
 import { registerAbility } from './registry';
 import { wallJump } from './wallJump';
 
 // (In the order the profile lists them and the route solver tries their moves.)
+registerAbility(doubleJump);
+registerAbility(ledgeGrab);
 registerAbility(wallJump);
 registerAbility(dash);
+registerAbility(dodgeRoll);
 
 export * from './registry';
 export type * from './types';

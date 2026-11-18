@@ -19,7 +19,9 @@ import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import type { Id, Project } from '../types';
 
 /** What the arcade model's movement and objects make up (each judged by the table, the moves and the route bot alike). */
-export const ARCADE_MECHANICS = ['walk', 'fall', 'jump', 'ramp', 'oneway', 'ladder', 'water', 'spring', 'teleporter', 'crate', 'plate', 'key', 'switch', 'door', 'hazard', 'double_jump', 'ledge_grab'];
+const OWN_MECHANICS = ['walk', 'fall', 'jump', 'ramp', 'oneway', 'ladder', 'water', 'spring', 'teleporter', 'crate', 'plate', 'key', 'switch', 'door', 'hazard'];
+/** With the abilities whose reach is in the jump table (their definitions say: src/abilities): judged as jumps are. */
+export const arcadeMechanics = (): string[] => [...OWN_MECHANICS, ...abilityDefinitions().filter((a) => a.reach?.table).map((a) => a.id)];
 
 export interface ReachDescription {
   /** The locomotion model it describes ("arcade", "topdown"). */
@@ -57,7 +59,10 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
     return { model: movement === 'platformer' ? 'arcade' : 'topdown', abilities: [], table: null, limits: null, moves: null, simulator: null, covers: { table: [], moves: [], simulator: [] }, approximate: [], capabilities: {} };
   }
   const table = jumpTable(components, gravityY)!;
-  const abilities = [...(components.DoubleJump ? ['double_jump'] : []), ...(components.LedgeGrab ? ['ledge_grab'] : [])];
+  // (Those whose reach is in the jump table come first, as they always did.)
+  const has = (a: { component: { type: string }; worksWith: string[] }) => !!components[a.component.type] && a.worksWith.includes('arcade');
+  const abilities = abilityDefinitions().filter((a) => a.reach?.table && has(a)).map((a) => a.id);
+  const judged = arcadeMechanics();
   const moves: MoveRule[] = [...ARCADE_MOVES];
   // The abilities this character has that have a part in its reach (their definitions say: src/abilities): each
   // adds its move rule.
@@ -66,8 +71,10 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
   const approximate: string[] = [];
   const capabilities: ReachDescription['capabilities'] = {};
   for (const a of abilityDefinitions()) {
-    if (!a.reach || !components[a.component.type] || !a.worksWith.includes('arcade')) continue;
+    if (!a.reach?.move || !has(a)) continue;
     const move = a.reach.move(components, base);
+    // (An ability may be in the table as well: named once.)
+    if (abilities.includes(a.id)) abilities.splice(abilities.indexOf(a.id), 1);
     moves.push(move);
     abilities.push(a.id);
     byMoves.push(...move.mechanics);
@@ -87,10 +94,10 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
     simulator: 'route_bot',
     covers: {
       // (The table has no closed form for these abilities.)
-      table: ARCADE_MECHANICS,
-      moves: [...ARCADE_MECHANICS, ...byMoves],
+      table: judged,
+      moves: [...judged, ...byMoves],
       // (The route bot doesn't ride moving platforms.)
-      simulator: [...ARCADE_MECHANICS, ...bySimulator],
+      simulator: [...judged, ...bySimulator],
     },
     approximate,
     capabilities,

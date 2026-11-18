@@ -76,6 +76,8 @@ export const dash: AbilityDefinition = {
   id: 'dash',
   describe: 'A short fast dash the way the keys point, no gravity; refilled on landing',
   plural: 'dashes',
+  noun: 'a dash',
+  askedBy: /dash/i,
   component: {
     type: 'Dash',
     label: 'Dash',

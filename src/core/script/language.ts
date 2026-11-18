@@ -270,11 +270,19 @@ export const MEMBERS: Record<string, string> = {
   grip: 'how well it grips the floor it stands on (1 = normal, less on ice, more on rough ground): its own friction times the floor\'s',
   name: 'its name',
 };
-// (And what each ability lets scripts read of itself, by its definition: src/abilities. self.dashing…)
+/** Properties documented with a guidance topic, not in the instructions every request carries: by name, the topic. */
+const MEMBER_TOPICS = new Map<string, string>();
+// (And what each ability lets scripts read of itself, by its definition: src/abilities. self.dashing… An ability
+// with a guidance topic has its names described there, with its component.)
 onAbilities((def, change) => {
   for (const [name, n] of Object.entries(def.scriptNames ?? {})) {
-    if (change === 'added') MEMBERS[name] = n.doc;
-    else delete MEMBERS[name];
+    if (change === 'added') {
+      MEMBERS[name] = n.doc;
+      if (def.topic) MEMBER_TOPICS.set(name, def.topic);
+    } else {
+      delete MEMBERS[name];
+      MEMBER_TOPICS.delete(name);
+    }
   }
 });
 
@@ -1178,7 +1186,7 @@ ${list(Object.fromEntries(Object.entries(BUILTIN_NAMES).filter(([k]) => !inTopic
 ${list(CONTEXT_NAMES)}
   <your variables>
 Properties of an entity (self.x, player.health, other.vy):
-${list(MEMBERS)}
+${list(Object.fromEntries(Object.entries(MEMBERS).filter(([k]) => !MEMBER_TOPICS.has(k))))}
 Functions:
 ${Object.entries(FUNCTIONS)
   .filter(([k]) => !inTopic('functions', k))

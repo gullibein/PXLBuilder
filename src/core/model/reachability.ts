@@ -10,6 +10,7 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
+import { tableBoosts } from '../../abilities/index';
 import { gameGeometry } from '../engine/geometry';
 import { rampOf as rampShape } from './ramps';
 import { hurtsOnTouch, onlyOnTouch, touchHarm } from './ruleScripts';
@@ -192,14 +193,14 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
 
   const base = characterReach(player.components, scene.world.gravity.y);
   if (!base) return { status: 'uncertain', why: 'the player has no jump' };
-  const extra = Number(player.components.DoubleJump?.extraJumps ?? 0);
-  // Double jump: each extra jump adds about another full jump in height and air time.
-  const reach: Reach = withExtraJumps(base, extra);
   const pBox = boxOf(player);
   const pHeight = pBox.bottom - pBox.top;
   const pHalf = (pBox.right - pBox.left) / 2;
-  // Ledge grab: a wall top a bit above the jump's peak can still be caught and climbed.
-  const grab = player.components.LedgeGrab ? pHeight * 0.6 : 0;
+  // What the player's abilities add to its jump (their definitions say: src/abilities): each extra jump in the air
+  // adds about another full jump in height and air time; a wall top a bit above the jump's peak can still be caught.
+  const boost = tableBoosts(player.components, { height: pHeight });
+  const reach: Reach = withExtraJumps(base, boost.airJumps);
+  const grab = boost.grab;
 
   // Standable tops: the top of a solid with nothing solid sitting right on it.
   // (A collider of several boxes: each is a wall or floor of its own.)
@@ -779,13 +780,14 @@ export interface JumpTable {
 export function jumpTable(components: ResolvedEntity['components'], gravityY: number): JumpTable | null {
   const base = characterReach(components, gravityY);
   if (!base) return null;
-  const extra = Number(components.DoubleJump?.extraJumps ?? 0);
-  const reach: Reach = withExtraJumps(base, extra);
   const col = components.Collider as { size?: { x?: number; y?: number } } | undefined;
   const sprite = components.Sprite as { width?: number; height?: number } | undefined;
   const pW = Number(col?.size?.x ?? sprite?.width ?? 32);
   const pH = Number(col?.size?.y ?? sprite?.height ?? 32);
-  const grab = components.LedgeGrab ? pH * 0.6 : 0;
+  // (What its abilities add to the jump: more jumps in the air, a ledge caught above its peak. src/abilities.)
+  const boost = tableBoosts(components, { height: pH });
+  const reach: Reach = withExtraJumps(base, boost.airJumps);
+  const grab = boost.grab;
   const CELL = 32;
   const maxRise = reach.height * MARGIN + grab;
   const gaps: JumpTable['gaps'] = [];

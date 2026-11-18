@@ -49,7 +49,8 @@ const solve = (grid: LevelGrid, p: Project) => solveLevel(grid, solverReach(reac
 
 describe('F6b: the reach publishes what the player can do, in numbers', () => {
   it('abilities are registered with the reach model once; a player has the capabilities of the abilities it has', () => {
-    expect(reachAbilityIds()).toEqual(['wall_jump', 'dash']);
+    // (Each ability's definition says its part in the reach: the first two in the jump table, the others by a move rule.)
+    expect(reachAbilityIds()).toEqual(['double_jump', 'ledge_grab', 'wall_jump', 'dash']);
     expect(reachOf(PLAIN).capabilities).toEqual({});
     expect(reachOf(game(['dash'])).capabilities).toEqual({ dash: { cells: 2, up: 2 } });
     expect(Object.keys(reachOf(BOTH).capabilities)).toEqual(['wall_jump', 'dash']);
@@ -284,12 +285,10 @@ describe('F6b: another ability plugs in with no change to the builder, the solve
   const testGlide = { type: 'TestGlide', label: 'Test glide', description: 'A test ability.', category: 'Behavior', fields: {} };
   beforeAll(() => {
     registerAbility({ id: 'test_glide', describe: 'a test glide', component: testGlide, worksWith: ['arcade'], order: 50, runtime: {}, reach: { move: () => glide, estimated: true } });
-    registry.register(testGlide);
     registerPattern(glideGap);
   });
   afterAll(() => {
     unregisterAbility('test_glide');
-    registry.unregister('TestGlide');
     unregisterPattern('test_glide_gap');
   });
   const glider = produce(PLAIN, (d) => {

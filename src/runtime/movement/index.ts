@@ -1,29 +1,28 @@
 /**
- * The movement registries: locomotion models (by the Character Controller's `movement` value) and abilities (by
- * the components a character has), in the order their hooks run. Registering one is all a new model or ability
- * needs (docs/engine-architecture-proposal.md §16).
+ * Locomotion models (by the Character Controller's `movement` value), registered here; and the abilities a
+ * character has (by its components), which are the definitions of src/abilities: an ability is registered there,
+ * once, and nowhere else (docs/engine-architecture-proposal.md §16, §24).
  */
 import type { RuntimeEntity } from '../runtime';
 import { abilitiesVersion, abilityDefinitions } from '../../abilities/index';
-import { doubleJump, ledgeGrab } from './abilities';
 import { arcade } from './arcade';
 import { topdown } from './topdown';
 import type { Ability, LocomotionModel } from './types';
 
 const MODELS: LocomotionModel[] = [];
 /**
- * Abilities registered here, with when their hooks run (double jump and ledge grab until they are definitions too,
- * V1.2; and the ones tests add). The others are the definitions of src/abilities: abilities() has them all, in the
- * order their hooks run (a dash before a wall jump before a double jump; ledge grab last).
+ * The abilities, as the runtime has them: every definition of src/abilities (the one place an ability is
+ * registered), in the order their hooks run (a dash before a wall jump before a double jump; ledge grab last).
  */
-const ABILITIES: { ability: Ability; order: number }[] = [];
-let known: { version: number; local: number; list: Ability[] } | null = null;
+let known: { version: number; list: Ability[] } | null = null;
 function abilities(): Ability[] {
-  if (known && known.version === abilitiesVersion() && known.local === ABILITIES.length) return known.list;
-  const all = [...abilityDefinitions().map((d) => ({ ability: { id: d.id, component: d.component.type, worksWith: d.worksWith, ...d.runtime } as Ability, order: d.order })), ...ABILITIES];
+  if (known && known.version === abilitiesVersion()) return known.list;
   // (A stable sort: those with the same order stay as they were registered.)
-  const list = all.map((x, i) => ({ ...x, i })).sort((a, b) => a.order - b.order || a.i - b.i).map((x) => x.ability);
-  known = { version: abilitiesVersion(), local: ABILITIES.length, list };
+  const list = abilityDefinitions()
+    .map((d, i) => ({ ability: { id: d.id, component: d.component.type, worksWith: d.worksWith, ...d.runtime } as Ability, order: d.order, i }))
+    .sort((a, b) => a.order - b.order || a.i - b.i)
+    .map((x) => x.ability);
+  known = { version: abilitiesVersion(), list };
   return list;
 }
 
@@ -33,22 +32,8 @@ export function registerLocomotion(m: LocomotionModel): () => void {
   return () => void MODELS.splice(MODELS.indexOf(m), 1);
 }
 
-/** Only its runtime part (the whole of an ability is a definition: src/abilities registerAbility). */
-export function registerAbility(a: Ability, order = 100): () => void {
-  if (abilities().some((x) => x.id === a.id)) throw new Error(`Two abilities with the id "${a.id}"`);
-  const entry = { ability: a, order };
-  ABILITIES.push(entry);
-  known = null;
-  return () => {
-    ABILITIES.splice(ABILITIES.indexOf(entry), 1);
-    known = null;
-  };
-}
-
 registerLocomotion(arcade);
 registerLocomotion(topdown);
-registerAbility(doubleJump, 30);
-registerAbility(ledgeGrab, 40);
 
 /**
  * The model a Character Controller `movement` value answers to, or null: there is no such model. Never another one

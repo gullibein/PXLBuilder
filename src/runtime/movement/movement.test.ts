@@ -15,7 +15,8 @@ import type { Project } from '../../core/types';
 import { mapLevel } from '../../regression/games/platformers';
 import { Player, varOf } from '../../regression/harness';
 import { Runtime } from '../runtime';
-import { abilityComponents, abilityWorksWith, movementValues, registerAbility, registerLocomotion } from './index';
+import { registerAbility } from '../../abilities/index';
+import { abilityComponents, abilityWorksWith, movementValues, registerLocomotion } from './index';
 
 const registry = createBuiltinRegistry();
 const withAbilities = (p: Project, comps: Record<string, Record<string, unknown>>): Project =>
@@ -188,17 +189,21 @@ describe('extensible: a model and an ability only this test knows, with no chang
         e.vy = 0;
       },
     });
-    registry.register({ type: 'TestBoost', label: 'Test boost', description: 'test only', category: 'Behavior', fields: {} });
+    // (An ability is one definition, registered once: src/abilities. Its component comes with it.)
     const offAbility = registerAbility({
       id: 'test_boost',
-      component: 'TestBoost',
+      describe: 'a test boost',
+      component: { type: 'TestBoost', label: 'Test boost', description: 'test only', category: 'Behavior', fields: {} },
       worksWith: ['test_glide'],
-      override({ e, input }) {
-        if (!input.isDown('jump')) return false;
-        e.vx = 400;
-        return true;
+      order: 50,
+      runtime: {
+        override({ e, input }) {
+          if (!input.isDown('jump')) return false;
+          e.vx = 400;
+          return true;
+        },
+        states: () => ['boosting'],
       },
-      states: () => ['boosting'],
     });
     try {
       expect(movementValues()).toContain('glide');

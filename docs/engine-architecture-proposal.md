@@ -1338,8 +1338,8 @@ These are acceptance criteria for the stages named. Each stage's report says whe
 
 | # | Requirement | Where it is met | State |
 |---|---|---|---|
-| T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | V1.1: one definition for an ability, dash and wall jump moved, proven with a test ability (§24.2). Closes in V1.2 (double jump, ledge grab) |
-| T2 | **The jump checker and the route bot consume shared interfaces.** The checker computes its own arcs; the bot has its own step per move. Unify where a concrete feature needs it, not for its own sake | V1 (bot steps with T1); the checker when hand-drawn grids arrive (T4) | Open |
+| T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | **Met** (V1.1, V1.2: §24.2, §24.3). Every ability is one definition, registered once; a test ability and a top-down one prove it |
+| T2 | **The jump checker and the route bot consume shared interfaces.** The checker computes its own arcs; the bot has its own step per move. Unify where a concrete feature needs it, not for its own sake | V1 (bot steps with T1); the checker when hand-drawn grids arrive (T4) | Half met (V1.1): the bot's steps for abilities are their definitions'. The checker's own arcs: open, with T4 |
 | T3 | **The generator uses the player's real abilities.** It sizes sections from the jump table only, so it never makes a level that needs a wall jump or a dash. It should build sections that use the abilities the player has, and those routes must be confirmed by the route bot. The bot costs real time for each level and the generator makes several attempts, so this needs a time budget; confirmation stays required only for routes through estimated moves | F6 (generator interface) with V1 (patterns) | Open |
 | T4 | **Hand-drawn levels get a cell grid.** Converting what is seen into cells is not enough: doors, keys, levers, plates, teleporters and their links must be read from the objects. A level that doesn't fit cells (off the grid, scripted objects) is reported as unjudged, never guessed | After F6 | Open |
 | T5 | **Every family in every stage.** Tetris, Dr. Mario, space shooters, mining and Boulder Dash are tested beside the platformers in every stage, with validation appropriate to each. No platformer assumption goes into a system other genres use | Every stage | Standing rule; met in F5 (§21.5) |
@@ -1889,7 +1889,66 @@ Seven stages, each reviewed on its own. The order alternates, so work for games 
 **Limitations:**
 - **Double jump and ledge grab are not moved yet** (V1.2). They are still registered with the runtime by themselves, hard-coded in the reach model, and their modules are declared by hand. T1 closes when they move.
 - **Holding a wall is shared vocabulary, not one ability's.** The route solver's "mode" for it lives in the move-rule helpers, and the bot's own jump presses into a wall when a step ends on one. Both dash and wall jump use it.
-- **A component registry made before an ability is registered doesn't get its component** (only the editor's own follows). Tests that register an ability make their registry afterwards.
+- **A component registry made before an ability is registered doesn't get its component** (only the editor's own follows). Tests that register an ability make their registry afterwards. *(Gone in V1.2: §24.3.)*
 - **The topic text for an ability is its component's description.** Longer guidance prose is still written in the topic.
 - **The exported player now carries the abilities' move rules and bot steps** with their runtime part: one file each, a few kilobytes.
 - **The other registries are as they were** (camera, turns, generators: two or three registrations each). Whether this approach suits them is assessed in V1.2, on paper.
+
+### 24.3 V1.2 — done (awaiting review before V1.3)
+
+**T1 is closed.** The five abilities there are, each one definition in `src/abilities/`:
+
+| Ability | Works with | Its part in the reach | Bot part |
+|---|---|---|---|
+| Double jump | Run and jump | In the jump table: more jumps in the air | None needed (judged as jumps are) |
+| Ledge grab | Run and jump | In the jump table: a ledge caught above the jump's peak | None needed |
+| Wall jump | Run and jump | A move rule, estimated | Yes |
+| Dash | Run and jump | A move rule, estimated | Yes |
+| **Dodge roll** (new) | **Walking from above** | None: levels from above have no jump table and no route solver | None |
+
+- **There is no other way to register an ability.** The runtime's own ability list is gone (`runtime/movement/abilities.ts` is deleted), and so are the reach model's registration, the table that matched components to abilities, and the modules declared by hand.
+- **A reach part can be "in the jump table".** The table knows two kinds of boost (more jumps in the air; a ledge caught above the peak); an ability says how much it gives of each. The level checker and the jump table read the sum; neither names an ability.
+- **The words the AI uses** for an ability ("a double jump") and the words of a request that ask for it are in its definition too.
+- **Script names of an ability with a guidance topic** are described in that topic, with its component, not in the instructions every request carries. That is how the instructions stayed inside their budget with a fifth ability.
+
+**Changed from the plan:** capability numbers for double jump and ledge grab are not added here. Nothing reads them until patterns require those abilities (V1.4), so they come with that.
+
+**The lifecycle of the registry, as a rule:**
+
+| Rule | How it holds | Test |
+|---|---|---|
+| The engine's abilities are registered when `src/abilities` is loaded | Every part that reads abilities imports it, so they are there before anything can ask | Each entry point loaded alone, in a fresh module graph, has all five: components, the runtime, the profile's modules, the script language, the reach model, the builder's vocabulary, the route bot |
+| The editor, the runtime and an exported game have the same abilities | The exported game's page loads the same play view, so the same runtime, which imports the abilities | The import chain is checked in the sources; an exported game is played in the browser tests |
+| **There is no "registered too late"** | A component registry reads the abilities' components whenever it is asked (it keeps no copy). The runtime, the reach, the bot, the vocabulary and the guidance read the list when they need it. The two systems that keep something of their own (the profile's modules, the script language's names) are told of every change | A registry made before an ability is registered has its component from then on; a game already running uses it at the character's next step; taken out, it is gone everywhere |
+| A wrong registration is refused at once | The same id or component twice; a setting whose default isn't valid | Yes |
+| A game with the component of an ability that isn't registered is told so | Loading warns ("unknown component type"); the compatibility report says it does nothing | Yes |
+
+So the limitation recorded in §24.2 (a component registry made before an ability is registered) is gone, not documented around.
+
+**The dodge roll** (`abilities/dodgeRoll.ts`): the first ability for characters seen from above.
+- **In play:** a press of its key rolls the character the way the keys point (the way it last headed, when none is held), fast, for a moment; it can't be steered meanwhile and (unless switched off) can't be hurt; then it walks on, and waits before the next roll. Walls stop it as they stop walking. Seen at an angle, it goes the way the keys point on the screen, as walking does.
+- **It has a component and a runtime part, and nothing else.** No reach, no bot: nothing is built or judged by it, and nothing claims to be.
+- **On a run-and-jump character** it is refused when asked for through the profile, reported as doing nothing when its component is there, and does nothing in play (Space is still its jump).
+- **No engine code was written for it** beyond its definition: the top-down movement model already called an ability's hook, and no ability had used it.
+- **Regression:** two new movement traces (from above, and at an angle). The shooter and Boulder Dash of the suite have no roll and play as they did.
+
+**On paper only: would the same approach suit the other registries?**
+
+What made it worth doing for abilities: five instances, about eight systems reading each, and more of them coming in V1.4. By the same three questions:
+
+| Registry | Instances | Systems reading each | More coming soon? | Verdict |
+|---|---|---|---|---|
+| Camera behaviours | 3 | 2 (the camera pipeline; the profile's report) | One, perhaps, with arenas (V5) | **Yes, but then.** Three registrations for a plug-in, and a behaviour with no implementation is skipped without a word. Move them to one definition each when the fourth is written, not before |
+| Turn systems | 1 | 2 (the script statements; the report) | None planned | **No.** One system, a thin adapter. The three registrations cost nobody anything. Only if a second turn system is really built |
+| Generators | 2 (one while editing, one at play) | 3 (the builder; the runtime; the report) | A second edit-time one with V2 | **Not this way.** Their problem is the request, which is the sections builder's own (audit B9): that is designed with the second generator |
+| Progression | 1 | 2 (the session; the report) | V5 or V6 | **No**, until then |
+
+One thing found on the way that would be cheap whenever the camera is next touched: a selected camera behaviour that has no implementation should be reported, as progression already does.
+
+**Limitations:**
+- **The hanging and the climbing of a ledge grab are still the arcade model's** (its host has the geometry of it). The definition says when a ledge is caught.
+- **A double jump's count now starts over with a respawn,** as a dash's charges do: its state is the ability's own, cleared with the rest. Before, a character that had used its air jump and was put back in mid-air had none until it landed. No golden or test saw the difference.
+- **The roll's default key is Space,** which also fires a Shooter in a game seen from above: its component says so and offers two other keys.
+- **While it can't be hurt, the roll blinks,** as anything that can't be hurt does.
+- **No starter has the roll,** and it is not played in the browser tests (only its place in the profile dialog is checked there).
+- **In the isometric starter the roll is tested where blocks stop one of its two axes:** it is shown to go the way walking goes there, further, not along a free diagonal.

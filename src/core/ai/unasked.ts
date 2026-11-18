@@ -4,6 +4,7 @@
  * a "Squished Motobug" object), and a built-in behavior removed when nothing asked to remove it (Stompable swapped
  * for a script that stomped differently).
  */
+import { abilityOfComponent } from '../../abilities/index';
 import type { Operation } from '../commands/operations';
 import type { AIContext } from './context';
 import { touchHarm } from '../model/ruleScripts';
@@ -36,8 +37,6 @@ const BEHAVIORS: Record<string, RegExp> = {
   Pushable: /push/i,
   Shooter: /shoot|fire|bullet/i,
   Jumper: /jump/i,
-  DoubleJump: /double|jump/i,
-  LedgeGrab: /ledge|grab|hang/i,
   MovingPlatform: /mov|platform/i,
   Goal: /goal|win|finish/i,
   Timer: /timer|time/i,
@@ -54,9 +53,11 @@ export function unaskedChanges(ctx: AIContext, request: string, operations: Oper
     );
   }
   // A behavior goes only when the request names it (or behavior in general) and asks for it gone or changed.
-  const asked = (component: string) => TAKE_AWAY.test(request) && (BEHAVIOR_WORDS.test(request) || BEHAVIORS[component].test(request));
+  // (An ability's words are its definition's: src/abilities.)
+  const wordsOf = (component: string): RegExp | undefined => BEHAVIORS[component] ?? abilityOfComponent(component)?.askedBy;
+  const asked = (component: string) => TAKE_AWAY.test(request) && (BEHAVIOR_WORDS.test(request) || wordsOf(component)!.test(request));
   {
-    const removed = operations.flatMap((o) => (o.op === 'remove_component' && o.component in BEHAVIORS && !asked(o.component) ? [o.component] : []));
+    const removed = operations.flatMap((o) => (o.op === 'remove_component' && wordsOf(o.component) && !asked(o.component) ? [o.component] : []));
     if (removed.length) {
       problems.push(
         `it removes ${[...new Set(removed)].join(', ')}, which the user didn't ask for: keep every built-in behavior exactly as it is (never replace one with a script that does "the same"); change only what was asked`,

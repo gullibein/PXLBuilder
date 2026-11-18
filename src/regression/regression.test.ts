@@ -56,6 +56,9 @@ const MOVES: Record<string, string> = {
   'spring bounce and launch': '1a6315497e0156db',
   'top-down walking (straight and diagonal)': 'add7098a588d2e66',
   'isometric walking (keys follow the screen)': '8efd1bb465ac7f9c',
+  // (Recorded at V1.2, when the dodge roll came in: the first ability for characters seen from above.)
+  'top-down dodge roll': '8f8e105e50efb343',
+  'isometric dodge roll (keys follow the screen)': 'd040aae08230cbc8',
   'running taken over by a script': '0e62334c57de4634',
   'jumping taken over by a script': 'f9000796869cc116',
   'climbing taken over by a script': '7cee0a8bfd20c936',

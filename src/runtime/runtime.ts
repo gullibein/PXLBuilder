@@ -305,8 +305,6 @@ export interface Behaviors {
   /** A moving platform: its path (relative to its start: the start, its points, the end), where it heads next and which way. */
   mover: { path: Vec2[]; loop: boolean; speed: number; pause: number; originX: number; originY: number; next: number; dir: 1 | -1; wait: number } | null;
   timer: { interval: number; repeat: boolean; t: number; done: boolean } | null;
-  doubleJump: { extra: number; left: number } | null;
-  ledgeGrab: boolean;
   /** Wander: its way now (dx, dy each -1, 0 or 1; 0,0 = standing) and when it next picks another. */
   wander: { speed: number; interval: number; pauses: boolean; dx: number; dy: number; t: number } | null;
 }
@@ -363,8 +361,6 @@ export function readBehaviors(c: Record<string, Record<string, unknown>>, at: Ve
       : null,
     mover: mv ? { path: moverPath(mv), loop: mv.loop === true, speed: num(mv.speed, 64), pause: num(mv.pause, 0.5), originX: at.x, originY: at.y, next: 1, dir: 1, wait: 0 } : null,
     timer: t ? { interval: num(t.interval, 2), repeat: t.repeat !== false, t: 0, done: false } : null,
-    doubleJump: c.DoubleJump ? { extra: num(c.DoubleJump.extraJumps, 1), left: num(c.DoubleJump.extraJumps, 1) } : null,
-    ledgeGrab: !!c.LedgeGrab,
     // Starts by standing still; the first pick comes at once.
     wander: c.Wander ? { speed: num(c.Wander.speed, 50), interval: Math.max(0.2, num(c.Wander.interval, 2)), pauses: c.Wander.pauses !== false, dx: 0, dy: 0, t: 0 } : null,
   };

@@ -129,9 +129,6 @@ modules.register<LocomotionModule>({
   provides: ['locomotion:topdown'],
   controller: 'topdown',
 });
-const ability = (id: string, component: string, describe: string): AbilityModule => ({ kind: 'ability', id, version: 1, describe, requires: ['locomotion:arcade'], provides: [`ability:${id}`], component });
-modules.register(ability('double_jump', 'DoubleJump', 'Extra jumps in the air'));
-modules.register(ability('ledge_grab', 'LedgeGrab', 'Catch ledges and climb up'));
 // Every ability declared whole in one definition (src/abilities): its module is made from that, now and whenever
 // one is registered or taken out. What it requires is the movement models its definition says it works with.
 onAbilities((def, change) => {

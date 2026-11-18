@@ -1,3 +1,4 @@
+import { TOPICS } from '../ai/topics';
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
@@ -113,7 +114,8 @@ describe('scripts', () => {
     const topics = Object.keys(SCRIPT_TOPICS).map((t) => scriptDocsFor(t)).join('\n');
     for (const k of Object.keys(STATEMENTS)) expect(text.includes(`  ${k}:`) || (topics.includes(`  ${k}:`) && text.includes(k)), k).toBe(true);
     for (const k of Object.keys(FUNCTIONS)) expect(text.includes(`  ${k}(`) || topics.includes(`  ${k}(`), k).toBe(true);
-    for (const k of Object.keys(MEMBERS)) expect(text).toContain(`  ${k}:`);
+    // (A property an ability gives is described with that ability, in its guidance topic.)
+    for (const k of Object.keys(MEMBERS)) expect(text.includes(`  ${k}:`) || Object.values(TOPICS).some((t) => t.text.includes(`scripts read self.${k}:`)), k).toBe(true);
   });
 });
 

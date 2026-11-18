@@ -61,14 +61,26 @@ export interface AbilityBot {
   settled?(s: Pick<BotStep, 'rt' | 'p' | 'to'>): boolean;
 }
 
+/** What an ability adds to the jump table (the closed-form numbers of the arcade model's jump). */
+export interface TableBoost {
+  /** More full jumps in the air. */
+  airJumps?: number;
+  /** A wall top this much above the jump's peak (px) is still caught and climbed. */
+  grab?: number;
+}
+
+/**
+ * An ability's part in the player's reach, one way or the other (or both):
+ * - `table`: what it adds to the jump table. It is then judged exactly as a jump is, by the table, the arcade
+ *   model's own moves and the route bot alike: nothing more to declare.
+ * - `move`: a move rule of its own for the route solver, with its capability in numbers; `estimated`: its moves are
+ *   estimates in cells, and a route through them counts only once the route bot has played it.
+ */
 export interface AbilityReach {
-  /**
-   * Its move rule for a character with these components (the ability's own settings in its component), with the
-   * capability it gives in numbers; `base`: the character's jump speed, the level's gravity, its running speed.
-   */
-  move(components: ComponentMap, base: { jumpForce: number; gravity: number; speed: number }): MoveRule;
-  /** Its moves are estimates in cells: a route through them counts only once the route bot has played it. */
-  estimated: boolean;
+  table?(components: ComponentMap, body: { height: number }): TableBoost;
+  /** `base`: the character's jump speed, the level's gravity, its running speed. */
+  move?(components: ComponentMap, base: { jumpForce: number; gravity: number; speed: number }): MoveRule;
+  estimated?: boolean;
 }
 
 export interface AbilityDefinition {
@@ -94,4 +106,8 @@ export interface AbilityDefinition {
   bot?: AbilityBot;
   /** The AI guidance topic its component is described in (else: in the instructions every request carries). */
   topic?: string;
+  /** What having it is called when the AI's work is told ("a double jump", "the ability to grab ledges"). */
+  noun?: string;
+  /** Words of a request that ask for it (an ability added that nobody asked for is pointed out). */
+  askedBy?: RegExp;
 }

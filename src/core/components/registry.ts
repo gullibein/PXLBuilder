@@ -14,8 +14,19 @@ export interface PropValidationError {
 export class ComponentRegistry {
   private readonly defs = new Map<string, ComponentDefinition>();
 
+  /**
+   * `more`: component types that are kept elsewhere and read whenever this registry is asked (the abilities'
+   * components: each ability's definition has its own). So the registry always has those there are now, whenever
+   * it was made: there is no "registered too late". Listed before the type `before` (else last).
+   */
+  constructor(private readonly more?: { list: () => readonly ComponentDefinition[]; before?: string }) {}
+
+  private find(type: string): ComponentDefinition | undefined {
+    return this.defs.get(type) ?? this.more?.list().find((d) => d.type === type);
+  }
+
   register(def: ComponentDefinition): void {
-    if (this.defs.has(def.type)) throw new Error(`Component type "${def.type}" is already registered`);
+    if (this.find(def.type)) throw new Error(`Component type "${def.type}" is already registered`);
     for (const [name, field] of Object.entries(def.fields)) {
       const err = validateField(field, field.default);
       if (err) throw new Error(`Default for ${def.type}.${name} is invalid: ${err}`);
@@ -23,27 +34,25 @@ export class ComponentRegistry {
     this.defs.set(def.type, def);
   }
 
-  /** Takes a component type out again (an ability taken out of the engine: its component goes with it). */
-  unregister(type: string): void {
-    this.defs.delete(type);
-  }
-
   has(type: string): boolean {
-    return this.defs.has(type);
+    return !!this.find(type);
   }
 
   get(type: string): ComponentDefinition | undefined {
-    return this.defs.get(type);
+    return this.find(type);
   }
 
   require(type: string): ComponentDefinition {
-    const def = this.defs.get(type);
+    const def = this.find(type);
     if (!def) throw new Error(`Unknown component type "${type}"`);
     return def;
   }
 
   list(): ComponentDefinition[] {
-    return [...this.defs.values()];
+    const own = [...this.defs.values()];
+    if (!this.more) return own;
+    const at = this.more.before ? own.findIndex((d) => d.type === this.more!.before) : -1;
+    return at < 0 ? [...own, ...this.more.list()] : [...own.slice(0, at), ...this.more.list(), ...own.slice(at)];
   }
 
   /** Full property set with every field at its default value. */
@@ -59,7 +68,7 @@ export class ComponentRegistry {
    * allowed (used for instance overrides). Unknown fields are always errors.
    */
   validate(type: string, props: ComponentProps, opts: { partial?: boolean } = {}): PropValidationError[] {
-    const def = this.defs.get(type);
+    const def = this.find(type);
     if (!def) return [{ component: type, field: '', message: 'unknown component type' }];
     const errors: PropValidationError[] = [];
     for (const [name, value] of Object.entries(props)) {

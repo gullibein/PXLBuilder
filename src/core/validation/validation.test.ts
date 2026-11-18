@@ -20,7 +20,7 @@ import { solveLevel } from '../levelGen/solver';
 import { instantiateDefinition } from '../model/factory';
 import { jumpTable, reachabilityProblems } from '../model/reachability';
 import { resolveEntity } from '../model/resolve';
-import { ARCADE_MECHANICS, playerReach, reachOf, solverReach } from '../reach/reach';
+import { arcadeMechanics, playerReach, reachOf, solverReach } from '../reach/reach';
 import type { Project } from '../types';
 import { levelPlayerReach, levelReachProblems } from './levelProblems';
 import { chooseValidators, runValidators, VALIDATORS, type ValidationTarget } from './validators';
@@ -68,7 +68,7 @@ describe('F4: reach descriptions', () => {
     expect(r.table).toEqual(jumpTable(player.components, p.scenes[0].world.gravity.y));
     expect(r.moves!.map((m) => m.id)).toEqual(ARCADE_MOVES.map((m) => m.id));
     expect(r.simulator).toBe('route_bot');
-    expect(r.covers.table).toEqual(ARCADE_MECHANICS);
+    expect(r.covers.table).toEqual(arcadeMechanics());
     expect(r.approximate).toEqual([]);
   });
 

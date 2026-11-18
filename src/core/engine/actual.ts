@@ -144,6 +144,21 @@ export function viewNotes(p: GameProfile, facts: GameFacts): string[] {
   return [...by].map(([view, names]) => `${names.slice(0, 3).map((n) => `"${n}"`).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''} ${names.length > 1 ? 'are' : 'is'} seen ${VIEW_WORDS[view]}, not as the game's view says (${p.view}): ${names.length > 1 ? 'they play as they are' : 'it plays as it is'} set, while what the game's view decides (ramps and jump-through platforms, camera zones, the level builder) stays as for "${p.view}"`);
 }
 
+/**
+ * Components the game's objects have that this engine has no such type of (an ability or a behaviour that isn't
+ * registered here: a game made with another version, or with something added that isn't loaded). Nothing reads
+ * them, so they do nothing; said, not passed over. (Loading a game warns of the same.)
+ */
+export function componentNotes(project: Pick<Project, 'definitions' | 'scenes'>, registry: ComponentRegistry): string[] {
+  const missing = new Map<string, string[]>();
+  const see = (owner: string, components: Record<string, unknown>) => {
+    for (const type of Object.keys(components)) if (!registry.has(type)) missing.set(type, [...(missing.get(type) ?? []), owner]);
+  };
+  for (const d of project.definitions) see(d.name, d.components);
+  for (const s of project.scenes) for (const e of s.entities) see(`${e.name ?? 'a placed object'} (in ${s.name})`, e.components);
+  return [...missing].map(([type, owners]) => `${[...new Set(owners)].slice(0, 3).join(', ')}${new Set(owners).size > 3 ? '…' : ''}: there is no "${type}" component in this engine (an ability or behaviour that isn't registered), so it does nothing`);
+}
+
 /** How the game's players move, in words (the profile panel's and the AI's line): each by itself, or "not in use". */
 export function describeMovement(facts: GameFacts): string {
   if (!facts.players.length) return 'not in use (no object is player-controlled)';

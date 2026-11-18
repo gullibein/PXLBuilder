@@ -6,7 +6,9 @@
  *
  * Nothing here knows any system: it only holds definitions.
  */
-import type { AbilityDefinition } from './types';
+import { validateField } from '../core/components/schema';
+import type { ComponentMap } from '../core/types';
+import type { AbilityDefinition, TableBoost } from './types';
 
 const DEFS: AbilityDefinition[] = [];
 type Listener = (def: AbilityDefinition, change: 'added' | 'removed') => void;
@@ -17,6 +19,10 @@ let version = 0;
 export function registerAbility(def: AbilityDefinition): () => void {
   if (DEFS.some((d) => d.id === def.id)) throw new Error(`Two abilities with the id "${def.id}"`);
   if (DEFS.some((d) => d.component.type === def.component.type)) throw new Error(`Two abilities with the component "${def.component.type}"`);
+  for (const [name, field] of Object.entries(def.component.fields)) {
+    const err = validateField(field, field.default);
+    if (err) throw new Error(`Default for ${def.component.type}.${name} is invalid: ${err}`);
+  }
   DEFS.push(def);
   version++;
   for (const l of [...LISTENERS]) l(def, 'added');
@@ -42,4 +48,16 @@ export const abilitiesVersion = (): number => version;
 export function onAbilities(listener: Listener): void {
   LISTENERS.push(listener);
   for (const d of [...DEFS]) listener(d, 'added');
+}
+
+/** What a character's abilities add to its jump table, together (the abilities whose reach is in the table). */
+export function tableBoosts(components: ComponentMap, body: { height: number }): Required<TableBoost> {
+  const out = { airJumps: 0, grab: 0 };
+  for (const d of DEFS) {
+    if (!d.reach?.table || !components[d.component.type]) continue;
+    const b = d.reach.table(components, body);
+    out.airJumps += b.airJumps ?? 0;
+    out.grab = Math.max(out.grab, b.grab ?? 0);
+  }
+  return out;
 }

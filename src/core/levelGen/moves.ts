@@ -154,7 +154,7 @@ export const standing = ({ c, r, mode, w }: SolverState, v: SolverView) => !mode
 /** Jumps (from the ground, a ladder, or the water's surface; from a spring, its launch). */
 const jump: MoveRule = {
   id: 'jump',
-  mechanics: ['jump', 'hazard', 'oneway', 'double_jump', 'ledge_grab'],
+  mechanics: ['jump', 'hazard', 'oneway'],
   successors(s, v) {
     if (standing(s, v)) v.jumpsFrom(s.c, s.r, s.away, s.id, v.role(s.c, s.r + 1) === 'spring', 0);
   },

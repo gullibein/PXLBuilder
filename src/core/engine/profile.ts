@@ -18,7 +18,7 @@ import { modules, type AbilityModule, type GeneratorModule, type KitModule, type
 import { presetById, PRESETS } from './presets';
 import { gameProfileSchema, type GameProfile } from './profileSchema';
 import { inferProfileFromObjects, kitOfObjects } from './infer';
-import { abilitiesInUse, abilityOn, describeMovement, gameFacts, movementNotes, viewNotes, type GameFacts } from './actual';
+import { abilitiesInUse, abilityOn, componentNotes, describeMovement, gameFacts, movementNotes, viewNotes, type GameFacts } from './actual';
 
 // (Through JSON: profiles are plain data, and this reads an Immer draft as well.)
 const cloneValue = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -125,7 +125,7 @@ export function checkGame(project: Project, registry: ComponentRegistry): Compat
   const kindsOf = (kind: ModuleKind) => modules.list<TurnsModule>(kind).map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
   // (Generators: every one registered, the engine's and any added, with what each requires.)
   const generators = modules.list<GeneratorModule>('generator').map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
-  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators), ...turnNotes(p, project, provided, kindsOf('turns')), ...movementNotes(p, facts), ...viewNotes(p, facts), ...(progressionIds().includes(p.progression.model) ? [] : [`progression '${p.progression.model}': nothing carries it out, so a won level is followed by nothing: the game stops there`])];
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators), ...turnNotes(p, project, provided, kindsOf('turns')), ...movementNotes(p, facts), ...viewNotes(p, facts), ...componentNotes(project, registry), ...(progressionIds().includes(p.progression.model) ? [] : [`progression '${p.progression.model}': nothing carries it out, so a won level is followed by nothing: the game stops there`])];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 
