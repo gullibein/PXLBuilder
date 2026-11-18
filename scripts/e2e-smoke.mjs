@@ -330,6 +330,16 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('stuck at the start')) {
+    // A game broken on purpose: paused from its start, with nothing that resumes it.
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    const scriptJson = JSON.stringify({ id: 'scr_stuck', name: 'Stuck', description: 'Pauses the game at its start.', vars: [], handlers: [{ when: { on: 'start' }, if: null, do: [{ do: 'pause' }] }] });
+    return { kind: 'apply', message: 'The game now pauses at its start.', changes: ['Player: pauses the game at the start'], operations: [{ op: 'set_script', target: 'definition', id: player, scriptJson }] };
+  }
+  if (req.startsWith('fix this problem: (found by playing the level)')) {
+    const player = body.context.library.find((d) => d.name === 'Player').id;
+    return { kind: 'apply', message: 'Removed the script that paused the game.', changes: ['Player: no longer pauses the game'], operations: [{ op: 'remove_script', target: 'definition', id: player, scriptId: 'scr_stuck' }] };
+  }
   if (req.includes('dodge roll test game')) {
     // A game seen from above: the hero with a (long) dodge roll, three hazards in a row on its way, a wall beyond.
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
@@ -5952,6 +5962,45 @@ try {
     await rp.keyboard.up('ArrowLeft');
     await rp.screenshot({ path: `${OUT}/12m-dodge-roll.png` });
     await rp.getByTestId('play').click();
+
+    // The play check (Debug tab): the editor plays the level by itself for a short time and says what it saw, its
+    // parts apart. Then the same game broken on purpose: the failure is listed, sent to the AI with the check, and gone.
+    step = 'the play check in the Debug tab';
+    const openDebug = async () => {
+      if (await rp.getByTestId('debug-panel').isVisible().catch(() => false)) return;
+      if (await rp.getByTestId('tab-debug').isVisible().catch(() => false)) await rp.getByTestId('tab-debug').click();
+      else await rp.getByTestId('debug-toggle').click();
+    };
+    await openDebug();
+    const pk = rp.getByTestId('play-check');
+    const part = async (name) => (await pk.getByTestId(`probe-${name}`).allInnerTexts()).join('\n');
+    await check(async () => (await pk.innerText()).includes('plays the level by itself') && (await pk.getByTestId('probe-lines').count()) === 0, 'Debug offers a play check, with nothing played yet');
+    await pk.getByTestId('probe-run').click();
+    await pk.getByTestId('probe-lines').waitFor({ timeout: 20000 });
+    await check(async () => (await part('runs')).includes('It ran without runtime errors'), 'Check by playing: the level ran without runtime errors');
+    await check(async () => /Left \(←\)[^\n]*Player moved/.test(await part('inputs')) && /Special \(Shift\)[^\n]*Player moved/.test(await part('inputs')), 'each key the level listens to, with what it changed (Left moves the hero; so does Shift: its roll)');
+    await check(async () => (await part('by_itself')).includes('With no key pressed, nothing happened') && (await pk.getByTestId('probe-failures').count()) === 0, 'nothing happens by itself in this level, said without calling it a failure');
+    await check(async () => (await pk.getByTestId('probe-limits').innerText()).includes('does not say the level can be won'), 'and it says what it does not say: that the level can be won');
+    await rp.screenshot({ path: `${OUT}/12n-play-check.png` });
+    await rp.getByTestId('global-prompt-toggle').click();
+    await gp.getByTestId('prompt-input').fill('Make it stuck at the start');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await check(aiRequests.at(-1).context.debug.playCheck?.lines.some((l) => l.startsWith('runs: It ran without runtime errors')) && aiRequests.at(-1).context.debug.playCheck.note.includes('Nothing was changed since this check'), 'the AI is given the play check with its requests (its lines, and that the game is as it was checked)');
+    await rp.keyboard.press('Escape');
+    await openDebug();
+    await check(async () => (await pk.innerText()).includes('the game changed since'), 'after a change the check is marked as older than the game');
+    await pk.getByTestId('probe-run').click();
+    await check(async () => (await part('failures')).includes("Player can't be moved"), 'checked again, the broken game (paused for good at its start): "Player can\'t be moved", as a failure');
+    await check(async () => (await part('by_itself')).includes('waiting for the player is right'), '(a paused game waiting is not what is wrong with it)');
+    await pk.getByTestId('fix-with-ai').first().click();
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    const fixAsk = aiRequests.at(-1);
+    await check(fixAsk.request.startsWith("Fix this problem: (found by playing the level) Player can't be moved") && fixAsk.context.debug.playCheck.lines.some((l) => l.startsWith("failures: Player can't be moved")), '✦ Fix sends the failure to the AI, with the check it came from');
+    await rp.keyboard.press('Escape');
+    await openDebug();
+    await pk.getByTestId('probe-run').click();
+    await check(async () => (await pk.getByTestId('probe-failures').count()) === 0 && /Left \(←\)[^\n]*Player moved/.test(await part('inputs')), 'after the fix, checked again: no failure, and the hero moves');
     await rc.close();
   }
 

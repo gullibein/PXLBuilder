@@ -1982,3 +1982,87 @@ One thing found on the way that would be cheap whenever the camera is next touch
 - **A dash still shares X with a Shooter by default.** Its default is unchanged (existing games and their traces depend on it); `special` can be offered for it when dashes are next worked on.
 - **The roll still blinks while it can't be hurt.**
 - **No starter has the roll.**
+
+### 24.5 V1.3 — the play probe (done, awaiting review before V1.4)
+
+**What it is.** `runtime/playProbe.ts`: `probeLevel(project, sceneId, registry, options)` plays a level on the real runtime for a bounded time and returns a `ProbeReport` (`core/debug/probeReport.ts`): what it saw, in four parts kept apart. It has no idea of genres. What it expects comes from the level as it runs.
+
+**What it is not.** It is not a validator, has no verdict, and no word for "validated", "winnable", "balanced" or "correct". It is outside the validator registry: nothing it sees changes a level's validation, so an uncertain level stays uncertain. Nothing found is "nothing found in this time", and every report says so.
+
+**The four parts.**
+
+| Part | What it says | Wrong when |
+|---|---|---|
+| 1. Runs | Runtime errors in any run (script errors, the game's own errors such as a level that isn't there, the engine stopping), each with the keys pressed in the run it showed in | There is one |
+| 2. Keys | For each key something in the level listens to: who listens, whether pressing it changed anything, what changed, and whether it only answered after another key | See failures |
+| 3. By itself | What happened with no key pressed, and whether the level is one where that is expected | See failures |
+| 4. Failures | What is wrong whatever the game is meant to be | Listed below |
+
+Besides these: **notes** (things seen that may or may not be meant: "with no key pressed, Player died after 4.4 s") and **not judged** (what wasn't tried or couldn't be told, each with its reason).
+
+**How a key's effect is told.** The level is played twice from the same seed, once with the key and once without, and the two are compared ten times a second. They only differ if the key did something. What is compared is what a player could notice (where things are, things appearing and going, which way they face, health, what is drawn on the screen, messages, sounds, the menu, the cursor, the level) and, apart, the variables. A key that only changed variables did nothing to see.
+
+**The runs, in order** (each stops being run when the budget has no room for it, and that is said):
+1. No key pressed, 6 s. Who listens to which key and what is set to act alone are read from this run.
+2. The same again, 2 s: if the two differ, the level doesn't repeat from the same seed and no key is judged (said, not guessed).
+3. Each listened-to key by itself, 4 s: a tap, a hold, a tap.
+4. Keys at random, 8 s: for errors and failures that only show when keys are combined.
+5. Each key that did nothing though something always listens to it, again after each of up to three keys that did (a title to start from, a menu to open first).
+
+**Where expectations come from: the level as it runs, never the kind of game.**
+
+| Read from | Gives |
+|---|---|
+| A character's movement model (`keys` on the model: `move`, and `sometimes` for a ladder's Up) | The keys that ought to move it |
+| Its abilities (`keys` on the ability definition) | The key each listens to, for some states only |
+| A Shooter fired by a key | Fire (and Space, seen from above) |
+| A switch used with a key | Interact, from beside it only |
+| Scripts on the things there (placed, generated or made in play) | Each key a handler or an expression reads; a menu's and a grid cursor's keys |
+| Patrol, a path, Wander, Jumper | Things that ought to act with no key pressed |
+| Turns being taken, a menu or cursor up, or paused from the start | The level waits for the player: nothing moving is right |
+
+**What is a failure** (kept few, so that each can be trusted):
+- A character's own movement keys never changed its place (turning doesn't count). Not judged while a menu or turns have the keys.
+- A Shooter's key changed nothing.
+- Everything set to act alone stood still and nothing else happened. One of several standing still is a note.
+- In every run, whatever was pressed, a steered character died or was put back, or the level started over, within 2 s.
+- The level was won within 1 s with no key pressed.
+- A place or speed that is no number; 500 more things than at the start.
+
+**What is never a failure:** nothing happening by itself in a level where nothing is set to; a key for some places only (a ladder's Up) doing nothing where it was tried; a level that takes turns, has a menu up or is paused, waiting.
+
+**What a caller who knows the kind of game asks:** `probeUnmet(report, { keys, byItself })` lists what of that wasn't seen. A shooter's caller asks for its fire key and for things acting by themselves, so moving alone is not enough; a tactics game's caller asks for neither. The tests use it for every family now; the real-AI evaluation (V1.5) is its next user.
+
+**Bounded and repeatable.**
+- A budget in seconds of the game's own time (default 90): the same on every machine. What doesn't fit is listed as not tried.
+- A seed (default 1) for everything random in the level. The same game, seed and budget give the same report.
+- A stop in real time (default 6 s) for a level too slow to play, said when it stops a probe.
+- It leaves the game and `Math.random` as they were.
+- It takes 0.05 to 0.5 s for the games of the regression suite, 1.3 s for the roguelike starter.
+
+**Where it shows.**
+- **Debug tab → Play check:** "Check by playing" runs it on the level and lists its lines by part, with the game's own key names. An error or a failure has "✦ Fix". After a change it is marked as older than the game.
+- **The AI:** `context.debug.playCheck` (the lines, the seed, whether the game changed since, and what the check doesn't say), only when the user ran one. One line in the debugging topic says what it is.
+- **Not automatic.** It is not run after a build, and a failure is not sent back to the AI by itself: both cost time or tokens on every build, and whether they pay is for the real-AI evaluation (V1.5) to measure. V1.7 is decided with that.
+
+**What it reported.**
+
+| Games | Result |
+|---|---|
+| 14 games of every family (the regression suite's and the starters) | No error, no failure; each shows what its kind is asked for |
+| 7 games saved by earlier versions | No error, no failure |
+| 13 games broken on purpose | Each flagged in its part |
+| A game paused at a title until Jump | First wrongly failed for its patrol standing still; found by its test and corrected: a paused level waits |
+
+**Tests** (`runtime/playProbe.test.ts`, 39): every family with its expectations; saved games; a shooter without its gun (moves, and that is said not to be enough); turn-based and still games not failed for waiting; who listens, by source; a key only after another; one patrol shut in (note) and all of them (failure); a runtime error only a key brings out; a level that isn't there; a movement model that isn't there; a character that only turns; stuck paused; lost at once; won at once; things made without end; the engine stopping, a place that is no number, a level that doesn't repeat, a model that doesn't declare its keys; the same seed twice; the budget; too slow; a room template; no validator (uncertain stays uncertain; no verdict words); the AI's context. Browser: the Debug tab's check on a game seen from above, the same game broken, its failure sent to the AI and gone after the fix.
+
+**Limitations.**
+- **It starts at the level's start and stays near it.** Nothing later in a level is reached, so nothing there is seen.
+- **Keys are tried one at a time** (and once at random). A move needing two keys together, or a sequence deeper than one opening key, is not looked for.
+- **One seed by default.** A level whose first seconds differ much by chance is seen once.
+- **A key for some places only can't be judged:** it is reported as doing nothing where it was tried, with no blame.
+- **For a game made of scripts, what ought to happen by itself is not known:** the report says what did, and which scripts act by time. Only patrols, paths, wandering and hopping are expected to move.
+- **A character moved by a script, not a movement model, is not checked for being movable.**
+- **What a player could notice is read from the game's state, not its picture:** a change that is only an animation frame is not seen.
+- **Only the keys.** The runtime has no mouse or touch input of its own to probe; touch buttons press the same actions, and are still not tested on a device.
+- **It runs on the page's own thread:** the editor waits up to about a second.

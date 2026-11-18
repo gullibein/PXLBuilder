@@ -6,7 +6,7 @@
  * A new model or ability is a registered object: nothing in the runtime changes.
  */
 import type { Box } from '../physics';
-import type { InputView } from '../input';
+import type { Action, InputView } from '../input';
 import type { Ladder, RuntimeEntity } from '../runtime';
 import type { EnginePart } from '../../core/script/language';
 
@@ -72,6 +72,12 @@ export interface LocomotionModel {
   answersTo: string[];
   /** It floats: no gravity pulls it (seen from above); Jump also fires; nothing lands on it. */
   floats: boolean;
+  /**
+   * The keys it reads: `move` wherever the character is, `sometimes` only at certain places (a ladder, water, a
+   * platform to drop through). For anything that asks which keys ought to do something (the play probe); a model
+   * that doesn't say is not judged on it.
+   */
+  keys?: { move: Action[]; sometimes: Action[] };
   /** Moves the character for one step, calling the abilities' hooks at its points. */
   step(ctx: MovementContext, abilities: readonly Ability[]): void;
   /** The states it is in now (grounded, airborne, climbing…). */

@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { diagnoseLevel, type Problem } from '../../core/debug/diagnose';
 import type { PlayEvent, PlayReport } from '../../core/debug/playReport';
+import { PROBE_LIMITS, probeLines, type ProbeAction, type ProbeReport } from '../../core/debug/probeReport';
+import { controlsOf, keyLabel } from '../../core/model/controls';
+import { probeLevel } from '../../runtime/playProbe';
 import { eventRegistry } from '../../core/logic/vocabulary';
 import type { Id } from '../../core/types';
 import { contextKey } from '../../core/ai/context';
@@ -64,6 +67,7 @@ export function DebugPanel() {
           ))}
         </ul>
       </section>
+      <PlayCheck />
       <section>
         <h4 className="debug-head">
           Last play
@@ -110,6 +114,89 @@ function Dungeons({ report, sceneId }: { report: PlayReport; sceneId: Id }) {
           </span>
         </li>
       ))}
+    </ul>
+  );
+}
+
+/**
+ * "Check by playing": the editor plays the level by itself for a short time (the play probe) and says what it saw,
+ * its four parts apart: runtime errors, what each key changed, what happens with no key pressed, plain failures.
+ * Only when asked (it takes a moment); what it found wrong can be sent to the AI to fix.
+ */
+function PlayCheck() {
+  const scene = useEditor(getActiveScene);
+  const project = useEditor((s) => s.project);
+  const lastProbe = useEditor((s) => s.lastProbe);
+  const [busy, setBusy] = useState(false);
+  const report = lastProbe && lastProbe.report.sceneId === scene.id ? lastProbe.report : null;
+  const run = () => {
+    setBusy(true);
+    // (After the button shows "Playing…": the check itself keeps the page busy for a moment.)
+    setTimeout(() => {
+      const { project: now, activeSceneId, setLastProbe } = useEditor.getState();
+      try {
+        setLastProbe(probeLevel(now, activeSceneId, componentRegistry), now);
+      } finally {
+        setBusy(false);
+      }
+    }, 30);
+  };
+  return (
+    <section data-testid="play-check">
+      <h4 className="debug-head">
+        Play check
+        {report && (
+          <span className="muted">
+            {' '}
+            · {Math.round(report.seconds.played)} s played by the editor{lastProbe!.project !== project ? ' · the game changed since' : ''}
+          </span>
+        )}
+      </h4>
+      {!report && <p className="muted">The editor plays the level by itself for a short time, with no key and with each key the level listens to, and says what it saw.</p>}
+      {report && <ProbeLines report={report} sceneId={scene.id} />}
+      <div className="ask-row">
+        <button className="ask-chip" data-testid="probe-run" disabled={busy} onClick={run}>
+          {busy ? 'Playing…' : report ? '▶ Check again' : '▶ Check by playing'}
+        </button>
+      </div>
+      {report && <p className="muted small" data-testid="probe-limits">{PROBE_LIMITS}</p>}
+    </section>
+  );
+}
+
+const PROBE_PARTS: Record<ReturnType<typeof probeLines>[number]['part'], string> = { runs: 'Runs', inputs: 'Keys', by_itself: 'By itself', failures: 'Failures', notes: 'Seen', unjudged: 'Not judged' };
+
+function ProbeLines({ report, sceneId }: { report: ProbeReport; sceneId: string }) {
+  const controls = useEditor((s) => s.project.settings.controls);
+  const lines = useMemo(() => {
+    const bound = controlsOf(controls);
+    // (The action with the game's key for it: "Left (←)", "Special (Shift)".)
+    const key = (a: ProbeAction) => (bound[a]?.includes('ShiftLeft') && bound[a].includes('ShiftRight') ? 'Shift' : bound[a]?.[0] ? keyLabel(bound[a][0]) : '');
+    const name = (a: ProbeAction) => `${a[0].toUpperCase()}${a.slice(1)}${key(a) ? ` (${key(a)})` : ''}`;
+    return probeLines(report, name);
+  }, [report, controls]);
+  return (
+    <ul className="problems" data-testid="probe-lines">
+      {lines.map((l, i) => {
+        // (A runtime error or a plain failure: something wrong. A key that did nothing though something always listens: worth a look.)
+        const wrong = l.ok === false && (l.part === 'runs' || l.part === 'failures');
+        const severity = wrong ? 'error' : l.ok === false ? 'warning' : 'note';
+        return (
+          <li key={i} className={`problem ${severity}`} data-testid={`probe-${l.part}`} data-ok={String(l.ok)}>
+            <span className="problem-mark" aria-label={severity}>
+              {wrong ? '●' : l.ok === false ? '▲' : l.ok ? '✓' : 'i'}
+            </span>
+            <span className="grow">
+              <b>{PROBE_PARTS[l.part]}</b> · {l.text}
+            </span>
+            {wrong && (
+              <span className="problem-actions">
+                <FixButton problem={{ key: `probe:${l.text}`, severity: 'error', text: `(found by playing the level) ${l.text}`, entityIds: [] }} sceneId={sceneId} />
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

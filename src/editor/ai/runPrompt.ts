@@ -178,7 +178,7 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
     return quick.kind === 'connection-delete' ? deleteConnection(ctx) : runQuickCommand(ctx, quick);
   }
   const body: AIRequestBody = {
-    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random),
+    context: buildAIPayload(state.project, ctx, componentRegistry, editorSettingsPayload(state.layout), state.lastPlay && { report: state.lastPlay.report, changedSince: state.lastPlay.project !== state.project }, Math.random, state.lastProbe && { report: state.lastProbe.report, changedSince: state.lastProbe.project !== state.project }),
     request,
     // The conversation about this so far (since its last "New chat"; survives closing the card and reloading).
     history: chatHistory(conversationKey(ctx)),

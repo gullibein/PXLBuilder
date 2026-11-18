@@ -15,6 +15,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import { contextFromSelection, type AIContext } from '../core/ai/context';
 import type { PlayReport } from '../core/debug/playReport';
+import type { ProbeReport } from '../core/debug/probeReport';
 import { EMPTY_HISTORY, record, redo, undo, type History, type TransactionSource } from '../core/commands/history';
 import type { Operation } from '../core/commands/operations';
 import { componentRegistry } from '../core/components/builtin';
@@ -173,6 +174,8 @@ export interface EditorState {
   logicOpen: boolean;
   /** The last play session (for the Debug tab and the AI), with the project it played. Not saved. */
   lastPlay: { report: PlayReport; project: Project } | null;
+  /** The last play check of a level (the Debug tab's "Check by playing"), with the project it played. Not saved. */
+  lastProbe: { report: ProbeReport; project: Project } | null;
   /** Edit the game, or play it. Play runs a separate runtime built from the project; it never edits the project. */
   mode: 'edit' | 'play';
 
@@ -235,6 +238,7 @@ export interface EditorState {
   openSprites(definitionId: Id | null): void;
   setMode(mode: 'edit' | 'play'): void;
   setLastPlay(report: PlayReport, project: Project): void;
+  setLastProbe(report: ProbeReport | null, project: Project): void;
   logMessage(level: LogLevel, message: string): void;
   clearLog(): void;
 }
@@ -315,6 +319,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     flash: null,
     mode: 'edit',
     lastPlay: null,
+    lastProbe: null,
 
     edit(label, recipe, opts = {}) {
       const before = get().project;
@@ -359,6 +364,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         worldContext: null,
         dirty: true,
         lastPlay: null,
+        lastProbe: null,
         history: record(s.history, { label, source: 'user', time: Date.now(), before, after: project, changes: [], operations: [] }),
       }));
     },
@@ -375,6 +381,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         dirty: false,
         history: EMPTY_HISTORY,
         lastPlay: null,
+        lastProbe: null,
       });
     },
 
@@ -531,6 +538,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setLastPlay(report, project) {
       set({ lastPlay: { report, project } });
+    },
+
+    setLastProbe(report, project) {
+      set({ lastProbe: report ? { report, project } : null });
     },
 
     setMode(mode) {

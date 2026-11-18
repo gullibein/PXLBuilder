@@ -18,6 +18,7 @@ import { soundLength } from '../audio/sound';
 import { audibleNotes, isStepSound, type StepSound } from '../audio/steps';
 import type { ComponentRegistry } from '../components/registry';
 import { diagnoseLevel, type Problem } from '../debug/diagnose';
+import { PROBE_LIMITS, probeLines, type ProbeReport } from '../debug/probeReport';
 import { summarizePlay, type PlayReport, type PlaySummary } from '../debug/playReport';
 import { boundsOf, type CameraBounds, type CameraSettings } from '../model/camera';
 import { describeRelationship, describeRule } from '../logic/describe';
@@ -321,7 +322,15 @@ export interface AIPayload {
   debug: {
     problems: (Omit<Problem, 'key'> & { entities: string[] })[];
     lastPlay: (PlaySummary & { note: string }) | null;
+    /** The editor's own short play of the level (the play probe), when the user asked for one: what it saw, in lines. */
+    playCheck?: { seconds: number; seed: number; lines: string[]; note: string };
   };
+}
+
+/** The last play check (the play probe), as the editor kept it. */
+export interface LastProbe {
+  report: ProbeReport;
+  changedSince: boolean;
 }
 
 /** The last play session, as the editor kept it. */
@@ -386,7 +395,7 @@ function playerReach(project: Project, scene: Scene, registry: ComponentRegistry
   return { character: placed?.name ?? def!.name, jumpHeightPx: Math.floor(r.height), jumpHeightTiles: down(r.height), runningJumpDistancePx: Math.round(r.distance), runningJumpDistanceTiles: t(r.distance), speed: r.speed, ...(cells ? { cells } : {}) };
 }
 
-export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null, random?: () => number): AIPayload {
+export function buildAIPayload(project: Project, ctx: AIContext, registry: ComponentRegistry, editor?: EditorSettingsPayload, lastPlay?: LastPlay | null, random?: () => number, playCheck?: LastProbe | null): AIPayload {
   const scene = project.scenes.find((s) => s.id === ctx.sceneId) ?? project.scenes[0];
   const connection = ctx.kind === 'connection' ? scene.relationships.find((r) => r.id === ctx.relationshipId) : undefined;
   const endIds = (ref: EntityRef) => (ref.kind === 'entity' ? [ref.id] : []);
@@ -608,9 +617,17 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
         const b = briefs(s, new Set());
         return { id: s.id, name: s.name, map: levelMap(project, s.id, registry), entities: b.list, otherCopies: b.copies };
       }),
-    debug: debugPayload(project, scene, registry, targetIds, lastPlay ?? null),
+    debug: { ...debugPayload(project, scene, registry, targetIds, lastPlay ?? null), ...playCheckPayload(scene, playCheck ?? null) },
     coordinateSystem: 'Pixels. x grows to the right, y grows DOWNWARD (so gravity y > 0 pulls down, and "above" means smaller y). Entity positions are centers.',
   };
+}
+
+/** The play probe's report for this level, if there is one: its lines, and whether the game changed since. */
+function playCheckPayload(scene: Scene, probe: LastProbe | null): Pick<AIPayload['debug'], 'playCheck'> {
+  if (!probe || probe.report.sceneId !== scene.id) return {};
+  const r = probe.report;
+  const note = `${probe.changedSince ? 'The game was changed after this check: it shows the game as it was then.' : 'Nothing was changed since this check.'} ${PROBE_LIMITS}`;
+  return { playCheck: { seconds: r.seconds.played, seed: r.seed, lines: probeLines(r).map((l) => `${l.part}: ${l.text}`), note } };
 }
 
 function debugPayload(project: Project, scene: Scene, registry: ComponentRegistry, focus: Id[], lastPlay: LastPlay | null): AIPayload['debug'] {

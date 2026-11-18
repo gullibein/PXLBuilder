@@ -19,6 +19,7 @@ export const arcade: LocomotionModel = {
   id: 'arcade',
   answersTo: ['platformer'],
   floats: false,
+  keys: { move: ['left', 'right', 'jump'], sometimes: ['up', 'down'] },
   states: (e) => [e.grounded ? 'grounded' : 'airborne', ...(e.climbing ? ['climbing'] : []), ...(e.hanging ? ['hanging'] : []), ...(e.inLiquid?.swim ? ['swimming'] : [])],
   step(ctx: MovementContext, abilities: readonly Ability[]): void {
     const { e, input, dt, host } = ctx;

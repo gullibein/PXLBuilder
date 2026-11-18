@@ -10,6 +10,7 @@ export const topdown: LocomotionModel = {
   id: 'topdown',
   answersTo: ['topdown'],
   floats: true,
+  keys: { move: ['left', 'right', 'up', 'down'], sometimes: [] },
   states: (e) => [Math.abs(e.vx) > 1 || Math.abs(e.vy) > 1 ? 'walking' : 'standing'],
   step({ e, input, dt, host }, abilities): void {
     e.grounded = false;
