@@ -483,7 +483,8 @@ export function entityFrom(project: Project, r: ResolvedEntity, geometry: Readon
     baseGravity: typeof pb?.gravityScale === 'number' ? pb.gravityScale : 1,
     speedFactor: 1,
     collider,
-    controller: cc ? { movement: movementValues().includes(String(cc.movement)) ? String(cc.movement) : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
+    // (Its movement value as it is: one no model answers to is not turned into another, see locomotionFor.)
+    controller: cc ? { movement: typeof cc.movement === 'string' && cc.movement ? cc.movement : 'platformer', speed: Number(cc.speed), acceleration: Number(cc.acceleration), jumpForce: Number(cc.jumpForce), airControl: Number(cc.airControl) } : null,
     climbable: !!c.Climbable,
     liquid: c.Liquid
       ? {
@@ -626,6 +627,8 @@ export class Runtime {
   flip: { way: 'upside_down' | 'left_right'; t: number; items: { e: RuntimeEntity; fx: number; fy: number; tx: number; ty: number; dur: number; turns: boolean; falls: boolean; arrived?: boolean }[] } | null = null;
   /** How many level flips are in effect now, per way (an odd number: the level is mirrored). */
   flips = { upside_down: 0, left_right: 0 };
+  /** The flips done since the level started, in order: which way and around which line (to undo them for a place). */
+  private flipLines: { up: boolean; line: number }[] = [];
   /** Sound effects and music on (scripts switch them for the whole game: the play view keeps them across levels). */
   soundOn = true;
   musicOn = true;
@@ -720,16 +723,23 @@ export class Runtime {
       this.dungeon = built.built;
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry, this.geometry));
+    // The level is as it was made again: no flip is in effect or under way.
+    this.flip = null;
+    this.flips = { upside_down: 0, left_right: 0 };
+    this.flipLines = [];
     // Checkpoints kept for a level started again: who reached one starts there (a level built anew has other places:
-    // none is kept).
+    // none is kept). A Checkpoint object is found again in the level as rebuilt and gives the place itself; a place
+    // a script set was kept as it is in the level as made (kept(): before any flip).
     if (gen) this.kept.clear();
     for (const [id, at] of this.kept) {
       const e = this.entities.find((x) => x.base.id === id);
       if (!e) continue;
-      e.x = at.x;
-      e.y = e.prevY = at.y;
-      e.spawn = { x: at.x, y: at.y };
-      e.checkpoint = at.by;
+      const checkpoint = at.by ? this.entities.find((x) => x.id === at.by && x.base.components.Checkpoint) : undefined;
+      const place = checkpoint ? this.checkpointPlace(e, checkpoint) : at;
+      e.x = place.x;
+      e.y = e.prevY = place.y;
+      e.spawn = { x: place.x, y: place.y };
+      e.checkpoint = checkpoint ? checkpoint.id : null;
     }
     // Fog of war, seen by whoever has it (the player).
     const viewer = this.entities.find((e) => e.base.components.FogOfWar);
@@ -780,6 +790,10 @@ export class Runtime {
     });
     this.scripts.reset();
     this.gameplay.reset();
+    // A character whose movement model isn't there: said once, here (it ignores the movement keys: control()).
+    for (const e of this.entities) {
+      if (e.controller && !locomotionFor(e.controller.movement)) this.gameplay.emit('script_error', e, null, { script: 'Character Controller', message: `there is no movement model "${String(e.controller.movement)}" (there are: ${movementValues().join(', ')}): ${e.name} ignores the movement keys` });
+    }
     // Scripts can add to what was built (a key in a room, a boss before the stairs): the signal "level_built".
     if (gen) this.gameplay.emit('signal', null, null, { name: 'level_built' });
   }
@@ -1272,6 +1286,7 @@ export class Runtime {
     const levelTime = Math.max(0, ...items.filter((it) => !it.falls).map((it) => it.dur));
     for (const it of items) if (it.falls) it.dur = Math.min(it.dur, (levelTime || time) * FLIP_CARRY);
     this.flips[way]++;
+    this.flipLines.push({ up, line });
     if (time <= 0) {
       this.flip = { way, t: 0, items };
       this.endFlip();
@@ -1447,6 +1462,8 @@ export class Runtime {
    */
   private control(e: RuntimeEntity, input: InputView, dt: number): void {
     const model = locomotionFor(e.controller!.movement);
+    // (No such movement model: nothing steps it by the keys. Said once when the level starts: load.)
+    if (!model) return;
     model.step({ e, input, dt, host: this.host }, abilitiesFor(e, model));
   }
 
@@ -1475,12 +1492,12 @@ export class Runtime {
   private gravityOn(e: RuntimeEntity): boolean {
     if (!e.controller) return true;
     const model = locomotionFor(e.controller.movement);
-    return abilitiesFor(e, model).every((a) => a.gravity?.(e) !== false);
+    return !model || abilitiesFor(e, model).every((a) => a.gravity?.(e) !== false);
   }
 
   /** It moves without gravity (its model floats: seen from above). */
   private modelFloats(e: RuntimeEntity): boolean {
-    return !!e.controller && locomotionFor(e.controller.movement).floats;
+    return !!e.controller && locomotionFor(e.controller.movement)?.floats === true;
   }
 
   /**
@@ -1493,10 +1510,11 @@ export class Runtime {
     const model = locomotionFor(e.controller.movement);
     const input = this.lastInput;
     return {
-      model: model.id,
+      // (No such model: named as the character has it, with no states of its own.)
+      model: model?.id ?? String(e.controller.movement),
       velocity: { x: e.vx, y: e.vy },
       facing: e.facing,
-      heading: model.floats ? { ...e.heading } : null,
+      heading: model?.floats ? { ...e.heading } : null,
       states: motionStates(e),
       intent: input
         ? { x: (input.isDown('right') ? 1 : 0) - (input.isDown('left') ? 1 : 0), y: (input.isDown('down') ? 1 : 0) - (input.isDown('up') ? 1 : 0), jump: input.isDown('jump') }
@@ -2059,7 +2077,8 @@ export class Runtime {
     if (e.spawn.x === at.x && e.spawn.y === at.y && e.checkpoint === (by?.id ?? null) && this.kept.has(e.base.id) === keep) return;
     e.spawn = { x: at.x, y: at.y };
     e.checkpoint = by?.id ?? null;
-    if (keep) this.kept.set(e.base.id, { x: at.x, y: at.y, by: by?.id ?? null });
+    // (Kept as a place in the level as made: a level started again is not flipped.)
+    if (keep) this.kept.set(e.base.id, { ...this.beforeFlips(at), by: by?.id ?? null });
     else this.kept.delete(e.base.id);
     this.gameplay.emit('checkpoint_reached', e, by, { x: Math.round(at.x), y: Math.round(at.y) });
   }
@@ -2068,11 +2087,28 @@ export class Runtime {
   reachCheckpoint(e: RuntimeEntity, checkpoint: RuntimeEntity): void {
     if (e.checkpoint === checkpoint.id) return;
     const c = checkpoint.base.components.Checkpoint as { heal?: unknown; keepOnRestart?: unknown } | undefined;
-    // On the checkpoint: its middle, or standing on its ground where things fall (feet at its bottom edge).
-    const [own, its] = [boxOf(e), boxOf(checkpoint)];
-    const y = !this.floats(e) && own && its ? its.y + its.hh - (own.y + own.hh - e.y) : checkpoint.y;
-    this.setCheckpoint(e, { x: checkpoint.x, y }, checkpoint, c?.keepOnRestart === true);
+    this.setCheckpoint(e, this.checkpointPlace(e, checkpoint), checkpoint, c?.keepOnRestart === true);
     if (c?.heal === true && e.health) e.health.current = e.health.max;
+  }
+
+  /** Where an entity comes back at a Checkpoint: its middle, or standing on its ground where things fall (feet at its bottom edge). */
+  private checkpointPlace(e: RuntimeEntity, checkpoint: RuntimeEntity): Vec2 {
+    const [own, its] = [boxOf(e), boxOf(checkpoint)];
+    return { x: checkpoint.x, y: !this.floats(e) && own && its ? its.y + its.hh - (own.y + own.hh - e.y) : checkpoint.y };
+  }
+
+  /**
+   * A place in the level as it is now, as it was before the flips done since the level started: each flip mirrors
+   * around its own line, so they are undone in reverse order, the last first.
+   */
+  private beforeFlips(at: Vec2): Vec2 {
+    let { x, y } = at;
+    for (let i = this.flipLines.length - 1; i >= 0; i--) {
+      const f = this.flipLines[i];
+      if (f.up) y = 2 * f.line - y;
+      else x = 2 * f.line - x;
+    }
+    return { x, y };
   }
 
   /** Where the camera is (without shake). */

@@ -301,6 +301,35 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('progression test game')) {
+    // Three short levels (a floor, the player, a goal close by). Level 1 has a door far to the left that goes on to
+    // Level 3 (go_to_level, named in lower case); Level 3 has one there that starts the whole game again.
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const door = (ref, name, step) => [
+      { op: 'create_definition', ref, name, description: name, category: 'Gameplay', tags: [], components: [{ component: 'Sprite', propsJson: '{"width":32,"height":32,"color":"#e8c34a"}' }, { component: 'Collider', propsJson: '{"size":{"x":28,"y":28},"isTrigger":true}' }] },
+      { op: 'set_script', target: 'definition', id: ref, scriptJson: JSON.stringify({ name, description: name, vars: [], handlers: [{ when: { on: 'contact' }, if: "has_tag(other, 'player')", do: [step] }] }) },
+    ];
+    const level = (sceneId, doorRef) => [
+      { op: 'draw_tiles', sceneId, definitionRef: lib('Platform'), rects: [{ col: -8, row: 1, width: 14, height: 1 }] },
+      { op: 'place_instance', sceneId, definitionRef: lib('Player'), x: 16, y: 16, name: null, ref: null },
+      { op: 'place_instance', sceneId, definitionRef: lib('Goal'), x: 112, y: 16, name: null, ref: null },
+      ...(doorRef ? [{ op: 'place_instance', sceneId, definitionRef: doorRef, x: -208, y: 16, name: null, ref: null }] : []),
+    ];
+    return {
+      kind: 'apply',
+      message: 'Made three short levels with a door on and a door back to the start.',
+      changes: ['Level 1: a goal, a door on to Level 3', 'Level 2: a goal', 'Level 3: a goal, a door that starts the game again'],
+      operations: [
+        ...door('skip', 'Skip door', { do: 'go_to_level', level: 'level 3' }),
+        ...door('again', 'Again door', { do: 'restart_game' }),
+        ...level(body.context.level.id, 'skip'),
+        { op: 'create_level', ref: 'L2', name: 'Level 2' },
+        ...level('L2', null),
+        { op: 'create_level', ref: 'L3', name: 'Level 3' },
+        ...level('L3', 'again'),
+      ],
+    };
+  }
   if (req.includes('with three levels')) {
     // Two new levels, each with its own player, a route and a goal.
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
@@ -2928,8 +2957,9 @@ try {
     await check(async () => (await dlg.getByTestId('profile-genre').locator('select').inputValue()) === 'puzzle' && (await dlg.getByTestId('profile-problem').count()) === 0, 'one system changed on its own (the kind of level: puzzle)');
     await dlg.getByTestId('profile-movement').locator('select').selectOption('topdown');
     await check(async () => (await dlg.getByTestId('profile-problem').innerText()).includes('needs view:top or view:iso') && (await dlg.getByTestId('profile-movement').locator('select').inputValue()) === 'arcade', "a change that doesn't go together is refused, saying why (walking from above in a side view)");
+    await check(async () => (await dlg.getByTestId('profile-player-0').innerText()).includes('Player: arcade') && !(await dlg.getByTestId('profile-ability-wall_jump').isChecked()), 'the profile lists each player-controlled character with how it really moves and its own abilities (Player: run and jump, no wall jump yet)');
     await dlg.getByTestId('profile-ability-wall_jump').check();
-    await check(async () => (await dlg.getByTestId('profile-done').innerText()).includes('wall_jump'), 'an ability is switched on in the profile (wall jump): the player gets it');
+    await check(async () => (await dlg.getByTestId('profile-done').innerText()).includes('wall_jump') && (await dlg.getByTestId('profile-ability-wall_jump').isChecked()), 'an ability is switched on for that character (wall jump): the player gets its component, and the profile shows it');
     await check(async () => (await dlg.getByTestId('profile-camera-follow').isChecked()) && !(await dlg.getByTestId('profile-camera-rooms').isChecked()), "the profile shows the camera's behaviours (following; no rooms yet)");
     await dlg.getByTestId('profile-camera-rooms').check();
     await check(async () => (await dlg.getByTestId('profile-camera-rooms').isChecked()) && (await dlg.getByTestId('profile-camera-follow').isChecked()) && (await dlg.getByTestId('profile-problem').count()) === 0, 'a camera behaviour is switched on in the profile (rooms: camera zones), following kept');
@@ -5761,6 +5791,91 @@ try {
     await pp.getByTestId('dock-library').click();
     await check(async () => (await pp.getByTestId('groups-toggle').getAttribute('aria-expanded')) === 'false', 'and that is remembered');
     await phone.close();
+  }
+
+  step = 'progression: a branch, the game again, the end, and an exported game across its levels';
+  {
+    // The game session carries these out (runtime/session.ts); here they are seen in the real play screen, and in
+    // an exported game, which is the same screen and session on its own page.
+    const prc = await browser.newContext({ viewport: { width: 1400, height: 860 }, acceptDownloads: true });
+    const pr = await prc.newPage();
+    pr.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    pr.on('console', (m) => m.type() === 'error' && !/401|fonts\.(googleapis|gstatic)\.com/.test(m.text() + (m.location()?.url ?? '')) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+    await pr.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await pr.goto(URL);
+    await startPlatformer(pr);
+    await pr.getByTestId('global-prompt-toggle').click();
+    const gp = pr.getByTestId('global-prompt');
+    await gp.getByTestId('prompt-input').fill('Make a progression test game');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await pr.keyboard.press('Escape');
+    /** Plays on a page with a play canvas: what level it is in, where the player is, the banner; a key held anew. */
+    const playing = (pg) => {
+      const pc = pg.getByTestId('play-canvas');
+      return {
+        level: async () => pc.getAttribute('data-level'),
+        x: async () => Number(((await pc.getAttribute('data-player')) ?? '0').split(',')[0]),
+        banner: async () => ((await pg.getByTestId('hud-banner').count()) ? pg.getByTestId('hud-banner').innerText() : ''),
+        hold: async (key) => {
+          for (const k of ['ArrowLeft', 'ArrowRight']) await pg.keyboard.up(k);
+          if (key) await pg.keyboard.down(key);
+        },
+      };
+    };
+    await pr.getByTestId('play').click();
+    const ed = playing(pr);
+    await check(async () => (await ed.level()) === 'Level 1', 'the test game plays from Level 1');
+    // go_to_level: the door far to the left leads on to Level 3, past Level 2.
+    await ed.hold('ArrowLeft');
+    await check(async () => (await ed.level()) === 'Level 3', 'go_to_level (a door in Level 1, the level named in lower case): on to Level 3, past Level 2');
+    await check(async () => Math.abs((await ed.x()) - 16) < 2, '(at its start, standing still: the keys were let go)');
+    // restart_game: Level 3's door starts the whole game again.
+    await ed.hold('ArrowLeft');
+    await check(async () => (await ed.level()) === 'Level 1', 'restart_game (a door in Level 3): the first level again');
+    await ed.hold(null);
+    // The levels in their order, to the end of the game.
+    await ed.hold('ArrowRight');
+    await check(async () => (await ed.banner()).includes('Level complete!'), 'to the goal: "Level complete!"');
+    await check(async () => (await ed.level()) === 'Level 2', 'then Level 2 (the next in order)');
+    await check(async () => (await ed.level()) === 'Level 3', 'won too (the key still held): Level 3');
+    await check(async () => (await ed.banner()).includes('You finished the game!'), 'the last level won: "You finished the game!"');
+    const still1 = await ed.x();
+    await pr.waitForTimeout(700);
+    await check(async () => (await ed.x()) === still1 && (await ed.level()) === 'Level 3' && (await ed.banner()).includes('You finished the game!'), 'and the game stands still there (nothing follows the last level)');
+    await ed.hold(null);
+    await pr.screenshot({ path: `${OUT}/12k-game-finished.png` });
+    await pr.getByTestId('play').click();
+    // The same game exported: one file, played on its own page, across its levels to the end.
+    await pr.getByTestId('project-menu').click();
+    await pr.getByTestId('menu-export-game').click();
+    if (await pr.getByTestId('export-target-web').count()) await pr.getByTestId('export-target-web').check();
+    const [dl] = await Promise.all([pr.waitForEvent('download'), pr.getByTestId('export-game-confirm').click()]);
+    const file = `${process.cwd()}/${OUT}/exported-progression.html`;
+    await dl.saveAs(file);
+    const xp = await prc.newPage();
+    const exportErrors = [];
+    xp.on('pageerror', (e) => exportErrors.push(e.message));
+    await xp.goto(`file://${file}`);
+    await xp.getByTestId('play-canvas').waitFor();
+    const ex = playing(xp);
+    await check(async () => (await ex.level()) === 'Level 1', 'the exported game starts at its first level');
+    await ex.hold('ArrowRight');
+    await check(async () => (await ex.banner()).includes('Level complete!'), 'exported: the goal reached, "Level complete!"');
+    await check(async () => (await ex.level()) === 'Level 2', 'exported: the next level starts (a level change in the exported game)');
+    await check(async () => (await ex.level()) === 'Level 3', 'exported: and the one after');
+    await check(async () => (await ex.banner()).includes('You finished the game!'), 'exported: the last level won, "You finished the game!"');
+    // And its scripts' own level changes: again from the start, by the door on to Level 3 and the door back.
+    await xp.reload();
+    await xp.getByTestId('play-canvas').waitFor();
+    await ex.hold('ArrowLeft');
+    await check(async () => (await ex.level()) === 'Level 3', 'exported: go_to_level leads on to Level 3');
+    await ex.hold('ArrowLeft');
+    await check(async () => (await ex.level()) === 'Level 1', 'exported: restart_game starts the first level again');
+    await ex.hold(null);
+    await check(exportErrors.length === 0, `exported: no errors on its page${exportErrors.length ? ': ' + exportErrors.join(' | ') : ''}`);
+    await xp.screenshot({ path: `${OUT}/12l-exported-levels.png` });
+    await prc.close();
   }
 
   step = 'console errors';

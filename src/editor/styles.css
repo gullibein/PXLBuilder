@@ -409,3 +409,6 @@
 .profile-state.incompatible, .profile-problem { color: var(--warn, #e5534b); margin: 0; }
 .profile-kits .chip { padding: 3px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12px; font-weight: 600; }
 .profile-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.profile-players { display: flex; flex-direction: column; gap: 6px; }
+.profile-player { display: flex; flex-direction: column; gap: 3px; }
+.profile-player-name { font-size: 12px; font-weight: 600; }

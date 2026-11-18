@@ -18,6 +18,7 @@ import { modules, type AbilityModule, type GeneratorModule, type KitModule, type
 import { presetById, PRESETS } from './presets';
 import { gameProfileSchema, type GameProfile } from './profileSchema';
 import { inferProfileFromObjects, kitOfObjects } from './infer';
+import { abilitiesInUse, abilityOn, describeMovement, gameFacts, movementNotes, viewNotes, type GameFacts } from './actual';
 
 // (Through JSON: profiles are plain data, and this reads an Immer draft as well.)
 const cloneValue = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -41,13 +42,26 @@ export function kitOf(project: Pick<Project, 'definitions' | 'settings'>, _regis
  * it was made from. Never written by this: a game gets a stored profile when the user or the AI chooses one, or when
  * it is made from a preset.
  */
-export function inferProfile(project: Pick<Project, 'definitions' | 'settings'>, _registry?: ComponentRegistry): GameProfile {
-  return inferProfileFromObjects(project);
+export function inferProfile(project: Pick<Project, 'definitions' | 'settings'> & Partial<Pick<Project, 'scenes'>>, registry?: ComponentRegistry): GameProfile {
+  return withAbilities(inferProfileFromObjects(project), project, registry);
 }
 
-/** The game's profile: the stored one, else worked out from the game. */
+/**
+ * A profile with the abilities the game's players actually have (engine/actual.ts): abilities are components on
+ * characters, never a second list to keep in step, so whatever a profile had stored for them is not read.
+ */
+function withAbilities(p: GameProfile, project: Pick<Project, 'definitions'> & Partial<Pick<Project, 'scenes'>>, registry?: ComponentRegistry): GameProfile {
+  const abilities = abilitiesInUse(gameFacts({ definitions: project.definitions, scenes: project.scenes ?? [] }, registry));
+  return { ...p, movement: { ...p.movement, abilities } };
+}
+
+/**
+ * The game's profile: the stored one, else worked out from the game. What it declares (the view, the movement
+ * model, geometry, camera, generators, turns, progression) is as chosen; its abilities are the players' own.
+ */
 export function profileOf(project: Project, registry: ComponentRegistry): GameProfile {
-  return storedGameProfile(project) ?? inferProfile(project, registry);
+  const stored = storedGameProfile(project);
+  return stored ? withAbilities(stored, project, registry) : inferProfile(project, registry);
 }
 
 /** The modules a profile selects, each with the system it is for. */
@@ -103,13 +117,15 @@ export function checkProfile(p: GameProfile): Compatibility {
  */
 export function checkGame(project: Project, registry: ComponentRegistry): Compatibility {
   const p = profileOf(project, registry);
-  const base = checkProfile(p);
+  // (Abilities are judged on the character that has them, below: not against the declared movement model.)
+  const base = checkProfile({ ...p, movement: { ...p.movement, abilities: [] } });
   if (base.state === 'incompatible') return base;
+  const facts = gameFacts(project, registry);
   const provided = new Set(selected(p).flatMap((s) => modules.get(s.kind, s.id)?.provides ?? []));
   const kindsOf = (kind: ModuleKind) => modules.list<TurnsModule>(kind).map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
   // (Generators: every one registered, the engine's and any added, with what each requires.)
   const generators = modules.list<GeneratorModule>('generator').map((g) => ({ id: g.id, version: g.version, describe: g.describe, requires: g.requires, fallback: g.fallback, without: g.without }));
-  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators), ...turnNotes(p, project, provided, kindsOf('turns')), ...(progressionIds().includes(p.progression.model) ? [] : [`progression '${p.progression.model}': nothing carries it out, so a won level is followed by nothing: the game stops there`])];
+  const notes = [...(base.state === 'degraded' ? base.notes : []), ...geometryNotes(p, project.definitions, provided), ...cameraNotes(p, project.definitions, provided), ...generatorNotes(p, project.scenes, provided, generators), ...turnNotes(p, project, provided, kindsOf('turns')), ...movementNotes(p, facts), ...viewNotes(p, facts), ...(progressionIds().includes(p.progression.model) ? [] : [`progression '${p.progression.model}': nothing carries it out, so a won level is followed by nothing: the game stops there`])];
   return notes.length ? { state: 'degraded', notes } : { state: 'ok' };
 }
 
@@ -150,6 +166,7 @@ export function projectFromProfile(profile: GameProfile, registry: ComponentRegi
     for (const a of other.assets) if (!project.assets.some((x) => x.id === a.id) && text.includes(a.id)) project.assets.push(a);
   }
   applyMovement(project, profile);
+  applyView(project, profile);
   project.settings.profile = cloneValue(profile);
   return project;
 }
@@ -170,6 +187,22 @@ function applyMovement(project: Project, profile: GameProfile): void {
     if (cc && cc.movement !== loco.controller) cc.movement = loco.controller;
   }
 }
+
+/**
+ * The levels are seen as the profile's view says: their gravity and their projection (flat, or at an angle), every
+ * level alike. Only what differs is written.
+ */
+function applyView(project: Project, profile: GameProfile): void {
+  const view = modules.get<ViewModule>('view', profile.view);
+  if (!view) return;
+  for (const s of project.scenes) {
+    if (s.world.gravity.x !== view.gravity.x || s.world.gravity.y !== view.gravity.y) s.world.gravity = { ...view.gravity };
+    if (view.projection === 'iso' && s.world.view !== 'iso') s.world.view = 'iso';
+    if (view.projection === 'flat' && s.world.view !== undefined) delete s.world.view;
+  }
+}
+
+const abilityFits = (abilityId: string, modelId: string): boolean => abilityOn(abilityId, modelId).works;
 
 /** A change to a profile: systems to set (the rest stay), or a preset to take them from (the game's kits are kept). */
 export const profileChangeSchema = z
@@ -199,6 +232,8 @@ export function changedProfile(base: GameProfile, c: ProfileChange): GameProfile
     const preset = presetById(c.preset);
     if (!preset) throw new ModelError(`There is no preset "${c.preset}" (there are: ${PRESETS.map((x) => x.id).join(', ')})`);
     p = { ...cloneValue(preset.profile), kits: [...base.kits, ...preset.profile.kits.filter((k) => !base.kits.includes(k))], theme: base.theme };
+    // (A preset says nothing about abilities: the players keep theirs, as far as the preset's movement has them.)
+    p.movement.abilities = base.movement.abilities.filter((a) => abilityFits(a, p.movement.model));
   }
   const touched = Object.keys(c).some((k) => k !== 'preset');
   if (c.view) p.view = c.view;
@@ -250,8 +285,11 @@ export function setGameProfile(project: Project, change: ProfileChange, registry
   for (const id of [...added, ...removed]) {
     const ab = modules.get<AbilityModule>('ability', id)!;
     for (const d of project.definitions) {
-      if (!d.components.CharacterController) continue;
-      if (added.includes(id) && !d.components[ab.component]) d.components[ab.component] = registry.createDefault(ab.component, {});
+      const cc = d.components.CharacterController as { movement?: unknown } | undefined;
+      if (!cc) continue;
+      // (Given to the characters it works on: the others would only carry a component that does nothing.)
+      const model = modules.list<LocomotionModule>('locomotion').find((l) => l.controller === (cc.movement ?? 'platformer'));
+      if (added.includes(id) && !d.components[ab.component] && model && abilityFits(id, model.id)) d.components[ab.component] = registry.createDefault(ab.component, {});
       if (removed.includes(id)) delete d.components[ab.component];
     }
   }
@@ -259,7 +297,7 @@ export function setGameProfile(project: Project, change: ProfileChange, registry
   if (removed.length) done.push(`the player no longer has ${removed.join(', ')}`);
   if (next.view !== before.view) {
     const view = modules.get<ViewModule>('view', next.view)!;
-    for (const s of project.scenes) s.world.gravity = { ...view.gravity };
+    applyView(project, next);
     done.push(`levels seen ${next.view === 'side' ? 'from the side' : next.view === 'top' ? 'from above' : 'at an angle'} (gravity ${view.gravity.y})`);
   }
   for (const id of next.kits.filter((k) => !before.kits.includes(k))) {
@@ -304,14 +342,15 @@ export function profileChoices(): { presets: string[]; choices: Record<string, s
 }
 
 /** The profile in a line per system (the AI's context, the profile panel's summary). */
-export function describeProfile(p: GameProfile): string {
+export function describeProfile(p: GameProfile, facts?: GameFacts): string {
   const gen = `${p.generator.id ? `${p.generator.id}${p.generator.settings.genre ? ` (${String(p.generator.settings.genre)})` : ''}` : 'none'}${p.generator.also?.length ? `, also ${p.generator.also.join(', ')}` : ''}`;
   return [
     p.preset ? `preset ${p.preset}` : 'own profile',
     `view ${p.view}`,
     `time ${p.time}`,
     `turns ${p.turns?.join(', ') || 'none'}`,
-    `movement ${p.movement.model}${p.movement.abilities.length ? ` + ${p.movement.abilities.join(', ')}` : ''}`,
+    // (With the game's facts: how each player-controlled object really moves, or that none is.)
+    facts ? `movement ${p.movement.model} (declared); players: ${describeMovement(facts)}` : `movement ${p.movement.model}${p.movement.abilities.length ? ` + ${p.movement.abilities.join(', ')}` : ''}`,
     `geometry ${p.geometry.join(', ') || 'none'}`,
     `camera ${p.camera.join(', ') || 'still'}`,
     `kits ${p.kits.join(', ')}`,

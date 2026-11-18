@@ -10,13 +10,12 @@ import { createBuiltinRegistry } from '../../core/components/builtin';
 import { modules, type AbilityModule, type LocomotionModule } from '../../core/engine/modules';
 import { checkProfile, changedProfile, inferProfile, projectFromPreset, setGameProfile } from '../../core/engine/profile';
 import { presetById } from '../../core/engine/presets';
-import { ABILITY_COMPONENTS } from '../../core/engine/infer';
 import { setScript } from '../../core/script/mutations';
 import type { Project } from '../../core/types';
 import { mapLevel } from '../../regression/games/platformers';
 import { Player, varOf } from '../../regression/harness';
 import { Runtime } from '../runtime';
-import { abilityComponents, movementValues, registerAbility, registerLocomotion } from './index';
+import { abilityComponents, abilityWorksWith, movementValues, registerAbility, registerLocomotion } from './index';
 
 const registry = createBuiltinRegistry();
 const withAbilities = (p: Project, comps: Record<string, Record<string, unknown>>): Project =>
@@ -229,7 +228,8 @@ describe('the profile and the runtime agree', () => {
     const comps = abilityComponents();
     for (const a of modules.list<AbilityModule>('ability')) {
       expect(comps, a.id).toContain(a.component);
-      expect(ABILITY_COMPONENTS[a.component], a.id).toBe(a.id);
+      // (What the module says the ability needs is what the runtime ability works with: the report and play agree.)
+      expect(a.requires.filter((t) => t.startsWith('locomotion:')).flatMap((t) => t.split('|').map((x) => x.replace('locomotion:', ''))).sort(), a.id).toEqual([...abilityWorksWith(a.component)].sort());
     }
   });
 

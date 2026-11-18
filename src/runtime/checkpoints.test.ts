@@ -338,6 +338,90 @@ describe('F6c checkpoints and progression: other levels know nothing of them', (
   });
 });
 
+describe('checkpoints kept across a restart after the level was flipped (the level started again is not flipped)', () => {
+  /** The side level with a wider floor (so its mirror image has ground too) and both flags keeping on restart. */
+  const wide = () =>
+    sideLevel({ keepOnRestart: true }, (_d, place) => {
+      for (let x = -464; x < -144; x += 32) place('Platform', x, 48);
+    });
+  const flagAt = (g: ReturnType<typeof play>, x: number) => g.rt.entities.find((e) => e.name === 'Flag' && Math.abs(e.x - x) < 1);
+
+  it('a Checkpoint reached in the flipped level: started again, the player is at that flag where it is in the level as made (not at its mirror image)', () => {
+    const g = play(wide());
+    g.run(0.2);
+    // Left to right around x = 0: the flag made at 256 is now at -256.
+    expect(g.rt.flipLevel('left_right', 0, 0, 0)).toBe(true);
+    g.run(0.3);
+    expect(flagAt(g, -256)).toBeDefined();
+    walkTo(g, -250);
+    const reached = g.rt.entities.find((e) => e.id === g.player().checkpoint)!;
+    expect(Math.round(reached.x)).toBe(-256);
+    expect(Math.round(g.player().spawn.x)).toBe(-256);
+    g.rt.restart();
+    g.run(0.3);
+    // The level as made: that flag is at 256 again, and so is the player, standing.
+    expect(g.rt.flips).toEqual({ upside_down: 0, left_right: 0 });
+    expect(Math.round(g.rt.entities.find((e) => e.id === reached.id)!.x)).toBe(256);
+    expect(Math.round(g.player().x)).toBe(256);
+    expect(g.player().grounded).toBe(true);
+    expect(g.player().checkpoint).toBe(reached.id);
+    // And it comes back there after dying, as before the restart.
+    g.rt.respawn(g.player(), 'died');
+    expect(Math.round(g.player().x)).toBe(256);
+  });
+
+  it('two flips around different lines (the level ends up moved across): the flag is still found in the level as made', () => {
+    const g = play(wide());
+    g.run(0.2);
+    g.rt.flipLevel('left_right', 0, 0, 0);
+    g.rt.flipLevel('left_right', -64, 0, 0);
+    g.run(0.3);
+    // x → -x → -128 + x: everything is 128 to the left. The flag made at 160 is at 32.
+    expect(flagAt(g, 32)).toBeDefined();
+    walkTo(g, g.player().x < 32 ? 40 : 24);
+    expect(Math.round(g.rt.entities.find((e) => e.id === g.player().checkpoint)!.x)).toBe(32);
+    g.rt.restart();
+    g.run(0.3);
+    expect(Math.round(g.player().x)).toBe(160);
+    expect(g.player().grounded).toBe(true);
+  });
+
+  it('a place a script set, after three flips (across, upside down, across again around another line): undone in reverse order, the last first', () => {
+    const g = play(wide());
+    g.run(0.2);
+    // A thing that stays where it is put: the coin, made at (48, 16). Where it is after the flips is where the place is set.
+    const coin = () => g.rt.entities.find((e) => e.name === 'Coin')!;
+    const made = { x: coin().x, y: coin().y };
+    g.rt.flipLevel('left_right', 0, 0, 0);
+    g.rt.flipLevel('upside_down', 100, 0, 0);
+    g.rt.flipLevel('left_right', -64, 0, 0);
+    // x: 48 → -48 → -80; y: 16 → 184.
+    expect([Math.round(coin().x), Math.round(coin().y)]).toEqual([-80, 184]);
+    g.rt.setCheckpoint(g.player(), { x: coin().x, y: coin().y }, null, true);
+    g.rt.restart();
+    // (Before a step is played: exactly where it is put.)
+    expect([g.player().x, g.player().y]).toEqual([made.x, made.y]);
+    expect([g.player().spawn.x, g.player().spawn.y]).toEqual([made.x, made.y]);
+    // (Undone in the wrong order it would be at 48 + 2 × 128.)
+    expect(g.player().x).not.toBe(made.x + 256);
+  });
+
+  it('no flip: a kept place is the place itself (as before); and a restart ends a flip under way and what scripts read of it', () => {
+    const g = play(wide());
+    g.run(0.2);
+    g.rt.setCheckpoint(g.player(), { x: 96, y: 16 }, null, true);
+    g.rt.flipLevel('left_right', 0, 2, 0);
+    g.run(0.3);
+    expect(g.rt.flip).not.toBeNull();
+    g.rt.restart();
+    expect(g.rt.flip).toBeNull();
+    expect(g.rt.flips).toEqual({ upside_down: 0, left_right: 0 });
+    expect([g.player().x, g.player().y]).toEqual([96, 16]);
+    g.run(0.3);
+    expect(Math.round(g.rt.entities.find((e) => e.name === 'Coin')!.x)).toBe(48);
+  });
+});
+
 describe('F6c checkpoints: by hand and by prompt', () => {
   it('the component is an ordinary one (the inspector lists it; add_component adds it), and its guidance comes with requests about checkpoints', () => {
     expect(registry.get('Checkpoint')?.category).toBe('Gameplay');

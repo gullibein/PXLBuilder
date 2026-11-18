@@ -37,7 +37,8 @@ export function createScene(name: string): Scene {
 export function createLevelFor(project: Project, name: string, like: Scene | undefined = project.scenes[0]): Scene {
   const scene = createScene(name);
   if (!like) return scene;
-  scene.world = { ...scene.world, gravity: { ...like.world.gravity }, backgroundColor: like.world.backgroundColor };
+  // (Seen as that level is: its gravity, and at an angle when it is.)
+  scene.world = { ...scene.world, gravity: { ...like.world.gravity }, backgroundColor: like.world.backgroundColor, ...(like.world.view ? { view: like.world.view } : {}) };
   // (A plain copy: `like` may be a draft being edited, which structuredClone can't copy.)
   scene.camera = JSON.parse(JSON.stringify(like.camera));
   return scene;

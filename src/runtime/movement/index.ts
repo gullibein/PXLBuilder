@@ -32,9 +32,13 @@ registerAbility(wallJump);
 registerAbility(doubleJump);
 registerAbility(ledgeGrab);
 
-/** The model a Character Controller `movement` value answers to (unknown: arcade, as a platformer). */
-export function locomotionFor(movement: string | undefined): LocomotionModel {
-  return MODELS.find((m) => m.answersTo.includes(movement ?? 'platformer')) ?? arcade;
+/**
+ * The model a Character Controller `movement` value answers to, or null: there is no such model. Never another one
+ * in its place: a character whose model isn't there ignores the movement keys, and the runtime and the compatibility
+ * report say so. (No value set: the field's default, a platformer.)
+ */
+export function locomotionFor(movement: string | undefined): LocomotionModel | null {
+  return MODELS.find((m) => m.answersTo.includes(movement ?? 'platformer')) ?? null;
 }
 
 /** The movement values the models answer to (the Character Controller's choices). */
@@ -51,10 +55,16 @@ export function abilitiesFor(e: RuntimeEntity, model: LocomotionModel): Ability[
 export function motionStates(e: RuntimeEntity): string[] {
   if (!e.controller) return [];
   const model = locomotionFor(e.controller.movement);
+  if (!model) return [];
   return [...model.states(e), ...abilitiesFor(e, model).flatMap((a) => a.states?.(e) ?? [])];
 }
 
 export type { Ability, LocomotionModel, MotionSnapshot, MovementContext, MovementHost } from './types';
+
+/** The locomotion models the ability of a component works with (for checking the engine's ability modules agree). */
+export function abilityWorksWith(component: string): string[] {
+  return ABILITIES.find((a) => a.component === component)?.worksWith ?? [];
+}
 
 /** The components that give abilities (for checking the engine's ability modules agree). */
 export function abilityComponents(): string[] {

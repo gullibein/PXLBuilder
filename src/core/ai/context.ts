@@ -8,6 +8,7 @@
  */
 import { playGeneratorFor } from '../generation/playGenerators';
 import { checkGame, describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
+import { gameFacts } from '../engine/actual';
 import { panelOf, type ObjectPanel } from '../model/panels';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { EnginePart } from '../script/language';
@@ -494,7 +495,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       const p = profileOf(project, registry);
       // (What the game uses that its profile doesn't give, and what happens instead: only when there is something.)
       const check = checkGame(project, registry);
-      return { profile: describeProfile(p), stored: !!storedGameProfile(project), ...(check.state === 'degraded' ? { works: check.notes } : check.state === 'incompatible' ? { works: check.reasons } : {}), ...(ctx.kind === 'project' ? profileChoices() : {}) };
+      // (With how each player-controlled object really moves: abilities are the characters' own, never a list apart.)
+      return { profile: describeProfile(p, gameFacts(project, registry)), stored: !!storedGameProfile(project), ...(check.state === 'degraded' ? { works: check.notes } : check.state === 'incompatible' ? { works: check.reasons } : {}), ...(ctx.kind === 'project' ? profileChoices() : {}) };
     })(),
     ...(editor ? { editor } : {}),
     ...(connection ? { connection: { id: connection.id, text: describeRelationship(project, scene, connection), type: connection.type, source: connection.source, target: connection.target, params: connection.params, conditions: connection.conditions } } : {}),

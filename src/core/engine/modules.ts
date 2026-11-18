@@ -26,6 +26,8 @@ export interface ViewModule extends Module {
   kind: 'view';
   /** The levels' gravity in this view (a side view pulls down; seen from above, nothing falls). */
   gravity: { x: number; y: number };
+  /** How its levels are drawn and walked: flat, or at an angle (a level's own setting: world.view). */
+  projection: 'flat' | 'iso';
 }
 
 export interface LocomotionModule extends Module {
@@ -99,9 +101,9 @@ export interface ValidatorModule extends Module {
 export const modules = new ModuleRegistry();
 
 // ---------------------------------------------------------------- views and time
-modules.register<ViewModule>({ kind: 'view', id: 'side', version: 1, describe: 'Seen from the side: gravity pulls down, "up" is jumping', requires: [], provides: ['view:side'], gravity: { x: 0, y: 980 } });
-modules.register<ViewModule>({ kind: 'view', id: 'top', version: 1, describe: 'Seen from above: no gravity, walking in every direction', requires: [], provides: ['view:top'], gravity: { x: 0, y: 0 } });
-modules.register<ViewModule>({ kind: 'view', id: 'iso', version: 1, describe: 'Seen at an angle (isometric): blocks with height', requires: [], provides: ['view:iso'], gravity: { x: 0, y: 0 } });
+modules.register<ViewModule>({ kind: 'view', id: 'side', version: 1, describe: 'Seen from the side: gravity pulls down, "up" is jumping', requires: [], provides: ['view:side'], gravity: { x: 0, y: 980 }, projection: 'flat' });
+modules.register<ViewModule>({ kind: 'view', id: 'top', version: 1, describe: 'Seen from above: no gravity, walking in every direction', requires: [], provides: ['view:top'], gravity: { x: 0, y: 0 }, projection: 'flat' });
+modules.register<ViewModule>({ kind: 'view', id: 'iso', version: 1, describe: 'Seen at an angle (isometric): blocks with height', requires: [], provides: ['view:iso'], gravity: { x: 0, y: 0 }, projection: 'iso' });
 // (The engine's clock: fixed steps of real time, runtime.ts update. The one time model there is.)
 modules.register({ kind: 'time', id: 'realtime', version: 1, describe: 'Real time: everything moves all the time (turn-taking is chosen beside it)', requires: [], provides: ['time:realtime'] });
 // Turn-taking: a capability beside the clock (engine/turns.ts; the turn system itself: runtime/turns.ts).

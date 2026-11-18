@@ -2,6 +2,8 @@
 
 An audit of everything built in F1–F6, at commit `98cc3b1`. Nothing was changed for it: findings and recommendations only.
 
+**Afterwards:** A1, A2 and A3 were addressed before V1. What changed is in `engine-architecture-proposal.md` §23. The findings below are as they were found.
+
 **How it was done.** By reading the code and by running probes on the real engine: each representative game was built and asked for its profile, its compatibility report, its level builder and its reach; profiles and objects were then made to disagree, to see what the engine does and says. Findings marked **verified** were observed that way or read directly in the code. Findings marked **risk** are inferred and not demonstrated.
 
 ---

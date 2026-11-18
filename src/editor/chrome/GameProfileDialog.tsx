@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { checkGame, profileChoices, profileOf, setGameProfile, storedGameProfile, type ProfileChange } from '../../core/engine/profile';
-import { modules, type GeneratorModule } from '../../core/engine/modules';
+import { abilityOn, gameFacts, type PlayerFacts } from '../../core/engine/actual';
+import * as m from '../../core/model/mutations';
+import { modules, type AbilityModule, type GeneratorModule } from '../../core/engine/modules';
 import type { ModuleKind } from '../../core/engine/module';
 import { PRESETS } from '../../core/engine/presets';
 import { GENRES, THEMES } from '../../core/levelGen/profile';
@@ -42,6 +44,8 @@ export function GameProfileDialog() {
   const profile = profileOf(project, componentRegistry);
   const stored = !!storedGameProfile(project);
   const check = checkGame(project, componentRegistry);
+  // What the game actually is: each player-controlled character's own movement and abilities (engine/actual.ts).
+  const facts = gameFacts(project, componentRegistry);
   const { choices } = profileChoices();
   const close = () => {
     setProblem(null);
@@ -62,6 +66,25 @@ export function GameProfileDialog() {
       }
     });
     if (ok) setDone(notes.length ? notes.join('; ') : `${label}: done`);
+    else setProblem(refused ?? 'That change could not be made');
+  };
+  /** An ability given to, or taken from, one character: its component on that object (abilities are the character's own). */
+  const toggleAbility = (pl: PlayerFacts, id: string, has: boolean) => {
+    const component = modules.get<AbilityModule>('ability', id)!.component;
+    setProblem(null);
+    setDone(null);
+    const label = `${pl.name}: ${has ? 'no ' : ''}${id}`;
+    let refused: string | null = null;
+    const ok = useEditor.getState().edit(`Game profile: ${label}`, (p) => {
+      try {
+        if (has) m.removeDefinitionComponent(p, pl.id, component);
+        else m.addDefinitionComponent(p, pl.id, component, componentRegistry);
+      } catch (e) {
+        refused = (e as Error).message;
+        throw e;
+      }
+    });
+    if (ok) setDone(`${label}: done`);
     else setProblem(refused ?? 'That change could not be made');
   };
   const valueOf = (key: (typeof SYSTEMS)[number]['key']) => (key === 'movement' ? profile.movement.model : key === 'generator' ? (profile.generator.id ?? '') : profile[key]);
@@ -116,22 +139,44 @@ export function GameProfileDialog() {
             </label>
           )}
           <div className="profile-row" data-testid="profile-abilities">
-            <span className="profile-label">Abilities</span>
-            <span className="profile-kits">
-              {choices.abilities.map((id) => {
-                const on = profile.movement.abilities.includes(id);
-                return (
-                  <label key={id} className="profile-check" title={describe('ability', id)}>
-                    <input
-                      type="checkbox"
-                      data-testid={`profile-ability-${id}`}
-                      checked={on}
-                      onChange={() => change({ abilities: on ? profile.movement.abilities.filter((a) => a !== id) : [...profile.movement.abilities, id] }, `${on ? 'no' : ''} ${id.replace('_', ' ')}`.trim())}
-                    />
-                    {id.replace('_', ' ')}
-                  </label>
-                );
-              })}
+            <span className="profile-label">Players</span>
+            <span className="profile-players">
+              {facts.players.length === 0 && (
+                <span className="muted small" data-testid="profile-no-players">
+                  Movement is not in use: no object is player-controlled.
+                </span>
+              )}
+              {facts.players.map((pl, i) => (
+                <span key={pl.id} className="profile-player" data-testid={`profile-player-${i}`}>
+                  <span className="profile-player-name">
+                    {pl.level ? `${pl.name} (in ${pl.level})` : pl.name}: {pl.model ?? `no movement model "${pl.movement}"`}
+                  </span>
+                  {pl.level !== null ? (
+                    <span className="muted small">{pl.abilities.map((a) => (a.works ? a.id : `${a.id} (does nothing)`)).join(', ') || 'no abilities'} · a placed copy with its own settings: change it in the level</span>
+                  ) : (
+                    <span className="profile-kits">
+                      {choices.abilities.map((id) => {
+                        const has = pl.abilities.find((a) => a.id === id);
+                        const fit = abilityOn(id, pl.model);
+                        return (
+                          <label key={id} className="profile-check" title={has && !has.works ? `Needs ${has.needs} movement: on ${pl.name} it does nothing` : !has && !fit.works ? `Needs ${fit.needs ?? 'a movement model'} movement` : describe('ability', id)}>
+                            <input
+                              type="checkbox"
+                              // (The first character's boxes keep the plain name; the others add which character.)
+                              data-testid={i === 0 ? `profile-ability-${id}` : `profile-ability-${id}-${i}`}
+                              checked={!!has}
+                              disabled={!has && !fit.works}
+                              onChange={() => toggleAbility(pl, id, !!has)}
+                            />
+                            {id.replace(/_/g, ' ')}
+                            {has && !has.works ? ' (does nothing)' : ''}
+                          </label>
+                        );
+                      })}
+                    </span>
+                  )}
+                </span>
+              ))}
             </span>
           </div>
           <div className="profile-row" data-testid="profile-turns">

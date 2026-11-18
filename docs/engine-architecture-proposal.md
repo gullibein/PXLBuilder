@@ -1718,3 +1718,91 @@ Tests check that play and the report agree. The Game profile dialog has a Camera
 - **The momentum platformer** is still a to-do (V3), never counted as passing.
 - **No stepped time model.** The roguelike's world turns are its scripts'.
 - **The turn system's interface covers taking turns.** Menus, the cursor and paths are the kit's, for any game.
+
+## 23. Remediation after the F6 audit (before V1)
+
+The audit (`docs/architecture-audit-f6.md`) found that view, movement and abilities could be configured in the profile without controlling what runs, and that the two drifted apart in silence (A1); two bugs (A2); and gaps in the browser coverage of progression (A3). This section is what was changed for them. No registry was added, no file format changed, and no game whose profile and objects already agreed plays differently.
+
+### 23.1 Declared, actual, and the report that compares them
+
+**One owner for each fact.**
+
+| | Declared: the profile | Actual: read from the game (`core/engine/actual.ts`) | The report (`checkGame`) |
+|---|---|---|---|
+| **View** | `profile.view`: what the game is meant to be | Each level's own: drawn at an angle → `iso`; else it has gravity → `side`; else `top` | Names every level seen otherwise, and says what stays as the game's view has it |
+| **Movement model** | `profile.movement.model`: the model meant for the game's characters | Each player-controlled object's Character Controller | Names every character that moves otherwise, or whose model isn't there |
+| **Abilities** | **Not declared.** There is no list apart | The ability components on each character | Names an ability that does nothing on its character |
+| Geometry, camera, generators, turns, progression | The profile, and the runtime reads it (as before) | — | What the game uses that the profile doesn't make active (as before) |
+
+- **The runtime plays the actual facts,** as it always did: a character moves by its own Character Controller, a level by its own gravity and projection. Nothing is taken from the profile for these, and nothing is picked from "the first player".
+- **Abilities are the characters' own.** An ability exists only as a component on a character, where its settings are. `profileOf` computes the game's abilities from the players each time it is asked; whatever a stored profile holds for them is not read. Changing abilities through the profile still gives and takes the components.
+- **The view and the model stay declared.** They are intent for the whole game that other choices depend on (which geometry is supported, the level builder, the kit). A game that differs from them is not "corrected" to whichever value is found: the difference is reported, by name.
+- **Nothing new to register.** `gameFacts` finds models and abilities through the modules there are.
+
+**What the report now says** (each note says what runs):
+
+| Situation | Note |
+|---|---|
+| A character whose model differs from the declared one | "*Drone* moves by "topdown" (its Character Controller), not by the profile's "arcade": it plays as its own setting says" |
+| A movement value no model answers to | "*Player*: there is no movement model "hover", so it ignores the movement keys (nothing else moves it in its place)" |
+| An ability on a character whose model doesn't have it | "*Drone*: its Dash (dash) needs arcade movement, so on this character it does nothing" |
+| A level seen otherwise than the game | ""*Space*" is seen from above (no gravity), not as the game's view says (side): it plays as it is set, while what the game's view decides (ramps and jump-through platforms, camera zones, the level builder) stays as for "side"" |
+| No player-controlled object | No note. Movement is described as "not in use" |
+
+**Several players.** Each player-controlled object is listed by itself, with its own model and abilities. A placed copy that differs from its object (its own override) is listed too, with its level. The game's ability list is the union of abilities that *work* on someone. An ability chosen through the profile goes to the characters it works on; taken away, it leaves all of them.
+
+**Levels that differ.** The declared view and each level's actual view are kept apart. A differing level is reported; its geometry and camera support are **not** recomputed for it (decision 2 of the review: existing per-level behaviour is preserved, and the note says so).
+
+**No silent fallback for movement.**
+- `locomotionFor` returns null for a value no model answers to. Before, it returned the arcade model; and `buildEntity` rewrote the value to `platformer` before that.
+- Such a character ignores the movement keys. It is still in the level and still falls and collides.
+- The level starts. One `script_error` is logged when it does, naming the character and the models there are.
+- The report names it.
+
+### 23.2 Isometric
+
+- **The engine does support it:** a level's `world.view` makes the camera, the keys and the drawing isometric. The isometric starter and `set_world` use it.
+- **The bug:** changing the profile's view only wrote the levels' gravity. **Fixed:** the view module now also says its projection (`flat` or `iso`), and a view change writes both to every level, in both directions. A new game from a profile does the same.
+- **A second bug, found while planning and confirmed:** `createLevelFor` copied a level's gravity to a new level, but not its projection, so a new level in an isometric game was flat. **Fixed** (the editor's New level, the AI's `create_level`, the level builder).
+- **Isometric with run-and-jump movement** is refused when asked for, as before: nothing is written.
+- **One level set flat in an isometric game** is reported by name.
+
+### 23.3 Checkpoints and level flips
+
+- **The bug:** a kept checkpoint was a position in the level as it was when reached. A level started again is not flipped, so after `flip_level` the player started at the mirror image.
+- **A Checkpoint object** is now remembered by its id. When the level is rebuilt, it is found again and gives the place itself.
+- **A place set by a script** is kept as a place in the level as made: the flips done since the level started are recorded (which way, around which line), and the place is mapped back through them **in reverse order, the last first**.
+- **Also fixed:** starting a level again did not end a flip under way, nor reset what scripts read of it (`level_flipped`). It does now.
+
+### 23.4 Shown to the user and the AI
+
+- **The profile dialog** lists every player-controlled character with how it really moves and a box for each ability, which adds or removes that character's component. An ability that would do nothing on a character can't be switched on there; one that is on and does nothing says so. With no player-controlled object it says movement is not in use.
+- **The AI's context** has the same line: the declared model, then each player by itself.
+
+### 23.5 Tests
+
+| What | Where | Result |
+|---|---|---|
+| The audit's probes H1, H2, H2c, H3, H5, H6 | `core/engine/actual.test.ts` | Each now produces the note that says what runs, or (H2, H2c, H6) the profile is simply true |
+| Every preset and every game of the regression suite | same | "ok": nothing to report |
+| No player-controlled object (Tetris, Dr. Mario, tactics; a game with no controller at all) | same | "ok"; "not in use"; no runtime error |
+| Two players with different models and abilities; a placed copy with its own override; a preset chosen over abilities | same | Each listed by itself; an ability given only where it works |
+| Isometric: changed to and back, a new level, one level set flat, refused with run-and-jump | same | Played: the camera is isometric and "right" follows the screen |
+| Checkpoints after one flip, two flips around different lines, three flips in two directions (script-set), a flip under way at restart | `runtime/checkpoints.test.ts` | The player starts where the checkpoint is in the level as made |
+| Module and runtime agree on which model an ability works with | `runtime/movement/movement.test.ts` | — |
+| `go_to_level`, `restart_game`, the levels in order, "You finished the game!" | Browser, the editor's play | — |
+| The same game exported: levels in order to the end, `go_to_level`, `restart_game` | Browser, the exported file | — |
+| A visit and the way back; a checkpoint; R | Browser (from F6c) | Kept |
+| The profile dialog: each player's movement and abilities, an ability switched on for a character | Browser | — |
+
+Every golden from F2–F6 is unchanged.
+
+### 23.6 Limitations
+
+- **Geometry and camera support follow the game's declared view,** not a differing level's. Reported, not changed (by decision).
+- **A game saved without a stored profile** is still described from its starter kit. A top-down game built on the platformer starter now shows notes where it showed "ok". That is accurate; working such games out differently would change how they play.
+- **A declared view or model that the game left behind can only be brought back into agreement by changing the game or the declaration:** nothing does it automatically.
+- **The stored profile still has a field for abilities.** It is written and not read. It can go at the next format change.
+- **A Checkpoint object that a script spawned in play** is not in the rebuilt level: its place is then kept as a script-set place.
+- **A place set while a flip is still under way** is mapped back as if the flip were done.
+- **Unchanged from the audit:** the items under B and C there (the registries, T1, the old checker for hand-made levels, and the rest).
