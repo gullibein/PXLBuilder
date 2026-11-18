@@ -24,8 +24,10 @@ import { checkComponents } from '../core/serialization/serialize';
 import type { Project } from '../core/types';
 import { boulderDash, spaceShooter } from '../regression/games/action';
 import { mapLevel } from '../regression/games/platformers';
-import { InputState, type Action } from '../runtime/input';
-import { abilityComponents } from '../runtime/movement/index';
+import { CONTROL_ACTIONS, DEFAULT_CONTROLS, keyMap } from '../core/model/controls';
+import { keyHints } from '../editor/play/PlayView';
+import { InputState, PAD_BUTTONS, type Action } from '../runtime/input';
+import { abilityComponents, abilityKeys } from '../runtime/movement/index';
 import { Runtime } from '../runtime/runtime';
 import { abilityDefinitions, registerAbility, unregisterAbility } from './index';
 import type { AbilityDefinition } from './types';
@@ -219,12 +221,12 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     return { rt, input, e, run };
   }
 
-  it('walking right and Space: a quick roll the same way, about twice as fast, for its duration; then it walks on; no steering meanwhile', () => {
+  it('walking right and Shift (the special move\'s own key): a quick roll the same way, about twice as fast, for its duration; then it walks on; no steering meanwhile', () => {
     const g = play(arena());
     g.run(0.3, ['right']);
     const walking = g.e.vx;
     g.input.press('right');
-    g.input.press('jump');
+    g.input.press('special');
     const x0 = g.e.x;
     // (The roll begun, Up is held as well for the rest of it.)
     const rolled = g.run(1 / 120) + g.run(0.22 - 1 / 120, ['up']);
@@ -232,7 +234,7 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     // (Up was held all the while: the roll keeps its way.)
     expect(g.e.x - x0).toBeGreaterThan(walking * 0.22 * 1.8);
     expect(Math.abs(g.e.y - 16)).toBeLessThan(1);
-    g.input.release('jump');
+    g.input.release('special');
     g.run(0.3);
     expect(g.rt.motion(g.e)!.states).not.toContain('rolling');
     expect(g.e.vx).toBeCloseTo(walking, 0);
@@ -244,22 +246,22 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     g.run(0.2, ['down']);
     g.run(0.3);
     const y0 = g.e.y;
-    g.input.press('jump');
+    g.input.press('special');
     g.run(0.3);
-    g.input.release('jump');
+    g.input.release('special');
     expect(g.e.y - y0).toBeGreaterThan(60);
     // Again at once: still waiting.
     g.run(0.3);
     const y1 = g.e.y;
-    g.input.press('jump');
+    g.input.press('special');
     expect(g.run(0.2)).toBe(0);
-    g.input.release('jump');
+    g.input.release('special');
     expect(Math.abs(g.e.y - y1)).toBeLessThan(1);
     // After the wait: again.
     g.run(0.8);
-    g.input.press('jump');
+    g.input.press('special');
     expect(g.run(0.2)).toBeGreaterThan(0.15);
-    g.input.release('jump');
+    g.input.release('special');
     // Another key, a slower and longer roll.
     const other = play(arena('topdown', { key: 'interact', speed: 200, duration: 0.5 }));
     other.input.press('jump');
@@ -272,14 +274,14 @@ describe('the dodge roll: an ability for characters seen from above', () => {
   it('it can\'t be hurt while it rolls (and can again after); with dodges off, it can', () => {
     const g = play(arena());
     g.input.press('right');
-    g.input.press('jump');
+    g.input.press('special');
     g.run(0.1);
     expect(g.e.invincible).toBeGreaterThan(0);
     g.run(0.4);
     expect(g.e.invincible).toBe(0);
     const open = play(arena('topdown', { dodges: false }));
     open.input.press('right');
-    open.input.press('jump');
+    open.input.press('special');
     expect(open.run(0.1)).toBeGreaterThan(0.05);
     expect(open.e.invincible).toBe(0);
   });
@@ -292,7 +294,7 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     const g = play(p);
     g.input.press('right');
     g.run(0.2);
-    g.input.press('jump');
+    g.input.press('special');
     g.run(0.5);
     // (Its right side at the wall's left side: 112 - 16.)
     const body = g.rt.boxOf(g.e)!;
@@ -307,7 +309,7 @@ describe('the dodge roll: an ability for characters seen from above', () => {
       g.run(0.2, ['down']);
       const [x0, y0] = [g.e.x, g.e.y];
       g.input.press('down');
-      g.input.press('jump');
+      g.input.press('special');
       const rolled = g.run(0.22);
       return { dx: g.e.x - x0, dy: g.e.y - y0, rolled, iso: g.rt.camera.iso === true };
     };
@@ -330,7 +332,7 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     const g = play(p);
     g.run(0.1);
     expect(g.e.scripts.at(-1)!.vars.get('rolled')).toBe(0);
-    g.input.press('jump');
+    g.input.press('special');
     g.run(0.1);
     expect(g.e.scripts.at(-1)!.vars.get('rolled')).toBe(1);
     expect(profileOf(p, registry).movement.abilities).toEqual(['dodge_roll']);
@@ -348,13 +350,14 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     const check = checkGame(odd, registry);
     expect(check.state === 'degraded' && check.notes.join(' ')).toMatch(/Player: its DodgeRoll \(dodge_roll\) needs topdown movement, so on this character it does nothing/);
     expect(profileOf(odd, registry).movement.abilities).toEqual([]);
-    // In play: Space is its jump, as ever; it never rolls.
+    // In play: Space is its jump, as ever; Shift does nothing; it never rolls.
     const a = play(plat);
     const b = play(odd);
     for (const g of [a, b]) {
       g.run(0.3);
       g.input.press('right');
       g.input.press('jump');
+      g.input.press('special');
     }
     expect(b.run(0.5)).toBe(0);
     a.run(0.5);
@@ -366,7 +369,188 @@ describe('the dodge roll: an ability for characters seen from above', () => {
       expect(gameFacts(p, registry).players.flatMap((x) => x.abilities)).toEqual([]);
       const g = play(p);
       g.input.press('jump');
+      g.input.press('special');
       expect(g.run(0.3)).toBe(0);
     }
+  });
+
+  it('a key of its own: given the roll, a shooter keeps every key it had (Space and X still fire, as often); Shift rolls, and Space does not', () => {
+    const shots = (p: Project, keys: Action[]) => {
+      const g = play(p);
+      for (const k of keys) g.input.press(k);
+      const rolled = g.run(2);
+      return { fired: g.rt.eventLog.filter((e) => e.type === 'shot' && e.subject === g.e.name).length, rolled };
+    };
+    const plain = spaceShooter(registry);
+    const withRoll = produce(plain, (d) => void (controller(d).components.DodgeRoll = registry.createDefault('DodgeRoll')));
+    expect(checkGame(withRoll, registry).state).toBe('ok');
+    for (const key of ['jump', 'fire'] as Action[]) {
+      const before = shots(plain, [key]);
+      const after = shots(withRoll, [key]);
+      expect(before.fired, key).toBeGreaterThan(3);
+      expect(after.fired, key).toBe(before.fired);
+      expect(after.rolled, key).toBe(0);
+    }
+    // Shift rolls; firing goes on meanwhile.
+    const both = shots(withRoll, ['fire', 'special']);
+    expect(both.rolled).toBeGreaterThan(0.2);
+    expect(both.fired).toBe(shots(plain, ['fire']).fired);
+  });
+
+  it('the special move is an action like the others: Shift by default, the right shoulder button on a controller, a key a game can change; scripts can listen to it', () => {
+    expect(CONTROL_ACTIONS).toContain('special');
+    expect(DEFAULT_CONTROLS.special).toEqual(['ShiftLeft', 'ShiftRight']);
+    // No other action has its keys.
+    for (const a of CONTROL_ACTIONS) if (a !== 'special') for (const k of DEFAULT_CONTROLS[a]) expect(DEFAULT_CONTROLS.special, a).not.toContain(k);
+    expect([PAD_BUTTONS[5], PAD_BUTTONS[6]]).toEqual(['special', 'special']);
+    expect(keyMap(undefined).ShiftLeft).toBe('special');
+    // A game gives it another key (the AI's set_controls, the Controls dialog).
+    const p = produce(arena(), (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{"special":["C"]}' } as never], registry));
+    expect(keyMap(p.settings.controls).KeyC).toBe('special');
+    expect(keyMap(p.settings.controls).ShiftLeft).toBeUndefined();
+    // A script of the game's own on the same key.
+    const q = produce(arena('topdown', {}, false), (d) => void setScript(d, { target: 'definition', id: controller(d).id }, { name: 'Shout', description: '', vars: [{ name: 'n', value: 0 }], handlers: [{ when: { on: 'key', key: 'special', edge: 'pressed' }, if: null, do: [{ do: 'set', var: 'n', value: 'n + 1' }] }] }));
+    const g = play(q);
+    g.input.press('special');
+    g.run(0.1);
+    expect(g.e.scripts.at(-1)!.vars.get('n')).toBe(1);
+  });
+
+  it('the play screen is told which keys the player\'s abilities listen to: its hints say "Shift rolls" (the game\'s own key when it has one), and a touch button is shown for it', () => {
+    const p = arena();
+    const g = play(p);
+    expect(abilityKeys(g.e)).toEqual([{ action: 'special', does: 'rolls' }]);
+    expect(keyHints(p, true, false, false, false, false, abilityKeys(g.e))).toBe('Arrows move · Shift rolls');
+    const own = produce(p, (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{"special":["C"]}' } as never], registry));
+    expect(keyHints(own, true, false, false, false, false, abilityKeys(play(own).e))).toBe('Arrows move · C rolls');
+    // Its component set to another key: that one.
+    expect(abilityKeys(play(arena('topdown', { key: 'fire' })).e)).toEqual([{ action: 'fire', does: 'rolls' }]);
+    // A dash says its key too; a character without such an ability, none.
+    const dasher = produce(mapLevel(registry, ['P...', '####']), (d) => void (controller(d).components.Dash = registry.createDefault('Dash')));
+    expect(abilityKeys(play(dasher).e)).toEqual([{ action: 'fire', does: 'dashes' }]);
+    expect(abilityKeys(play(arena('topdown', {}, false)).e)).toEqual([]);
+  });
+});
+
+describe('a respawn is a fresh start for a character\'s abilities (the rule, and what it replaced)', () => {
+  // Before V1.2 the engine was of two minds: a dash was refilled by a respawn, a double jump was not (its count
+  // was kept elsewhere on the character and survived). Measured on the commit before: a character that had used
+  // its air jump and came back in mid-air had none until it landed, while its dash was ready. Now every ability's
+  // state is its own and is cleared together: after a respawn a character has what it has when a level starts.
+  /** A character with these ability components, placed three rows up in the air (so it also comes back there). */
+  function inTheAir(components: string[]) {
+    const p = produce(mapLevel(registry, ['............', '............', '............', '............', 'P...........', '############']), (d) => {
+      for (const c of components) controller(d).components[c] = registry.createDefault(c);
+      d.scenes[0].entities.find((e) => e.definitionId === controller(d).id)!.transform.position.y -= 96;
+    });
+    const rt = new Runtime(p, p.scenes[0].id, registry);
+    const input = new InputState();
+    const e = rt.entities.find((x) => x.controller)!;
+    const tick = (n: number) => {
+      for (let i = 0; i < n; i++) rt.update(1 / 120, input);
+    };
+    const tap = (k: Action) => {
+      input.press(k);
+      tick(2);
+      input.release(k);
+      tick(2);
+    };
+    /** Jump pressed in the air: did it jump again? */
+    const airJump = () => {
+      const vy = e.vy;
+      tap('jump');
+      return e.vy < vy - 100;
+    };
+    const dash = () => {
+      const vx = Math.abs(e.vx);
+      tap('fire');
+      return Math.abs(e.vx) > vx + 100;
+    };
+    tick(3);
+    return { rt, e, tick, airJump, dash };
+  }
+
+  it('double jump: all its jumps at the level\'s start, none left once used, all again after a respawn (in mid-air too) and after landing', () => {
+    const g = inTheAir(['DoubleJump']);
+    expect(g.airJump()).toBe(true);
+    g.tick(20);
+    expect(g.airJump()).toBe(false);
+    g.rt.respawn(g.e, 'died');
+    g.tick(3);
+    expect(g.e.grounded).toBe(false);
+    expect(g.airJump()).toBe(true);
+    expect(g.airJump()).toBe(false);
+    // Landing refills it, as ever.
+    g.tick(200);
+    expect(g.e.grounded).toBe(true);
+    g.rt.update(1 / 120, new InputState());
+    const input = new InputState();
+    input.press('jump');
+    g.rt.update(1 / 120, input);
+    input.release('jump');
+    for (let i = 0; i < 30; i++) g.rt.update(1 / 120, input);
+    expect(g.e.grounded).toBe(false);
+  });
+
+  it('two extra jumps: two after a respawn, not more; a setting lowered in play is the most it has', () => {
+    const p = inTheAir(['DoubleJump']);
+    (p.e.base.components.DoubleJump as { extraJumps: number }).extraJumps = 2;
+    p.rt.respawn(p.e, 'died');
+    p.tick(3);
+    expect([p.airJump(), (p.tick(20), p.airJump()), (p.tick(20), p.airJump())]).toEqual([true, true, false]);
+    p.rt.respawn(p.e, 'died');
+    p.tick(3);
+    (p.e.base.components.DoubleJump as { extraJumps: number }).extraJumps = 1;
+    expect([p.airJump(), (p.tick(20), p.airJump())]).toEqual([true, false]);
+  });
+
+  it('dash: the same rule (as it always was for a dash)', () => {
+    const g = inTheAir(['Dash']);
+    expect(g.dash()).toBe(true);
+    g.tick(40);
+    expect(g.dash()).toBe(false);
+    g.rt.respawn(g.e, 'died');
+    g.tick(3);
+    expect(g.dash()).toBe(true);
+  });
+
+  it('both on one character: both are back after a respawn', () => {
+    const g = inTheAir(['DoubleJump', 'Dash']);
+    expect(g.airJump()).toBe(true);
+    g.tick(10);
+    expect(g.dash()).toBe(true);
+    g.tick(40);
+    expect([g.airJump(), g.dash()]).toEqual([false, false]);
+    g.rt.respawn(g.e, 'died');
+    g.tick(3);
+    expect(g.airJump()).toBe(true);
+    g.tick(10);
+    expect(g.dash()).toBe(true);
+  });
+
+  it('dodge roll: the wait before the next roll is over after a respawn', () => {
+    const p = produce(projectFromPreset('topdown', registry), (d) => {
+      controller(d).components.DodgeRoll = registry.createDefault('DodgeRoll', { cooldown: 5 });
+      m.addEntity(d, d.scenes[0].id, instantiateDefinition(controller(d), { x: 16, y: 16 }));
+    });
+    const rt = new Runtime(p, p.scenes[0].id, registry);
+    const input = new InputState();
+    const e = rt.entities.find((x) => x.controller)!;
+    const roll = () => {
+      input.press('special');
+      let rolled = false;
+      for (let i = 0; i < 60; i++) {
+        rt.update(1 / 120, input);
+        if (i === 1) input.release('special');
+        rolled ||= rt.motion(e)!.states.includes('rolling');
+      }
+      return rolled;
+    };
+    expect(roll()).toBe(true);
+    expect(roll()).toBe(false);
+    rt.respawn(e, 'died');
+    // (Keys held through a respawn don't count until let go: none is held here.)
+    rt.update(1 / 120, input);
+    expect(roll()).toBe(true);
   });
 });

@@ -170,7 +170,7 @@ export const operationSchema = z.union([
     op: z.literal('set_controls'),
     controlsJson: z
       .string()
-      .describe('The game\'s keys, for the actions to change: JSON {"action": ["key", ...]} with actions left, right, up, down, jump, interact (the action / use / talk / choose key), fire, menu (pause, back); keys by name ("W", "Space", "Up", "Esc", "1") or browser code ("KeyW"); 1-4 an action, no key for two. Others keep the engine\'s keys; "{}" puts all back'),
+      .describe('The game\'s keys, for the actions to change: JSON {"action": ["key", ...]} with actions left, right, up, down, jump, interact (the action / use / talk / choose key), fire, special (Shift: a roll), menu (pause, back); keys by name ("W", "Space", "Up", "Esc", "1") or browser code ("KeyW"); 1-4 an action, no key for two. Others keep the engine\'s keys; "{}" puts all back'),
   }),
   z.object({
     op: z.literal('set_sprite_resolution'),

@@ -1947,8 +1947,38 @@ One thing found on the way that would be cheap whenever the camera is next touch
 
 **Limitations:**
 - **The hanging and the climbing of a ledge grab are still the arcade model's** (its host has the geometry of it). The definition says when a ledge is caught.
-- **A double jump's count now starts over with a respawn,** as a dash's charges do: its state is the ability's own, cleared with the rest. Before, a character that had used its air jump and was put back in mid-air had none until it landed. No golden or test saw the difference.
-- **The roll's default key is Space,** which also fires a Shooter in a game seen from above: its component says so and offers two other keys.
+- **A double jump's count now starts over with a respawn** *(looked into and made a rule in §24.4)***,** as a dash's charges do: its state is the ability's own, cleared with the rest. Before, a character that had used its air jump and was put back in mid-air had none until it landed. No golden or test saw the difference.
+- **The roll's default key is Space,** which also fires a Shooter in a game seen from above: its component says so and offers two other keys. *(Changed in §24.4: a key of its own.)*
 - **While it can't be hurt, the roll blinks,** as anything that can't be hurt does.
-- **No starter has the roll,** and it is not played in the browser tests (only its place in the profile dialog is checked there).
+- **No starter has the roll,** and it is not played in the browser tests (only its place in the profile dialog is checked there). *(Played there since §24.4.)*
 - **In the isometric starter the roll is tested where blocks stop one of its two axes:** it is shown to go the way walking goes there, further, not along a free diagonal.
+
+### 24.4 V1.2 follow-ups (from its review)
+
+**1. A respawn and a character's abilities: the rule.**
+
+- **What the engine did before V1.2** (measured by running the commit before it): a respawn refilled a dash and did **not** refill a double jump. A character that had used its air jump and came back in mid-air had none until it landed; its dash was ready. The two abilities kept their counts in different places on the character, and only one of the places was cleared.
+- **The rule now, on purpose:** a respawn is a fresh start for a character's abilities, every one alike. It has what it has when a level starts: its air jumps and dash charges full, no wait before a roll. Each ability's state is its own and all of it is cleared together (`runtime.ts` `respawn`).
+- **Why this one and not the old one:** it is what a level's start already does, what a dash already did, and what a player expects of coming back. The old behaviour for a double jump was a side effect of where its count was kept.
+- **What it changes in play:** one case only: a character with a double jump that comes back in mid-air (its start or its checkpoint is in the air) after using its air jump. It can jump again at once. Landing refilled it before and still does.
+- **Tested directly** (`abilities/abilities.test.ts`): double jump (one and two extra jumps; a setting lowered in play), dash, both on one character, and the roll's wait.
+
+**2. A key of its own for the roll.**
+
+- **A new action, `special`:** Shift on the keyboard (both), the right shoulder button and the left trigger on a controller, a touch button on phones. No other action has its keys.
+- **The roll listens to it by default.** Space, X and E are still offered in its component.
+- **Nothing a game had stops working when the roll is added:** a shooter given the roll fires as often with Space and with X as before, and neither rolls; Shift rolls, and firing goes on meanwhile (tested).
+- **It is an action like the others:** a game can give it other keys (the Controls dialog, `set_controls`), and scripts can listen to it (`key: "special"`).
+- **An ability says which keys it listens to** (`keys` in its definition). The play screen's hints say so ("Shift rolls", or the game's own key) and a touch button is shown for a key that has none yet. A dash says its key the same way.
+
+**3. The roll played in the browser.** A game seen from above made by the (stubbed) AI's operations: the hero with a roll, three hazards in a row, a wall beyond. In the real play screen:
+- the profile lists the hero with its roll, and a dash can't be given to it;
+- the hints say "Shift rolls";
+- Right and Shift: it is past the hazards in well under the time walking takes, and nothing hurt it;
+- it comes to the wall; a roll into the wall goes no further;
+- walking back through the hazards without rolling, it is hurt.
+
+**Limitations after these:**
+- **A dash still shares X with a Shooter by default.** Its default is unchanged (existing games and their traces depend on it); `special` can be offered for it when dashes are next worked on.
+- **The roll still blinks while it can't be hurt.**
+- **No starter has the roll.**

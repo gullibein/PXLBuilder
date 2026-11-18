@@ -334,7 +334,7 @@ export interface ProjectSettings {
    */
   playPixels?: number;
   /** Which keys do what (model/controls.ts): the actions named here use these keys instead of the engine's. */
-  controls?: Partial<Record<'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu', string[]>>;
+  controls?: Partial<Record<'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'special' | 'menu', string[]>>;
   /**
    * The game's profile (engine/profileSchema.ts): which module of each engine system it uses (view, time, movement,
    * geometry, camera, kits, level builder, progression) and its look. Missing: not chosen (worked out from the game

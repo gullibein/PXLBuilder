@@ -138,6 +138,7 @@ export const dash: AbilityDefinition = {
     gravity: (e) => !(((e.ability.dash as DashState | undefined)?.t ?? 0) > 0),
     states: (e) => (((e.ability.dash as DashState | undefined)?.t ?? 0) > 0 ? ['dashing'] : []),
   },
+  keys: (c) => [{ action: c.Dash?.key === 'interact' ? 'interact' : 'fire', does: 'dashes' }],
   scriptNames: { dashing: { state: 'dashing', doc: 'mid-dash (Dash)' } },
   // Its speed for its duration; up too, unless it only goes sideways.
   reach: {

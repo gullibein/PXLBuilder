@@ -1,10 +1,10 @@
 /**
  * A game's controls: which keys do what, for each of the game's actions (left, right, up, down, jump, action,
- * fire, menu). The game's own setting (project.settings.controls) replaces the keys of the actions it names; the
+ * fire, special, menu). The game's own setting (project.settings.controls) replaces the keys of the actions it names; the
  * others keep the engine's. Used by Play, by exported games, by the key hints, and by everything the keys steer
  * (characters, scripts' key handlers, menus and the grid cursor). Game controllers and touch buttons are unchanged.
  */
-export const CONTROL_ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'] as const;
+export const CONTROL_ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'special', 'menu'] as const;
 export type ControlAction = (typeof CONTROL_ACTIONS)[number];
 export type Controls = Partial<Record<ControlAction, string[]>>;
 
@@ -17,6 +17,7 @@ export const ACTION_LABELS: Record<ControlAction, string> = {
   jump: 'Jump',
   interact: 'Action (use, talk, choose)',
   fire: 'Fire',
+  special: 'Special move (roll, dodge)',
   menu: 'Menu / back',
 };
 
@@ -29,6 +30,8 @@ export const DEFAULT_CONTROLS: Record<ControlAction, string[]> = {
   jump: ['Space', 'KeyZ'],
   interact: ['KeyE'],
   fire: ['KeyX'],
+  // (A key of its own, shared with no other action: what an ability such as a dodge roll listens to by default.)
+  special: ['ShiftLeft', 'ShiftRight'],
   menu: ['Escape', 'KeyP'],
 };
 

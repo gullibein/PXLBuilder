@@ -4,8 +4,8 @@
  * actions (bindings change in one place).
  */
 import { keyMap } from '../core/model/controls';
-export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
-export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'];
+export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'special' | 'menu';
+export const ALL_ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'special', 'menu'];
 
 /** What reading the input needs (an InputState, or a view of it that leaves some keys out). */
 export interface InputView {
@@ -84,6 +84,9 @@ export const PAD_BUTTONS: Record<number, Action | 'restart'> = {
   3: 'interact',
   2: 'fire',
   7: 'fire',
+  // (The right shoulder button and the left trigger: the special move, a roll.)
+  5: 'special',
+  6: 'special',
   8: 'restart',
   9: 'menu',
   12: 'up',

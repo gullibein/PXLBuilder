@@ -2024,6 +2024,8 @@ export class Runtime {
     e.heldBlock = held.length ? new Set(held) : null;
     e.hanging = null;
     e.controlsDone = false;
+    // A fresh start for its abilities, every one alike: what it has when a level starts (its air jumps and dash
+    // charges full, no wait before a roll). Each ability's state is its own (src/abilities) and is cleared here.
     e.ability = {};
     e.coyote = 0;
     e.jumpBuffer = 0;

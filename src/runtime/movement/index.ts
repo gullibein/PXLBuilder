@@ -54,6 +54,16 @@ export function abilitiesFor(e: RuntimeEntity, model: LocomotionModel): Ability[
   return abilities().filter((a) => a.worksWith.includes(model.id) && e.base.components[a.component]);
 }
 
+/** The keys a character's abilities listen to (their definitions say), each with what it does: for key hints and touch buttons. */
+export function abilityKeys(e: RuntimeEntity): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string }[] {
+  if (!e.controller) return [];
+  const model = locomotionFor(e.controller.movement);
+  if (!model) return [];
+  return abilityDefinitions()
+    .filter((d) => d.keys && d.worksWith.includes(model.id) && e.base.components[d.component.type])
+    .flatMap((d) => d.keys!(e.base.components));
+}
+
 /** The states a character's movement is in now (its model's and its abilities'): the motion snapshot's states. */
 export function motionStates(e: RuntimeEntity): string[] {
   if (!e.controller) return [];

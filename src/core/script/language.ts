@@ -39,7 +39,7 @@ export type Trigger =
   | { on: 'contact' }
   | { on: 'hurt' };
 
-export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'menu';
+export type KeyName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'special' | 'menu';
 
 export type Stmt =
   | { do: 'set'; var: string; value: string; on: string | null }
@@ -186,7 +186,7 @@ export interface BehaviorScript {
 
 // ---------------------------------------------------------------- reference tables
 
-export const KEYS: KeyName[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'menu'];
+export const KEYS: KeyName[] = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'special', 'menu'];
 
 /** Names every expression can use (plus the script's variables). */
 export const BUILTIN_NAMES: Record<string, string> = {

@@ -104,6 +104,11 @@ export interface AbilityDefinition {
   reach?: AbilityReach;
   /** How the route bot plays its moves; none: a level that needs it is never proven playable here (uncertain). */
   bot?: AbilityBot;
+  /**
+   * The keys it listens to on a character with these components, and what each does in a word ("rolls"): the play
+   * screen's key hints and its touch buttons show them. (A key the movement itself uses, as Jump, needs no entry.)
+   */
+  keys?(components: ComponentMap): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string }[];
   /** The AI guidance topic its component is described in (else: in the instructions every request carries). */
   topic?: string;
   /** What having it is called when the AI's work is told ("a double jump", "the ability to grab ledges"). */

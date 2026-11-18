@@ -330,6 +330,23 @@ function stubModel(body) {
       ],
     };
   }
+  if (req.includes('dodge roll test game')) {
+    // A game seen from above: the hero with a (long) dodge roll, three hazards in a row on its way, a wall beyond.
+    const lib = (name) => body.context.library.find((d) => d.name === name).id;
+    const sceneId = body.context.level.id;
+    const put = (name, x, y) => ({ op: 'place_instance', sceneId, definitionRef: lib(name), x, y, name: null, ref: null });
+    return {
+      kind: 'apply',
+      message: 'The hero can roll; hazards and a wall to try it on.',
+      changes: ['Player: a dodge roll', 'Three hazards in a row, a wall beyond'],
+      operations: [
+        { op: 'add_component', target: 'definition', id: lib('Player'), component: 'DodgeRoll', propsJson: '{"duration":0.6}' },
+        put('Player', 48, 112),
+        ...[112, 144, 176].map((x) => put('Hazard', x, 112)),
+        ...[48, 80, 112, 144, 176].map((y) => put('Wall', 432, y)),
+      ],
+    };
+  }
   if (req.includes('with three levels')) {
     // Two new levels, each with its own player, a route and a goal.
     const lib = (name) => body.context.library.find((d) => d.name === name).id;
@@ -5877,6 +5894,65 @@ try {
     await check(exportErrors.length === 0, `exported: no errors on its page${exportErrors.length ? ': ' + exportErrors.join(' | ') : ''}`);
     await xp.screenshot({ path: `${OUT}/12l-exported-levels.png` });
     await prc.close();
+  }
+
+  step = 'a dodge roll in a game seen from above';
+  {
+    // The first ability that isn't a platformer's, played in the real play screen: it rolls (far faster than
+    // walking), nothing hurts it meanwhile, a wall stops it, and walking the same way back it is hurt.
+    const rc = await browser.newContext({ viewport: { width: 1400, height: 860 } });
+    const rp = await rc.newPage();
+    rp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    rp.on('console', (m) => m.type() === 'error' && !/401|fonts\.(googleapis|gstatic)\.com/.test(m.text() + (m.location()?.url ?? '')) && errors.push(`console: ${m.text()} (${m.location()?.url ?? ''})`));
+    await rp.route('**/api/ai', async (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stubModel(JSON.parse(route.request().postData()))) }));
+    await rp.goto(URL);
+    await rp.getByTestId('viewport-canvas').waitFor();
+    if (await rp.getByTestId('game-chooser').count()) await pickStarter(rp, 'topdown');
+    await rp.getByTestId('global-prompt-toggle').click();
+    const gp = rp.getByTestId('global-prompt');
+    await gp.getByTestId('prompt-input').fill('Make a dodge roll test game');
+    await gp.getByTestId('prompt-input').press('Enter');
+    await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await rp.keyboard.press('Escape');
+    // The profile lists the hero with its roll (an ability for characters seen from above).
+    await rp.getByTestId('project-menu').click();
+    await rp.getByTestId('menu-profile').click();
+    const dlg = rp.getByTestId('profile-dialog');
+    await check(async () => (await dlg.getByTestId('profile-player-0').innerText()).includes('Player: topdown') && (await dlg.getByTestId('profile-ability-dodge_roll').isChecked()) && (await dlg.getByTestId('profile-ability-dash').isDisabled()) && (await dlg.getByTestId('profile-state').innerText()).includes('go together'), 'the profile shows the hero walking from above with its dodge roll (a dash can\'t be given to it), and nothing to report');
+    await rp.keyboard.press('Escape');
+    await rp.getByTestId('play').click();
+    const pc = rp.getByTestId('play-canvas');
+    const at = async () => Number(((await pc.getAttribute('data-player')) ?? '0').split(',')[0]);
+    const hurts = async () => (((await pc.getAttribute('data-events')) ?? '').match(/damaged:Player/g) ?? []).length;
+    await check(async () => (await rp.locator('.hud-keys').innerText()).includes('Shift rolls'), 'played: the key hints say what the roll\'s key is ("Shift rolls")');
+    await check(async () => Math.abs((await at()) - 48) < 2, '(the hero stands at its start)');
+    // Right and Shift: through the three hazards in one roll.
+    await rp.keyboard.down('ArrowRight');
+    await rp.keyboard.down('ShiftLeft');
+    const t0 = Date.now();
+    await check(async () => (await at()) > 230, 'Right and Shift: the hero rolls through the row of hazards');
+    const took = Date.now() - t0;
+    await rp.keyboard.up('ShiftLeft');
+    // (Walking at its 150 px/s it would take 1.2 s to get that far, and be hurt on the way.)
+    await check(took < 1000 && (await hurts()) === 0, `far faster than it walks (${took} ms for 180 px), and nothing hurt it meanwhile`);
+    // On to the wall: it stops there, and a roll into it gets no further.
+    await check(async () => (await at()) > 395, 'walking on, it comes to the wall');
+    await rp.waitForTimeout(600);
+    const atWall = await at();
+    await rp.keyboard.down('ShiftLeft');
+    await rp.waitForTimeout(700);
+    await rp.keyboard.up('ShiftLeft');
+    const afterRoll = await at();
+    await check(atWall < 410 && Math.abs(afterRoll - atWall) < 1, `the wall stops it, and a roll into the wall goes no further (${atWall} → ${afterRoll})`);
+    await check(async () => (await hurts()) === 0, '(still unhurt)');
+    // Back the same way on foot: the hazards hurt it.
+    await rp.keyboard.up('ArrowRight');
+    await rp.keyboard.down('ArrowLeft');
+    await check(async () => (await hurts()) >= 1, 'walking back through the hazards without rolling, it is hurt');
+    await rp.keyboard.up('ArrowLeft');
+    await rp.screenshot({ path: `${OUT}/12m-dodge-roll.png` });
+    await rp.getByTestId('play').click();
+    await rc.close();
   }
 
   step = 'console errors';
