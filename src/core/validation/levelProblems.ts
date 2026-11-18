@@ -5,6 +5,7 @@
  * to" is not said: the level's reach is said to be unjudged instead (uncertain, never a false alarm).
  */
 import type { ComponentRegistry } from '../components/registry';
+import { abilityById } from '../../abilities/index';
 import { reachabilityProblems } from '../model/reachability';
 import { resolveEntity } from '../model/resolve';
 import { reachOf, type ReachDescription } from '../reach/reach';
@@ -28,12 +29,11 @@ export function levelReachProblems(project: Project, sceneId: Id, registry: Comp
   if (!beyond.length) return problems;
   const kept = problems.filter((p) => !p.key.startsWith('reach-things:') && !p.key.startsWith('reach-platforms:'));
   if (kept.length === problems.length) return problems;
-  const words: Record<string, string> = { wall_jump: 'wall jumps', dash: 'dashes' };
   return [
     ...kept,
     {
       key: 'reach-unjudged',
-      text: `Not checked: whether the player gets everywhere. Its ${beyond.map((a) => words[a] ?? a).join(' and ')} aren't judged by the jump checker, which alone can't get it to everything; play it to see.`,
+      text: `Not checked: whether the player gets everywhere. Its ${beyond.map((a) => abilityById(a)?.plural ?? a).join(' and ')} aren't judged by the jump checker, which alone can't get it to everything; play it to see.`,
       entityIds: [],
     },
   ];

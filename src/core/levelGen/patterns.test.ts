@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
-import { MECHANICS, SECTION_ROLES } from './blueprint';
+import { mechanics, SECTION_ROLES } from './blueprint';
 import { generateLevel } from './generate';
 import { allPatterns } from './patterns/index';
 import { findRoles } from './roles';
@@ -15,7 +15,7 @@ describe('the pattern library', () => {
       expect(p.version, p.id).toBeGreaterThanOrEqual(1);
       expect(p.name.length, p.id).toBeGreaterThan(10);
       expect(p.variants.length, p.id).toBeGreaterThan(0);
-      for (const m of p.mechanics) expect(MECHANICS, p.id).toContain(m);
+      for (const m of p.mechanics) expect(mechanics(), p.id).toContain(m);
       for (const f of p.fits) expect(SECTION_ROLES, p.id).toContain(f);
       // (Everything it needs is a part the starter game has, or the moving platform it can do without.)
       for (const r of [...p.needs, ...p.variants.flatMap((v) => v.needs ?? [])]) expect([...roles, 'mover'], `${p.id}: ${r}`).toContain(r);

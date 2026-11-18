@@ -9,7 +9,7 @@ import { createLevelFor } from '../model/factory';
 import * as m from '../model/mutations';
 import type { Id, Project, Scene } from '../types';
 import { produce } from 'immer';
-import { MECHANICS, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
+import { mechanics, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
 import { allPatterns, patternById } from './patterns/index';
 import { patternFits } from './pattern';
 import { playerReach } from '../reach/reach';
@@ -154,7 +154,7 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
     theme: profile.theme?.id ?? null,
     structures: STRUCTURE_INFO,
     // (Not the mechanics of abilities the player doesn't have.)
-    mechanics: MECHANICS.filter((m) => !themeAvoids(project, registry).includes(m) && !required.has(m)).join(', '),
+    mechanics: mechanics().filter((m) => !themeAvoids(project, registry).includes(m) && !required.has(m)).join(', '),
     // (The game's levels, briefly, so a new one is something else: the engine checks that too.)
     levels: project.scenes.flatMap((s) => {
       const f = fingerprintOfScene(project, s, registry);

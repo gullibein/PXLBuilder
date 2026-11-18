@@ -67,6 +67,8 @@ export interface MoveRule {
    * requires the capability sizes itself from these (levelGen/pattern.ts).
    */
   capability?: { id: string; numbers: Record<string, number> };
+  /** The moves it makes that go by another name than its own (a wall jump's rule also makes "wall_slide"). */
+  makes?: string[];
   successors(s: SolverState, v: SolverView): void;
 }
 
@@ -146,7 +148,8 @@ const swim: MoveRule = {
 };
 
 /** Standing (on the ground, a ladder, the water's surface): where the player can jump from. */
-const standing = ({ c, r, mode, w }: SolverState, v: SolverView) => !mode && (v.supportAt(c, r + 1, w) || v.ladderAt(c, r) || (v.waterAt(c, r) && !v.waterAt(c, r - 1)));
+/** Standing somewhere a move starts from: on something, on a ladder, at the water's surface (and in no other mode). */
+export const standing = ({ c, r, mode, w }: SolverState, v: SolverView) => !mode && (v.supportAt(c, r + 1, w) || v.ladderAt(c, r) || (v.waterAt(c, r) && !v.waterAt(c, r - 1)));
 
 /** Jumps (from the ground, a ladder, or the water's surface; from a spring, its launch). */
 const jump: MoveRule = {
@@ -172,91 +175,13 @@ const teleport: MoveRule = {
 /** The arcade model's moves, in the order the solver always tried them. */
 export const ARCADE_MOVES: readonly MoveRule[] = [walk, climb, swim, jump, teleport];
 
-// ---------------------------------------------------------------- abilities' moves
+// ---------------------------------------------------------------- for the abilities' move rules (src/abilities)
+// (An ability's own rule is in its definition; these are what such rules share: holding a wall is a mode of the
+// search that any of them may end a move in.)
 
 /** A free, safe cell with a wall right beside it on side `side` (-1 left, 1 right): where the player can hold a wall. */
-const onWall = (c: number, r: number, side: -1 | 1, w: World, v: SolverView) => r >= 0 && r < v.H && v.freeAt(c, r, w) && !v.hurtsAt(c, r) && v.solidAt(c + side, r, w) && c + side >= 0 && c + side < v.W;
+export const onWall = (c: number, r: number, side: -1 | 1, w: World, v: SolverView) => r >= 0 && r < v.H && v.freeAt(c, r, w) && !v.hurtsAt(c, r) && v.solidAt(c + side, r, w) && c + side >= 0 && c + side < v.W;
 /** The goal's cell, touched in the air (a kick or a dash ends there: in play, touching it is enough). */
-const goalAt = (c: number, r: number, v: SolverView) => v.role(c, r) === 'goal';
+export const goalAt = (c: number, r: number, v: SolverView) => v.role(c, r) === 'goal';
 /** The mode for holding a wall on side `side`. */
-const wallMode = (side: -1 | 1) => (side === -1 ? 1 : 2);
-
-/**
- * Wall slide and wall jump (WallJump): the player jumps or falls onto a wall it presses against and holds it,
- * sliding down; from a wall it jumps up and away, `riseRows` up at most and `awayCells` across, onto ground or onto
- * the other side of a shaft, and from there again. Estimated in cells (the real kick, slide and steering are the
- * runtime's: a route through wall jumps is confirmed by the route bot).
- */
-export function wallJumpMove(riseRows: number, awayCells: number): MoveRule {
-  return {
-    id: 'wall_jump',
-    mechanics: ['wall_jump'],
-    // (rise: rows a kick gains; away: cells it carries across, so how wide a shaft it climbs.)
-    capability: { id: 'wall_jump', numbers: { rise: riseRows, away: awayCells } },
-    successors(s, v) {
-      const { c, r, kh, so, cr, mode, id, w } = s;
-      const toWall = (side: -1 | 1) => (tc: number, tr: number, ww: World) => onWall(tc, tr, side, ww, v) && !v.supportAt(tc, tr + 1, ww);
-      if (!mode) {
-        // Onto a wall: jumping (or stepping off and falling) to a cell beside a wall, holding it.
-        if (!standing(s, v)) return;
-        for (const side of [-1, 1] as const)
-          for (let rise = v.lim.maxRise; rise >= -4; rise--)
-            for (let dx = -(v.maxGap + 1); dx <= v.maxGap + 1; dx++) {
-              if (dx === 0 && rise <= 0) continue;
-              if (v.canJump(c, r, dx, rise, s.away, v.lim.gap, toWall(side))) v.push(c + dx, r - rise, kh, so, cr, id, 'jump', 3 + Math.abs(dx) + Math.max(0, rise), wallMode(side));
-            }
-        return;
-      }
-      const side: -1 | 1 = mode === 1 ? -1 : 1;
-      // Sliding down: still on the wall, or onto the floor under it.
-      if (v.supportAt(c, r + 1, w)) v.push(c, r, kh, so, cr, id, 'wall_slide');
-      else if (onWall(c, r + 1, side, w, v)) v.push(c, r + 1, kh, so, cr, id, 'wall_slide', 1, mode);
-      // Kicking off: up and away from the wall (onto the other wall of a shaft, or onto ground).
-      const away = -side as -1 | 1;
-      for (let rise = riseRows; rise >= -2; rise--)
-        for (let k = 1; k <= awayCells; k++) {
-          const dx = away * k;
-          if (v.canJump(c, r, dx, rise, w, () => awayCells, toWall(away))) v.push(c + dx, r - rise, kh, so, cr, id, 'wall_jump', 3 + k + Math.max(0, rise), wallMode(away));
-          else if (v.canJump(c, r, dx, rise, w, () => awayCells, (tc, tr) => goalAt(tc, tr, v) && v.freeAt(tc, tr, w))) v.push(c + dx, r - rise, kh, so, cr, id, 'wall_jump', 3 + k + Math.max(0, rise), wallMode(away));
-          if (v.canJump(c, r, dx, rise, w, () => awayCells)) v.push(c + dx, r - rise, kh, so, cr, id, 'wall_jump', 3 + k + Math.max(0, rise));
-        }
-    },
-  };
-}
-
-/**
- * Dash (Dash): from the ground, a jump and then a dash at its top the way the keys point: sideways it carries the
- * jump `cells` further; up (with eight or four directions) it lifts it `upRows` higher. One per jump (its charge
- * refills on landing). Estimated in cells (confirmed by the route bot).
- */
-export function dashMove(cells: number, upRows: number): MoveRule {
-  return {
-    id: 'dash',
-    mechanics: ['dash'],
-    // (cells: how much further than a jump it carries across; up: rows higher.)
-    capability: { id: 'dash', numbers: { cells, up: upRows } },
-    successors(s, v) {
-      if (!standing(s, v) || cells <= 0) return;
-      const { c, r, kh, so, cr, id } = s;
-      const lim = v.lim;
-      const top = lim.maxRise + upRows;
-      const gapOf = (rise: number) => (rise > lim.maxRise ? Math.max(0, Math.min(1, lim.gap(lim.maxRise))) : lim.gap(rise) + cells);
-      const reach = Math.max(...Array.from({ length: lim.maxRise + 9 }, (_, i) => lim.gap(lim.maxRise - i))) + cells;
-      for (let rise = top; rise >= -10; rise--)
-        for (let dx = -(reach + 1); dx <= reach + 1; dx++) {
-          if (dx === 0 && rise <= lim.maxRise) continue;
-          // (Only what a plain jump can't: the dash's own reach.)
-          if (rise <= lim.maxRise && Math.abs(dx) - 1 <= lim.gap(rise) && v.canJump(c, r, dx, rise, s.away, lim.gap)) continue;
-          if (!v.canJump(c, r, dx, rise, s.away, gapOf)) continue;
-          v.push(c + dx, r - rise, kh, so, cr, id, 'dash', 5 + 1.5 * Math.max(0, Math.abs(dx) - 1) + Math.max(0, rise));
-          // (And onto a wall beside where it lands, to slide or kick off.)
-        }
-      for (const side of [-1, 1] as const)
-        for (let rise = top; rise >= -4; rise--)
-          for (let dx = -(reach + 1); dx <= reach + 1; dx++) {
-            const land = (tc: number, tr: number, ww: World) => onWall(tc, tr, side, ww, v) && !v.supportAt(tc, tr + 1, ww);
-            if (v.canJump(c, r, dx, rise, s.away, gapOf, land)) v.push(c + dx, r - rise, kh, so, cr, id, 'dash', 5 + Math.abs(dx) + Math.max(0, rise), wallMode(side));
-          }
-    },
-  };
-}
+export const wallMode = (side: -1 | 1) => (side === -1 ? 1 : 2);

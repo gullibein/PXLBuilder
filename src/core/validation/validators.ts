@@ -244,7 +244,9 @@ export function runValidators(ids: readonly string[], t: ValidationTarget, notes
   }
   if (problems.length) return { state: 'invalid', problems, verdicts, uncertain };
   // (Estimated moves the level needs, or that the solver's route took.)
-  const taken = new Set((verdicts.cell_solver?.evidence?.route ?? []).map((p) => (p.move === 'wall_slide' ? 'wall_jump' : p.move)));
+  // (A move by the rule that makes it: a wall jump's rule also makes "wall_slide".)
+  const ruleOf = (move: string) => t.reach?.moves?.find((r) => r.makes?.includes(move))?.id ?? move;
+  const taken = new Set((verdicts.cell_solver?.evidence?.route ?? []).map((p) => ruleOf(p.move)));
   const estimated = t.reach?.approximate.filter((m) => t.mechanics.includes(m) || taken.has(m as never)) ?? [];
   const solved = verdicts.cell_solver?.state === 'pass';
   const played = verdicts.route_bot?.state === 'pass';

@@ -187,11 +187,11 @@ describe('F4: choosing validators by coverage', () => {
 
 describe('F4: the route bot plays the moves the reach description says it simulates', () => {
   it('every move a reach description\'s rules make is one the bot plays; a route with a move it can\'t play is skipped, said', async () => {
-    const { BOT_MOVES, playRoute } = await import('../../runtime/routeBot');
+    const { botMoves, playRoute } = await import('../../runtime/routeBot');
     const r = reachIn(precisionRoom(registry));
     const made = new Set<string>(['wall_slide']);
     for (const m of r.moves!) made.add(m.id);
-    for (const id of made) expect(BOT_MOVES, id).toContain(id as never);
+    for (const id of made) expect(botMoves(), id).toContain(id as never);
     const p = mapLevel(registry, ['P.G', '###']);
     expect(playRoute(p, p.scenes[0].id, [{ col: 0, row: 0, move: 'start' }, { col: 2, row: 0, move: 'grapple' as never }], registry)).toMatchObject({ won: false, skipped: "it can't play a grapple move" });
   });

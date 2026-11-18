@@ -7,6 +7,7 @@
  * sections and patterns to match), or section by section (sections: each named, or a "custom" one drawn as a small
  * map, which the builder joins into the rest).
  */
+import { abilityDefinitions } from '../../abilities/index';
 import { z } from 'zod';
 import type { Role } from './roles';
 
@@ -22,8 +23,13 @@ export const STRUCTURE_INFO: Record<Structure, string> = {
   hub: 'the start in the middle: the key at one end, the locked goal at the other',
 };
 
-export const MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins', 'ramp', 'water', 'ladder', 'switch', 'key', 'crate', 'teleporter', 'wall_jump', 'dash'] as const;
-export type Mechanic = (typeof MECHANICS)[number];
+/** What levels are made of that the builder has by itself. */
+export const OWN_MECHANICS = ['gap', 'stairs', 'floating', 'enemy', 'pipe', 'blocks', 'spring', 'mover', 'hazard', 'coins', 'ramp', 'water', 'ladder', 'switch', 'key', 'crate', 'teleporter'] as const;
+/** A mechanic a level can be asked for by: the builder's own, or an ability with a part in the player's reach (by its id). */
+export type Mechanic = (typeof OWN_MECHANICS)[number] | (string & {});
+/** The mechanics there are now: the builder's own, then the abilities that have a part in the player's reach (src/abilities). */
+export const mechanics = (): Mechanic[] => [...OWN_MECHANICS, ...abilityDefinitions().filter((a) => a.reach).map((a) => a.id)];
+const mechanicSchema = z.string().refine((m) => mechanics().includes(m), { error: (issue) => `"${String(issue.input)}" is not a mechanic (there are: ${mechanics().join(', ')})` });
 
 /** How many ways there are through: one; a bonus route up above; a choice of two ways; a risky shortcut beside a slow safe way. */
 export const ROUTES = ['one', 'bonus_above', 'choice', 'risky_shortcut'] as const;
@@ -49,9 +55,9 @@ export const blueprintSchema = z.object({
   length: z.enum(['short', 'medium', 'long']).nullable().default(null),
   seed: z.number().int().nullable().default(null),
   structure: z.enum(STRUCTURES).nullable().default(null),
-  focus: z.array(z.enum(MECHANICS)).max(3).nullable().default(null).describe('Mechanics the level is about'),
-  escalate: z.enum(MECHANICS).nullable().default(null).describe('A mechanic that gets harder each time it comes'),
-  avoid: z.array(z.enum(MECHANICS)).nullable().default(null),
+  focus: z.array(mechanicSchema).max(3).nullable().default(null).describe('Mechanics the level is about'),
+  escalate: mechanicSchema.nullable().default(null).describe('A mechanic that gets harder each time it comes'),
+  avoid: z.array(mechanicSchema).nullable().default(null),
   routes: z.enum(ROUTES).nullable().default(null),
   secrets: z.number().int().min(0).max(3).nullable().default(null),
   concept: z.string().max(300).nullable().default(null),

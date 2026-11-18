@@ -1338,7 +1338,7 @@ These are acceptance criteria for the stages named. Each stage's report says whe
 
 | # | Requirement | Where it is met | State |
 |---|---|---|---|
-| T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | Open |
+| T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | V1.1: one definition for an ability, dash and wall jump moved, proven with a test ability (§24.2). Closes in V1.2 (double jump, ledge grab) |
 | T2 | **The jump checker and the route bot consume shared interfaces.** The checker computes its own arcs; the bot has its own step per move. Unify where a concrete feature needs it, not for its own sake | V1 (bot steps with T1); the checker when hand-drawn grids arrive (T4) | Open |
 | T3 | **The generator uses the player's real abilities.** It sizes sections from the jump table only, so it never makes a level that needs a wall jump or a dash. It should build sections that use the abilities the player has, and those routes must be confirmed by the route bot. The bot costs real time for each level and the generator makes several attempts, so this needs a time budget; confirmation stays required only for routes through estimated moves | F6 (generator interface) with V1 (patterns) | Open |
 | T4 | **Hand-drawn levels get a cell grid.** Converting what is seen into cells is not enough: doors, keys, levers, plates, teleporters and their links must be read from the objects. A level that doesn't fit cells (off the grid, scripted objects) is reported as unjudged, never guessed | After F6 | Open |
@@ -1806,3 +1806,90 @@ Every golden from F2–F6 is unchanged.
 - **A Checkpoint object that a script spawned in play** is not in the rebuilt level: its place is then kept as a script-set place.
 - **A place set while a flip is still under way** is mapped back as if the flip were done.
 - **Unchanged from the audit:** the items under B and C there (the registries, T1, the old checker for hand-made levels, and the rest).
+
+## 24. V1: abilities in one place, then breadth; and attention for games that aren't platformers
+
+### 24.1 The plan (approved)
+
+Seven stages, each reviewed on its own. The order alternates, so work for games that aren't platformers is not left to the end.
+
+| # | Stage | What it is for | Serves |
+|---|---|---|---|
+| V1.1 | One definition for each ability; dash and wall jump moved; a test ability by one call | T1, the smallest useful part | Platformers (architecture) |
+| V1.2 | Double jump and ledge grab moved; a dodge roll for characters seen from above; T1 closed | The registration is shown not to be for platformers only | Platformers and top-down games |
+| V1.3 | Play probe: does a level run, and does it react? | Scripted games become visible to validation | Every family, mostly scripted games |
+| V1.4 | Ability patterns in breadth | The builder uses what the player can do | Platformers |
+| V1.5 | Real-AI evaluation: live on demand, recorded replies replayed in the ordinary tests | The path that actually makes games is tested | Every family |
+| V1.6 | A precision genre and preset | The Celeste- and Meat Boy-inspired slice as something to pick | Platformers |
+| V1.7 | Game checks written with the game | Decided after V1.3 and V1.5, by what they catch | Scripted games |
+
+**Rules for every stage:**
+- The cross-genre regression suite keeps playing every family: platformers (traditional, precision), Tetris, Dr. Mario, the space shooter, mining, Boulder Dash, the RPG, tactics.
+- The momentum platformer is V3: a to-do, never counted as implemented or passing.
+- What nothing has proven stays uncertain. Running is not winning.
+- No abstraction without a use.
+
+**Requirements recorded from the review:**
+
+| Stage | Requirement |
+|---|---|
+| V1.3 | The probe reports apart: it runs without runtime errors; relevant inputs give an observable response; things act by themselves where expected; obvious runtime failures. A game that rightly waits for input does not fail because nothing moves by itself. Never "winnable", "balanced" or "correct". Seeds, a bounded budget, clear reasons |
+| V1.4 | Meaningful patterns, not a number of them. For a pattern needing several abilities, each is tested by itself: without any one of them the intended route is impossible, and the bot plays it with them. The builder's and the bot's budgets stay |
+| V1.5 | Claude first, the harness independent of the provider (Gemini next without a redesign). Live runs only when a person starts one, with the expected cost shown first; never in ordinary tests. Each prompt is judged on mechanics and play, not only on valid operations. Recorded: provider and model, prompt, result, tokens, cost, time |
+
+**Deliberately not in V1:** new movement models, momentum and curved ground (V3); grid movement, reach and a solver for levels seen from above (V2); a general generator request; a stepped time model; validators for one genre of board game; merging the other registries; a cell grid for hand-drawn levels (T4).
+
+### 24.2 V1.1 — done (awaiting review before V1.2)
+
+**What an ability was before.** Dash lived in ten places: its runtime behaviour, its component, its profile module, the table that told profiles which component is which ability, its part of the reach model, its move rule, its route-bot step, the builder's list of mechanics, the names scripts read, and the AI's topic table. Each had to be kept in step by hand.
+
+**What it is now: one definition, registered once** (`src/abilities/`).
+
+| Part of the definition | Who reads it |
+|---|---|
+| `id`, `describe`, `plural` | The profile's module (made from it), the report, sentences ("its wall jumps aren't judged…") |
+| `component` (type, label, description, fields) | The component registries: the editor's inspector, `add_component`, the AI's component list |
+| `worksWith` | The runtime (an ability is given only to a model it works with) and the module's requirement, from the same field |
+| `order`, `runtime` (hooks, states) | The movement model's step |
+| `scriptNames` | What scripts may read (`self.dashing`), and what the script language documents |
+| `reach` (its move rule with its capability numbers; estimated or exact) | The reach description, so the route solver, the level builder (capabilities, the needs check) and the validators |
+| `bot` (the moves it plays, one tick's keys, when it counts as arrived) | The route bot; and so whether the reach says the ability is simulated |
+| `topic` | The AI guidance topic its component is described in |
+
+- **Only the identity, the component and the runtime part are needed.** No reach part: levels are neither built nor judged by it. A reach part and no bot part: built for, solved, and its levels stay **uncertain** (nothing played them).
+- **The registry holds definitions and nothing else** (`registry.ts`: no import of any system). Systems read it when they need it; the three that keep something of their own for each ability (the module registry, the editor's component registry, the script language's table of names) are told when the list changes.
+- **Dash and wall jump are each one file** (`dash.ts`, `wallJump.ts`), moved as they were: the same hooks, the same move rules, the same bot steps.
+- **Patterns are not the ability's.** A level pattern says which capabilities it requires and is found by that; one pattern may need two abilities. That was so before and stays.
+- **The mechanics a level can be asked for by** are the builder's own plus the abilities that have a reach part. The blueprint checks against the list there is now, and says which there are when a word isn't one.
+- **The solver's moves are no closed list** any more: an ability's rule names its own.
+
+**The proof: Glide** (`src/abilities/glide.test.ts`). An ability only that test knows: holding Jump while falling, the character falls slowly, and is carried further. It is one definition and one `registerAbility` call. No engine file names it (a test reads the sources). From that one registration:
+
+| System | What the test shows |
+|---|---|
+| The editor and the AI's operations | Its component is in the registries with its setting; `add_component` gives it; a wrong setting is refused |
+| The AI's guidance | Its component is listed under the topic it names, and described there |
+| The profile and the report | It is an ability a profile can give; the profile shows it for the character that has it; on a character seen from above it is refused when asked for, and reported as doing nothing when it is there |
+| The runtime | With Jump held the character is much longer in the air; without the component it falls as ever |
+| Scripts | `self.gliding` is a name scripts may read, true while gliding; unknown again once the ability is taken out |
+| The reach | A capability with numbers from the component's own setting; estimated; not simulated |
+| The level builder's vocabulary | `focus: ["glide"]` is accepted; a word that is no mechanic is refused with the list |
+| The builder and the solver | Its pattern is built only for a player that has it; the route goes by a glide; without it there is no route |
+| Validation, no bot part | Built, solved, and **uncertain**, never validated; said plainly |
+| The checker for hand-made levels | "Its glides aren't judged by the jump checker…": unjudged, in the ability's own words |
+| Validation, a bot part added to the same definition | The bot plays the glides on the real runtime; the same levels are **validated** |
+| Taken out | Every system has forgotten it |
+
+**Where abilities are in the code now** (checked by a test on the sources, comments left out):
+- **Implementing or registering dash or wall jump:** `abilities/dash.ts` and `abilities/wallJump.ts`, and no other file.
+- **Still naming them, each for its own reason:** the AI's guidance prose; the two patterns that require them; a worked example script for the AI; a regression game made with them. (And one unrelated word: "dash" as a line style in the editor.)
+
+**Non-regression.** Every golden is unchanged: the 9 games, the 17 movement traces, the validation snapshots and sweeps, the reach-aware suite (the bot's play frame for frame), camera, dungeons, turns, sessions. The AI's instructions are inside their budget.
+
+**Limitations:**
+- **Double jump and ledge grab are not moved yet** (V1.2). They are still registered with the runtime by themselves, hard-coded in the reach model, and their modules are declared by hand. T1 closes when they move.
+- **Holding a wall is shared vocabulary, not one ability's.** The route solver's "mode" for it lives in the move-rule helpers, and the bot's own jump presses into a wall when a step ends on one. Both dash and wall jump use it.
+- **A component registry made before an ability is registered doesn't get its component** (only the editor's own follows). Tests that register an ability make their registry afterwards.
+- **The topic text for an ability is its component's description.** Longer guidance prose is still written in the topic.
+- **The exported player now carries the abilities' move rules and bot steps** with their runtime part: one file each, a few kilobytes.
+- **The other registries are as they were** (camera, turns, generators: two or three registrations each). Whether this approach suits them is assessed in V1.2, on paper.

@@ -6,6 +6,8 @@
  * how a ladder or a spring really behaves). Used by tests of the level builder; not part of play.
  */
 import type { ComponentRegistry } from '../core/components/registry';
+import { abilityDefinitions } from '../abilities/index';
+import type { AbilityBot } from '../abilities/types';
 import type { Move } from '../core/levelGen/solver';
 import { setRouteBot } from '../core/validation/validators';
 import type { Id, Project } from '../core/types';
@@ -26,14 +28,19 @@ export interface BotResult {
 
 const CELL = 32;
 const DT = 1 / 120;
-/** The moves the bot can play (the reach description's simulator covers these): a route with another isn't played. */
-export const BOT_MOVES: readonly Move[] = ['start', 'walk', 'fall', 'jump', 'climb', 'swim', 'spring', 'teleport', 'push', 'wall_slide', 'wall_jump', 'dash'];
+/** The moves the bot plays by itself (the arcade model's). */
+const OWN_MOVES: readonly Move[] = ['start', 'walk', 'fall', 'jump', 'climb', 'swim', 'spring', 'teleport', 'push'];
+/** The bot part of the ability that makes a move (its definition's: src/abilities), if one plays it. */
+const botPartFor = (move: Move): AbilityBot | undefined => abilityDefinitions().find((d) => d.bot?.moves.includes(move))?.bot;
+/** The moves the bot can play: its own and those the abilities' definitions play. A route with another isn't played. */
+export const botMoves = (): Move[] => [...OWN_MOVES, ...abilityDefinitions().flatMap((d) => d.bot?.moves ?? [])];
 /** Seconds a step may take before the bot gives up on it. */
 const STEP_TIME = 4;
 
 /** Plays the level `sceneId` along `path` (the cells the player stands in, from the solver, with how it gets there). */
 export function playRoute(project: Project, sceneId: Id, path: { col: number; row: number; move: Move; mode?: number }[], registry: ComponentRegistry, onTick?: (step: number, p: { x: number; y: number; vx: number; vy: number; grounded: boolean }, held: string[]) => void, maxSeconds = Infinity): BotResult {
-  const unknown = path.find((p) => !BOT_MOVES.includes(p.move));
+  const playable = botMoves();
+  const unknown = path.find((p) => !playable.includes(p.move));
   if (unknown) return { won: false, skipped: `it can't play a ${unknown.move} move`, steps: 0, of: path.length - 1, seconds: 0 };
   const rt = new Runtime(project, sceneId, registry);
   // (Riding moving platforms takes timing the bot doesn't have.)
@@ -84,7 +91,8 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
     const toX = to.col * CELL + CELL / 2;
     const fromX = from.col * CELL + CELL / 2;
     let jumped = false;
-    let dashed = false;
+    // (An ability's step keeps what it needs to remember here: empty when the step begins.)
+    const mem: Record<string, unknown> = {};
     let pressedAt = 0;
     // (Off the ground since the jump: only then does landing count.)
     let airborne = false;
@@ -100,9 +108,9 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
       // Arrived: in the cell, and standing (or on a ladder, or swimming), near its middle when stopping matters.
       // (In water, swimming; on a spring, bouncing: there all the same.)
       const onSpring = springNear(to.col) !== null && Math.abs(springNear(to.col)! - toX) < 8;
-      // (A step onto a wall: holding it, sliding.)
-      const onWall = !!to.mode && !!rt.motion(p)?.states.includes('wallSliding');
-      const settled = p.grounded || p.climbing || !!p.inLiquid || onSpring || onWall;
+      // (Or as an ability says: holding the wall a step ends on.)
+      const held = abilityDefinitions().some((d) => d.bot?.settled?.({ rt, p, to }));
+      const settled = p.grounded || p.climbing || !!p.inLiquid || onSpring || held;
       // (Before another jump the same way, no stopping in the middle: the run-up speed is kept.)
       const next = path[i + 1];
       const onward = !!next && (next.move === 'jump' || next.move === 'walk') && Math.sign(next.col - to.col) === Math.sign(to.col - from.col) && to.col !== from.col;
@@ -119,86 +127,10 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
       const dir = Math.sign(toX - p.x);
       // (The side of the wall it holds now, and of the one it goes to: -1 left, 1 right.)
       const wallOf = (mode?: number) => (mode === 1 ? -1 : mode === 2 ? 1 : 0);
-      if (to.move === 'wall_slide') {
-        // Down the wall it holds: pressing toward it, until the cell (or the floor) is reached.
-        const side = wallOf(from.mode);
-        hold('right', side > 0);
-        hold('left', side < 0);
-        tick();
-        continue;
-      }
-      if (to.move === 'wall_jump') {
-        // Pressing toward the wall until it slides; Jump (pressed anew) kicks off it; then steering to the target,
-        // and pressing into the wall there (when the step ends on one).
-        const side = wallOf(from.mode);
-        const sliding = !!rt.motion(p)?.states.includes('wallSliding');
-        if (!jumped) {
-          hold('jump', false);
-          hold('right', side > 0);
-          hold('left', side < 0);
-          if (sliding && t - began > 2 * DT) {
-            tick();
-            hold('jump', true);
-            jumped = true;
-          }
-        } else {
-          const toSide = wallOf(to.mode);
-          const near = Math.abs(toX - p.x) < CELL;
-          hold('right', (toSide > 0 && near) || (dir > 0 && Math.abs(toX - p.x) > 3));
-          hold('left', (toSide < 0 && near) || (dir < 0 && Math.abs(toX - p.x) > 3));
-        }
-        tick();
-        continue;
-      }
-      if (to.move === 'dash') {
-        // A jump (from the take-off cell, running on through it for a long one), a dash at its top the way the
-        // target is (up when it is higher than a jump gets), then steering on (into the wall, if it ends on one).
-        const jdir = Math.sign(to.col - from.col);
-        const up = to.row < from.row - 1;
-        const dashState = (p.ability.dash ?? null) as { left: number; t: number } | null;
-        if (!jumped) {
-          const long = Math.abs(to.col - from.col) >= 2 && !up;
-          const edge = fromX + jdir * (long ? 11 : 0);
-          const atTakeoff = here.col === from.col && (jdir === 0 || !long ? Math.abs(p.x - fromX) < 6 : jdir * (p.x - edge) >= -3);
-          if (p.grounded && atTakeoff && !input.isDown('jump')) {
-            hold('jump', true);
-            jumped = true;
-            pressedAt = t;
-          } else {
-            hold('jump', false);
-            const back = here.col !== from.col || jdir === 0 || !long ? Math.sign(fromX - p.x) : jdir;
-            hold('right', back > 0 && Math.abs(fromX - p.x) > 2);
-            hold('left', back < 0 && Math.abs(fromX - p.x) > 2);
-          }
-        } else if (!airborne) {
-          if (!p.grounded) airborne = true;
-          // (Still on the ground a moment after Jump: it was held back (a ceiling's corner); let go, try again.)
-          else if (t - pressedAt > 0.1) {
-            hold('jump', false);
-            jumped = false;
-          }
-          hold('right', !up && jdir > 0);
-          hold('left', !up && jdir < 0);
-        } else if (!dashed) {
-          if (p.vy > -60) {
-            hold('up', up);
-            hold('right', jdir > 0);
-            hold('left', jdir < 0);
-            input.press('fire');
-            dashed = true;
-          }
-        } else {
-          input.release('fire');
-          hold('up', false);
-          const toSide = wallOf(to.mode);
-          const busy = !!dashState && dashState.t > 0;
-          // (Onto a wall: pressing into it only once level with the cell to hold it in, not above the wall's top,
-          // where it would go over; until then, steering to stay beside it.)
-          const level = here.row >= to.row;
-          const beside = dir !== 0 && Math.abs(toX - p.x) > 3;
-          hold('right', !busy && (toSide > 0 ? level || (beside && dir > 0) : toSide === 0 && dir > 0 && Math.abs(toX - p.x) > 3));
-          hold('left', !busy && (toSide < 0 ? level || (beside && dir < 0) : toSide === 0 && dir < 0 && Math.abs(toX - p.x) > 3));
-        }
+      // A move an ability makes: played by that ability's own step (its definition's bot part: src/abilities).
+      const part = botPartFor(to.move);
+      if (part) {
+        part.step({ rt, p, input, from, to, here, fromX, toX, dir, t, began, dt: DT, hold, tick, wallSide: wallOf, mem });
         tick();
         continue;
       }

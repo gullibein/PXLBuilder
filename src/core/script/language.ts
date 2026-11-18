@@ -13,6 +13,7 @@
  * checker and the reference text the AI reads all come from the tables
  * below, and the interpreter (runtime/scripts.ts) implements exactly them.
  */
+import { onAbilities } from '../../abilities/index';
 import { z } from 'zod';
 import { eventRegistry } from '../logic/vocabulary';
 import type { Project } from '../types';
@@ -244,8 +245,6 @@ export const MEMBERS: Record<string, string> = {
   grounded: 'standing on something',
   climbing: 'on a ladder, climbing or holding on',
   hanging: 'hanging from a ledge (LedgeGrab)',
-  dashing: 'mid-dash (Dash)',
-  wall_sliding: 'sliding down a wall (WallJump)',
   bumped: 'the side it bumped into a wall on in the last step (-1 left, 1 right, 0 none)',
   following: 'being steered by a "follows" connection right now',
   blinking: 'blinking after a hit (it can\'t be hurt meanwhile)',
@@ -271,6 +270,13 @@ export const MEMBERS: Record<string, string> = {
   grip: 'how well it grips the floor it stands on (1 = normal, less on ice, more on rough ground): its own friction times the floor\'s',
   name: 'its name',
 };
+// (And what each ability lets scripts read of itself, by its definition: src/abilities. self.dashing…)
+onAbilities((def, change) => {
+  for (const [name, n] of Object.entries(def.scriptNames ?? {})) {
+    if (change === 'added') MEMBERS[name] = n.doc;
+    else delete MEMBERS[name];
+  }
+});
 
 export interface FunctionInfo {
   args: string;

@@ -1,3 +1,4 @@
+import { abilityDefinitions, onAbilities } from '../../abilities/index';
 import { ComponentRegistry } from './registry';
 import type { ComponentDefinition } from './schema';
 
@@ -380,32 +381,6 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
     fields: {},
   },
   {
-    type: 'WallJump',
-    label: 'Wall Jump',
-    description: 'A player-controlled platformer character slides down walls it presses against (slower), and Jump pushes it off the wall, up and away.',
-    category: 'Behavior',
-    fields: {
-      slideSpeed: { kind: 'number', default: 90, min: 0, step: 10, description: 'Fastest slide down a wall (px/s)' },
-      jumpX: { kind: 'number', default: 260, min: 0, step: 10, description: 'Push away from the wall (px/s)' },
-      jumpY: { kind: 'number', default: 0, min: 0, step: 10, description: 'Jump speed up (px/s); 0: its own jump' },
-      lockTime: { kind: 'number', default: 0.15, min: 0, step: 0.05, description: 'Seconds it can\'t steer back to the wall' },
-    },
-  },
-  {
-    type: 'Dash',
-    label: 'Dash',
-    description: 'A player-controlled platformer character dashes the way the keys point when its key is pressed: fast, no gravity, a moment; charges refill on landing.',
-    category: 'Behavior',
-    fields: {
-      speed: { kind: 'number', default: 520, min: 0, step: 20, description: 'px/s' },
-      duration: { kind: 'number', default: 0.16, min: 0.02, step: 0.02, description: 'Seconds' },
-      charges: { kind: 'number', default: 1, min: 1, step: 1, integer: true, description: 'Dashes before landing again' },
-      directions: { kind: 'enum', options: ['eight', 'four', 'horizontal'], default: 'eight' },
-      key: { kind: 'enum', options: ['fire', 'interact'], default: 'fire', description: 'fire: X; interact: E' },
-      refillOnGround: { kind: 'boolean', default: true },
-    },
-  },
-  {
     type: 'Goal',
     label: 'Goal',
     description: 'Reaching it wins the level: when the player touches it, play goes on to the next level (or the game is finished). An exit flag, the top of an escape ladder, a portal.',
@@ -450,11 +425,23 @@ export const BUILTIN_COMPONENTS: ComponentDefinition[] = [
   },
 ];
 
+/**
+ * A registry of the engine's components: these, and the component of every ability there is (each ability's
+ * definition has its own: src/abilities), listed among the behaviours.
+ */
 export function createBuiltinRegistry(): ComponentRegistry {
   const registry = new ComponentRegistry();
-  for (const def of BUILTIN_COMPONENTS) registry.register(def);
+  for (const def of BUILTIN_COMPONENTS) {
+    if (def.type === 'Goal') for (const a of abilityDefinitions()) registry.register(a.component);
+    registry.register(def);
+  }
   return registry;
 }
 
 /** Shared default registry used by the editor. */
 export const componentRegistry = createBuiltinRegistry();
+// (An ability registered or taken out later: the editor's registry follows.)
+onAbilities((def, change) => {
+  if (change === 'removed') componentRegistry.unregister(def.component.type);
+  else if (!componentRegistry.has(def.component.type)) componentRegistry.register(def.component);
+});

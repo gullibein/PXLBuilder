@@ -32,7 +32,8 @@ export interface SolveResult {
 }
 
 /** How the player got into a cell: 'start', or a move rule's move ('walk', 'jump', 'wall_jump', 'dash'…). */
-export type Move = 'start' | 'walk' | 'fall' | 'jump' | 'climb' | 'swim' | 'spring' | 'teleport' | 'push' | 'wall_slide' | 'wall_jump' | 'dash';
+// (The arcade model's own, and whatever the player's abilities' rules make: theirs are named in their definitions.)
+export type Move = 'start' | 'walk' | 'fall' | 'jump' | 'climb' | 'swim' | 'spring' | 'teleport' | 'push' | (string & {});
 
 const MAX_STATES = 400000;
 

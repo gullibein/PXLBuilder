@@ -4,14 +4,28 @@
  * needs (docs/engine-architecture-proposal.md §16).
  */
 import type { RuntimeEntity } from '../runtime';
-import { dash, doubleJump, ledgeGrab, wallJump } from './abilities';
+import { abilitiesVersion, abilityDefinitions } from '../../abilities/index';
+import { doubleJump, ledgeGrab } from './abilities';
 import { arcade } from './arcade';
 import { topdown } from './topdown';
 import type { Ability, LocomotionModel } from './types';
 
 const MODELS: LocomotionModel[] = [];
-/** Abilities in the order their hooks run (a dash before a wall jump before a double jump; ledge grab last). */
-const ABILITIES: Ability[] = [];
+/**
+ * Abilities registered here, with when their hooks run (double jump and ledge grab until they are definitions too,
+ * V1.2; and the ones tests add). The others are the definitions of src/abilities: abilities() has them all, in the
+ * order their hooks run (a dash before a wall jump before a double jump; ledge grab last).
+ */
+const ABILITIES: { ability: Ability; order: number }[] = [];
+let known: { version: number; local: number; list: Ability[] } | null = null;
+function abilities(): Ability[] {
+  if (known && known.version === abilitiesVersion() && known.local === ABILITIES.length) return known.list;
+  const all = [...abilityDefinitions().map((d) => ({ ability: { id: d.id, component: d.component.type, worksWith: d.worksWith, ...d.runtime } as Ability, order: d.order })), ...ABILITIES];
+  // (A stable sort: those with the same order stay as they were registered.)
+  const list = all.map((x, i) => ({ ...x, i })).sort((a, b) => a.order - b.order || a.i - b.i).map((x) => x.ability);
+  known = { version: abilitiesVersion(), local: ABILITIES.length, list };
+  return list;
+}
 
 export function registerLocomotion(m: LocomotionModel): () => void {
   if (MODELS.some((x) => x.id === m.id)) throw new Error(`Two locomotion models with the id "${m.id}"`);
@@ -19,18 +33,22 @@ export function registerLocomotion(m: LocomotionModel): () => void {
   return () => void MODELS.splice(MODELS.indexOf(m), 1);
 }
 
-export function registerAbility(a: Ability): () => void {
-  if (ABILITIES.some((x) => x.id === a.id)) throw new Error(`Two abilities with the id "${a.id}"`);
-  ABILITIES.push(a);
-  return () => void ABILITIES.splice(ABILITIES.indexOf(a), 1);
+/** Only its runtime part (the whole of an ability is a definition: src/abilities registerAbility). */
+export function registerAbility(a: Ability, order = 100): () => void {
+  if (abilities().some((x) => x.id === a.id)) throw new Error(`Two abilities with the id "${a.id}"`);
+  const entry = { ability: a, order };
+  ABILITIES.push(entry);
+  known = null;
+  return () => {
+    ABILITIES.splice(ABILITIES.indexOf(entry), 1);
+    known = null;
+  };
 }
 
 registerLocomotion(arcade);
 registerLocomotion(topdown);
-registerAbility(dash);
-registerAbility(wallJump);
-registerAbility(doubleJump);
-registerAbility(ledgeGrab);
+registerAbility(doubleJump, 30);
+registerAbility(ledgeGrab, 40);
 
 /**
  * The model a Character Controller `movement` value answers to, or null: there is no such model. Never another one
@@ -48,7 +66,7 @@ export function movementValues(): string[] {
 
 /** The abilities a character has (by its components) that work with its model. */
 export function abilitiesFor(e: RuntimeEntity, model: LocomotionModel): Ability[] {
-  return ABILITIES.filter((a) => a.worksWith.includes(model.id) && e.base.components[a.component]);
+  return abilities().filter((a) => a.worksWith.includes(model.id) && e.base.components[a.component]);
 }
 
 /** The states a character's movement is in now (its model's and its abilities'): the motion snapshot's states. */
@@ -63,10 +81,10 @@ export type { Ability, LocomotionModel, MotionSnapshot, MovementContext, Movemen
 
 /** The locomotion models the ability of a component works with (for checking the engine's ability modules agree). */
 export function abilityWorksWith(component: string): string[] {
-  return ABILITIES.find((a) => a.component === component)?.worksWith ?? [];
+  return abilities().find((a) => a.component === component)?.worksWith ?? [];
 }
 
 /** The components that give abilities (for checking the engine's ability modules agree). */
 export function abilityComponents(): string[] {
-  return ABILITIES.map((a) => a.component);
+  return abilities().map((a) => a.component);
 }

@@ -23,6 +23,11 @@ export class ComponentRegistry {
     this.defs.set(def.type, def);
   }
 
+  /** Takes a component type out again (an ability taken out of the engine: its component goes with it). */
+  unregister(type: string): void {
+    this.defs.delete(type);
+  }
+
   has(type: string): boolean {
     return this.defs.has(type);
   }

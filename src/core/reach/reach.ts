@@ -9,7 +9,8 @@
  */
 import type { ComponentRegistry } from '../components/registry';
 import { limitsFrom, type Limits } from '../levelGen/limits';
-import { ARCADE_MOVES, dashMove, wallJumpMove, type MoveRule } from '../levelGen/moves';
+import { abilityDefinitions } from '../../abilities/index';
+import { ARCADE_MOVES, type MoveRule } from '../levelGen/moves';
 import type { SolverReach } from '../levelGen/solver';
 import { instantiateDefinition } from '../model/factory';
 import { characterReach } from '../model/reach';
@@ -42,65 +43,8 @@ export interface ReachDescription {
   capabilities: Record<string, Record<string, number>>;
 }
 
-/**
- * An ability's part in a player's reach: when a character has it (by its components), the move rule it adds (with
- * its capability numbers), and whether that rule is exact or an estimate to be confirmed by simulation. Registered
- * once for each ability; the reach description, the route solver, the validators and the level builder find it
- * from there.
- */
-export interface ReachAbility {
-  id: string;
-  has(components: ResolvedEntity['components']): boolean;
-  move(components: ResolvedEntity['components'], base: { jumpForce: number; gravity: number; speed: number }): MoveRule;
-  /** Its moves are estimated in cells (true: a route through them is confirmed by the simulator before it counts). */
-  estimated: boolean;
-  /** The simulator plays its moves (false: levels that need it are never proven playable here, and that is said). */
-  simulated: boolean;
-}
-
-const ABILITIES: ReachAbility[] = [];
-
-export function registerReachAbility(a: ReachAbility): void {
-  if (ABILITIES.some((x) => x.id === a.id)) throw new Error(`Two reach abilities with the id "${a.id}"`);
-  ABILITIES.push(a);
-}
-export function unregisterReachAbility(id: string): void {
-  const i = ABILITIES.findIndex((x) => x.id === id);
-  if (i >= 0) ABILITIES.splice(i, 1);
-}
-export const reachAbilityIds = (): string[] => ABILITIES.map((a) => a.id);
-
-const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-/** Kept under the estimate, as the jump table is: what a player can count on. */
-const MARGIN = 0.92;
-const CELL = 32;
-
-// A kick off the wall: up as fast as its jumpY (0: the player's jump), away at jumpX until its top.
-registerReachAbility({
-  id: 'wall_jump',
-  has: (c) => !!c.WallJump,
-  move(c, base) {
-    const w = c.WallJump!;
-    const vy = num(w.jumpY, 0) || base.jumpForce;
-    const rise = Math.floor(((vy * vy) / (2 * base.gravity)) * MARGIN / CELL);
-    const away = Math.max(1, Math.floor((num(w.jumpX, 260) * (vy / base.gravity) * MARGIN) / CELL));
-    return wallJumpMove(Math.max(1, rise), away);
-  },
-  estimated: true,
-  simulated: true,
-});
-// A dash: its speed for its duration; up too, unless it only goes sideways.
-registerReachAbility({
-  id: 'dash',
-  has: (c) => !!c.Dash,
-  move(c) {
-    const d = c.Dash!;
-    const cells = Math.floor((num(d.speed, 520) * num(d.duration, 0.16) * MARGIN) / CELL);
-    return dashMove(cells, d.directions === 'horizontal' ? 0 : cells);
-  },
-  estimated: true,
-  simulated: true,
-});
+/** The abilities that have a part in the player's reach (their definitions': src/abilities), by id. */
+export const reachAbilityIds = (): string[] => abilityDefinitions().filter((a) => a.reach).map((a) => a.id);
 
 /** The reach of a character with these components, in a world with this gravity (null: it has no controller). */
 export function reachOf(components: ResolvedEntity['components'], gravityY: number): ReachDescription | null {
@@ -115,19 +59,23 @@ export function reachOf(components: ResolvedEntity['components'], gravityY: numb
   const table = jumpTable(components, gravityY)!;
   const abilities = [...(components.DoubleJump ? ['double_jump'] : []), ...(components.LedgeGrab ? ['ledge_grab'] : [])];
   const moves: MoveRule[] = [...ARCADE_MOVES];
-  // The abilities registered with the reach model that this character has: each adds its move rule.
+  // The abilities this character has that have a part in its reach (their definitions say: src/abilities): each
+  // adds its move rule.
   const byMoves: string[] = [];
   const bySimulator: string[] = [];
   const approximate: string[] = [];
   const capabilities: ReachDescription['capabilities'] = {};
-  for (const a of ABILITIES) {
-    if (!a.has(components)) continue;
-    const move = a.move(components, base);
+  for (const a of abilityDefinitions()) {
+    if (!a.reach || !components[a.component.type] || !a.worksWith.includes('arcade')) continue;
+    const move = a.reach.move(components, base);
     moves.push(move);
     abilities.push(a.id);
     byMoves.push(...move.mechanics);
-    if (a.simulated) bySimulator.push(...move.mechanics);
-    if (a.estimated) approximate.push(...move.mechanics);
+    // (Simulated: the route bot plays every move the rule makes, by the ability's own bot part. Without one, a level
+    // that needs the ability is never proven playable here: it stays uncertain.)
+    const played = a.bot?.moves ?? [];
+    if ([move.id, ...(move.makes ?? [])].every((m) => played.includes(m))) bySimulator.push(...move.mechanics);
+    if (a.reach.estimated) approximate.push(...move.mechanics);
     if (move.capability) capabilities[move.capability.id] = { ...move.capability.numbers };
   }
   return {

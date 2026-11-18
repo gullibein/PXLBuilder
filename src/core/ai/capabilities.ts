@@ -4,6 +4,7 @@
  * from the real engine. It also lists what does NOT exist yet, so the model
  * says so instead of inventing features.
  */
+import { abilityOfComponent } from '../../abilities/index';
 import { ENGINE_PART_INFO } from '../model/engineParts';
 import type { ComponentRegistry } from '../components/registry';
 import type { FieldSchema } from '../components/schema';
@@ -43,12 +44,13 @@ export const COMPONENT_TOPICS: Record<string, { fields: string[]; components: st
   autotiling: { fields: ['Sprite.autotile', 'Sprite.autotileSheet'], components: [] },
   rounded_corners: { fields: ['Sprite.roundCorners'], components: [] },
   random: { fields: [], components: ['FogOfWar', 'Light'] },
-  precision_moves: { fields: [], components: ['WallJump', 'Dash'] },
+  // (Its components are the abilities' whose definitions name this topic: src/abilities.)
+  precision_moves: { fields: [], components: [] },
   camera: { fields: [], components: ['CameraZone'] },
   checkpoints: { fields: [], components: ['Checkpoint'] },
 };
 const fieldTopic = (comp: string, field: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.fields.includes(`${comp}.${field}`))?.[0];
-const componentTopic = (comp: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.components.includes(comp))?.[0];
+const componentTopic = (comp: string) => Object.entries(COMPONENT_TOPICS).find(([, t]) => t.components.includes(comp))?.[0] ?? abilityOfComponent(comp)?.topic;
 
 export function describeComponents(registry: ComponentRegistry): string {
   return registry
@@ -73,7 +75,7 @@ export function componentDocsFor(registry: ComponentRegistry, topic: string): st
   if (!t) return '';
   const out: string[] = [];
   for (const c of registry.list()) {
-    if (t.components.includes(c.type)) out.push([`  ${c.type}: ${c.description}`, ...Object.entries(c.fields).map(([n, f]) => describeField(n, f))].join('\n'));
+    if (t.components.includes(c.type) || abilityOfComponent(c.type)?.topic === topic) out.push([`  ${c.type}: ${c.description}`, ...Object.entries(c.fields).map(([n, f]) => describeField(n, f))].join('\n'));
     else for (const [n, f] of Object.entries(c.fields)) if (t.fields.includes(`${c.type}.${n}`)) out.push(`  ${c.type}.${n}:\n${describeField(n, f)}`);
   }
   return out.length ? `Components for this:\n${out.join('\n')}` : '';

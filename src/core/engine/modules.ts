@@ -4,6 +4,7 @@
  * moved them there), with what it requires and provides: a game's profile selects among them, and the compatibility
  * check works from these declarations alone. (`pointsTo` marked the ones that only described old code: none is left.)
  */
+import { onAbilities } from '../../abilities/index';
 import { TURN_SYSTEMS } from './turns';
 import { PROGRESSIONS } from '../progression/progression';
 import { GENERATORS } from './generators';
@@ -131,8 +132,12 @@ modules.register<LocomotionModule>({
 const ability = (id: string, component: string, describe: string): AbilityModule => ({ kind: 'ability', id, version: 1, describe, requires: ['locomotion:arcade'], provides: [`ability:${id}`], component });
 modules.register(ability('double_jump', 'DoubleJump', 'Extra jumps in the air'));
 modules.register(ability('ledge_grab', 'LedgeGrab', 'Catch ledges and climb up'));
-modules.register(ability('wall_jump', 'WallJump', 'Slide down walls and jump off them'));
-modules.register(ability('dash', 'Dash', 'A short fast dash the way the keys point, no gravity; refilled on landing'));
+// Every ability declared whole in one definition (src/abilities): its module is made from that, now and whenever
+// one is registered or taken out. What it requires is the movement models its definition says it works with.
+onAbilities((def, change) => {
+  if (change === 'removed') modules.unregister('ability', def.id);
+  else modules.register<AbilityModule>({ kind: 'ability', id: def.id, version: 1, describe: def.describe, requires: [def.worksWith.map((m) => `locomotion:${m}`).join('|')], provides: [`ability:${def.id}`], component: def.component.type });
+});
 
 // ---------------------------------------------------------------- geometry and camera
 // (All answered by the collision world, runtime/geometry/world.ts, behind the GeometryQuery interface; the runtime

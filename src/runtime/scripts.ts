@@ -23,6 +23,7 @@ import type { InputState, InputView } from './input';
 
 import { overlaps, type Box } from './physics';
 import { feetOf, groundGrip, STEP, type Runtime, type RuntimeEntity } from './runtime';
+import { abilitiesVersion, abilityDefinitions } from '../abilities/index';
 import { motionStates } from './movement/index';
 import { addComponent, readField, removeComponent, setTag, writeField } from './fields';
 import { byTag, LiveGrid, PointGrid } from './spatialIndex';
@@ -1485,8 +1486,20 @@ function show(v: Value): string {
   return String(v);
 }
 
+/** The names abilities' definitions give scripts (src/abilities), with the state each reads: worked out once for the abilities there are. */
+let abilityNames: { version: number; states: Map<string, string> } | null = null;
+function abilityState(name: string): string | undefined {
+  if (!abilityNames || abilityNames.version !== abilitiesVersion()) {
+    abilityNames = { version: abilitiesVersion(), states: new Map(abilityDefinitions().flatMap((d) => Object.entries(d.scriptNames ?? {}).map(([n, s]) => [n, s.state] as [string, string]))) };
+  }
+  return abilityNames.states.get(name);
+}
+
 function member(e: RuntimeEntity | null, name: string): Value {
-  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'climbing' || name === 'dashing' || name === 'wall_sliding' || name === 'open' || name === 'on' ? false : 0;
+  // (A name an ability's definition gives scripts: true while the character is in that state of it.)
+  const state = abilityState(name);
+  if (state) return !!e && motionStates(e).includes(state);
+  if (!e) return name === 'name' ? '' : name === 'alive' || name === 'grounded' || name === 'climbing' || name === 'open' || name === 'on' ? false : 0;
   switch (name) {
     case 'x':
       return e.x;
@@ -1502,10 +1515,6 @@ function member(e: RuntimeEntity | null, name: string): Value {
       return e.collider ? e.collider.hh * 2 : 0;
     case 'grounded':
       return e.grounded;
-    case 'dashing':
-      return motionStates(e).includes('dashing');
-    case 'wall_sliding':
-      return motionStates(e).includes('wallSliding');
     case 'climbing':
       return e.climbing;
     case 'hanging':

@@ -12,7 +12,8 @@ import { playRoute } from '../../runtime/routeBot';
 import { createBuiltinRegistry } from '../components/builtin';
 import { projectFromPreset, setGameProfile } from '../engine/profile';
 import { reachMeasure } from '../reach/probe';
-import { playerReach, registerReachAbility, reachAbilityIds, solverReach, unregisterReachAbility } from '../reach/reach';
+import { playerReach, reachAbilityIds, solverReach } from '../reach/reach';
+import { registerAbility, unregisterAbility } from '../../abilities/index';
 import type { Project } from '../types';
 import { setRouteBot } from '../validation/validators';
 import { generateLevel, type GenerateResult } from './generate';
@@ -278,17 +279,21 @@ describe('F6b: another ability plugs in with no change to the builder, the solve
       return ctx.entry;
     },
   };
-  // (Given by a component the player may have: here its Trail.)
+  // (An ability with a part in the reach and no bot part: one definition, registered once. The whole of what one
+  // registration gives is src/abilities/glide.test.ts.)
+  const testGlide = { type: 'TestGlide', label: 'Test glide', description: 'A test ability.', category: 'Behavior', fields: {} };
   beforeAll(() => {
-    registerReachAbility({ id: 'test_glide', has: (c) => !!c.Trail, move: () => glide, estimated: true, simulated: false });
+    registerAbility({ id: 'test_glide', describe: 'a test glide', component: testGlide, worksWith: ['arcade'], order: 50, runtime: {}, reach: { move: () => glide, estimated: true } });
+    registry.register(testGlide);
     registerPattern(glideGap);
   });
   afterAll(() => {
-    unregisterReachAbility('test_glide');
+    unregisterAbility('test_glide');
+    registry.unregister('TestGlide');
     unregisterPattern('test_glide_gap');
   });
   const glider = produce(PLAIN, (d) => {
-    d.definitions.find((x) => x.name === 'Player')!.components.Trail = registry.createDefault('Trail');
+    d.definitions.find((x) => x.name === 'Player')!.components.TestGlide = {};
   });
   const bp = { seed: 2, structure: 'run', length: 'short', sections: [{ pattern: 'test_glide_gap' }] };
 

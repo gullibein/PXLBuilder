@@ -234,7 +234,12 @@ export const TOPICS: Record<string, Topic> = {
 for (const key of Object.keys(SCRIPT_TOPICS)) if (TOPICS[key]) TOPICS[key] = { ...TOPICS[key], text: `${TOPICS[key].text}\n${scriptDocsFor(key)}` };
 
 // Topics with component fields of their own: their descriptions go with them.
-for (const key of Object.keys(COMPONENT_TOPICS)) if (TOPICS[key]) TOPICS[key] = { ...TOPICS[key], text: `${TOPICS[key].text}\n${componentDocsFor(componentRegistry, key)}` };
+// (Read each time: a topic's components include those of the abilities there are now.)
+for (const key of Object.keys(COMPONENT_TOPICS)) {
+  if (!TOPICS[key]) continue;
+  const own = TOPICS[key].text;
+  TOPICS[key] = Object.defineProperty({ ...TOPICS[key] }, 'text', { enumerable: true, get: () => `${own}\n${componentDocsFor(componentRegistry, key)}` });
+}
 
 // The worked examples that go only with requests about them: a topic each.
 for (const r of EXAMPLE_ROUTING) {
