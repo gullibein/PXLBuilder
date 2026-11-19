@@ -146,7 +146,7 @@ describe('the level builder (classic platformer)', () => {
 
   it('records how the level was made: builder, seed, the blueprint, each pattern with its version', () => {
     const r = build(starter(), { difficulty: 2, seed: 31, concept: 'gentle start' });
-    expect(r.madeBy).toMatchObject({ generator: 'classic', version: 2, seed: 31, blueprint: { difficulty: 2, seed: 31, concept: 'gentle start' } });
+    expect(r.madeBy).toMatchObject({ generator: 'classic', version: 3, seed: 31, blueprint: { difficulty: 2, seed: 31, concept: 'gentle start' } });
     expect(Object.values(r.madeBy.patterns).every((v) => v >= 1)).toBe(true);
     expect(Object.keys(r.madeBy.patterns)).toContain('start');
   });
@@ -182,13 +182,15 @@ describe('variety (stage 4)', () => {
   });
 
   it('it builds up: tests and twists late in a level are harder than early ones', { timeout: 60000 }, () => {
-    let early = 0;
-    let late = 0;
+    // (Their average difficulty, not their sum: how many there are in each half says nothing about how hard they are.)
+    const early: number[] = [];
+    const late: number[] = [];
     for (let seed = 0; seed < 10; seed++) {
       const s = fp(build(p, { difficulty: 3, seed, structure: 'run', length: 'long' })).sections;
       const hard = s.map((x, i) => ({ i, d: Number(x.split('@')[1]), test: /^(test|twist):/.test(x) })).filter((x) => x.test);
-      for (const h of hard) (h.i < s.length * 0.5 ? (early += h.d) : (late += h.d));
+      for (const h of hard) (h.i < s.length * 0.5 ? early : late).push(h.d);
     }
-    expect(late).toBeGreaterThan(early);
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(mean(late)).toBeGreaterThan(mean(early) + 0.5);
   });
 });

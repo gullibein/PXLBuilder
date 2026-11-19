@@ -9,7 +9,7 @@ import { TURN_SYSTEMS } from './turns';
 import { PROGRESSIONS } from '../progression/progression';
 import { GENERATORS } from './generators';
 import { playGeneratorById, type PlayGenerator } from '../generation/playGenerators';
-import { CAMERA_BEHAVIORS } from './camera';
+import { CAMERA_BEHAVIORS, gameCamera } from './camera';
 import { VALIDATORS, type Validator } from '../validation/validators';
 import { GEOMETRY } from './geometry';
 import type { ComponentRegistry } from '../components/registry';
@@ -179,7 +179,10 @@ modules.register<GeneratorModule>({
   build: ({ project, sceneId, blueprint, registry, options }) => {
     const genre = levelProfileOf(project, registry)?.genre.id;
     const id = genre && GENRE_BUILDS[genre] ? genre : 'classic';
-    return generateLevel(project, sceneId, blueprint, registry, id, { validators: ['layout', 'checker', 'cell_solver', ...(id === 'puzzle' ? ['puzzle_needed'] : [])], ...options });
+    // (A game whose camera stays still shows the level as one screen: its levels keep their size. With a camera
+    // that follows, a level may be a few cells longer than its layout, when its ending needs them.)
+    const fixedSize = !gameCamera(project).includes('follow');
+    return generateLevel(project, sceneId, blueprint, registry, id, { validators: ['layout', 'checker', 'cell_solver', ...(id === 'puzzle' ? ['puzzle_needed'] : [])], fixedSize, ...options });
   },
 });
 modules.register<GeneratorModule>({

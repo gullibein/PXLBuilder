@@ -184,7 +184,7 @@ interface Pick {
 }
 
 /** The pattern, variant and width for a slot, within `room` columns (null: nothing fits). */
-function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number, failed: ReadonlySet<string> = new Set()): Choice | null {
+function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number, failed: ReadonlySet<string> = new Set(), ending: 'grow' | 'fit' | null = null): Choice | null {
   const focus = k.bp.focus ?? [];
   const avoid = k.avoid;
   const named0 = slot.spec?.pattern ? patternById(slot.spec.pattern) : undefined;
@@ -230,6 +230,20 @@ function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number,
     if (variant) {
       const [lo, hi] = p.width(k.lim, d, variant, k.caps, k.without);
       if (lo <= room) return { pattern: p, variant, width: k.rnd.int(lo, Math.min(hi, room)), difficulty: d };
+      // What ends the run, wider than the cells left for it. The level can be made that much longer: it is built as
+      // drawn, at its least width. A level that keeps its size, or an ending with something the level was to leave
+      // out (a last enemy, where enemies are avoided): one of its other variants that fit, drawn anew. (A build was
+      // thrown away here before; nothing else is drawn differently, so every other build is as it was.)
+      const leftOut = (v: string) => !!p.variants.find((x) => x.id === v)?.mechanics?.some((m) => avoid.has(m));
+      if (ending === 'grow' && Number.isFinite(lo) && !leftOut(variant)) return { pattern: p, variant, width: lo, difficulty: d };
+      if (ending) {
+        const fits = wanted.filter((v) => !leftOut(v) && p.width(k.lim, d, v, k.caps, k.without)[0] <= room);
+        if (fits.length) {
+          const narrower = k.rnd.weighted(fits, () => 1);
+          const [lo2, hi2] = p.width(k.lim, d, narrower, k.caps, k.without);
+          return { pattern: p, variant: narrower, width: k.rnd.int(lo2, Math.min(hi2, room)), difficulty: d };
+        }
+      }
     }
     pick.w = 0;
   }
@@ -370,6 +384,18 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
   let hubEntry = 0;
   // Bonus sections the blueprint asks for (secrets, a route above): put among the sections.
   let bonuses = (bp.secrets ?? 0) + (bp.routes === 'bonus_above' ? 1 : 0);
+  /**
+   * Makes the level `more` cells longer at the far end of a run, just inside the wall it ends at. The new cells are
+   * empty over the run's own floor (its ending is built there); beside another floor they are wall, so that floor is
+   * as it was. Everything already built keeps its place or moves over with its run.
+   */
+  const lengthen = (run: RunPlan, more: number): void => {
+    const at = run.dir > 0 ? grid.width - 1 : 1;
+    const own = (r: number, b: Band) => r >= b.top && r <= b.fill;
+    grid.widen(at, more, (r) => (own(r, run.band) || !plan.runs.some((q) => own(r, q.band)) ? null : 'ground'));
+    for (const q of plan.runs) if (q.start >= at) q.start += more;
+    run.length += more;
+  };
   for (let ri = 0; ri < plan.runs.length; ri++) {
     const run = plan.runs[ri];
     let entry = run.afterIntro ? hubEntry : run.entry;
@@ -399,7 +425,8 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
       }
       return { role, spec: null };
     };
-    const buildSlot = (slot: Slot, room: number, isEnding: boolean): boolean => {
+    const buildSlot = (slot: Slot, roomGiven: number, isEnding: boolean): boolean => {
+      let room = roomGiven;
       const ctxBase = (width: number, difficulty: number, variant: string): SectionCtx => ({
         g: grid, rnd: rnd.fork(), lim, reach, caps, without, roles, difficulty, variant, dir: run.dir, start: run.start + run.dir * used, width, band: run.band, entry,
         ref: (p) => `${p}${++refs}`,
@@ -421,7 +448,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
       // this section is tried again, not the whole level.
       const failed = new Set<string>();
       for (let tries = 0; tries < 4; tries++) {
-        let choice = choose(slot, room, run.band, k, progress, failed);
+        let choice = choose(slot, room, run.band, k, progress, failed, isEnding ? (opts.fixedSize ? 'fit' : 'grow') : null);
         if (!choice && slot.spec?.pattern) {
           if (!notes.some((n) => n.startsWith(`pattern "${slot.spec!.pattern}"`))) notes.push(`pattern "${slot.spec.pattern}" can't be built here (missing parts or room); another was used`);
           choice = choose({ role: slot.role, spec: null }, room, run.band, k, progress, failed);
@@ -429,6 +456,13 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
         if (!choice && !isEnding) choice = choose({ role: 'rest', spec: null }, room, run.band, k, progress, failed);
         if (!choice) return false;
         if (slot.spec?.variant && choice.variant !== slot.spec.variant) notes.push(`variant "${slot.spec.variant}" of "${choice.pattern.id}" can't be built here (missing parts, or not on this floor); "${choice.variant}" was used`);
+        // An ending that needs more cells than are left: the level is made that much longer, at the run's far end.
+        if (isEnding && choice.width > room) {
+          const more = choice.width - room;
+          lengthen(run, more);
+          room += more;
+          notes.push(`the level was made ${more} cell${more > 1 ? 's' : ''} longer for its ending (${choice.pattern.id}/${choice.variant})`);
+        }
         // The ending takes up what is left of the run (the goal at its very end).
         if (isEnding) choice.width = room;
         const before = grid.clone();
@@ -568,6 +602,11 @@ export interface GenerateOptions {
   candidates?: number;
   /** The validators its levels go through (default: the sections generator's: layout, checker, cell_solver, and puzzle_needed for puzzles). */
   validators?: string[];
+  /**
+   * The level keeps the size its layout gives it (a game whose camera stays still: the level is the screen). Else a
+   * level whose ending needs a few cells more than are left gets them: it is made that much longer.
+   */
+  fixedSize?: boolean;
   /** Told about every checked build's grid (its moving platforms as bridges), for tools and tests. */
   onBuilt?: (grid: LevelGrid) => void;
 }

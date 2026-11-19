@@ -34,6 +34,18 @@ describe('the route bot: playing a level on the real runtime', () => {
     expect(r).toMatchObject({ won: true });
   });
 
+  it('swims a pool and gets out of it at its bank (no ground to take off from: strokes up, onto the bank)', () => {
+    // (A pool sunk into the floor, a short bank, a hole in it: the level a seed of the classic builder gives.)
+    const { p, g } = level(['#............................#', '#.P........................G.#', '########~~~~~####.############', '########wwwww####.############', '#################.############']);
+    const route = solveLevel(g, lim);
+    expect(route.goal).toBe(true);
+    // (The way out of the water is a jump, from a cell of the pool.)
+    const out = route.path.findIndex((q, i) => q.move === 'jump' && i > 0 && ['water', 'deepWater'].includes(g.get(route.path[i - 1].col, route.path[i - 1].row) ?? ''));
+    expect(out, route.path.map((q) => `${q.move}(${q.col},${q.row})`).join(' ')).toBeGreaterThan(0);
+    const r = playRoute(p, p.scenes[0].id, route.path, registry);
+    expect(r).toMatchObject({ won: true });
+  });
+
   it('a jump the level checker would not see as too wide for the real arc fails in play (a route forced over a 6-cell gap)', () => {
     const { p } = level(['............', '.P.......G..', '###......###']);
     const r = playRoute(p, p.scenes[0].id, [{ col: 1, row: 1, move: 'start' }, { col: 9, row: 1, move: 'jump' }], registry);

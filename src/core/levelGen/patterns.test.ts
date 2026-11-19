@@ -37,6 +37,10 @@ describe('the pattern library', () => {
       }
       for (const v of pat.variants) {
         const difficulty = Math.max(3, v.minDifficulty ?? 1);
+        // (Every level checks out. Where the variant had no room in a build, another section took its place, and that
+        // is said: in one seed of the three at most.)
+        let built = 0;
+        const missed: string[] = [];
         for (const seed of [1, 2, 3]) {
           let r: ReturnType<typeof generateLevel>;
           try {
@@ -46,8 +50,12 @@ describe('the pattern library', () => {
             continue;
           }
           const s = (r.madeBy.fingerprint as { sections: string[] }).sections;
-          if (r.state !== 'validated' || !s.some((x) => x.includes(`:${pat.id}/${v.id}@`))) failures.push(`${pat.id}/${v.id} seed ${seed}: ${r.state}, ${s.join(' ')} ${r.notes.join('; ')}`);
+          if (r.state !== 'validated') failures.push(`${pat.id}/${v.id} seed ${seed}: ${r.state}, ${s.join(' ')} ${r.notes.join('; ')}`);
+          if (s.some((x) => x.includes(`:${pat.id}/${v.id}@`))) built++;
+          else if (!/can't be built here/.test(r.notes.join(' '))) failures.push(`${pat.id}/${v.id} seed ${seed}: left out without a word`);
+          else missed.push(`seed ${seed}: ${s.join(' ')}`);
         }
+        if (built < 2) failures.push(`${pat.id}/${v.id}: built in ${built} of 3 seeds (${missed.join(' | ')})`);
       }
     }
     expect(failures).toEqual([]);

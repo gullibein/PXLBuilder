@@ -22,7 +22,8 @@ export interface GenreBuild {
 
 export const CLASSIC_BUILD: GenreBuild = {
   id: 'classic',
-  version: 2,
+  // (3: an ending wider than the cells left makes the level longer; before, that build was thrown away.)
+  version: 3,
   structures: { run: 4, climb: 2, descent: 1.5, loop: 2, hub: 1.5 },
   weights: {
     start: { intro: 1 },
@@ -67,7 +68,7 @@ export const CLASSIC_BUILD: GenreBuild = {
  */
 export const PUZZLE_BUILD: GenreBuild = {
   id: 'puzzle',
-  version: 1,
+  version: 2,
   structures: { run: 3, climb: 2, loop: 1.5, hub: 2, descent: 1 },
   weights: {
     start: { intro: 1 },

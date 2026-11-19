@@ -84,7 +84,8 @@ export interface Pattern {
    */
   requires?: string[];
   /** Variants, each a different construction; with extra parts some need. */
-  variants: { id: string; needs?: Role[]; bottomOnly?: boolean; minDifficulty?: number }[];
+  /** (`mechanics`: what this variant adds to what the pattern is about: an ending with a last enemy and gap.) */
+  variants: { id: string; needs?: Role[]; bottomOnly?: boolean; minDifficulty?: number; mechanics?: Mechanic[] }[];
   difficulty: [number, number];
   /**
    * How wide (cells) it can be, at this difficulty, for this variant. `without`: what the player gets over without

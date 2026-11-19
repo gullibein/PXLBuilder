@@ -125,9 +125,12 @@ describe('F6b: patterns are built for the reach the player has', () => {
     for (const difficulty of [2, 4])
       for (let seed = 1; seed <= 8; seed++) {
         const { r, sections } = build(BOTH, { seed, difficulty, avoid: ['mover'] });
-        const uses = has(sections, 'dash_gap') || has(sections, 'wall_shaft');
-        if (has(sections, 'dash_gap')) dash++;
-        if (has(sections, 'wall_shaft')) wall++;
+        // (A section that needs the dash; one that needs wall jumps: any of them, since V1.4.)
+        const dashes = ['dash_gap', 'dash_rise', 'dash_shaft', 'dash_cling'].some((id) => has(sections, id));
+        const walls = ['wall_shaft', 'kick_back', 'dash_shaft', 'dash_cling'].some((id) => has(sections, id));
+        const uses = dashes || walls;
+        if (dashes) dash++;
+        if (walls) wall++;
         expect(r.state, `d${difficulty} seed ${seed}`).toBe('validated');
         // (Validated with an ability section means played: the solver's route alone is not enough.)
         if (uses) expect(r.notes.join(' '), `d${difficulty} seed ${seed}`).toMatch(/the route bot played it to the goal/);

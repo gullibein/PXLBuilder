@@ -174,6 +174,14 @@ export function playRoute(project: Project, sceneId: Id, path: { col: number; ro
         continue;
       }
       if (to.move === 'jump') {
+        // (Out of water, at a pool's bank: there is no ground to take off from. Strokes up, steering onto the bank.)
+        if (p.inLiquid && !p.grounded && !p.climbing && !jumped) {
+          hold('right', dir > 0);
+          hold('left', dir < 0);
+          hold('jump', Math.floor(t * 6) % 2 === 0);
+          tick();
+          continue;
+        }
         // A run up to the take-off, then the jump, Jump held all the way; steering toward the landing.
         if (!jumped) {
           // (Running through the take-off cell and off near its far edge, at speed, as a player jumps a gap; a

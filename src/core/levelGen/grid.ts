@@ -43,13 +43,17 @@ export class LevelGrid {
   readonly placed: Placed[] = [];
   readonly links: Link[] = [];
 
+  /** In cells. (Only `widen` changes it.) */
+  width: number;
+
   constructor(
-    readonly width: number,
+    width: number,
     readonly height: number,
     /** Sizes in cells of the roles' objects (a door 1×2, a pipe 2×1). */
     private readonly roles: Roles,
   ) {
     if (width < 1 || height < 1) throw new GridError(`A level needs at least one cell (asked ${width}×${height})`);
+    this.width = width;
     this.cells = Array.from({ length: height }, () => Array<Role | null>(width).fill(null));
   }
 
@@ -129,9 +133,22 @@ export class LevelGrid {
 
   /** Puts back what a copy (clone) had: undoes everything done since it was made. */
   restore(from: LevelGrid): void {
+    this.width = from.width;
     this.cells = from.cells.map((r) => [...r]);
     this.placed.splice(0, this.placed.length, ...from.placed.map((p) => structuredClone(p)));
     this.links.splice(0, this.links.length, ...from.links.map((l) => structuredClone(l)));
+  }
+
+  /**
+   * Makes the level `count` cells wider: new columns at column `at` (what was there and beyond moves over, things
+   * placed by themselves with it; paths and links are kept as they are). `fill`: what each row's new cells hold.
+   */
+  widen(at: number, count: number, fill: (row: number) => Role | null): void {
+    if (count < 1) return;
+    if (at < 0 || at > this.width) throw new GridError(`A level ${this.width} cells wide can't be widened at column ${at}`);
+    this.cells.forEach((row, r) => row.splice(at, 0, ...Array<Role | null>(count).fill(fill(r))));
+    this.width += count;
+    for (const p of this.placed) if (p.col >= at) p.col += count;
   }
 
   /** Takes a placed thing away (and its links). */

@@ -68,7 +68,8 @@ export const VALIDATED_GAMES: Record<string, () => Project> = {
 };
 
 const VALIDATION: Record<string, string> = {
-  'mario: generated level': '52a305319a3fec17',
+  // (The classic builder's version 3: this seed's first build, thrown away before, is now the level. Before: '52a305319a3fec17'.)
+  'mario: generated level': 'dff1429562a45dfb',
   'mario: stomp and block': 'fe346746f20b6904',
   tetris: 'a7b3607edbd79a55',
   'dr mario': 'a7b3607edbd79a55',

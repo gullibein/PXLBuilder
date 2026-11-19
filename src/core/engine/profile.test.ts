@@ -36,10 +36,14 @@ const GOLDEN_DEFINITIONS: Record<string, string> = {
   roguelike: 'e0078f9b404b7802',
   isometric: '615739314cc59da2',
 };
+// (Recorded again with the builders' versions 3 and 2, when an ending wider than the cells left stopped throwing the
+// build away (docs §24.7): of these 45 levels, the 29 that came from their first build before are the same to the
+// byte; the 16 whose earlier builds were thrown away are now their first build. The version is in every record.
+// Before: c04924868a34893e, c1c8a1635d540ef6, c9ae67cab13aa620.)
 const GOLDEN_LEVELS: Record<string, { builder: string; hash: string }> = {
-  'classic-built': { builder: 'classic', hash: 'c04924868a34893e' },
-  puzzle: { builder: 'puzzle', hash: 'c1c8a1635d540ef6' },
-  platformer: { builder: 'classic', hash: 'c9ae67cab13aa620' },
+  'classic-built': { builder: 'classic', hash: '7f238211475c7aca' },
+  puzzle: { builder: 'puzzle', hash: 'e7dddbaed3aa46e2' },
+  platformer: { builder: 'classic', hash: 'd364ce281aa9ec2a' },
 };
 const levelsHash = (p: ReturnType<typeof fixture>) => {
   const h = createHash('sha256');

@@ -2154,7 +2154,7 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 | Patterns that require a double jump or a ledge grab | Both are in the jump table: every classic pattern is already sized by them, and a pattern in cells can't need a ledge grab (it adds less than a row). The capability numbers planned for them are therefore not added: nothing would read them. The route bot does not press Jump again in the air, so a level for a double-jumping player is judged by the table, as before, and not played |
 
 **Found on the way, not changed.**
-- **Whole levels are thrown away for their last section.** About a third of the builds in these sweeps ended with "no room was left for the goal", each with five to seven cells left for it; the goal's widest variant needs eight, and when it is drawn there is no second draw. Falling back to a narrower variant would likely fix it, and would change which level a seed gives a player without abilities, so it is left for a decision of its own.
+- **Whole levels were thrown away for their last section** ("no room was left for the goal"). Looked into and put right in §24.7.
 - **On a level of several floors a section can be bypassed** by dropping through a gap to the floor below. The builder's check catches it (the level is built again); it costs builds.
 
 **Tests** (`levelGen/abilityPatterns.test.ts`, 22; `reachAware.test.ts` as before):
@@ -2173,3 +2173,62 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 - **`kick_back` is for a player without a dash upward** (with the default numbers).
 - **The bot proves one route playable on one run.** It does not say a section is fair or fun; nothing here measures that.
 - **Estimated moves.** A player whose numbers are far from the defaults (a very long dash, a weak kick) gets sections sized from them, each still solved and played, or not validated.
+
+### 24.7 V1.4 follow-up — the room an ending gets
+
+**The question** (from the review): a goal needs one cell, and a level that scrolls can be a few cells longer. Why was a level ever thrown away for want of room for its goal?
+
+**What was found.**
+
+| Fact | Measured (100 classic levels, 100 puzzle levels) |
+|---|---|
+| The goal itself needs three cells (the goal, ground under it, a cell each side) | Its plain ending: 3. Raised on a step: 5 |
+| There is always room for it | 5, 6 or 7 cells were left for the ending in every build |
+| One of the three endings is wider: a last gap and an enemy before the goal ("gauntlet") | It needs 8 |
+| The builder keeps 5 cells for the ending, whichever is drawn | So the wide one never fitted: drawn 32 and 33 times, too wide 32 and 33 times |
+| A drawn ending that didn't fit was not drawn again: the whole build was thrown away | 142 and 152 builds for 100 levels each |
+| So the gap-and-enemy ending was never built in a level left to the builder | 0 of 200 |
+
+It was not a shortage of space in the level. It was the builder asking for more than it had kept, and giving up.
+
+**What it does now.**
+- **A level whose ending needs a few cells more is made that much longer** (one to three cells), at the far end of its last floor, just inside the wall. The ending is built as drawn. On a level of several floors the other floors are as they were: the new cells beside them are wall.
+- **A game whose camera stays still keeps its levels' size** (a short level on one floor is one screen: thirty cells). There the ending is drawn again among those that fit. The engine says which: the profile's camera follows, or it doesn't (`fixedSize`, passed by the generator module; the builder itself knows no camera).
+- **The ending with an enemy is not given to a level that leaves enemies out.** It used to be drawn for such a level too; it never showed because it was never built. A variant can now say what it adds to a level (`mechanics`).
+- **The goal's surroundings** were already the builder's own sections: the goal is one section among them, and only its last gap and enemy were tied to it.
+
+**Result** (the same 100 levels each):
+
+| | Before | After |
+|---|---|---|
+| Builds for 100 classic levels | 142 | 108 |
+| From the first build | 74 | 92 |
+| Builds for 100 puzzle levels | 152 | 116 |
+| Levels ending with the last gap and enemy | 0 | 22 classic, 19 puzzle |
+| Made longer, by how much | none | 1 cell: 7; 2: 10; 3: 24 |
+| Not validated | 0 | 0 |
+
+**What changed for existing seeds, exactly.** Nothing is drawn differently except where a build used to be thrown away, so:
+- A level that never drew the wide ending is the same to the byte. Measured on 105 recorded levels: all 76 such levels identical.
+- A seed whose build was thrown away for its ending now gives that build (it gave a later one before): 29 of the 105.
+- The builders' versions went up (classic 3, puzzle 2), as they do when a seed can give another level; the version is in every level's record.
+- Levels already in a game are not built again: nothing in a saved game changes.
+
+**Goldens recorded again, and why** (every other golden is unchanged, among them the classic and puzzle sweeps):
+
+| Golden | Why |
+|---|---|
+| The Mario-style level of the regression suite (its play trace and its validation) | Its seed's first build was thrown away before; it is now the level |
+| Levels built through the profile's generator (three saved games, 45 levels) | 16 of the 45 are now their first build; and the version is in every record |
+
+**Tests changed, and why.**
+- **"It builds up"** compared the sum of the difficulties of the tests and twists in each half of a level, which depends on how many there are. It now compares their averages (early 3.4, late 4.3), which is what it claims.
+- **"Every variant builds when asked for by name"** asked for it in three seeds of three. With one seed's first build now kept, one variant has no room in one of them (another section takes its place, and that is said, as always). It now asks for two of three, every level validated, and never left out without a word.
+- **"Free levels use the abilities"** counted `dash_gap` only; it counts any section that needs the dash.
+
+**Found on the way.**
+- **The route bot could not get out of a pool at its bank** (no ground to take off from). It showed because a recorded seed's level now has a pool. The bot now strokes up and onto the bank; tested on that level (it fails with the bot as it was).
+- **Not changed: the same flaw for other sections.** A section's variant is drawn before its width is looked at; when it is too wide for the room left, the whole pattern is dropped for that slot (about five times a level). No build is lost, another pattern is picked; the wider variants come up less than their weight says. Drawing among the variants that fit would change nearly every level a seed gives, so it is left for a decision of its own.
+- **Not changed: another variant with an enemy in levels that leave enemies out.** "An enemy between pipes" is built in about one in ten levels asked for without enemies (3 of 30). The way to say it is there now (`mechanics` on a variant); using it for the draw changes the levels of requests without enemies.
+
+**Tests** (`levelGen/ending.test.ts`, 8; `routeBot.test.ts`, 1): what each ending needs; no build thrown away, the wide ending built, every level as wide as its layout plus what its ending needed; several floors (the other floors as they were, wall beside them); no enemy ending where enemies are left out; the size kept for a still camera, by option and through the engine; recorded levels the same to the byte, and the four that changed; the grid made wider; the bot out of a pool.

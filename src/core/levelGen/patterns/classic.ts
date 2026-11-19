@@ -494,7 +494,7 @@ const finale: Pattern = {
   mechanics: [],
   fits: ['finale'],
   needs: ['ground', 'goal'],
-  variants: [{ id: 'pad' }, { id: 'gauntlet', needs: ['enemy'], minDifficulty: 2 }, { id: 'raised' }],
+  variants: [{ id: 'pad' }, { id: 'gauntlet', needs: ['enemy'], minDifficulty: 2, mechanics: ['enemy', 'gap'] }, { id: 'raised' }],
   difficulty: [1, 5],
   width: (lim, _d, v) => (v === 'gauntlet' ? [8, 9 + Math.max(1, lim.gap(0))] : v === 'raised' ? [5, 8] : [3, 6]),
   build(ctx) {

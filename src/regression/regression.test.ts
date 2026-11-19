@@ -29,7 +29,9 @@ const golden = (name: string, got: string, want: string) => {
 
 /** Fingerprints recorded with the engine before F2 (movement moved behind the movement models). */
 const GAMES: Record<string, string> = {
-  'mario: generated level': 'ba9fd23c5205d802',
+  // (Recorded again with the classic builder's version 3: this seed's first build used to be thrown away for its
+  // ending and is now the level, with a pool the bot swims out of. Before: 'ba9fd23c5205d802'.)
+  'mario: generated level': '41eddaeb1504f7c1',
   'mario: stomp and block': '7797b96734514bca',
   'tetris': 'aa4e2126b0418fb0',
   'dr mario': '668aa2b21263d78a',
