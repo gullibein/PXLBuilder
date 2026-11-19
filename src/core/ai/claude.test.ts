@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { askClaude, MODEL, resetClaudeFeatures, usageCost } from './claude';
+import { askClaude, MAX_OUTPUT, MODEL, resetClaudeFeatures, usageCost } from './claude';
 import type { AIRequestBody } from './protocol';
 
 /**
@@ -277,6 +277,85 @@ describe('the Claude call', () => {
     // The answer carries it.
     const client = streaming({ beta: { messages: { parse: async () => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', parsed_output: answer, usage: { input_tokens: 10, output_tokens: 10 } }) } } });
     expect((await askClaude(client, body())).usage?.cost).toBeCloseTo(240 / 1e6, 12);
+  });
+
+  // An answer of two whole operations and the start of a third, as it reads when it stops in the middle.
+  const place = (x: number) => ({ op: 'place_instance', sceneId: 's1', definitionRef: 'def_1', x, y: 4, name: null, ref: null, onTop: null });
+  const whole = JSON.stringify({ kind: 'preview', message: 'A chess board.', changes: ['Placed the pieces'], operations: [place(1), place(2), place(3)], needCode: null, starter: null });
+  const partial = whole.slice(0, whole.lastIndexOf('{"op"') + 30);
+
+  it('an answer has the most room the models give; a model that refuses it is asked with less, from then on', async () => {
+    const seen: Record<string, unknown>[] = [];
+    await askClaude(fakeClient(seen), body());
+    expect(seen[0].max_tokens).toBe(MAX_OUTPUT);
+    expect(MAX_OUTPUT).toBe(128_000);
+    const notes: string[] = [];
+    const tokens: unknown[] = [];
+    const picky = streaming({
+      beta: {
+        messages: {
+          parse: async (p: { max_tokens: number }) => {
+            tokens.push(p.max_tokens);
+            if (p.max_tokens > 64_000) throw rejected('max_tokens: 128000 > 64000, which is the maximum allowed number of output tokens for this model');
+            return { stop_reason: 'end_turn', parsed_output: answer };
+          },
+        },
+      },
+    });
+    expect((await askClaude(picky, body(), undefined, MODEL, (m) => notes.push(m))).ok).toBe(true);
+    expect((await askClaude(picky, body())).ok).toBe(true);
+    expect(tokens).toEqual([128_000, 64_000, 64_000]);
+    expect(notes.join('\n')).toMatch(/did not take 128,000 tokens of room.*asking with 64,000/);
+  });
+
+  it('an answer cut off at the length limit is not thrown away: the changes that arrived whole are applied, and it says first that the rest is missing', async () => {
+    const cut = streaming({ beta: { messages: { parse: async () => ({ model: MODEL, stop_reason: 'max_tokens', content: [{ type: 'text', text: partial }], usage: { input_tokens: 10, output_tokens: 128000 } }) } } });
+    const r = await askClaude(cut, body());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.response.operations).toEqual([place(1), place(2)]);
+    expect(r.response.kind).toBe('preview');
+    expect(r.response.changes[0]).toBe("⚠ The AI's answer was cut off at the length limit: its first 2 changes arrived whole and are applied, the rest is missing. Ask it to finish the rest (or ask for less at once).");
+    expect(r.response.changes[1]).toBe('Placed the pieces');
+    expect(r.response.message).toMatch(/^⚠ The AI's answer was cut off[^]*A chess board\.$/);
+    // (It is paid for all the same, and says so.)
+    expect(r.usage?.outputTokens).toBe(128000);
+    // Cut before one change was whole (in its thinking, or inside the first one): nothing to keep, said as before.
+    const early = streaming({ beta: { messages: { parse: async () => ({ stop_reason: 'max_tokens', content: [{ type: 'text', text: whole.slice(0, whole.indexOf('{"op"') + 12) }] }) } } });
+    expect(await askClaude(early, body())).toMatchObject({ ok: false, error: 'The AI response was incomplete. Try a smaller request.' });
+  });
+
+  it('the connection lost while a long answer is being written: what arrived whole is kept; with nothing whole, the error says what happened', async () => {
+    // (A stream as the SDK gives it: the text so far is heard as it is written; the end never comes.)
+    const dropping = (text: string) =>
+      ({
+        beta: {
+          messages: {
+            stream: () => {
+              const heard: ((delta: string, soFar: string) => void)[] = [];
+              return {
+                on: (event: string, f: (delta: string, soFar: string) => void) => void (event === 'text' && heard.push(f)),
+                finalMessage: async () => {
+                  for (const f of heard) f(text, text);
+                  throw new Error('network error');
+                },
+              };
+            },
+          },
+        },
+      }) as unknown as Anthropic;
+    const notes: string[] = [];
+    const r = await askClaude(dropping(partial), body(), undefined, MODEL, (m) => notes.push(m));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.response.operations).toEqual([place(1), place(2)]);
+    expect(r.response.changes[0]).toMatch(/^⚠ The AI's answer was interrupted \(the connection was lost while it was being written\): its first 2 changes arrived whole and are applied, the rest is missing/);
+    expect(notes.join('\n')).toMatch(/The connection was lost while .* was writing its answer \(network error\)/);
+    const nothing = await askClaude(dropping('{"kind":"preview","message":"A chess'), body());
+    expect(nothing).toMatchObject({ ok: false, error: 'The connection to the AI was lost while it was writing its answer (network error), before any complete change had arrived: nothing was changed. Try again; if it keeps happening, ask for less at once.' });
+    // (Not reached at all, nothing written yet: as before.)
+    const unreachable = { beta: { messages: { stream: () => ({ on: () => undefined, finalMessage: async () => { throw new Anthropic.APIConnectionError({ message: 'Connection error.' }); } }) } } } as unknown as Anthropic;
+    expect(await askClaude(unreachable, body())).toMatchObject({ ok: false, error: 'Could not reach the Anthropic API (network or browser blocked the request).' });
   });
 
   it("the app's fixed reference goes after the instructions and is cached with them", async () => {

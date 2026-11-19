@@ -19,7 +19,7 @@ import { eventRegistry } from '../logic/vocabulary';
 import type { Project } from '../types';
 import { componentRegistry } from '../components/builtin';
 import { checkComponent, resolveField } from './fields';
-import { checkExpr, ExprError, parseExpr, suggest, type Scope } from './expr';
+import { checkExpr, ExprError, MAX_EXPRESSION, parseExpr, suggest, type Scope } from './expr';
 
 // ---------------------------------------------------------------- data
 
@@ -800,7 +800,23 @@ function statesList(value: unknown): unknown {
 
 // ---------------------------------------------------------------- checking
 
-const LIMITS = { handlers: 40, statements: 400, depth: 8, vars: 40, states: 20 };
+/**
+ * How big one script may be. Generous: a board game's rules (chess: every piece's moves, check, castling) are one
+ * script with a hundred variables and long conditions, and a limit hit there costs a whole rebuild of the script.
+ * (What keeps a script from freezing the game is the work it may do per step, in the runtime, not its size.)
+ */
+export const SCRIPT_LIMITS = { handlers: 80, statements: 2000, depth: 12, vars: 120, states: 40, expression: MAX_EXPRESSION };
+const LIMITS = SCRIPT_LIMITS;
+/**
+ * How much scripts may do while the game runs, in statements: one run of a handler, all scripts in one step, and
+ * the rounds of one each or repeat. Only there to stop a runaway script; measured at about 50,000 simple
+ * statements in 2.5 ms on a desktop, so a whole step's worth is a few dozen milliseconds on a slow phone.
+ */
+export const SCRIPT_WORK = { run: 200_000, step: 400_000, rounds: 2000 };
+/** As many problems as one answer names (the rest are counted): enough to fix them all at once, not a wall. */
+const MAX_PROBLEMS = 10;
+/** A long formula in a message: its start, enough to find it. */
+const clip = (text: string) => (text.length > 90 ? `${text.slice(0, 80)}… (${text.length} characters)` : text);
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Words that can't be variable names. */
 const RESERVED = new Set([...Object.keys(BUILTIN_NAMES), ...Object.keys(CONTEXT_NAMES), ...Object.keys(FUNCTIONS), 'true', 'false', 'null', 'and', 'or', 'not']);
@@ -1014,37 +1030,47 @@ export function messageParts(text: string): string[] {
 export function checkScript(raw: unknown, project: Project): { script: BehaviorScript } | { error: string } {
   const parsed = scriptSchema.safeParse(raw);
   if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { error: `Script: ${issue.path.join('.') || 'value'}: ${issue.message}` };
+    const issues = parsed.error.issues.slice(0, MAX_PROBLEMS).map((issue) => `${issue.path.join('.') || 'value'}: ${issue.message}`);
+    const more = parsed.error.issues.length - issues.length;
+    return { error: `Script: ${issues.join('; ')}${more > 0 ? `; and ${more} more` : ''}` };
   }
   const script = parsed.data as BehaviorScript;
   const name = `Script "${script.name}"`;
-  if (script.handlers.length > LIMITS.handlers) return { error: `${name} has too many handlers (max ${LIMITS.handlers})` };
-  if (script.vars.length > LIMITS.vars) return { error: `${name} has too many variables (max ${LIMITS.vars})` };
-  if (script.states.length > LIMITS.states) return { error: `${name} has too many states (max ${LIMITS.states})` };
+  // Every problem, not the first: each one sent back alone costs a whole new answer (a long script's second
+  // problem was only found after its first was fixed, and the script was then left out).
+  const found: { where: string; what: string; places: number }[] = [];
+  const bad = (where: string, what: string): void => {
+    const same = found.find((f) => f.what === what);
+    if (same) same.places++;
+    else found.push({ where, what, places: 1 });
+  };
+  if (script.handlers.length > LIMITS.handlers) bad('', `has too many handlers (${script.handlers.length}; max ${LIMITS.handlers})`);
+  if (script.vars.length > LIMITS.vars) bad('', `has too many variables (${script.vars.length}; max ${LIMITS.vars})`);
+  if (script.states.length > LIMITS.states) bad('', `has too many states (${script.states.length}; max ${LIMITS.states})`);
 
   const varNames = new Set<string>();
   for (const v of script.vars) {
-    if (!IDENT.test(v.name)) return { error: `${name}: variable name "${v.name}" must be letters, digits and _` };
-    if (RESERVED.has(v.name)) return { error: `${name}: "${v.name}" is a built-in name and can't be a variable` };
-    if (varNames.has(v.name)) return { error: `${name}: variable "${v.name}" is declared twice` };
+    if (!IDENT.test(v.name)) bad('', `: variable name "${v.name}" must be letters, digits and _`);
+    else if (RESERVED.has(v.name)) bad('', `: "${v.name}" is a built-in name and can't be a variable`);
+    else if (varNames.has(v.name)) bad('', `: variable "${v.name}" is declared twice`);
     varNames.add(v.name);
   }
   const states = new Set(script.states);
-  if (states.size !== script.states.length) return { error: `${name}: a state is listed twice` };
+  if (states.size !== script.states.length) bad('', ': a state is listed twice');
   const objects = new Set(project.definitions.map((d) => d.id));
   // (spawn also takes an object's name: a ready-made script's "Coin".)
   const objectNames = new Set(project.definitions.map((d) => d.name));
   const functions = Object.fromEntries(Object.entries(FUNCTIONS).map(([k, f]) => [k, { min: f.min, max: f.max }]));
   const members = new Set(Object.keys(MEMBERS));
   let count = 0;
+  let tooLong = false;
 
   for (const [hi, h] of script.handlers.entries()) {
-    const where = `${name}, handler ${hi + 1} (${h.when.on})`;
-    if (h.state !== null && !states.has(h.state)) return { error: `${where}: unknown state "${h.state}"${suggest(h.state, [...states])}; declare it in "states"` };
-    if (h.when.on === 'enter_state' && h.state === null) return { error: `${where}: enter_state needs "state"` };
+    const where = `, handler ${hi + 1} (${h.when.on})`;
+    if (h.state !== null && !states.has(h.state)) bad(where, `unknown state "${h.state}"${suggest(h.state, [...states])}; declare it in "states"`);
+    if (h.when.on === 'enter_state' && h.state === null) bad(where, 'enter_state needs "state"');
     if (h.when.on === 'event' && !eventRegistry.has(h.when.event)) {
-      return { error: `${where}: unknown event "${h.when.event}"${suggest(h.when.event, eventRegistry.list().map((e) => e.type))}` };
+      bad(where, `unknown event "${h.when.event}"${suggest(h.when.event, eventRegistry.list().map((e) => e.type))}`);
     }
     const base = new Set([...Object.keys(BUILTIN_NAMES), ...varNames]);
     if (h.when.on === 'event' || h.when.on === 'signal' || h.when.on === 'landed_on' || h.when.on === 'hit_from_below' || h.when.on === 'contact' || h.when.on === 'hurt') base.add('other');
@@ -1053,65 +1079,68 @@ export function checkScript(raw: unknown, project: Project): { script: BehaviorS
     const checkText = (text: string, names: Set<string>, what: string): string | null => {
       try {
         const err = checkExpr(parseExpr(text), scopeOf(names));
-        return err ? `${what} "${text}": ${err}` : null;
+        return err ? `${what} "${clip(text)}": ${err}` : null;
       } catch (e) {
-        if (e instanceof ExprError) return `${what} "${text}" ${e.message}`;
+        if (e instanceof ExprError) return `${what} "${clip(text)}" ${e.message}`;
         throw e;
       }
     };
     if (h.if !== null) {
       const err = checkText(h.if, base, 'condition');
-      if (err) return { error: `${where}: ${err}` };
+      if (err) bad(where, err);
     }
-    const walk = (list: Stmt[], names: Set<string>, depth: number, path: string): string | null => {
-      if (depth > LIMITS.depth) return `${path}: nested too deeply (max ${LIMITS.depth})`;
+    const walk = (list: Stmt[], names: Set<string>, depth: number, path: string): void => {
+      if (depth > LIMITS.depth) return bad(`${where}: ${path}`, `nested too deeply (max ${LIMITS.depth})`);
       for (const [si, s] of list.entries()) {
-        const at = `${path}${path ? ' > ' : ''}step ${si + 1} (${s.do})`;
-        if (++count > LIMITS.statements) return `${at}: the script is too long (max ${LIMITS.statements} steps)`;
+        const at = `${where}: ${path}${path ? ' > ' : ''}step ${si + 1} (${s.do})`;
+        const here = `${path}${path ? ' > ' : ''}step ${si + 1} (${s.do})`;
+        if (++count > LIMITS.statements) tooLong = true;
         for (const text of exprSlots(s)) {
           const err = checkText(text, names, 'expression');
-          if (err) return `${at}: ${err}`;
+          if (err) bad(at, err);
         }
-        if (s.do === 'set' && !s.on && !varNames.has(s.var)) return `${at}: unknown variable "${s.var}"${suggest(s.var, [...varNames])}; declare it in "vars"`;
-        if (s.do === 'state' && !states.has(s.name)) return `${at}: unknown state "${s.name}"${suggest(s.name, [...states])}; declare it in "states"`;
-        if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object) && !(s.do === 'spawn' && objectNames.has(s.object))) return `${at}: there is no library object "${s.object}"`;
-        if (s.do === 'draw' && s.shape === 'sprite' && s.object === null) return `${at}: a sprite drawing needs "object" (a library object id)`;
+        if (s.do === 'set' && !s.on && !varNames.has(s.var)) bad(at, `unknown variable "${s.var}"${suggest(s.var, [...varNames])}; declare it in "vars"`);
+        if (s.do === 'state' && !states.has(s.name)) bad(at, `unknown state "${s.name}"${suggest(s.name, [...states])}; declare it in "states"`);
+        if ((s.do === 'spawn' || s.do === 'shoot' || s.do === 'draw') && s.object !== null && !objects.has(s.object) && !(s.do === 'spawn' && objectNames.has(s.object))) bad(at, `there is no library object "${s.object}"`);
+        if (s.do === 'draw' && s.shape === 'sprite' && s.object === null) bad(at, `a sprite drawing needs "object" (a library object id)`);
         if (s.do === 'play_sound' && !findSound(project, s.sound)) {
           const names = project.assets.filter((a) => a.kind === 'sound').map((a) => a.name);
-          return `${at}: there is no sound "${s.sound}"${names.length ? ` (sounds: ${names.join(', ')})` : ' (make one with make_sound first)'}`;
+          bad(at, `there is no sound "${s.sound}"${names.length ? ` (sounds: ${names.join(', ')})` : ' (make one with make_sound first)'}`);
         }
         if (s.do === 'play_music' && !findSong(project, s.music)) {
           const names = project.assets.filter((a) => a.kind === 'music' && a.song).map((a) => a.name);
-          return `${at}: there is no song "${s.music}"${names.length ? ` (songs: ${names.join(', ')})` : ' (write one in the music machine, or with make_song)'}`;
+          bad(at, `there is no song "${s.music}"${names.length ? ` (songs: ${names.join(', ')})` : ' (write one in the music machine, or with make_song)'}`);
         }
-        if (s.do === 'emit' && !eventRegistry.has(s.event)) return `${at}: unknown event "${s.event}"${suggest(s.event, eventRegistry.list().map((e) => e.type))}`;
+        if (s.do === 'emit' && !eventRegistry.has(s.event)) bad(at, `unknown event "${s.event}"${suggest(s.event, eventRegistry.list().map((e) => e.type))}`);
         if (s.do === 'set_field') {
           const target = resolveField(componentRegistry, s.component, s.field);
-          if ('error' in target) return `${at}: ${target.error}`;
+          if ('error' in target) bad(at, target.error);
         }
         if (s.do === 'add_component' || s.do === 'remove_component') {
           const err = checkComponent(componentRegistry, s.component);
-          if (err) return `${at}: ${err}`;
+          if (err) bad(at, err);
         }
-        if (s.do === 'repeat') {
-          const err = walk(s.then, new Set([...names, 'i']), depth + 1, at);
-          if (err) return err;
-        }
+        if (s.do === 'repeat') walk(s.then, new Set([...names, 'i']), depth + 1, here);
         if (s.do === 'if') {
-          const err = walk(s.then, names, depth + 1, `${at} then`) ?? walk(s.else, names, depth + 1, `${at} else`);
-          if (err) return err;
+          walk(s.then, names, depth + 1, `${here} then`);
+          walk(s.else, names, depth + 1, `${here} else`);
         }
-        if (s.do === 'each') {
-          const err = walk(s.then, new Set([...names, 'it']), depth + 1, at);
-          if (err) return err;
-        }
+        if (s.do === 'each') walk(s.then, new Set([...names, 'it']), depth + 1, here);
       }
-      return null;
     };
-    const err = walk(h.do, base, 1, '');
-    if (err) return { error: `${where}: ${err}` };
+    walk(h.do, base, 1, '');
   }
-  return { script };
+  if (tooLong) bad('', `is too long (${count} steps; max ${LIMITS.statements})`);
+  if (!found.length) return { script };
+  // (A problem with no place of its own reads on from the script's name: "… has too many variables".)
+  const said = found.slice(0, MAX_PROBLEMS).map((f) => {
+    const text = f.where ? `${f.where}: ${f.what}` : f.what.startsWith(':') ? f.what : ` ${f.what}`;
+    return f.places > 1 ? `${text} (and the same in ${f.places - 1} more place${f.places > 2 ? 's' : ''})` : text;
+  });
+  if (said.length === 1) return { error: `${name}${said[0]}` };
+  const more = found.length - said.length;
+  const list = said.map((t, i) => `(${i + 1}) ${t.replace(/^[:,]?\s*/, '')}`);
+  return { error: `${name} has ${found.length} problems, all to fix in one go: ${list.join('; ')}${more > 0 ? `; and ${more} more` : ''}` };
 }
 
 // ---------------------------------------------------------------- reference text for the AI

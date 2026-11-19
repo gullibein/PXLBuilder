@@ -2232,3 +2232,39 @@ It was not a shortage of space in the level. It was the builder asking for more 
 - **Not changed: another variant with an enemy in levels that leave enemies out.** "An enemy between pipes" is built in about one in ten levels asked for without enemies (3 of 30). The way to say it is there now (`mechanics` on a variant); using it for the draw changes the levels of requests without enemies.
 
 **Tests** (`levelGen/ending.test.ts`, 8; `routeBot.test.ts`, 1): what each ending needs; no build thrown away, the wide ending built, every level as wide as its layout plus what its ending needed; several floors (the other floors as they were, wall beside them); no enemy ending where enemies are left out; the size kept for a still camera, by option and through the engine; recorded levels the same to the byte, and the four that changed; the grid made wider; the bot out of a pool.
+
+### 24.8 Side step — a board game that never worked (chess)
+
+A user built a chess game with the published app (version 7b1ac9a) and sent the whole AI log. It took four
+requests, well over a quarter of an hour of waiting and about $3, and the game never played. Nothing in that log was a bug in a platformer
+feature; all of it was the app treating a board game as a platformer with levels, and a script too big for limits
+nobody had told the AI about. What the log showed, and what changed:
+
+| What happened | Why | Change |
+| --- | --- | --- |
+| The first answer (80 s, $0.60) only chose the top-down starter. | A new game starts on the platformer starter; the AI may ask for another. | A new game whose words name a board game (`BOARD_GAME_WORDS`: chess, checkers, tic-tac-toe, …) is moved to the top-down starter before the AI is asked. Only from the New game window (nothing of the user's is replaced). |
+| "Puzzles to build this level around: a bridge over a gap, a spring" went along, and after the build the AI was asked again ($0.10) because "the levels lack the puzzles". | Puzzles were picked for the platformer starter, kept after the switch, and checked for in a level nobody walks through. | `levelsToGetThrough(project)`: a game whose placed things include no `CharacterController` has no level idea in its context, no puzzle check, and after a starter switch the puzzles are picked again (or dropped) for the new starter. |
+| "Want 2 more levels, each a little harder?" was offered, and the request it sends carried "the level to beat". | The offer only asked whether the levels can be won. | No offer for such a game; a request for more levels is told that a level here is another board or set-up, and to ask when it is unclear. |
+| The rules script was refused: "too many variables (max 40)". Sent back ($0.54, 146 s), it was refused again: "expression … is too long (max 500 characters)", and left out. The game had no rules. | The limits were sized for an enemy's behaviour, the AI was never told them, and the checker reported one problem at a time. | `SCRIPT_LIMITS`: 80 handlers, 120 variables, 40 states, 2,000 statements, nesting 12, 2,000 characters per expression (60 brackets deep). `checkScript` reports every problem at once (the same slip in many places counted once; ten named, the rest counted; a long formula named by its first 80 characters). |
+| The result read "✓ Applied", with "⚠ Left out one part" as its last line. | A left-out part was one more line under the changes. | A left-out script leads the result: "⚠ NOT WORKING YET: the behavior script "…" could not be used and was left out, so what it does is missing from the game", with why, and the summary says so too. |
+| A failed part sent back for correcting was cut at 12,000 characters. | A cap sized for small operations. | 60,000 characters (`PATCH_MAX`), and one longer than that says where it was cut. |
+| The next request ended in "network error" after 517 s; the one after in "The AI response was incomplete" at 64,000 tokens ($1.42). Both were lost whole. | The direct API path threw away an answer that did not end (the claude.ai path already kept what arrived). | `max_tokens` 128,000 (a model that refuses it is asked with 64,000 from then on). An answer cut off at the limit, or whose connection is lost while it is written, keeps the operations that arrived whole (`readCutOff`), applied with the first line saying the rest is missing; with nothing whole, the error says what happened. |
+| Had the script been accepted, a look-ahead at "medium" strength would have run into the work budget. | 50,000 statements per handler run, measured at about 2.5 ms. | `SCRIPT_WORK`: 200,000 per run, 400,000 per step (still only a runaway guard), and the error names the number and the remedy. |
+
+**Guidance.** A new topic, `board_games` (sent by the request's words; the instructions have no room for a pointer,
+30 characters under their budget), says what the turn-based topic does not: no course, no CharacterController or
+goal; the board is the pieces (`thing_at`, `in_cell`, `get`), never a variable per square; one rules object with
+states; the size limits and the work budget with their numbers (taken from the constants); that a signal is no
+subroutine; a computer player's look-ahead spread over steps; that levels are other boards; and to say which rules
+are in. Chess no longer brings the Rogue/Sokoban stepping topic.
+
+**What this does not show.** None of it was run against a live model: the tests use stand-ins for the API and a
+mocked AI in the browser. They show that the limits, messages, salvage and request notes do what is described;
+whether a model now writes a chess game that plays is exactly what V1.5 is for, and a chess prompt belongs in its
+set.
+
+**Proposed, not built.** (1) A synchronous `call` statement (a named block of statements with a result): the
+legality test was written four times in the refused script because there is no way to write it once; it would be a
+language addition, with its own budget and recursion rules. (2) A chess prompt in the V1.5 evaluation set.
+(3) An automatic "finish the rest" after a cut-off answer on the API path, as the claude.ai path does: it spends
+another long request without asking, so it is left to the user for now.

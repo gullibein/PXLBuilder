@@ -30,7 +30,10 @@ export class ExprError extends Error {
 type Tok = { t: 'num'; v: number } | { t: 'str'; v: string } | { t: 'id'; v: string } | { t: 'op'; v: string } | { t: 'end' };
 
 const OPS = ['<=', '>=', '==', '!=', '&&', '||', '+', '-', '*', '/', '%', '<', '>', '!', '(', ')', ',', '.', '?', ':'];
-const MAX_LENGTH = 500;
+/** The longest formula. (A chess move's legality, written out, is past 500 characters.) */
+export const MAX_EXPRESSION = 2000;
+const MAX_LENGTH = MAX_EXPRESSION;
+const MAX_NESTING = 60;
 
 function tokenize(src: string): Tok[] {
   if (src.length > MAX_LENGTH) throw new ExprError(`is too long (max ${MAX_LENGTH} characters)`);
@@ -84,13 +87,23 @@ export function parseExpr(src: string): Expr {
     pos++;
   };
 
+  // (A long formula may nest as deep as it is long: stopped by name, before the reader itself runs out of room.)
+  let nested = 0;
+  const deeper = (): void => {
+    if (++nested > MAX_NESTING) throw new ExprError(`is nested too deeply (max ${MAX_NESTING} brackets inside each other)`);
+  };
   const ternary = (): Expr => {
+    deeper();
     const c = binary(0);
-    if (!isOp('?')) return c;
+    if (!isOp('?')) {
+      nested--;
+      return c;
+    }
     pos++;
     const a = ternary();
     expect(':');
     const b = ternary();
+    nested--;
     return { k: 'cond', c, a, b };
   };
   const LEVELS: BinOp[][] = [['||'], ['&&'], ['==', '!='], ['<', '<=', '>', '>='], ['+', '-'], ['*', '/', '%']];
@@ -107,7 +120,10 @@ export function parseExpr(src: string): Expr {
   const unary = (): Expr => {
     if (isOp('-') || isOp('!')) {
       const op = (toks[pos++] as { v: string }).v as '-' | '!';
-      return { k: 'un', op, a: unary() };
+      deeper();
+      const a = unary();
+      nested--;
+      return { k: 'un', op, a };
     }
     return postfix();
   };

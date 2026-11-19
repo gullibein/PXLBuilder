@@ -27,7 +27,7 @@ import { instantiateDefinition } from '../model/factory';
 import { getEntitySize } from '../model/geometry';
 import { levelMap, type LevelMap } from '../model/levelMap';
 import { LEVEL_CELL } from '../model/placement';
-import { levelDesignIdea, type LevelDesignIdea } from './levelIdeas';
+import { levelDesignIdea, type LevelDesignIdea, levelsToGetThrough } from './levelIdeas';
 import { builderInfo } from '../levelGen/build';
 import { isTopDownScene } from '../model/topDown';
 import { characterReach } from '../model/reach';
@@ -543,7 +543,8 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
             return { generator: { ...g, wall: name(g.wall), floor: name(g.floor), stairs: name(g.stairs), monsters: spawn(g.monsters), loot: spawn(g.loot), example: example ? { rooms: example.rooms, things: example.entities.length, problems: example.problems } : { problems: ['not built: the game\'s profile doesn\'t select the generator "dungeon" (see game.works)'] } } };
           })()
         : {}),
-      ...(random && (ctx.kind === 'level' || ctx.kind === 'project') ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
+      // (Ideas for a level to get through: not for a game whose levels aren't that, a board game or a puzzle board.)
+      ...(random && (ctx.kind === 'level' || ctx.kind === 'project') && levelsToGetThrough(project, registry) ? { design: levelDesignIdea(project, scene, registry, random) } : {}),
       // The engine's level builder (generate_level): what it can build in this game.
       ...(random && (ctx.kind === 'level' || ctx.kind === 'project') && !isTopDownScene(project, scene, registry) ? (() => {
         const b = builderInfo(project, registry);

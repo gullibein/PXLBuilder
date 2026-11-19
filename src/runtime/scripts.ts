@@ -14,7 +14,7 @@
  */
 import { CELL } from './turns';
 import { parseExpr, type Expr } from '../core/script/expr';
-import { checkScript, findSong, findSound, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
+import { checkScript, findSong, findSound, SCRIPT_WORK, type BehaviorScript, type Handler, type Stmt } from '../core/script/language';
 import type { Project } from '../core/types';
 import { nextLevel } from '../core/progression/progression';
 import { patchGenerator } from '../core/model/mutations';
@@ -53,14 +53,14 @@ export interface ScriptError {
 }
 
 /**
- * Statements one handler run, and all scripts in one step, may do: only there to stop a runaway script. A
- * statement takes well under a microsecond, so even the step budget is a few dozen milliseconds, while real games
- * (a falling-block board clearing rows: each row × each block) stay far below it.
+ * Statements one handler run, and all scripts in one step, may do: only there to stop a runaway script
+ * (SCRIPT_WORK, beside the size limits the AI is told with them). Real games (a falling-block board clearing rows:
+ * each row × each block; a board game looking at every piece's moves) stay below it.
  */
-const RUN_BUDGET = 50_000;
-const STEP_BUDGET = 150_000;
+const RUN_BUDGET = SCRIPT_WORK.run;
+const STEP_BUDGET = SCRIPT_WORK.step;
 /** Most things one "each" goes through (and times a "repeat" runs). */
-const MAX_EACH = 2000;
+const MAX_EACH = SCRIPT_WORK.rounds;
 const MAX_STATE_CHAIN = 10;
 const MAX_ERRORS = 30;
 /** Turns taken in a game whose profile doesn't make them active (engine/turns.ts): refused, said. */
@@ -327,7 +327,7 @@ export class ScriptSystem {
 
   private tick(ctx: Ctx): void {
     if (--this.budget < 0 || --this.stepBudget < 0) {
-      this.report(ctx.self, ctx.inst, 'did too much work in one step and was stopped there');
+      this.report(ctx.self, ctx.inst, `did too much work in one step and was stopped there (a handler may do ${RUN_BUDGET.toLocaleString('en-US')} statements at a time: spread long work over several steps)`);
       throw new Abort();
     }
   }

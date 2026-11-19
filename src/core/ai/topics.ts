@@ -10,7 +10,7 @@ import { ENEMY_SCRIPTS } from '../script/enemies';
 const SWOOPER_SETTINGS = SWOOPER_SCRIPT.vars.filter((v) => v.setting).map((v) => `${v.name} ${JSON.stringify(v.value)}`).join(', ');
 import type { AIContext } from './context';
 import { EXAMPLE_ROUTING, SCRIPT_EXAMPLES } from '../script/examples';
-import { SCRIPT_TOPICS, scriptDocsFor } from '../script/language';
+import { SCRIPT_LIMITS, SCRIPT_TOPICS, SCRIPT_WORK, scriptDocsFor } from '../script/language';
 import { COMPONENT_TOPICS, componentDocsFor, enginepartsGuide } from './capabilities';
 import { componentRegistry } from '../components/builtin';
 import { NEW_GAME_GUIDE, CAMERA_GUIDE, DEBUGGING_GUIDE, DRAWING_GUIDE, EDITOR_GUIDE, LEVELS_BUILDER_GUIDE, LEVELS_GUIDE, TOPDOWN_GUIDE } from './guideSections';
@@ -19,6 +19,12 @@ import { NEW_GAME_GUIDE, CAMERA_GUIDE, DEBUGGING_GUIDE, DRAWING_GUIDE, EDITOR_GU
 const ENEMY_LIST = Object.entries(ENEMY_SCRIPTS)
   .map(([name, sc]) => `"${name}": ${sc.description} Settings: ${sc.vars.filter((v) => v.setting).map((v) => `${v.name} ${JSON.stringify(v.value)}`).join(', ')}.`)
   .join('\n  ');
+
+/**
+ * Words that name a board game: a game of rules on a board, with nobody to steer through a level. (Also how a new
+ * game of that kind is known to be built on the starter seen from above, before the AI is asked anything.)
+ */
+export const BOARD_GAME_WORDS = /\b(chess|checkers|draughts|board ?games?|tic.?tac.?toe|noughts and crosses|connect.?(four|4)|four in a row|othello|reversi|backgammon|card games?|solitaire|minesweeper|sudoku|memory game)\b/i;
 
 export interface Topic {
   title: string;
@@ -213,8 +219,22 @@ export const TOPICS: Record<string, Topic> = {
   grid_games: {
     title: "Grid and turn-based games (Rogue, Sokoban, one square per key press)",
     scopes: [],
-    words: /grid|turn.?based|sokoban|rogue|square|tile by tile|chess|checkers|board game|step by step|per (key )?press/i,
+    words: /grid|turn.?based|sokoban|rogue|square|tile by tile|step by step|per (key )?press/i,
     text: `- Grid and turn-based games (Rogue, Sokoban, "one square per key press"): keep everything on its square. Give every character DamageReceiver.knockback 0, and move them with scripts by exactly 32 px (position or glide_to). When a script moves the player itself (it reads key(...) and steps with position or glide_to), set the player's CharacterController.speed to 0 in the same reply: otherwise the controller also walks it with the arrow keys between steps, nudging it off its square, and a glide worked out from that spot can cut straight through a wall (glide_to doesn't stop at walls). Keep the Character Controller itself: it is what makes it the player (respawning, goals, switches, the camera). Before stepping into a square, look at it: solid_at(x, y) for walls (and Pushable things), thing_at(x, y, "enemy") for who stands there (attack instead of moving; never two creatures on one square). Pushing in a scripted turn: if thing_at(x, y, "barrel") is in the way and the square beyond it is free (not solid_at, thing_at null), move the barrel one square on (position or glide_to with "on") and then step; otherwise don't move. For real-time pushing (the player walks freely), the Pushable component does all of this by itself (step 32 keeps it on the grid).`,
+  },
+  board_games: {
+    title: 'Board games (chess, checkers, tic-tac-toe, four in a row, cards): rules on a board, how big a script may be',
+    scopes: [],
+    // (The app sends it by the request's words; the instructions carry no pointer to it: they have no room left.)
+    internal: true,
+    words: BOARD_GAME_WORDS,
+    text: `- BOARD GAMES (chess, checkers, tic-tac-toe, four in a row, card and tile games): a game of rules on a board. Nobody walks through it and there is no course to get through, so nothing of a platformer's or an adventure's kit belongs in it: no CharacterController, no goal, no enemies, hazards, checkpoints or level puzzles (bridges, springs, switches), and a fixed camera on the whole board. Squares are picked with the cursor (topic "turns").
+  * The board is the pieces themselves: each piece an entity in the middle of its square, tagged with its side and its kind ("white", "pawn"), what only it knows (has it moved) in a variable of its own script. Read the board with thing_at(x, y, tag), in_cell(x, y, tag) and get(e, "var"); never one variable per square (a chess board would be 64).
+  * One object ("Rules") carries the script with whose turn it is and the rules, with states for the phases (choose a piece, choose where to, the computer thinks, game over).
+  * HOW BIG A SCRIPT MAY BE: ${SCRIPT_LIMITS.handlers} handlers, ${SCRIPT_LIMITS.vars} variables, ${SCRIPT_LIMITS.states} states, ${SCRIPT_LIMITS.statements} statements in all, nested ${SCRIPT_LIMITS.depth} deep, and ${SCRIPT_LIMITS.expression} characters in one expression. A script past any of these is refused whole. Keep well inside: work a long condition out in steps into variables (line_free, target_ok) instead of one formula, and write a test once (a handler or a few statements setting a variable that the others read), never the same long formula copied into several places.
+  * HOW MUCH A SCRIPT MAY DO: one run of a handler ${SCRIPT_WORK.run.toLocaleString('en-US')} statements, all scripts in one step ${SCRIPT_WORK.step.toLocaleString('en-US')}, one each or repeat ${SCRIPT_WORK.rounds} rounds; past that it is stopped with an error in the Debug log. A signal's handlers run after the handler that sent it has finished, never in the middle of it: a signal is no subroutine that hands back an answer. A computer player that looks ahead does it over several steps: a "thinking" state whose tick handler looks at one piece or one candidate move per step, keeps the best so far in variables, and plays it when all are done. Begin with a simple one (a legal move, captures first), and say in the summary how it plays.
+  * LEVELS of a board game are other boards or set-ups (another size, another starting position, another piece set or colors, a stronger opponent), each a complete game; never a harder course, and nothing is "added to the level" to make it harder. When the user asks for more levels and it isn't clear what they should be, ask (clarify).
+  * Say plainly in the summary which rules are in and which are not yet (for chess: check and checkmate, stalemate, castling, en passant, promotion): a board game with a rule missing still plays, a script refused for its size does not.`,
   },
   autotiling: {
     title: "Autotiling: draw_autotile, 16 edge and corner pictures",

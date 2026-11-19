@@ -1508,12 +1508,29 @@ export function failedOperations(project: Project, ops: Operation[], registry: C
   return bad;
 }
 
-export function pruneOperations(project: Project, ops: Operation[], registry: ComponentRegistry): { kept: Operation[]; skipped: string[] } {
+export function pruneOperations(project: Project, ops: Operation[], registry: ComponentRegistry): { kept: Operation[]; skipped: string[]; left: Operation[] } {
   const bad = new Map<number, string>();
   produce(project, (d) => {
     applyOperations(d, ops, registry, (i, message) => bad.set(i, message));
   });
-  return { kept: ops.filter((_, i) => !bad.has(i)), skipped: [...bad.values()] };
+  return { kept: ops.filter((_, i) => !bad.has(i)), skipped: [...bad.values()], left: ops.filter((_, i) => bad.has(i)) };
+}
+
+/**
+ * The behavior scripts among operations that were left out, by name: a game whose script is missing doesn't do
+ * what the answer says it does, which is said first and plainly (not as one more line under the changes).
+ */
+export function scriptsLeftOut(left: Operation[]): string[] {
+  return left.flatMap((o) => {
+    if (o.op !== 'set_script' && o.op !== 'use_script_for' && o.op !== 'edit_script') return [];
+    if (o.op === 'edit_script') return ['a change to a script'];
+    try {
+      const name = (JSON.parse(o.scriptJson ?? 'null') as { name?: unknown; ready?: unknown } | null)?.name;
+      return [typeof name === 'string' && name ? `"${name}"` : 'a script'];
+    } catch {
+      return ['a script'];
+    }
+  });
 }
 
 /**

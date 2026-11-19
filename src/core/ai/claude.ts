@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { betaJSONSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/beta/json-schema';
 import { compactSchema, expandReply } from './compactSchema';
+import { readCutOff } from './cutOff';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
@@ -66,7 +67,15 @@ export type ClaudeNote = (message: string) => void;
  * a structured-output schema. Either is then left out and the same request
  * sent again, so the AI keeps working; answers are validated the same way.
  */
-const accepted = { fallbacks: new Set<string>(), format: new Map<string, 'compact' | 'tool'>() };
+const accepted = { fallbacks: new Set<string>(), format: new Map<string, 'compact' | 'tool'>(), smallOutput: new Set<string>() };
+
+/**
+ * The room an answer has, thinking included. The most the current models give (a whole game, or a board game's
+ * rules in one script, with the thinking before it, ran into 64,000 and the whole answer was lost). A model that
+ * refuses it is asked with the smaller one from then on.
+ */
+export const MAX_OUTPUT = 128_000;
+const SMALL_OUTPUT = 64_000;
 
 /** Which reply format each model was found to take (missing: the full strict format). Kept by the browser for a while. */
 export function claudeFormats(): Record<string, 'compact' | 'tool'> {
@@ -82,6 +91,30 @@ export function rememberClaudeFormats(formats: Record<string, unknown>): void {
 export function resetClaudeFeatures(): void {
   accepted.fallbacks.clear();
   accepted.format.clear();
+  accepted.smallOutput.clear();
+}
+
+/**
+ * An answer that didn't arrive whole (cut off at the length limit, or the connection lost while it was written):
+ * the operations that did arrive whole are kept and applied, saying first that the rest is missing (minutes of work
+ * and their price were lost for the last lines). Null: not one arrived.
+ */
+function keepWhatArrived(text: string, why: string, note: ClaudeNote, expand: (v: unknown) => unknown = (v) => v): ClaudeResult | null {
+  const cut = readCutOff(text);
+  if (!cut) return null;
+  const parsed = readReply(expand(cut.reply));
+  if (!parsed.ok || !parsed.response.operations.length) return null;
+  const n = parsed.response.operations.length;
+  const said = `⚠ The AI's answer ${why}: its first ${n} change${n === 1 ? '' : 's'} arrived whole and ${n === 1 ? 'is' : 'are'} applied, the rest is missing. Ask it to finish the rest (or ask for less at once).`;
+  note(`Kept the ${n} operation(s) that arrived whole.`);
+  return { ok: true, response: { ...parsed.response, kind: 'preview', message: `${said}${parsed.response.message ? `\n\n${parsed.response.message}` : ''}`, changes: [said, ...parsed.response.changes] } };
+}
+
+/** What has arrived of the answer being written (for when it never ends). */
+interface Arriving {
+  text: string;
+  tool: string;
+  compact: boolean;
 }
 
 /** Asks Claude for structured operations. Never throws for API problems: they come back as plain-language errors. */
@@ -90,11 +123,17 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
     return { ok: false, status: 400, error: 'Missing request or context', kind: 'other' };
   }
   for (;;) {
+    const arriving: Arriving = { text: '', tool: '', compact: false };
     try {
-      return await callClaude(client, body, model, signal, note, draft);
+      return await callClaude(client, body, model, signal, note, draft, arriving);
     } catch (e) {
       if (e instanceof Anthropic.BadRequestError) {
         const why = apiErrorText(e);
+        if (!accepted.smallOutput.has(model) && /max_tokens/i.test(why)) {
+          accepted.smallOutput.add(model);
+          note(`${CLAUDE_MODELS[model].name} did not take ${MAX_OUTPUT.toLocaleString('en-US')} tokens of room for its answer (${why}); asking with ${SMALL_OUTPUT.toLocaleString('en-US')}.`);
+          continue;
+        }
         // (Per model: a model with no fallback, such as Haiku, refuses the parameter; the others keep it.)
         if (!accepted.fallbacks.has(model) && /fallback|beta/i.test(why)) {
           accepted.fallbacks.add(model);
@@ -115,12 +154,22 @@ export async function askClaude(client: Anthropic, body: AIRequestBody, signal?:
           continue;
         }
       }
+      // The connection lost while the answer was being written (a long one takes minutes): what arrived whole is
+      // kept; with nothing whole, the error says what happened instead of a bare "network error".
+      const aborted = (e as Error).name === 'AbortError' || e instanceof Anthropic.APIUserAbortError;
+      const lost = !aborted && !(e instanceof Anthropic.APIError && typeof e.status === 'number') && (arriving.text || arriving.tool);
+      if (lost) {
+        note(`The connection was lost while ${CLAUDE_MODELS[model].name} was writing its answer (${(e as Error).message || 'no details'}); ${(arriving.tool || arriving.text).length.toLocaleString('en-US')} characters had arrived.`);
+        const kept = keepWhatArrived(arriving.tool || arriving.text, 'was interrupted (the connection was lost while it was being written)', note, arriving.compact ? (v) => expandReply(v, fullFormat()) : undefined);
+        if (kept) return kept;
+        return { ok: false, status: 502, error: `The connection to the AI was lost while it was writing its answer (${(e as Error).message || 'network error'}), before any complete change had arrived: nothing was changed. Try again; if it keeps happening, ask for less at once.`, kind: 'other' };
+      }
       return failure(e);
     }
   }
 }
 
-async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal: AbortSignal | undefined, note: ClaudeNote, draft?: (soFar: string, channel?: string) => void): Promise<ClaudeResult> {
+async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeModel, signal: AbortSignal | undefined, note: ClaudeNote, draft: ((soFar: string, channel?: string) => void) | undefined, arriving: Arriving): Promise<ClaudeResult> {
   // Fast: the same model thinking less (the biggest part of the wait).
   const effort = body.speed === 'fast' ? ('low' as const) : ('medium' as const);
   // The game's data is its own block, cached: a second request with the same game (the answer sent back to be fixed,
@@ -129,7 +178,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const common = {
     model,
     // Room for big answers (a whole game, many drawings at once); the request is streamed, so a long one doesn't time out.
-    max_tokens: 64000,
+    max_tokens: accepted.smallOutput.has(model) ? SMALL_OUTPUT : MAX_OUTPUT,
     messages: [
       {
         role: 'user' as const,
@@ -152,21 +201,32 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   ];
   // Streamed (a long answer takes minutes), and the whole message read at the end: the same message parse/create give.
   // (Whoever wants the answer as it is written hears it: its text so far, and a reply tool's input so far.)
+  // (A reply tool's input is also kept as it was written: of an answer cut off inside it, the message holds only
+  // what could be guessed of it.)
   const send = <P extends Parameters<typeof client.beta.messages.stream>[0]>(params: P) => {
     const stream = client.beta.messages.stream(params, { signal });
-    if (draft) {
-      let input = '';
-      stream.on('text', (_delta, soFar) => draft(soFar, 'text'));
-      stream.on('inputJson', (delta) => draft((input += delta), 'tool'));
+    arriving.text = '';
+    arriving.tool = '';
+    if (typeof stream.on === 'function') {
+      stream.on('text', (_delta, soFar) => {
+        arriving.text = soFar;
+        draft?.(soFar, 'text');
+      });
+      stream.on('inputJson', (delta) => {
+        arriving.tool += delta;
+        draft?.(arriving.tool, 'tool');
+      });
     }
     return stream.finalMessage();
   };
   const used = (r: { model?: string; usage?: Parameters<typeof usageCost>[1] }) => (r.usage ? usageCost(r.model ?? model, r.usage) : undefined);
   const declined: ClaudeResult = { ok: true, response: { kind: 'unsupported', message: 'The AI declined this request.', changes: [], operations: [], needCode: null, starter: null } };
   const incomplete: ClaudeResult = { ok: false, status: 502, error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' };
+  const salvaged = (text: string, expand?: (v: unknown) => unknown) => keepWhatArrived(text, 'was cut off at the length limit', note, expand);
 
   const level = accepted.format.get(model);
   if (level === 'compact') {
+    arriving.compact = true;
     systemPrompt ??= buildSystemPrompt(componentRegistry);
     const response = await send({
       ...common,
@@ -178,7 +238,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     if (response.stop_reason === 'refusal') return withUsage(declined);
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
       note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
-      return withUsage(incomplete);
+      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response), (v) => expandReply(v, fullFormat())) : null) ?? incomplete);
     }
     const parsed = readReply(expandReply(response.parsed_output, fullFormat()));
     if (!parsed.ok) {
@@ -200,7 +260,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     if (response.stop_reason === 'refusal') return withUsage(declined);
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
       note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
-      return withUsage(incomplete);
+      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response)) : null) ?? incomplete);
     }
     return withUsage({ ok: true, response: response.parsed_output });
   }
@@ -218,7 +278,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const cutOff = () => {
     const inTool = response.content.some((b) => b.type === 'tool_use');
     note(`${CLAUDE_MODELS[model].name}'s answer reached the length limit (${common.max_tokens} tokens${inTool ? ', written into the reply tool' : ''}). It began: ${replyText(response).slice(0, 600) || '(no text)'}`);
-    return withUsage(incomplete);
+    return withUsage(salvaged(inTool ? arriving.tool : replyText(response)) ?? incomplete);
   };
   if (response.stop_reason === 'max_tokens') return cutOff();
   if (response.stop_reason === 'stop_sequence') note(`${CLAUDE_MODELS[model].name} began writing a tool call as text; stopped it there.`);

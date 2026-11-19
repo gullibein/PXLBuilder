@@ -5,7 +5,8 @@ import { createBuiltinRegistry } from '../components/builtin';
 import { createProject, createScene, instantiateDefinition } from '../model/factory';
 import * as m from '../model/mutations';
 import { buildAIPayload } from './context';
-import { LEVEL_PUZZLES, levelDesignIdea, levelShape } from './levelIdeas';
+import { LEVEL_PUZZLES, levelDesignIdea, levelShape, levelsToGetThrough } from './levelIdeas';
+import { tetris } from '../../regression/games/boards';
 import { GENRES, THEMES } from '../levelGen/profile';
 
 const registry = createBuiltinRegistry();
@@ -92,5 +93,28 @@ describe('variety for generated levels', () => {
     const idea = levelDesignIdea(puzzle, puzzle.scenes[0], registry, () => 0.3);
     expect(idea.style!.name).toBe('Puzzle platformer, Castle');
     expect(idea.puzzles!.every((x) => GENRES[1].puzzles.includes(x.split(':')[0]))).toBe(true);
+  });
+});
+
+describe("games that aren't levels to get through", () => {
+  it('a game with a character someone steers is levels to get through; a board (nothing placed is steered) is not; an empty game is not judged yet', () => {
+    expect(levelsToGetThrough(project(), registry)).toBe(true);
+    expect(levelsToGetThrough(createProject(registry), registry)).toBe(true);
+    expect(levelsToGetThrough(tetris(registry), registry)).toBe(false);
+    // A chess board: pieces and a rules object, no CharacterController anywhere.
+    const board = produce(createProject(registry), (d) => {
+      const coin = d.definitions.find((x) => x.name === 'Coin')!;
+      for (let i = 0; i < 8; i++) m.addEntity(d, d.scenes[0].id, instantiateDefinition(coin, { x: 16 + 32 * i, y: 48 }));
+    });
+    expect(levelsToGetThrough(board, registry)).toBe(false);
+  });
+
+  it("the AI gets no level idea (a start corner, a goal corner, puzzles to build in) for a board game; a platformer's still comes", () => {
+    const random = () => 0.3;
+    const p = project();
+    expect(buildAIPayload(p, { kind: 'level', sceneId: p.scenes[1].id, point: null }, registry, undefined, null, random).level.design).toBeDefined();
+    const t = tetris(registry);
+    expect(buildAIPayload(t, { kind: 'level', sceneId: t.scenes[0].id, point: null }, registry, undefined, null, random).level.design).toBeUndefined();
+    expect(buildAIPayload(t, { kind: 'project', sceneId: t.scenes[0].id }, registry, undefined, null, random).level.design).toBeUndefined();
   });
 });

@@ -1026,7 +1026,7 @@ describe('behavior scripts', () => {
       }),
     );
     walkRight(rt, input, 0.5);
-    expect(rt.scripts.errors).toEqual([{ entity: 'Enemy', script: 'Test', message: 'did too much work in one step and was stopped there' }]);
+    expect(rt.scripts.errors).toEqual([{ entity: 'Enemy', script: 'Test', message: 'did too much work in one step and was stopped there (a handler may do 200,000 statements at a time: spread long work over several steps)' }]);
     expect(events(rt, 'script_error')).toHaveLength(1);
     expect(p.x).toBeGreaterThan(40);
   });

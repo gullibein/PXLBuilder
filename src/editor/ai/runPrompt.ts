@@ -6,13 +6,14 @@
  */
 import { DrawingScanner, levelSketch, type LevelSketch } from '../../core/ai/streamDrawings';
 import { answerPreview, narrateOperation } from '../../core/ai/narrate';
-import { levelStats, statsLine } from '../../core/ai/levelIdeas';
+import { levelStats, levelsToGetThrough, statsLine } from '../../core/ai/levelIdeas';
+import { resolveEntity } from '../../core/model/resolve';
 import { setJobNote } from './jobs';
 import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } from '../backgroundGen';
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
-import { TOPICS, topicsFor } from '../../core/ai/topics';
+import { BOARD_GAME_WORDS, TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
@@ -27,7 +28,7 @@ import { GeminiProvider } from './geminiProvider';
 import { BrowserClaudeProvider } from './browserProvider';
 import { claudeSample, SampleAIProvider } from './sampleProvider';
 import { applyAsNewObject, applyToObject, objectChoiceFor, type ObjectChoice } from '../../core/commands/objectChoice';
-import { applyOperations, checkOperations, failedOperations, isEditorOperation, pruneOperations, type ApplyResult, type Operation } from '../../core/commands/operations';
+import { applyOperations, checkOperations, failedOperations, isEditorOperation, pruneOperations, scriptsLeftOut, type ApplyResult, type Operation } from '../../core/commands/operations';
 import { checkEditorSetting, editorReference, editorSettingsPayload, type EditorLayout } from '../layout/settings';
 import { addOverlays } from '../overlays/overlays';
 import { componentRegistry } from '../../core/components/builtin';
@@ -44,6 +45,9 @@ import type { GameType, Id, Project, Starter } from '../../core/types';
 import { switchStarter } from '../persistence';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
+/** The most of one failed operation sent back for correcting (characters): a long script whole. */
+const PATCH_MAX = 60_000;
+
 export interface ObjectChange {
   message: string;
   changes: string[];
@@ -170,6 +174,17 @@ export function withPictureNote(request: string, images: readonly AIPicture[] | 
 }
 
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn, options: PromptOptions = {}): Promise<PromptOutcome> {
+  // A new game (from the New game window: nothing of the user's is in it yet) whose words name a kind that is
+  // plainly built on one starter (chess, a board game: seen from above) is moved there before the AI is asked,
+  // instead of paying for an answer that only says so (a chess game's first answer, 80 seconds, chose the starter).
+  if (options.newGame) {
+    const named = BOARD_GAME_WORDS.exec(request)?.[0];
+    const current = useEditor.getState().project.settings.gameType ?? 'platformer';
+    if (named && current === 'platformer') {
+      switchStarter('topdown');
+      trace?.('note', `"${named}" is played on a board seen from above: moved to the top-down starter before asking (no answer spent on choosing it)`);
+    }
+  }
   const state = useEditor.getState();
   // Plain editing commands ("delete", "duplicate 3 times to the right", "paste"…) are done by the app itself, at once.
   const quick = options.images?.length ? null : quickCommandFor(ctx, request);
@@ -218,22 +233,37 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
   // Building a level (a new game, or a level asked for): the puzzles picked for it go in the request itself, where the
   // AI can't miss them (in the context they were easily passed over for the easiest, a key and a door). Names only:
   // how each is built is in context.level.design.
-  const design = (body.context.level as { design?: { puzzles?: string[]; forNewLevels?: { puzzles?: string[] }[] } } | undefined)?.design;
+  type Design = { puzzles?: string[]; forNewLevels?: { puzzles?: string[] }[] };
+  const designNow = () => (body.context.level as { design?: Design; builder?: unknown } | undefined)?.design;
+  let design = designNow();
   const buildsLevels = newGameAsked || /\b(build|make|create|generate|design|rebuild|redo|draw|add)\b[^.?!]*\blevels?\b/i.test(request);
-  if (design?.puzzles?.length && buildsLevels) {
-    const names = (list: string[]) => list.map((p) => p.split(':')[0]).join(', ');
-    const more = (design.forNewLevels ?? []).filter((l) => l.puzzles?.length);
-    body.request = options.moreLevels
-      ? `${request}\n\n[Puzzles for the new levels (the app picked them so games differ; each needed to get through; context.level.design.forNewLevels says how; a key and door may come too, never instead): ${more.map((l, i) => `new level ${i + 1}: ${names(l.puzzles!)}`).join('; ')}.]`
-      : `${request}\n\n[Puzzles to build this level around (the app picked them so games differ; each needed to get through; context.level.design.puzzles says how; a key and door may come too, never instead): ${names(design.puzzles)}.${more.length ? ` Each new level you create gets its own, in context.level.design.forNewLevels (${more.map((l, i) => `${i + 2}: ${names(l.puzzles!)}`).join('; ')}).` : ''} Unless the user asked for something else.]`;
+  const puzzleNames = (list: string[]) => list.map((p) => p.split(':')[0]).join(', ');
+  /** The puzzles picked, as the request says them ('' when there are none to say). */
+  const puzzleNote = (d: Design | undefined): string => {
+    if (!d?.puzzles?.length || !buildsLevels) return '';
+    const more = (d.forNewLevels ?? []).filter((l) => l.puzzles?.length);
+    const note = options.moreLevels
+      ? `\n\n[Puzzles for the new levels (the app picked them so games differ; each needed to get through; context.level.design.forNewLevels says how; a key and door may come too, never instead): ${more.map((l, i) => `new level ${i + 1}: ${puzzleNames(l.puzzles!)}`).join('; ')}.]`
+      : `\n\n[Puzzles to build this level around (the app picked them so games differ; each needed to get through; context.level.design.puzzles says how; a key and door may come too, never instead): ${puzzleNames(d.puzzles)}.${more.length ? ` Each new level you create gets its own, in context.level.design.forNewLevels (${more.map((l, i) => `${i + 2}: ${puzzleNames(l.puzzles!)}`).join('; ')}).` : ''} Unless the user asked for something else.]`;
     // (With the engine's level builder there, they are for a level drawn by hand: a generated one has its own.)
-    if (level?.builder) body.request = body.request.replace(/ Unless the user asked for something else\.\]$/, ' Unless the user asked for something else. These are for a level drawn with draw_map; with generate_level the engine picks the sections.]');
-    trace?.('note', `Puzzles for this level: ${names(design.puzzles)}`);
+    return (body.context.level as { builder?: unknown } | undefined)?.builder ? note.replace(/ Unless the user asked for something else\.\]$/, ' Unless the user asked for something else. These are for a level drawn with draw_map; with generate_level the engine picks the sections.]') : note;
+  };
+  let puzzlesSaid = puzzleNote(design);
+  if (puzzlesSaid) {
+    body.request = `${request}${puzzlesSaid}`;
+    trace?.('note', `Puzzles for this level: ${puzzleNames(design!.puzzles!)}`);
+  }
+  // A game whose levels aren't places a character gets through (a board game, a puzzle board): the ideas for such
+  // levels didn't go along (context.ts), and a new level of it is said to be what it is.
+  const toGetThrough = levelsToGetThrough(state.project, componentRegistry);
+  if (buildsLevels && !newGameAsked && !toGetThrough) {
+    body.request += `\n\n[This game has no player-controlled character: its levels are not places to walk through, so there is no layout, route, start and goal, or list of puzzles for a new one, and "harder" is not a bigger maze. A new level here is another board or set-up of the same game (its own arrangement, look or rules), as the user describes; if it isn't clear what it should be, ask (clarify).]`;
+    trace?.('note', "This game's levels aren't places to walk through (no player-controlled character): no level layout, puzzles or level to beat went along");
   }
   // "Harder than level 2", "a more complex level", more levels: the level to beat, counted, goes in the request with
   // what beating it means (left to itself the AI often built a simpler one).
   const harder = /\b(harder|tougher|trickier|bigger|larger|longer|more (complex|complicated|difficult|challenging|intricate|advanced)|even more|step up)\b/i.test(request);
-  if (buildsLevels && (harder || options.moreLevels)) {
+  if (buildsLevels && toGetThrough && (harder || options.moreLevels)) {
     const named = /\blevel\s*(\d+)\b/i.exec(request);
     const levels = state.project.scenes.filter((sc) => sc.entities.length);
     const ref = (named ? state.project.scenes[Number(named[1]) - 1] : undefined) ?? state.project.scenes.find((sc) => sc.name.toLowerCase() !== '' && request.toLowerCase().includes(sc.name.toLowerCase()) && sc.id !== ctx.sceneId) ?? levels.at(-1);
@@ -463,6 +493,15 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: to, starters: STARTERS, sprites };
+        // (The puzzles picked were for the starter it left, a bridge and a spring for a game now seen from above:
+        // what this starter's levels get, if anything, is said in their place, and checked for afterwards.)
+        const said = puzzlesSaid;
+        design = designNow();
+        puzzlesSaid = puzzleNote(design);
+        if (said !== puzzlesSaid) {
+          body.request = said ? body.request.replace(said, puzzlesSaid) : `${body.request}${puzzlesSaid}`;
+          trace?.('note', puzzlesSaid ? `Puzzles for this level, on the new starter: ${puzzleNames(design!.puzzles!)}` : 'The puzzles picked were for the starter it left: none go along on this one');
+        }
         response = await ask(body, signal, trace);
         await fetchCode();
         // Still nothing built (or another switch): once more, plainly.
@@ -536,7 +575,13 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       const patch = failed.length > 0 && failed.length <= 6 && response.operations.length >= 6;
       if (patch) {
         const ops = response.operations;
-        const listed = failed.map((f, n) => `${n + 1}. operation ${f.index + 1} (${ops[f.index].op}): ${f.message}\n${JSON.stringify(ops[f.index]).slice(0, 12000)}`).join('\n');
+        // (Each whole, so that it can be corrected rather than written again from memory: a long script was cut at
+        // 12,000 characters, and its second half came back different. One too long even for that says so.)
+        const whole = (o: Operation): string => {
+          const text = JSON.stringify(o);
+          return text.length > PATCH_MAX ? `${text.slice(0, PATCH_MAX)}… [cut here: ${text.length - PATCH_MAX} more characters. Write this operation again whole.]` : text;
+        };
+        const listed = failed.map((f, n) => `${n + 1}. operation ${f.index + 1} (${ops[f.index].op}): ${f.message}\n${whole(ops[f.index])}`).join('\n');
         trace?.('note', `Only the ${failed.length} part(s) that failed go back; the other ${ops.length - failed.length} are kept`);
         stage(`Fixing ${failed.length === 1 ? 'one part' : `${failed.length} parts`} that didn't check out`);
         try {
@@ -613,12 +658,22 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
       // Still not right: keep what applies, leave out the rest, and say so.
       const again = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
       if (again) {
-        const { kept, skipped } = pruneOperations(useEditor.getState().project, response.operations, componentRegistry);
+        const { kept, skipped, left } = pruneOperations(useEditor.getState().project, response.operations, componentRegistry);
         state.logMessage('warn', `AI answer still didn't check out; left out ${skipped.length} part(s): ${skipped.join('; ')}`);
         trace?.('check', `Still didn't check out; left out ${skipped.length} part(s): ${skipped.join('; ')}`);
         if (!kept.length) return { status: 'error', message: `The AI's change couldn't be applied. ${skipped[0]}` };
         const note = skipped.length === 1 ? `Left out one part that couldn't be applied: ${skipped[0]}` : `Left out ${skipped.length} parts that couldn't be applied (first: ${skipped[0]})`;
-        response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
+        // A script among them: the game doesn't do what the answer describes. Said first, in plain words, with
+        // the answer's own summary after it (a chess game whose rules script was left out read "✓ Applied").
+        const scripts = scriptsLeftOut(left);
+        if (scripts.length) {
+          const which = scripts.length === 1 ? `the behavior script ${scripts[0]}` : `${scripts.length} behavior scripts (${[...new Set(scripts)].join(', ')})`;
+          const why = skipped[0].length > 300 ? `${skipped[0].slice(0, 300)}…` : skipped[0];
+          const warning = `⚠ NOT WORKING YET: ${which} could not be used and ${scripts.length === 1 ? 'was' : 'were'} left out, so what ${scripts.length === 1 ? 'it does' : 'they do'} is missing from the game. Ask for ${scripts.length === 1 ? 'it' : 'them'} again ("write the rules script again"). Why: ${why}`;
+          response = { ...response, kind: 'preview', operations: kept, message: `⚠ Part of this could not be applied: the game will not play as described below until that is fixed.\n\n${response.message}`, changes: [warning, ...response.changes] };
+        } else {
+          response = { ...response, kind: 'preview', operations: kept, changes: [...response.changes, `⚠ ${note}`] };
+        }
       }
       // Still changing what wasn't asked for: said plainly with the changes (undo takes it back).
       const stillUnasked = gameOps(response) && !building ? unaskedChanges(ctx, request, response.operations, useEditor.getState().project) : null;
@@ -1062,6 +1117,9 @@ function missingPuzzles(project: Project, sceneId: Id, operations: Operation[], 
     const scene = after.scenes.find((s) => s.id === id);
     const st = scene ? levelStats(after, scene, componentRegistry) : null;
     if (!scene || !st) continue;
+    // (Puzzles are for a level a character gets through. What was built is something else, a board with pieces:
+    // it lacks nothing.)
+    if (!scene.entities.some((e) => !!resolveEntity(after, e, componentRegistry).components.CharacterController)) continue;
     const lacking = puzzles.map((p) => p.split(':')[0].trim()).filter((name) => PUZZLE_PIECES[name] && !st.pieces.includes(PUZZLE_PIECES[name]));
     if (lacking.length) {
       out.push(`${scene.name} (sceneId ${as}): ${lacking.map((n) => `${n} (no ${PUZZLE_PIECES[n]})`).join(', ')}`);

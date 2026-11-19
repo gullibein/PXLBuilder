@@ -4739,7 +4739,7 @@ try {
   await kAsk('The player kills mushroom-enemies by jumping on top of them, but other enemies cannot be killed that way.');
   await check(async () => (await kPrompt.getByTestId('prompt-result').getAttribute('data-status')) === 'message' && (await kPrompt.getByTestId('prompt-result').innerText()).includes("There's no mushroom enemy"), 'the AI instructs the user when what they describe does not exist yet');
   await check(serverCalls === serverBefore && anthropicCalls.at(-1).key === VALID && anthropicCalls.at(-1).url.includes('/v1/messages'), 'prompts use the user key, not the server');
-  await check(anthropicCalls.at(-1).streamed === true && anthropicCalls.at(-1).sent.max_tokens === 64000, '(streamed, with room for long answers: 64,000 tokens)');
+  await check(anthropicCalls.at(-1).streamed === true && anthropicCalls.at(-1).sent.max_tokens === 128000, '(streamed, with room for long answers: 128,000 tokens)');
   {
     const sent = anthropicCalls.at(-1).sent;
     await check(anthropicCalls.at(-1).model === 'claude-opus-5-5' && sent.system.at(-1).cache_control?.ttl === '1h' && sent.system.at(-1).text.startsWith('EDITOR SETTINGS') && sent.messages[0].content[0].cache_control?.type === 'ephemeral', 'Opus by default; the system prompt is cached for an hour and the game data for the request');
@@ -5021,6 +5021,48 @@ try {
     await np.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
     await check(async () => Number(await np.getByTestId('viewport-canvas').getAttribute('data-entities')) > 50 && asked.length === 2, '(and what the AI adds is built into the level: no third request)');
     await nc.close();
+  }
+
+  step = 'a board game is not levels to get through';
+  {
+    // A chess game: built on the starter seen from above without an answer spent on choosing it, with the board
+    // games' guidance and no platformer puzzles; afterwards no re-ask for puzzles and no offer of harder levels;
+    // and a request for more levels is told that a level here is another board.
+    const bc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const bp = await bc.newPage();
+    bp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    const asked = [];
+    await bp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      asked.push({ request: body.request, starter: body.context.newGame?.current ?? null, topics: body.topics ?? [], design: body.context.level?.design ?? null });
+      if (asked.length > 1) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'clarify', message: 'Which boards should they be?', changes: [], operations: [] }) });
+      const lib = (n) => body.context.library.find((d) => d.name === n).id;
+      const sceneId = body.context.level.id;
+      // The board: walls round it and pieces on it; nothing anyone steers (the starter's player is cleared away).
+      const legend = [{ char: '#', object: lib('Wall') }, { char: 'o', object: lib('Floor') }];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A chess board.', changes: ['The board'], operations: [{ op: 'draw_map', sceneId, col: 0, row: 0, legend, rows: ['######', '#oooo#', '#oooo#', '######'], clear: true }] }) });
+    });
+    await bp.goto(URL);
+    await bp.getByTestId('viewport-canvas').waitFor();
+    if (!(await bp.getByTestId('game-idea').isVisible())) {
+      await bp.getByTestId('project-menu').click();
+      await bp.getByTestId('menu-new').click();
+    }
+    if (!(await bp.getByTestId('new-sprites-engine').isVisible())) await bp.getByTestId('game-advanced').click();
+    await bp.getByTestId('new-sprites-engine').click();
+    await bp.getByTestId('game-idea').fill('a chess game against the computer');
+    await bp.getByTestId('game-idea').press('Enter');
+    await bp.getByTestId('global-prompt').getByTestId('prompt-result').waitFor({ timeout: 10000 });
+    await check(async () => asked.length === 1 && asked[0].starter === 'topdown', 'a new chess game is on the starter seen from above before the AI is asked (no answer spent on choosing it)');
+    await check(async () => asked[0].topics.includes('board_games') && !/Puzzles to build this level around/.test(asked[0].request), "(with the board games' guidance, and no bridge or spring picked for it)");
+    await bp.waitForTimeout(600);
+    await check(async () => asked.length === 1, 'a board with nobody to steer is not sent back for "the puzzles it lacks"');
+    await check(async () => (await bp.getByTestId('more-levels-offer').count()) === 0, 'and no "2 more levels, a little harder" is offered for it');
+    const bg = bp.getByTestId('global-prompt');
+    await bg.getByTestId('prompt-input').fill('Build 2 more levels');
+    await bg.getByTestId('prompt-input').press('Enter');
+    await check(async () => asked.length === 2 && /no player-controlled character/.test(asked[1].request) && /another board or set-up/.test(asked[1].request) && !/level to beat/i.test(asked[1].request) && asked[1].design === null, 'asked for more levels, the AI is told a level of this game is another board (no course to beat, no level idea)');
+    await bc.close();
   }
 
   step = 'a drawn new game in two parts';

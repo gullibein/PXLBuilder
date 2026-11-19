@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuiltinRegistry } from '../components/builtin';
 import { createProject } from '../model/factory';
 import { checkExpr, formatExpr, parseExpr } from './expr';
-import { checkScript, describeScriptLanguage, SCRIPT_TOPICS, scriptDocsFor, FUNCTIONS, MEMBERS, STATEMENTS, usesMenuKey } from './language';
+import { checkScript, describeScriptLanguage, SCRIPT_LIMITS, SCRIPT_TOPICS, scriptDocsFor, FUNCTIONS, MEMBERS, STATEMENTS, usesMenuKey } from './language';
 import { produce } from 'immer';
 
 const project = createProject(createBuiltinRegistry());
@@ -106,7 +106,55 @@ describe('scripts', () => {
 
   it('size limits keep scripts bounded', () => {
     const deep = (n: number): unknown => (n === 0 ? { do: 'jump', force: '1' } : { do: 'if', cond: 'true', then: [deep(n - 1)] });
-    expect(broken((s) => ((s.handlers[0].do = [deep(9) as never]), s))).toMatch(/nested too deeply/);
+    expect(broken((s) => ((s.handlers[0].do = [deep(SCRIPT_LIMITS.depth - 1) as never]), s))).toBeNull();
+    expect(broken((s) => ((s.handlers[0].do = [deep(SCRIPT_LIMITS.depth) as never]), s))).toMatch(/nested too deeply \(max 12\)/);
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `v${i}`, value: 0 }));
+    expect(broken((s) => ((s.vars = [...s.vars, ...many(SCRIPT_LIMITS.vars - 1)]), s))).toBeNull();
+    expect(broken((s) => ((s.vars = [...s.vars, ...many(SCRIPT_LIMITS.vars + 4)]), s))).toBe('Script "Charge" has too many variables (125; max 120)');
+    const steps = (n: number) => Array.from({ length: n }, () => ({ do: 'jump', force: '1' }));
+    expect(broken((s) => ((s.handlers[0].do = steps(SCRIPT_LIMITS.statements - 5) as never), s))).toBeNull();
+    expect(broken((s) => ((s.handlers[0].do = steps(SCRIPT_LIMITS.statements + 5) as never), s))).toBe('Script "Charge" is too long (2007 steps; max 2000)');
+  });
+
+  it("a board game's rules fit: a hundred variables, a condition of a thousand characters (chess was refused for 41 variables, then for a 501-character formula)", () => {
+    const vars = Array.from({ length: 100 }, (_, i) => ({ name: `sq${i}`, value: 0 }));
+    const long = Array.from({ length: 40 }, (_, i) => `(sq${i} == ${i} and sq${i + 1} != 0)`).join(' or ');
+    expect(long.length).toBeGreaterThan(1000);
+    expect(broken((s) => ((s.vars = [...s.vars, ...vars]), (s.handlers[0].if = long), s))).toBeNull();
+    // (Still bounded: by length, and by how deep it nests, each said by name.)
+    const tooLong = Array.from({ length: 90 }, (_, i) => `(sq${i} == ${i} and sq${i + 1} != 0)`).join(' or ');
+    const said = broken((s) => ((s.vars = [...s.vars, ...vars]), (s.handlers[0].if = tooLong), s))!;
+    expect(said).toMatch(/is too long \(max 2000 characters\)/);
+    // (A long formula is named by its start, not printed whole into the message that goes back to the AI.)
+    expect(said.length).toBeLessThan(260);
+    expect(said).toContain(`${tooLong.slice(0, 80)}… (${tooLong.length} characters)`);
+    expect(() => parseExpr(`${'('.repeat(61)}1${')'.repeat(61)}`)).toThrow(/nested too deeply \(max 60 brackets inside each other\)/);
+    expect(formatExpr(parseExpr(`${'('.repeat(50)}1${')'.repeat(50)}`))).toBe('1');
+    expect(() => parseExpr(`${'-'.repeat(900)}1`)).toThrow(/nested too deeply/);
+  });
+
+  it('every problem of a script is reported at once, each with its place (one sent back alone cost a whole new answer each)', () => {
+    const said = broken((s) => {
+      s.vars = Array.from({ length: SCRIPT_LIMITS.vars + 1 }, (_, i) => ({ name: `v${i}`, value: 0 }));
+      s.handlers[0].if = 'dist(playr) < 160';
+      (s.handlers[1].do[0] as { speed: string }).speed = 'sped * 3';
+      s.handlers[2].do.push({ do: 'state', name: 'flee' } as never);
+      return s;
+    })!;
+    expect(said).toBe(
+      'Script "Charge" has 4 problems, all to fix in one go: (1) has too many variables (121; max 120); (2) handler 1 (tick): condition "dist(playr) < 160": unknown name "playr" (did you mean "player"?); ' +
+        '(3) handler 2 (tick): step 1 (move_toward): expression "sped * 3": unknown name "sped"; (4) handler 3 (event): step 2 (state): unknown state "flee"; declare it in "states"',
+    );
+    // The same slip in many places is one problem, counted; and a long list ends by saying how many more.
+    const same = broken((s) => ((s.handlers[1].do = Array.from({ length: 5 }, () => ({ do: 'set', var: 'sped', value: '1' })) as never), s))!;
+    expect(same).toBe('Script "Charge", handler 2 (tick): step 1 (set): unknown variable "sped" (did you mean "speed"?); declare it in "vars" (and the same in 4 more places)');
+    const lots = broken((s) => ((s.handlers[1].do = Array.from({ length: 14 }, (_, i) => ({ do: 'set', var: `u${i}`, value: '1' })) as never), s))!;
+    expect(lots).toMatch(/^Script "Charge" has 14 problems, all to fix in one go: \(1\) handler 2/);
+    expect(lots).toMatch(/\(10\) handler 2 \(tick\): step 10 \(set\): unknown variable "u9"[^;]*; declare it in "vars"; and 4 more$/);
+    // (Nested places keep their whole path.)
+    expect(broken((s) => ((s.handlers[1].do = [{ do: 'if', cond: 'true', then: [], else: [{ do: 'repeat', times: '2', then: [{ do: 'state', name: 'nope' }] }] }] as never), s))).toBe(
+      'Script "Charge", handler 2 (tick): step 1 (if) else > step 1 (repeat) > step 1 (state): unknown state "nope"; declare it in "states"',
+    );
   });
 
   it('the AI reference documents every statement, function and property: in the instructions, or in its topic (named there)', () => {

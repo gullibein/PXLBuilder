@@ -225,6 +225,19 @@ function styleAndPuzzles(style: { name: string; rules: string }, puzzles: string
   return { style, puzzles: picked.map((p) => `${p}: ${LEVEL_PUZZLES[p]}`) };
 }
 
+/**
+ * Whether the game's levels are places a character gets through (a platformer, a maze, an RPG's map): some level has
+ * a player-controlled character in it, or nothing is placed anywhere yet (the game isn't made: it may become one).
+ * A board game, a falling-block puzzle or a card table has none. A "level" of such a game is another board or
+ * set-up, and what goes with levels to walk through is not for it: a layout, where the start and the goal go,
+ * puzzles on the way, each level harder than the last.
+ */
+export function levelsToGetThrough(project: Project, registry: ComponentRegistry): boolean {
+  const placed = project.scenes.flatMap((s) => s.entities);
+  if (!placed.length) return true;
+  return placed.some((e) => !!resolveEntity(project, e, registry).components.CharacterController);
+}
+
 /** This request's idea for a level (`random` in [0,1), e.g. Math.random). */
 export function levelDesignIdea(project: Project, scene: Scene, registry: ComponentRegistry, random: () => number): LevelDesignIdea {
   const topDown = isTopDownScene(project, scene, registry);

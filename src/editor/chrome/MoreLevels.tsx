@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { partLevels } from '../../core/generation/playGenerators';
+import { levelsToGetThrough } from '../../core/ai/levelIdeas';
 import { winProblems } from '../../core/model/reachability';
 import type { Project } from '../../core/types';
 import { startJob, stopJob, useJobs, type PromptJob } from '../ai/jobs';
@@ -15,8 +16,8 @@ const MORE = 2;
 export const MORE_LEVELS_REQUEST = `Build ${MORE} more levels for this game, after the levels it has (context.level.design.forNewLevels), each a little harder than the one before, with the game's objects, and a make_background for each. Leave the existing levels as they are.`;
 
 /**
- * A game made of levels, with fewer than three, that can be won: one where more levels make sense (not a game with
- * random levels, not an endless one with nothing to finish).
+ * A game made of levels to get through, with fewer than three, that can be won: one where more levels make sense (not
+ * a game with random levels, not an endless one with nothing to finish, not a board game or a puzzle board).
  */
 export function wantsMoreLevels(project: Project): boolean {
   const templates = partLevels(project);
@@ -24,6 +25,9 @@ export function wantsMoreLevels(project: Project): boolean {
   if (templates.size || project.scenes.some((s) => s.generator)) return false;
   const levels = project.scenes.filter((s) => !templates.has(s.id));
   if (!levels.length || levels.length >= 3) return false;
+  // (Levels a character gets through, each a step on from the last. A board game, a puzzle board: another level of
+  // it is not "a little harder than the one before", and nothing here knows what it would be.)
+  if (!levelsToGetThrough(project, componentRegistry)) return false;
   return levels.every((s) => !winProblems(project, s.id, componentRegistry).some((p) => p.key === 'win-no-goal'));
 }
 
