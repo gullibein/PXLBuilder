@@ -111,6 +111,14 @@ export function fillMissingNulls(raw: unknown): unknown {
  * doesn't take) is left out, and said in the answer's changes, rather than throwing away the whole answer (maybe a
  * long one: a new game's art and levels) over one line of it. Anything else wrong with the answer still fails.
  */
+/**
+ * The change lines of an answer as they are shown: without the ones that say nothing (empty, or the word "null",
+ * "none" or "n/a" where the AI meant "no lines": a result once began with the line "null").
+ */
+export function tidyChanges(changes: readonly string[]): string[] {
+  return changes.filter((c) => typeof c === 'string' && c.trim() !== '' && !/^\s*["'`]?(null|none|n\/a|undefined)["'`]?\.?\s*$/i.test(c));
+}
+
 export function readReply(raw: unknown): { ok: true; response: AIResponse; dropped: string[] } | { ok: false; issues: string } {
   const filled = fillMissingNulls(raw);
   const first = aiResponseSchema.safeParse(filled);

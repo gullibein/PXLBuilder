@@ -125,3 +125,16 @@ describe('the pixel font', () => {
     expect(sharp.texts()).toBe(2); // (with its shadow)
   });
 });
+
+describe('how big text really is on the play screen', () => {
+  it("a game of coarse pixels draws text bigger than asked (never under one game pixel per font pixel); a fine one as asked", async () => {
+    const { pixelTextMetrics, pixelFontFor } = await import('./pixelFont');
+    // 8×8 sprites, each game pixel 8 canvas pixels on a screen of 2 canvas pixels per px: 14 px text is 20 px tall.
+    expect(pixelTextMetrics(14, 2, 8, pixelFontFor(8))).toEqual({ advance: 16, tall: 20, line: 28, pixel: 4 });
+    // 32×32 sprites, a game pixel one canvas pixel: about what was asked.
+    const fine = pixelTextMetrics(14, 1, 1, pixelFontFor(32));
+    expect(fine.tall).toBeGreaterThanOrEqual(7);
+    expect(fine.tall).toBeLessThanOrEqual(14);
+    expect(fine.advance).toBeLessThan(14 * 0.9);
+  });
+});

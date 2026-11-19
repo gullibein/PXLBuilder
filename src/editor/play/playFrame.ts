@@ -4,7 +4,7 @@
  * all on the game's pixel grid. Shared by Play and by the game's picture
  * for PXLGameSite (taken the same way, so it looks exactly like the game).
  */
-import { pixelFontFor } from '../../render/pixelFont';
+import { pixelFontFor, pixelTextMetrics } from '../../render/pixelFont';
 import { drawFog } from '../../runtime/fog';
 import type { Project, Scene } from '../../core/types';
 import { drawBuiltinHud, type BuiltinHud } from '../../render/hud';
@@ -63,6 +63,8 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   const perArt = zoomNow * dpr * worldPerArt;
   // (Text in the pixel font that fits the game's sprite size: tiny for 8×8 sprites, bigger and finer for finer ones.)
   const grid: PixelGrid = { cell: perArt >= 1 ? Math.round(perArt) : 1, lowRes: (f.project.settings.playPixels ?? 0) > 0, font: pixelFontFor(f.project.settings.spriteResolution) };
+  // (What lays text out, a menu box, measures it as it is drawn here: the screen layer, `dpr` canvas px per px.)
+  runtime.measureText(`${grid.cell}:${dpr}:${grid.font?.name ?? ''}`, (textSize) => pixelTextMetrics(textSize, dpr, grid.cell, grid.font));
   // What scripts drew: on the ground under everything (highlighted squares), labels in the level, then the screen
   // layer (HUDs, scores, menus) on top, then the built-in display.
   const drawings = [...runtime.drawings.values()];

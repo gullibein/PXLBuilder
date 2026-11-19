@@ -8,6 +8,7 @@ import { expandReadyScript } from '../core/script/ready';
 import type { Project } from '../core/types';
 import { InputState, type Action } from './input';
 import { Runtime } from './runtime';
+import { wrapWords } from './turns';
 
 const registry = createBuiltinRegistry();
 
@@ -150,5 +151,90 @@ describe('the kit looks the way the game says', () => {
     step(rt, 0.1);
     expect(rt.kit.style.cursorStyle).toBe('square');
     expect(rt.scripts.errors.some((e) => /cursor_style "triangle"/.test(e.message))).toBe(true);
+  });
+});
+
+describe('the menu box, laid out for the text as it is really drawn', () => {
+  /** A board whose one object opens a menu at the start (with a bar behind the item at hand). */
+  function menuGame(title: string | null, items: string[]): Runtime {
+    let project = createProject(registry, 'Menu', 'topdown');
+    const sceneId = project.scenes[0].id;
+    project = produce(project, (d) => {
+      const def = createDefinition('Rules', { Sprite: registry.createDefault('Sprite', { width: 32, height: 32 }) }, ['rules']);
+      const checked = checkScript(
+        { id: 'scr_menu', name: 'Menu', description: '', vars: [], states: [], handlers: [{ when: { on: 'start' }, do: [{ do: 'kit_style', menu_selected: '#3a2f6a' }, { do: 'menu', items, title, cancel: false, at: 'center' }] }] },
+        d,
+      );
+      if ('error' in checked) throw new Error(checked.error);
+      def.scripts = [checked.script];
+      m.addDefinition(d, def, registry);
+      d.scenes[0].entities = [];
+      m.addEntity(d, sceneId, instantiateDefinition(def, { x: 16, y: 16 }));
+    });
+    return new Runtime(project, sceneId, registry);
+  }
+  const items = ['2 Players', 'Vs CPU: Easy', 'Vs CPU: Normal', 'Vs CPU: Master'];
+  const kit = (rt: Runtime) => [...rt.drawings.entries()].filter(([k]) => k.includes('m')).map(([k, v]) => ({ id: k.replace(/^.*?(m[a-z]\d*)$/, '$1'), ...v }));
+  const get = (rt: Runtime, id: string) => kit(rt).find((d) => d.id === id)!;
+  // An 8×8 game on a screen at twice its size: each font pixel 4 px, a letter 12 × 20 px, 16 px to the next.
+  const coarse = (size: number) => ({ advance: 16, tall: 20, line: 28, pixel: 4, size });
+
+  it('the bar behind the item at hand is drawn before its text (it was drawn over it, hiding the item)', () => {
+    const rt = menuGame('Retro Chess', items);
+    step(rt, 0.05);
+    const bar = get(rt, 'ms');
+    const text = get(rt, 'mt1');
+    expect(text.text).toBe('2 Players');
+    expect(bar.order).toBeLessThan(text.order);
+    expect(get(rt, 'mc').order).toBeGreaterThan(bar.order);
+  });
+
+  it('measured as the play screen draws it: lines keep clear of each other, every line is inside the box, the bar holds its line', () => {
+    const rt = menuGame('Retro Chess  You play White', items);
+    step(rt, 0.05);
+    // (Laid out by guess first: 14 px text taken for 9 px a letter; then the play screen says how it draws it.)
+    const guessed = get(rt, 'mf').w;
+    rt.measureText('8x8@2', coarse);
+    const box = get(rt, 'mf');
+    const lines = [0, 1, 2, 3, 4].map((n) => get(rt, `mt${n}`));
+    expect(box.w).toBeGreaterThan(guessed);
+    for (const [n, l] of lines.entries()) {
+      // Inside the box, left to right and top to bottom.
+      expect(l.x + [...l.text].length * 16, l.text).toBeLessThanOrEqual(box.x + box.w);
+      expect(l.y).toBeGreaterThanOrEqual(box.y);
+      expect(l.y + 20).toBeLessThanOrEqual(box.y + box.h);
+      // Clear of the line above: a letter's height and a gap.
+      if (n) expect(l.y - lines[n - 1].y, l.text).toBeGreaterThanOrEqual(20 + 8);
+    }
+    const bar = get(rt, 'ms');
+    expect(bar.y).toBeLessThanOrEqual(lines[1].y);
+    expect(bar.y + bar.h).toBeGreaterThanOrEqual(lines[1].y + 20);
+    // Everything of the box on the game's pixels (4 px), border and all: the same on all four sides.
+    const border = get(rt, 'mb');
+    for (const v of [box.x, box.y, box.w, box.h, border.x, border.y, border.w, border.h, bar.y, bar.h]) expect(v % 4).toBe(0);
+    expect([box.x - border.x, box.y - border.y, border.w - box.w, border.h - box.h]).toEqual([4, 4, 8, 8]);
+    // The same measure again changes nothing; it stays right as the game goes on.
+    step(rt, 0.05);
+    expect(get(rt, 'mf').w).toBe(box.w);
+  });
+
+  it('a title too long for the screen goes on to the next line at a space, and the items follow below it', () => {
+    const rt = menuGame('Retro Chess for two players or against the computer at four levels of skill', items);
+    rt.screen = { w: 640, h: 400 };
+    step(rt, 0.05);
+    rt.measureText('8x8@2', coarse);
+    const box = get(rt, 'mf');
+    expect(box.x).toBeGreaterThanOrEqual(16);
+    expect(box.x + box.w).toBeLessThanOrEqual(640 - 16);
+    const texts = kit(rt).filter((d) => /^mt\d+$/.test(d.id)).sort((a, b) => a.y - b.y);
+    expect(texts.length).toBeGreaterThan(5);
+    expect(texts.slice(0, texts.length - 4).map((t) => t.text).join(' ')).toBe('Retro Chess for two players or against the computer at four levels of skill');
+    for (const t of texts) expect(t.x + [...t.text].length * 16, t.text).toBeLessThanOrEqual(box.x + box.w);
+    expect(texts.at(-4)!.text).toBe('2 Players');
+    // (The menu still works as a menu: the second item is chosen with Down and the action key.)
+    tap(rt, 'down');
+    expect(rt.kit.menu?.index).toBe(1);
+    expect(wrapWords('a bb ccc', 4)).toEqual(['a bb', 'ccc']);
+    expect(wrapWords('abcdefgh ij', 4)).toEqual(['abcdefgh', 'ij']);
   });
 });

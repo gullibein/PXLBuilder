@@ -655,6 +655,19 @@ export class Runtime {
   soundsPlayed = 0;
   /** The play screen's size in px (set by the play view; scripts read screen_w / screen_h). */
   screen = { w: 960, h: 600 };
+  /**
+   * How big text is really drawn on the play screen (set by whoever draws it, with a key that changes when the
+   * answer would: the zoom, the screen). Null: not drawn on a pixel grid (tests, checks): an estimate is used.
+   */
+  textMetrics: ((size: number) => { advance: number; tall: number; line: number; pixel: number }) | null = null;
+  private textKey = '';
+  /** The play screen says how it draws text; what was laid out with another measure is laid out again. */
+  measureText(key: string, metrics: (size: number) => { advance: number; tall: number; line: number; pixel: number }): void {
+    if (key === this.textKey) return;
+    this.textKey = key;
+    this.textMetrics = metrics;
+    this.kit.redraw();
+  }
 
   constructor(
     readonly project: Project,
@@ -694,6 +707,7 @@ export class Runtime {
       get screen() {
         return rt.screen;
       },
+      textMetrics: (size) => rt.textMetrics?.(size) ?? null,
       solidAtPoint: (x, y) => this.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh),
       emit: (type, subject, other = null) => this.gameplay.emit(type, subject, other),
       report: (message) => this.gameplay.emit('script_error', null, null, { script: 'turns', message }),

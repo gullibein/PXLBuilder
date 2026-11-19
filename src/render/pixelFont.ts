@@ -230,6 +230,18 @@ export function pixelFontFor(resolution: number | undefined): PixelFont {
   return r <= 8 ? TINY_FONT : r <= 16 ? FONT_5X7 : r <= 32 ? FONT_10X14 : FONT_20X28;
 }
 
+/**
+ * How big text of `size` really is on the play screen, in screen px: the pixel font that fits, never smaller than
+ * one of the game's pixels per font pixel (`cell` canvas pixels; `dpr` canvas pixels per screen px). In a game of
+ * 8×8 sprites, text asked 14 px tall comes out 20: whatever lays text out (a menu box) measures with this.
+ */
+export function pixelTextMetrics(size: number, dpr: number, cell: number, font: PixelFont = TINY_FONT): { advance: number; tall: number; line: number; pixel: number } {
+  const fit = fitPixelFont(size * dpr, cell, font);
+  const k = fit.scale / dpr;
+  // (pixel: one of the game's pixels, in screen px: what boxes round to.)
+  return { advance: fit.font.advance * k, tall: fit.font.h * k, line: fit.font.line * k, pixel: cell / dpr };
+}
+
 /** How wide and tall a text is in font pixels (several lines split at "\n"). */
 export function pixelTextSize(text: string, font: PixelFont = TINY_FONT): { w: number; h: number } {
   const lines = text.split('\n');

@@ -18,7 +18,7 @@ import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
 import { buildAIPayload, codeFor, codeToSend, contextKey, type AIContext } from '../../core/ai/context';
-import { AIUnavailableError, type AIPicture, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
+import { AIUnavailableError, tidyChanges, type AIPicture, type AIRequestBody, type AIResponse } from '../../core/ai/protocol';
 import { HttpAIProvider, type AIProvider } from '../../core/ai/provider';
 import { geminiKey, getApiKey } from './apiKey';
 import { chatHistory, conversationKey, unusableReply } from './aiLog';
@@ -45,6 +45,32 @@ import type { GameType, Id, Project, Starter } from '../../core/types';
 import { switchStarter } from '../persistence';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
+/** The most script code that goes along with part 2 of a game built in two answers (characters). */
+const PART_CODE_MAX = 80_000;
+
+/**
+ * The library objects whose scripts are new or changed since `before` (the ones an answer just wrote), the biggest
+ * first, as many as fit in `max` characters; the same script on several objects (one "side color" on six pieces)
+ * counted once.
+ */
+export function scriptsWritten(before: Project, after: Project, max: number): Id[] {
+  const was = new Map(before.definitions.map((d) => [d.id, JSON.stringify(d.scripts ?? [])]));
+  const seen = new Set<string>();
+  const changed = after.definitions
+    .filter((d) => (d.scripts ?? []).length > 0 && was.get(d.id) !== JSON.stringify(d.scripts))
+    .map((d) => ({ id: d.id, text: JSON.stringify((d.scripts ?? []).map((s) => ({ ...s, id: '' }))) }))
+    .filter((d) => !seen.has(d.text) && !!seen.add(d.text))
+    .sort((a, b) => b.text.length - a.text.length);
+  const out: Id[] = [];
+  let used = 0;
+  for (const d of changed) {
+    if (used + d.text.length > max) continue;
+    used += d.text.length;
+    out.push(d.id);
+  }
+  return out;
+}
+
 /** The most of one failed operation sent back for correcting (characters): a long script whole. */
 const PATCH_MAX = 60_000;
 
@@ -387,7 +413,8 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         written = Math.max(written, soFar.length);
         draft?.(soFar, channel);
       };
-      const r = await provider.respond(b, sig, tr, timed);
+      const answered = await provider.respond(b, sig, tr, timed);
+      const r = { ...answered, changes: tidyChanges(answered.changes) };
       tr?.('note', answerTiming(sentAt, firstAt, Date.now(), written));
       const drawn = r.operations.flatMap((o) => (o.op === 'draw_sprite' && !o.situation ? [{ name: o.name, palette: o.palette, rows: o.rows }] : []));
       if (drawn.length) options.onDrawings?.(drawn);
@@ -445,7 +472,17 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
             else level.design = design;
           }
           body.context = { ...keep, ...fresh, newGame: keep.newGame };
-          body.request += `\n\n[${PART_TWO}${art.changes.length ? ` Part 1 made: ${art.changes.join('; ')}.` : ''}]`;
+          // The scripts part 1 wrote go along in full: the level is built to fit them (where a rules script puts
+          // its pieces), and the context carries only their names. (Without them part 2 answered by asking for
+          // the code: a request spent on that.)
+          const wrote = scriptsWritten(now, now2.project, PART_CODE_MAX);
+          if (wrote.length) {
+            const sent = new Set((body.code ?? []).map((c) => c.id));
+            const code = codeFor(now2.project, wrote).filter((c) => !sent.has(c.id));
+            body.code = [...(body.code ?? []), ...code];
+            if (code.length) trace?.('note', `Sent along: the scripts part 1 wrote (${code.map((c) => c.name).join(', ')})`);
+          }
+          body.request += `\n\n[${PART_TWO}${wrote.length ? ' The scripts you wrote in part 1 come in full under FULL CODE: build the level to fit them, without asking for them.' : ''}${art.changes.length ? ` Part 1 made: ${art.changes.join('; ')}.` : ''}]`;
         } else trace?.('note', `Part 1 gave nothing that applies${applied && 'message' in applied ? ` (${applied.message})` : ''}: the whole game in one answer instead`);
       }
     }

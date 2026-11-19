@@ -28,6 +28,21 @@ const key = (i: number, j: number) => `${i},${j}`;
 
 type Anchor = ScreenDrawing['anchor'];
 
+/** A line broken at its spaces into lines of at most `fits` characters (a word longer than that stays whole). */
+export function wrapWords(text: string, fits: number): string[] {
+  const out: string[] = [];
+  let now = '';
+  for (const word of text.split(' ')) {
+    const next = now ? `${now} ${word}` : word;
+    if (now && [...next].length > fits) {
+      out.push(now);
+      now = word;
+    } else now = next;
+  }
+  out.push(now);
+  return out;
+}
+
 /** What the kit needs from the runtime (kept small: tests can give a stand-in). */
 export interface KitHost {
   entities: RuntimeEntity[];
@@ -35,6 +50,8 @@ export interface KitHost {
   drawings: Map<string, ScreenDrawing>;
   /** The play screen's size (px), for placing the menu. */
   screen: { w: number; h: number };
+  /** How big text of that size is really drawn (screen px); null: not known (an estimate is used). */
+  textMetrics?(size: number): { advance: number; tall: number; line: number; pixel: number } | null;
   solidAtPoint(x: number, y: number): boolean;
   /** Tells an entity's scripts (and rules, and the play log) that something happened to it. */
   emit(type: string, subject: RuntimeEntity | null, other?: RuntimeEntity | null): void;
@@ -104,7 +121,8 @@ export const DEFAULT_KIT_STYLE: KitStyle = {
   bannerSize: 28,
 };
 
-const KIT = '\u0000kit';
+/** What the kit's own drawings are named with (so a script's drawing never has the same name). */
+export const KIT = '\u0000kit';
 const FOUR = [
   [1, 0],
   [-1, 0],
@@ -527,6 +545,11 @@ export class TurnKit {
 
   // ------------------------------------------------------------------ look
 
+  /** Drawn again now (the play screen found out how big its text is). */
+  redraw(): void {
+    this.draw();
+  }
+
   /** The kit's look, as the game's own drawings (redone each step). */
   private draw(): void {
     const d = this.host.drawings;
@@ -579,26 +602,42 @@ export class TurnKit {
     if (this.menu) {
       const m = this.menu;
       const { w: W, h: H } = this.host.screen;
-      const lines = [...(m.title ? m.title.split('\n') : []), ...m.items];
-      const line = Math.round(st.menuSize * 1.3);
-      const pad = Math.round(st.menuSize * 0.7);
-      const charW = st.menuSize * 0.65;
-      const indent = Math.round(st.pointer.length * charW + st.menuSize * 0.4);
-      const w = Math.min(W - 32, Math.max(90, Math.max(...lines.map((l) => l.replace(/^-/, '').length)) * charW + 2 * pad + indent));
-      const h = lines.length * line + 2 * pad;
+      // Laid out with the size the text is really drawn at (the game's pixel font: in a game of coarse pixels the
+      // letters are much bigger than asked), so that lines keep apart and the box holds its text. (Measured as
+      // 0.65 × 1.3 of the size, an 8×8 game's menu had its lines run into each other and its title out of the box.)
+      const real = this.host.textMetrics?.(st.menuSize) ?? null;
+      const charW = real ? real.advance : st.menuSize * 0.65;
+      const tall = real ? real.tall : st.menuSize * 0.75;
+      const line = Math.max(Math.round(st.menuSize * 1.3), Math.ceil(tall * 1.6));
+      const pad = Math.round(Math.max(st.menuSize * 0.7, charW));
+      const indent = Math.round([...st.pointer].length * charW + Math.max(st.menuSize * 0.4, charW * 0.5));
+      // (A title too long for the screen goes on to more lines, at its spaces.)
+      const fits = Math.max(8, Math.floor((W - 32 - 2 * pad) / charW));
+      const titleLines = m.title ? m.title.split('\n').flatMap((l) => wrapWords(l, fits)) : [];
+      const lines = [...titleLines, ...m.items];
+      const longest = Math.max(...titleLines.map((l) => [...l].length * charW), ...m.items.map((l) => [...l.replace(/^-/, '')].length * charW + indent));
+      // (On the game's pixel grid boxes round to whole game pixels: the box and its border are sized in them, or
+      // a 2 px border shows on two sides only.)
+      const px = real ? Math.max(1, real.pixel) : 1;
+      const whole = (v: number) => Math.round(v / px) * px;
+      const edge = Math.max(2, px);
+      const w = whole(Math.min(W - 32, Math.max(90, Math.ceil(longest + 2 * pad))));
+      const h = whole(lines.length * line + 2 * pad);
       const [sx, sy] = ({ top_left: [0, 0], top: [0.5, 0], top_right: [1, 0], left: [0, 0.5], center: [0.5, 0.5], right: [1, 0.5], bottom_left: [0, 1], bottom: [0.5, 1], bottom_right: [1, 1] } as const)[m.at];
       // Its top left corner: 16 px in from the screen's edges, on the side it is anchored to.
-      const left = sx === 0 ? 16 : sx === 1 ? W - 16 - w : (W - w) / 2;
-      const top = sy === 0 ? 16 : sy === 1 ? H - 16 - h : (H - h) / 2;
-      put('mb', { shape: 'rect', anchor: 'top_left', x: left - 2, y: top - 2, w: w + 4, h: h + 4, color: st.menuBorder, alpha: 1 });
+      const left = whole(sx === 0 ? 16 : sx === 1 ? W - 16 - w : (W - w) / 2);
+      const top = whole(sy === 0 ? 16 : sy === 1 ? H - 16 - h : (H - h) / 2);
+      put('mb', { shape: 'rect', anchor: 'top_left', x: left - edge, y: top - edge, w: w + 2 * edge, h: h + 2 * edge, color: st.menuBorder, alpha: 1 });
       put('mf', { shape: 'rect', anchor: 'top_left', x: left, y: top, w, h, color: st.menuColor, alpha: 1 });
-      const titled = m.title ? m.title.split('\n').length : 0;
+      const titled = titleLines.length;
       lines.forEach((l, n) => {
         const item = n - titled;
         const off = item >= 0 && l.startsWith('-');
-        const y = top + pad + n * line + 2;
+        // Each line in the middle of its row; the selected row's bar first, behind its text (it hid it).
+        const row = top + pad + n * line;
+        const y = Math.round(row + (line - tall) / 2);
+        if (item === m.index && st.menuSelected) put('ms', { shape: 'rect', anchor: 'top_left', x: left + edge, y: whole(row), w: w - 2 * edge, h: whole(line), color: st.menuSelected, alpha: 1 });
         put(`mt${n}`, { shape: 'text', anchor: 'top_left', x: left + pad + (item >= 0 ? indent : 0), y, w: 0, h: 0, text: l.replace(/^-/, ''), size: st.menuSize, color: item < 0 ? st.menuTitle : off ? st.menuGreyed : st.menuText, alpha: 1 });
-        if (item === m.index && st.menuSelected) put('ms', { shape: 'rect', anchor: 'top_left', x: left + 3, y: y - 3, w: w - 6, h: line, color: st.menuSelected, alpha: 1 });
         if (item === m.index && st.pointer) put('mc', { shape: 'text', anchor: 'top_left', x: left + pad, y, w: 0, h: 0, text: st.pointer, size: st.menuSize, color: st.pointerColor, alpha: 1 });
       });
     }

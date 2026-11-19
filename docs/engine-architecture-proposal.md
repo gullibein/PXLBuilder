@@ -2268,3 +2268,31 @@ legality test was written four times in the refused script because there is no w
 language addition, with its own budget and recursion rules. (2) A chess prompt in the V1.5 evaluation set.
 (3) An automatic "finish the rest" after a cut-off answer on the API path, as the claude.ai path does: it spends
 another long request without asking, so it is left to the user for now.
+
+### 24.9 Side step, continued — the second chess game (one live run) and its menu
+
+The user built chess again on 0e3a445 with a live model (Claude Opus 5.5 through their own key) and sent the log
+and a screenshot. **This is one run by the user, not an evaluation**: it shows what happened once.
+
+What the log shows of §24.8's changes: the game started on the top-down starter with no answer spent on it; the
+board games' guidance went along; the rules script (41,000 characters with the rest of part 1) was accepted the
+first time, with no retry and nothing left out; no puzzle re-ask, no offer of harder levels. The answer said which
+rules are in (moves, captures, promotion, win by taking the king) and which are not (check, checkmate, castling, en
+passant): the simplification is the model's, and stated. The user reports that the game works. Not shown by this
+run: whether the four strengths play differently, what "more levels" gives, a script past the limits.
+
+It took 639 s and $2.30. 430 s of that was the model working before its first word, and 179 s writing 69,000
+tokens: that is the model's time on a chess program at medium effort, not time the app lost. What the app did lose,
+and the screenshot's faults:
+
+| Seen | Why | Change |
+| --- | --- | --- |
+| The menu's lines ran into each other, its title ran out of the box, and the item at hand was hidden under its bar. | The kit laid the menu out for text of 0.65 × 1.3 of the asked size, while the play screen draws text in the game's pixel font, never under one game pixel per font pixel: in an 8×8 game 14 px text is 20 px tall and 16 px a letter. The bar was drawn after its line's text. | The play screen tells the runtime how it draws text (`Runtime.measureText`, `pixelTextMetrics`); the menu is laid out with that (row height, box width, text centred in its row), in whole game pixels (the 2 px border showed on two sides only), the bar before the text. A title too long for the screen wraps at its spaces. Without a play screen (tests, checks) the old estimate stands. |
+| "♔" in the title was drawn as a box. | The pixel fonts have letters, digits, common punctuation and ♥. | Said in the turn-based guidance, with the advice to keep menu lines short and put a second fact on its own title line. |
+| Part 2 of the build answered by asking for the rules script part 1 had just written (a request, $0.14). | The request said the scripts "are in the context now"; the context carries only their names. | The scripts part 1 wrote go along with part 2 in full (`scriptsWritten`: new or changed ones, biggest first, the same one on several objects once, up to 80,000 characters), and the request says so. |
+| The result's first line was "null". | The model wrote `"changes": ["null"]` for "no lines". | `tidyChanges`: lines that say nothing are not shown or passed on. |
+
+Left as it is: six pieces each got the same small "side color" script written out in full (about a second of
+writing; an operation that sets one script on several objects would change the reply format, which is at the
+strict format's limits). Scripts that draw their own text boxes with `draw` still place lines by the asked size;
+giving scripts the real text size (a `text_width` function) is a small language addition, proposed, not built.

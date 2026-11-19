@@ -1,3 +1,4 @@
+import { KIT } from '../../runtime/turns';
 import { resolutionZoom } from '../../core/model/camera';
 import { usesMenuKey } from '../../core/script/language';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -282,6 +283,13 @@ export function PlayView(props: PlayViewProps) {
       const grid = drawPlayFrame(ctx, runtime, { project, scene, size, extraZoom, worldPerArt, images, looks, heartLook, startCamera }, banner);
       canvas.dataset.grid = String(grid.cell);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
+      // (A menu box as it is laid out, and how wide its longest line is drawn: for the browser tests.)
+      const box = runtime.drawings.get(`${KIT}mf`);
+      if (box) {
+        const texts = [...runtime.drawings.entries()].filter(([k]) => k.startsWith(`${KIT}mt`)).map(([, d]) => d);
+        const advance = runtime.textMetrics?.(texts[0]?.size ?? 14)?.advance ?? 0;
+        canvas.dataset.menu = `${Math.round(box.w)}x${Math.round(box.h)} text ${Math.round(Math.max(0, ...texts.map((d) => d.x - box.x + [...d.text].length * advance)))} rows ${texts.map((d) => Math.round(d.y)).join(',')}`;
+      } else delete canvas.dataset.menu;
       for (const s of runtime.soundQueue.splice(0)) {
         const recipe = sounds.get(s.assetId);
         // (Sound effects switched off by the game: set_sound.)

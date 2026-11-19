@@ -5065,21 +5065,64 @@ try {
     await bc.close();
   }
 
+  step = 'a menu box in a game of coarse pixels';
+  {
+    // An 8×8 game draws its text big (never under one game pixel per font pixel): the menu box is laid out for the
+    // text as drawn, so the title is inside the box and the lines are a letter's height and more apart.
+    const mc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
+    const mp = await mc.newPage();
+    mp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await mp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      const wall = body.context.library.find((d) => d.name === 'Wall').id;
+      const script = { id: 'menu', name: 'Menu', description: 'A menu.', vars: [], states: [], handlers: [{ when: { on: 'start' }, state: null, if: null, do: [{ do: 'kit_style', menu_selected: '#3a2f6a' }, { do: 'menu', items: ['2 Players', 'Vs CPU: Easy', 'Vs CPU: Master'], title: 'Retro Chess  You play White', cancel: false, at: 'center' }] }] };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A menu.', changes: ['Menu'], operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: wall, x: 16, y: 16, name: null, ref: null, onTop: null }, { op: 'set_script', target: 'definition', id: wall, scriptJson: JSON.stringify(script) }] }) });
+    });
+    await mp.goto(URL);
+    await mp.getByTestId('viewport-canvas').waitFor();
+    if (!(await mp.getByTestId('game-chooser').count())) {
+      await mp.getByTestId('project-menu').click();
+      await mp.getByTestId('menu-new').click();
+    }
+    await mp.getByTestId('new-sprite-size-8').click();
+    await pickStarter(mp, 'topdown');
+    await mp.getByTestId('global-prompt-toggle').click();
+    await mp.getByTestId('global-prompt').getByTestId('prompt-input').fill('Add a menu');
+    await mp.getByTestId('global-prompt').getByTestId('prompt-input').press('Enter');
+    await mp.getByTestId('global-prompt').locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await mp.keyboard.press('Escape');
+    await mp.getByTestId('play').click();
+    const mPlay = mp.getByTestId('play-canvas');
+    const menu = async () => /^(\d+)x(\d+) text (\d+) rows ([\d,]+)$/.exec((await mPlay.getAttribute('data-menu')) ?? '');
+    await check(async () => {
+      const m = await menu();
+      // (27 letters of 16 px: 432 px of title in a box that holds it.)
+      return !!m && Number(m[3]) >= 27 * 16 - 4 && Number(m[1]) >= Number(m[3]);
+    }, "a menu's box holds its text as the play screen draws it");
+    await check(async () => {
+      const rows = ((await menu())?.[4] ?? '').split(',').map(Number);
+      return rows.length === 4 && rows.every((y, n) => !n || y - rows[n - 1] >= 28);
+    }, "its lines are a letter's height (20 px) and a gap apart");
+    await mc.close();
+  }
+
   step = 'a drawn new game in two parts';
   {
     const tc = await browser.newContext({ viewport: { width: 1300, height: 860 } });
     const tp = await tc.newPage();
     tp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     const asked = [];
+    const codes = [];
     let failSecond = false;
     await tp.route('**/api/ai', async (route) => {
       const body = JSON.parse(route.request().postData());
       asked.push(body.request);
+      codes.push((body.code ?? []).map((c) => `${c.name}:${(c.scripts ?? []).map((x) => x.name).join('+')}`).join(','));
       const lib = (n) => body.context.library.find((d) => d.name === n).id;
       const sceneId = body.context.level.id;
       if (/part 1 of 2/.test(body.request)) {
         const draw = (n, c) => ({ op: 'draw_sprite', target: 'definition', id: lib(n), name: n, palette: [{ key: 'a', color: c }], rows: Array.from({ length: 16 }, () => 'aaaaaaaaaaaaaaaa'), frames: null, fps: null, situation: null });
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A red hero.', changes: ['Player: red', 'Platform: brown'], operations: [draw('Player', '#d03030'), draw('Platform', '#8a5a2b'), draw('Goal', '#30d030')] }) });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A red hero.', changes: ['null', 'Player: red', 'Platform: brown'], operations: [{ op: 'set_script', target: 'definition', id: lib('Platform'), scriptJson: JSON.stringify({ id: 'rules', name: 'Board rules', description: 'Where things go.', vars: [{ name: 'ox', value: 16 }], states: [], handlers: [{ when: { on: 'start' }, state: null, if: null, do: [{ do: 'set', var: 'ox', value: 'ox + 0' }] }] }) }, draw('Player', '#d03030'), draw('Platform', '#8a5a2b'), draw('Goal', '#30d030')] }) });
       }
       if (failSecond) return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'The AI response was incomplete. Try a smaller request.', kind: 'other' }) });
       const legend = [{ char: '#', object: lib('Platform') }, { char: 'P', object: lib('Player') }, { char: 'G', object: lib('Goal') }];
@@ -5102,6 +5145,8 @@ try {
     const result = tp.getByTestId('global-prompt').getByTestId('prompt-result');
     await check(async () => asked.length >= 2 && /part 1 of 2/.test(asked[0]) && /Part 2 of 2/.test(asked[1]) && /Part 1 made: Player: red; Platform: brown/.test(asked[1]), `a new game the AI draws is asked for in two parts: the objects, then the level (${asked.length} requests)`);
     await check(async () => (await result.getAttribute('data-status')) === 'applied' && Number(await tp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20 && /Player: red/.test(await result.innerText()) && /Level 1/.test(await result.innerText()), '(both parts applied, and both parts\' changes listed)');
+    await check(async () => codes[0] === '' && /Platform:[^,]*Board rules/.test(codes[1]) && /scripts you wrote in part 1 come in full under FULL CODE/.test(asked[1]), 'the script part 1 wrote goes along with part 2 in full (no request spent on asking for it)');
+    await check(async () => !/(^|\n)\s*[•*-]?\s*null\s*($|\n)/.test(await result.innerText()) && !/Part 1 made: null/.test(asked[1]), 'a change line that says nothing ("null") is not shown, nor passed on');
     // Two more levels: built by the engine, with no AI request at all.
     const before = asked.length;
     await tp.getByTestId('more-levels-yes').click();
