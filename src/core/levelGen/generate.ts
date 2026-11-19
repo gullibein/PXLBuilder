@@ -170,6 +170,8 @@ interface Pick {
   roles: Roles;
   /** What the player can do beyond its jump (its reach description's capabilities). */
   caps: Capabilities;
+  /** What it gets over without the capabilities named (SectionCtx.without). */
+  without: SectionCtx['without'];
   build: GenreBuild;
   bp: Blueprint;
   used: Built[];
@@ -219,12 +221,14 @@ function choose(slot: Slot, room: number, band: Band, k: Pick, progress: number,
     // (A variant asked for by name is built at the difficulty it needs.)
     const asked = slot.spec?.variant ? p.variants.find((v) => v.id === slot.spec!.variant) : undefined;
     if (asked && variantsFor(p, k.roles, band, 5).includes(asked.id)) d = Math.max(d, asked.minDifficulty ?? 1);
-    const vs = variantsFor(p, k.roles, band, d);
+    // (A climb higher than this floor ever has room for: not here.)
+    const fitsBand = !p.climbs || p.climbs(k.lim, k.caps, k.without) <= Math.min(band.maxUp, band.slab - band.top - 3);
+    const vs = fitsBand ? variantsFor(p, k.roles, band, d) : [];
     const wanted = slot.spec?.variant && vs.includes(slot.spec.variant) ? [slot.spec.variant] : vs;
     // (A variant the level used already is less likely.)
     const variant = wanted.length ? k.rnd.weighted(wanted, (v) => (k.used.some((u) => u.pattern === p.id && u.variant === v) ? 0.3 : 1)) : null;
     if (variant) {
-      const [lo, hi] = p.width(k.lim, d, variant, k.caps);
+      const [lo, hi] = p.width(k.lim, d, variant, k.caps, k.without);
       if (lo <= room) return { pattern: p, variant, width: k.rnd.int(lo, Math.min(hi, room)), difficulty: d };
     }
     pick.w = 0;
@@ -356,7 +360,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
   const pacing = rnd.pick(build.pacings);
   const counter = { i: 0 };
   const specs = bp.sections ? [...bp.sections] : null;
-  const k: Pick = { rnd, lim, roles, caps, build, bp, used: [], seen: new Map(), avoid, signature };
+  const k: Pick = { rnd, lim, roles, caps, without, build, bp, used: [], seen: new Map(), avoid, signature };
   // Two ways through (a choice, a risky shortcut): sections of their own in place of tests and twists.
   const twoWays = bp.routes === 'choice' || bp.routes === 'risky_shortcut' ? bp.routes : null;
   let routes = twoWays && roles.oneway ? (length === 'long' ? 2 : 1) : 0;
@@ -623,19 +627,20 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
     // What the level needs of the player beyond its jump: the capabilities its sections require. Moves that are only
     // estimated are judged by the route solver and then played by the route bot (chosen by coverage: §8.4).
     const needs = [...new Set(out.built.flatMap((b) => patternById(b.pattern)?.requires ?? []))];
+    // What a section says it needs, the level does need: without that capability's moves there is no way to the goal
+    // (else the section asks for nothing: built again). Each capability by itself: a section that requires two needs
+    // both. Asked first: a search costs far less than the route bot playing a level that is then thrown away.
+    const spare = needs.filter((c) => solveLevel(still, { limits: reach, moves: movesWithout(description, [c]) }).goal);
+    if (spare.length) {
+      lastProblems = [`it can be won without the player's ${spare.join(' and ')}, which a section was built to need`];
+      continue;
+    }
     const chosen = chooseValidators(before, { reach: description, mechanics: needs, grid: still });
     const target = { reach: description, mechanics: needs, grid: still, botSeconds: botRuns < BOT_RUNS ? BOT_SECONDS : 0 };
     let checked = validateBuilt(project, sceneId, ops, moving ? [...ops.filter((o) => o.op === 'erase_area'), ...asStill(out.grid, roles).toOperations(sceneId)] : null, registry, chosen.ids, target, chosen.notes);
     if (checked.verdicts.route_bot) botRuns++;
     if (checked.state === 'invalid') {
       lastProblems = checked.problems;
-      continue;
-    }
-    // What a section says it needs, the level does need: without that capability's moves there is no way to the goal
-    // (else the section asks for nothing: built again).
-    const spare = needs.filter((c) => solveLevel(still, { limits: reach, moves: movesWithout(description, [c]) }).goal);
-    if (spare.length) {
-      lastProblems = [`it can be won without the player's ${spare.join(' and ')}, which a section was built to need`];
       continue;
     }
     // (The solver's route took an estimated move no section asked for, a dash over an ordinary gap: played too.)

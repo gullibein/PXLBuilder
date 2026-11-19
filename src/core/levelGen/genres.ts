@@ -44,6 +44,11 @@ export const CLASSIC_BUILD: GenreBuild = {
     // (Built only for a player with the capability each requires: patterns/abilities.ts.)
     dash_gap: { teach: 1.5, test: 2, twist: 1.5 },
     wall_shaft: { teach: 1.5, test: 1.5, twist: 1.5 },
+    dash_rise: { teach: 1.5, test: 1.5, twist: 1 },
+    kick_back: { teach: 1.5, test: 1.5, twist: 1 },
+    // (The two that need both abilities: never the first thing a level asks.)
+    dash_shaft: { test: 1.5, twist: 2 },
+    dash_cling: { test: 1.5, twist: 2 },
     goal: { finale: 1 },
   },
   pacings: [

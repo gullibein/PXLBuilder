@@ -1340,7 +1340,7 @@ These are acceptance criteria for the stages named. Each stage's report says whe
 |---|---|---|---|
 | T1 | **One place per movement ability.** A new ability must not need separate, unrelated code in several systems. Today it touches the runtime ability, its component, the engine module, the profile inference table, a solver move rule and a route-bot step. An ability should declare its move rule and its bot step beside its runtime code, found through one registration, with its capability tags and validation coverage declared there | V1, which adds several abilities at once | **Met** (V1.1, V1.2: §24.2, §24.3). Every ability is one definition, registered once; a test ability and a top-down one prove it |
 | T2 | **The jump checker and the route bot consume shared interfaces.** The checker computes its own arcs; the bot has its own step per move. Unify where a concrete feature needs it, not for its own sake | V1 (bot steps with T1); the checker when hand-drawn grids arrive (T4) | Half met (V1.1): the bot's steps for abilities are their definitions'. The checker's own arcs: open, with T4 |
-| T3 | **The generator uses the player's real abilities.** It sizes sections from the jump table only, so it never makes a level that needs a wall jump or a dash. It should build sections that use the abilities the player has, and those routes must be confirmed by the route bot. The bot costs real time for each level and the generator makes several attempts, so this needs a time budget; confirmation stays required only for routes through estimated moves | F6 (generator interface) with V1 (patterns) | Open |
+| T3 | **The generator uses the player's real abilities.** It sizes sections from the jump table only, so it never makes a level that needs a wall jump or a dash. It should build sections that use the abilities the player has, and those routes must be confirmed by the route bot. The bot costs real time for each level and the generator makes several attempts, so this needs a time budget; confirmation stays required only for routes through estimated moves | F6 (generator interface) with V1 (patterns) | Met (F6b: the way; V1.4: six patterns for wall jumps and dashes, two needing both, within the budgets: §24.6). Double jump and ledge grab stay in the jump table |
 | T4 | **Hand-drawn levels get a cell grid.** Converting what is seen into cells is not enough: doors, keys, levers, plates, teleporters and their links must be read from the objects. A level that doesn't fit cells (off the grid, scripted objects) is reported as unjudged, never guessed | After F6 | Open |
 | T5 | **Every family in every stage.** Tetris, Dr. Mario, space shooters, mining and Boulder Dash are tested beside the platformers in every stage, with validation appropriate to each. No platformer assumption goes into a system other genres use | Every stage | Standing rule; met in F5 (§21.5) |
 | T6 | **No rewrite for purity.** Systems move to shared interfaces when a concrete improvement needs it; existing behaviour is preserved | Every stage | Standing rule |
@@ -2095,3 +2095,81 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 - **What a player could notice is read from the game's state, not its picture:** a change that is only an animation frame is not seen.
 - **Only the keys.** The runtime has no mouse or touch input of its own to probe; touch buttons press the same actions, and are still not tested on a device.
 - **It runs on the page's own thread:** the editor waits up to about a second.
+
+### 24.6 V1.4 — ability patterns in breadth (done, awaiting review before V1.5)
+
+**What it is.** The level builder had two sections that need more than the jump (a gap to dash across, a shaft to climb by wall jumps). It now has six, chosen for being different things to do, not different sizes of one obstacle. Two of them need both abilities.
+
+**The six.**
+
+| Pattern | Requires | What the player does | Why the ability is needed | Variants |
+|---|---|---|---|---|
+| `dash_gap` (F6b) | dash | Jumps and dashes across | The gap is wider than it gets across without the dash | plain, over spikes |
+| `dash_rise` (new) | dash | Jumps and dashes upward | The cliff is higher than it gets up without the dash, by a row or two | a cliff up to higher ground; a wall to get over and down again |
+| `wall_shaft` (F6b) | wall jump | Walks in under a hanging wall and kicks from wall to wall | The cliff is higher than it gets up without wall jumps | one |
+| `kick_back` (new) | wall jump | Jumps onto the cliff's face, kicks back and up onto a ledge behind it, jumps from the ledge onto the top | The ledge is a jump and a kick above the floor, the top a jump above the ledge: higher than it gets without the kick | the ledge a block, or a jump-through platform |
+| `dash_shaft` (new) | dash **and** wall jump | Dashes upward to catch a wall, then kicks to the top | The hanging wall ends too high for a jump and a kick to get onto it (so not without the dash); the cliff is higher than a dash lifts (so not without wall jumps) | one |
+| `dash_cling` (new) | dash **and** wall jump | Dashes across a pit to catch a cliff's face, kicks back and up onto a ledge hanging before it, jumps onto the top | The face is further than any jump reaches a wall (so not without the dash); the ledge and the top are higher than a dash gets to across a pit (so not without wall jumps) | a pit out of the level; a trench of spikes |
+
+**How the requirements of the review are held.**
+
+| Requirement | How |
+|---|---|
+| A section requiring two abilities needs both | The builder checks every level it makes: for each capability its sections require, by itself, the route solver must find no way to the goal without that capability's moves. A level that can be won without one is thrown away and built again. Tested for every pattern, variant and seed, and for the two that require both with the dash alone and with wall jumps alone |
+| The solver establishes the route | As before: the route solver, with the player's own move rules. The tests assert the route goes through the moves of every required ability |
+| The bot plays it | As before (F6b): a level whose route goes through estimated moves is validated only when the route bot has played it to the goal on the real runtime. The tests play each again on the level as the editor would have it |
+| Only for characters with the abilities | `requires` on the pattern, checked against the reach's capabilities before it can be picked. A section whose ability isn't needed for it by this player is not picked either (below) |
+| Unchanged without the abilities | The patterns are filtered out before anything random is drawn. Tested directly: a plain player's classic and puzzle levels are row for row the same with the six patterns registered as with none. The earlier goldens are unchanged |
+| The budgets stay | The same limits (12 builds a level, 8 of them played, 120 s of play each). Measured below |
+
+**What makes a section be for a player (all read from the player's own numbers, none written down for a kind of game).**
+- **Its size:** from the reach's capabilities (a dash's `cells` and `up`, a kick's `rise` and `away`), the jump's rise, and what the player gets over without a capability, measured by the solver itself.
+- **Whether it is offered at all** (`width` answers "none" for this player): no `kick_back` for a player whose dash upward gets it up that cliff anyway; no `dash_rise` or `dash_shaft` for a dash that only goes sideways.
+- **Whether a floor has room for it** (`climbs`): a level of several floors has room for a two-row climb only, so the higher climbs are not picked there. Before, such a pattern was picked, failed, and used up one of the section's tries.
+
+**A climb after a climb.** After one climbing section the ground is as high as it may go, and no second climb fitted: in a level about wall jumps, the first shaft was the last. A climb now starts from the entry's floor where that has room, and otherwise drops first (two cells to walk off, then a pit as deep as it takes) and climbs out of the pit. `wall_shaft` does the same (its version is 2).
+
+**The check that a section's ability is needed now runs before the route bot.** It is a search (milliseconds); the bot playing a level takes far longer, and a level that fails the check is thrown away. Nothing changes for a level without ability sections.
+
+**Measured** (40 levels each, seeds 1 to 20 at two difficulties, nothing asked for but no moving platforms):
+
+| Player | Levels with an ability section | Sections seen | Each (worst), after | Each (worst), before |
+|---|---|---|---|---|
+| Dash and wall jump | 22 (before: 12) | dash_rise 12, wall_shaft 8, dash_gap 6, dash_shaft 3, dash_cling 1 | 319 ms (1.5 s) | 192 ms (0.7 s) |
+| Dash | 13 (7) | dash_gap 10, dash_rise 8 | 152 ms (0.5 s) | 233 ms (1.3 s) |
+| Wall jump | 11 (8) | wall_shaft 8, kick_back 6 | 159 ms (0.6 s) | 129 ms (1.1 s) |
+| None | 0 | none | 61 ms (0.1 s) | 61 ms (0.1 s) |
+
+- All 160 validated, each with an ability section played by the bot. Asked to be about the abilities (a focus), 39 of 40 levels of a player with both have such sections.
+- The times are of one machine and vary by a tenth from run to run; the test's limit is 3 s a level, as before.
+
+**Considered and not built** (each would have been another name, not another thing to do, or is not something the solver and the bot can stand behind today):
+
+| Idea | Why not |
+|---|---|
+| A wall slide down a shaft past spikes to a side exit | The floor has two rows under it, so there is depth for it only after a climb; and the bot's step onto the wall just under its own ledge fails. A different thing to do, worth a later look |
+| A dash across onto the wall of a hanging shaft | The solver's flight goes a row over the take-off, into the hanging wall. A dash lower in the jump would pass under: a move the dash's rule doesn't have |
+| A dash along the ground under a low ceiling; a kick off a wall and a dash in the air | New moves for the dash's rule and its bot part, each to be estimated and confirmed: not without evidence they are needed |
+| Chains of one obstacle (two dash gaps with a pillar between), a gap up to a higher ledge | One obstacle in another size |
+| Patterns that require a double jump or a ledge grab | Both are in the jump table: every classic pattern is already sized by them, and a pattern in cells can't need a ledge grab (it adds less than a row). The capability numbers planned for them are therefore not added: nothing would read them. The route bot does not press Jump again in the air, so a level for a double-jumping player is judged by the table, as before, and not played |
+
+**Found on the way, not changed.**
+- **Whole levels are thrown away for their last section.** About a third of the builds in these sweeps ended with "no room was left for the goal", each with five to seven cells left for it; the goal's widest variant needs eight, and when it is drawn there is no second draw. Falling back to a narrower variant would likely fix it, and would change which level a seed gives a player without abilities, so it is left for a decision of its own.
+- **On a level of several floors a section can be bypassed** by dropping through a gap to the floor below. The builder's check catches it (the level is built again); it costs builds.
+
+**Tests** (`levelGen/abilityPatterns.test.ts`, 22; `reachAware.test.ts` as before):
+- The six, their requirements, and that what the player does differs: six different sequences of moves.
+- Each pattern and variant, five seeds at two difficulties: validated; the solver's route through every required ability's move; played by the bot; no way without any one of the required abilities; no way without any.
+- The two that need both: a way with both, none with either alone, the dash first.
+- Only for a player that has what a section requires (named, and in free levels); not for one that doesn't need it.
+- Sized from the abilities' numbers (a weaker kick, a longer dash).
+- A climb after a climb; levels about the abilities (all five of a player with both come up); several floors; the same seed twice; the time.
+- A plain player's levels the same with the patterns as without.
+
+**Limitations.**
+- **Two abilities.** Wall jump and dash; double jump and ledge grab as above.
+- **On one floor.** The three higher climbs need four rows; levels of several floors have two.
+- **`dash_shaft` and `dash_cling` come up seldom when nothing is asked for** (4 sections in 40 levels): they need room, both abilities, and a test or twist slot. Asked for by focus or by name, they are built.
+- **`kick_back` is for a player without a dash upward** (with the default numbers).
+- **The bot proves one route playable on one run.** It does not say a section is fair or fun; nothing here measures that.
+- **Estimated moves.** A player whose numbers are far from the defaults (a very long dash, a weak kick) gets sections sized from them, each still solved and played, or not validated.

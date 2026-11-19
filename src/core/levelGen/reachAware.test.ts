@@ -92,9 +92,17 @@ describe('F6b: what the reach gets over, measured by the solver with its own mov
 });
 
 describe('F6b: patterns are built for the reach the player has', () => {
-  it('patterns say what they require; the two that need more than the jump name only capabilities the reach model has', () => {
+  it('patterns say what they require; those that need more than the jump name only capabilities the reach model has', () => {
     const requiring = allPatterns().filter((p) => p.requires?.length);
-    expect(requiring.map((p) => [p.id, p.requires])).toEqual([['dash_gap', ['dash']], ['wall_shaft', ['wall_jump']]]);
+    // (The first two since F6b; the others since V1.4: abilityPatterns.test.)
+    expect(requiring.map((p) => [p.id, p.requires])).toEqual([
+      ['dash_gap', ['dash']],
+      ['wall_shaft', ['wall_jump']],
+      ['dash_rise', ['dash']],
+      ['kick_back', ['wall_jump']],
+      ['dash_shaft', ['dash', 'wall_jump']],
+      ['dash_cling', ['dash', 'wall_jump']],
+    ]);
     for (const p of requiring) for (const c of p.requires!) expect(reachAbilityIds(), p.id).toContain(c);
   });
 

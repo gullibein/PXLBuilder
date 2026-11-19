@@ -86,8 +86,18 @@ export interface Pattern {
   /** Variants, each a different construction; with extra parts some need. */
   variants: { id: string; needs?: Role[]; bottomOnly?: boolean; minDifficulty?: number }[];
   difficulty: [number, number];
-  /** How wide (cells) it can be, at this difficulty, for this variant. */
-  width(lim: Limits, difficulty: number, variant: string, caps: Capabilities): [number, number];
+  /**
+   * How wide (cells) it can be, at this difficulty, for this variant. `without`: what the player gets over without
+   * the capabilities named (as in SectionCtx). A pattern that can't be built for this player at all (what it is
+   * about isn't beyond the player's reach without its capability) says so with a least width of Infinity: it is
+   * then not picked, instead of picked and failing.
+   */
+  width(lim: Limits, difficulty: number, variant: string, caps: Capabilities, without?: SectionCtx['without']): [number, number];
+  /**
+   * The least rows it climbs (a cliff, a shaft), for this player. It is not picked on a floor that never has that
+   * much room to rise (a level of several floors has little), instead of picked and failing there.
+   */
+  climbs?(lim: Limits, caps: Capabilities, without: SectionCtx['without']): number;
   /** Builds the section; returns the ground's top row where the player leaves it. Throws GridError when it can't. */
   build(ctx: SectionCtx): number;
 }
