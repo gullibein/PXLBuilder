@@ -2296,3 +2296,18 @@ Left as it is: six pieces each got the same small "side color" script written ou
 writing; an operation that sets one script on several objects would change the reply format, which is at the
 strict format's limits). Scripts that draw their own text boxes with `draw` still place lines by the asked size;
 giving scripts the real text size (a `text_width` function) is a small language addition, proposed, not built.
+
+**Checked on the user's own game, and its status lines (8437dfd → next).** The user sent the chess game's file.
+Opened and played in a browser, its menu is right with the fix above (the game is low-resolution, `playPixels`
+128: one game pixel is about 6 px of the screen, and the measure holds there too). Its status lines at the top
+left were not: the script draws "WHITE TO MOVE" and "VS CPU - HARD" as two texts of size 8, 14 px apart, and the
+play screen draws each 5 game pixels tall, about 30 px: one on top of the other. That is the case left open above
+(a script's own text), and it is fixed without a new script function: when the screen layer is drawn on the pixel
+grid, **lines of text that were clear of each other at the size asked are kept clear as drawn**
+(`keepLinesApart`): the lower one is moved down by whole game pixels (up, from the screen's bottom) until it has
+the line above, its shadow and the font's line space over it. Lines that overlapped as asked (a shadow copy, two
+words on one row), lines not over each other, lines anchored to different places, the kit's own menu lines and
+everything in the level are left where they are; when nothing overlaps, nothing moves (a game of fine pixels is
+drawn as before). Known limits, not handled: text running into text beside it on the same row (drawn wider than
+asked), text over a box a script drew for it, and a column of lines too tall for the screen. A script function
+giving the real size of text stays a separate proposal.

@@ -40,7 +40,7 @@ export function hudOf(runtime: Runtime, banner: string | null): BuiltinHud {
 }
 
 /** Draws the frame; returns the pixel grid it used. */
-export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f: FrameSetup, banner: string | null): PixelGrid {
+export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f: FrameSetup, banner: string | null): PixelGrid & { linesMoved: number } {
   const { size, worldPerArt, images, looks } = f;
   const canvas = ctx.canvas;
   const dpr = canvas.width / size.width;
@@ -78,7 +78,7 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   // Fog of war over the level (under the screen's own drawings: the HUD stays readable).
   if (runtime.fog) drawFog(ctx, runtime.fog);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);
+  const linesMoved = drawScreenDrawings(ctx, drawings, 'screen', size, looks, images, runtime.time, grid);
   drawBuiltinHud(ctx, hudOf(runtime, banner), { width: canvas.width, height: canvas.height, grid, levelScale: zoomNow * dpr, cssPx: dpr }, f.heartLook, images, runtime.time);
-  return grid;
+  return { ...grid, linesMoved };
 }

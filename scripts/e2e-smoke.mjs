@@ -5075,7 +5075,7 @@ try {
     await mp.route('**/api/ai', async (route) => {
       const body = JSON.parse(route.request().postData());
       const wall = body.context.library.find((d) => d.name === 'Wall').id;
-      const script = { id: 'menu', name: 'Menu', description: 'A menu.', vars: [], states: [], handlers: [{ when: { on: 'start' }, state: null, if: null, do: [{ do: 'kit_style', menu_selected: '#3a2f6a' }, { do: 'menu', items: ['2 Players', 'Vs CPU: Easy', 'Vs CPU: Master'], title: 'Retro Chess  You play White', cancel: false, at: 'center' }] }] };
+      const script = { id: 'menu', name: 'Menu', description: 'A menu.', vars: [], states: [], handlers: [{ when: { on: 'start' }, state: null, if: null, do: [{ do: 'kit_style', menu_selected: '#3a2f6a' }, { do: 'menu', items: ['2 Players', 'Vs CPU: Easy', 'Vs CPU: Master'], title: 'Retro Chess  You play White', cancel: false, at: 'center' }, { do: 'draw', id: 'turn', shape: 'text', anchor: 'top_left', x: '12', y: '12', text: 'WHITE TO MOVE', size: '8', color: '#fff1d6' }, { do: 'draw', id: 'mode', shape: 'text', anchor: 'top_left', x: '12', y: '26', text: 'VS CPU - HARD', size: '8', color: '#ff9ad5' }, { do: 'draw', id: 'help', shape: 'text', anchor: 'bottom_left', x: '12', y: '-12', text: 'ESC MENU', size: '8', color: '#8a80a8' }] }] };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A menu.', changes: ['Menu'], operations: [{ op: 'place_instance', sceneId: body.context.level.id, definitionRef: wall, x: 16, y: 16, name: null, ref: null, onTop: null }, { op: 'set_script', target: 'definition', id: wall, scriptJson: JSON.stringify(script) }] }) });
     });
     await mp.goto(URL);
@@ -5103,6 +5103,7 @@ try {
       const rows = ((await menu())?.[4] ?? '').split(',').map(Number);
       return rows.length === 4 && rows.every((y, n) => !n || y - rows[n - 1] >= 28);
     }, "its lines are a letter's height (20 px) and a gap apart");
+    await check(async () => (await mPlay.getAttribute('data-lines-moved')) === '1', 'two lines a script draws 14 px apart, drawn 20 px tall, do not run into each other: the lower one is moved down (the line at the bottom stays)');
     await mc.close();
   }
 

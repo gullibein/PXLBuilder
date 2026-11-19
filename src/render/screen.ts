@@ -10,6 +10,7 @@ import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { DrawAnchor } from '../core/script/language';
 import type { Project } from '../core/types';
 import type { ScreenDrawing } from '../runtime/runtime';
+import { KIT } from '../runtime/turns';
 import { drawEntities, type ImageLookup } from './renderer';
 import { drawPixelText, fitPixelFont, pixelTextSize, TINY_FONT, type PixelFont } from './pixelFont';
 
@@ -113,16 +114,86 @@ export function pixelFontScale(tall: number, cell: number, font: PixelFont = TIN
   return cell * Math.max(1, Math.round((tall * 0.7) / font.h / cell));
 }
 
+/** A line of text on the screen: where it was asked to be, and where (and how big) it is drawn. Canvas pixels. */
+export interface TextLine {
+  /** Lines that belong together: the ones anchored to the same place on the screen. */
+  group: string;
+  /** Anchored to the screen's bottom: such lines are moved up, the others down. */
+  fromBottom: boolean;
+  askedTop: number;
+  askedTall: number;
+  left: number;
+  w: number;
+  top: number;
+  h: number;
+  /** The least room to the next line. */
+  gap: number;
+}
+
+/**
+ * Where each line's top goes so that lines written under each other stay under each other. Text is drawn in the
+ * game's pixel font, never smaller than one game pixel per font pixel, so in a game of coarse pixels it comes out
+ * much bigger than the size asked (8 px text 40 px tall): lines a script put 14 px apart ran into each other. A
+ * line that was clear of the one above it at the size asked is moved down (up, from the screen's bottom) until it
+ * is clear of it as drawn, by whole `cell`s. Lines that overlapped as asked (a shadow under a text, two words on
+ * one row) are left exactly where they are, and so is everything when nothing overlaps.
+ */
+export function keepLinesApart(lines: readonly TextLine[], cell: number): number[] {
+  const tops = lines.map((l) => l.top);
+  const order = lines.map((_, i) => i).sort((a, b) => (lines[a].fromBottom ? lines[b].askedTop - lines[a].askedTop : lines[a].askedTop - lines[b].askedTop));
+  const placed: number[] = [];
+  for (const i of order) {
+    const t = lines[i];
+    for (const j of placed) {
+      const p = lines[j];
+      if (p.group !== t.group || t.left >= p.left + p.w || p.left >= t.left + t.w) continue;
+      if (t.fromBottom) {
+        // (t was asked wholly above p.)
+        if (t.askedTop + t.askedTall > p.askedTop + 0.01) continue;
+        const most = tops[j] - Math.max(t.gap, p.gap) - t.h;
+        if (tops[i] > most) tops[i] = Math.floor(most / cell) * cell;
+      } else {
+        if (t.askedTop < p.askedTop + p.askedTall - 0.01) continue;
+        const least = tops[j] + p.h + Math.max(t.gap, p.gap);
+        if (tops[i] < least) tops[i] = Math.ceil(least / cell) * cell;
+      }
+    }
+    placed.push(i);
+  }
+  return tops;
+}
+
 /**
  * Draws the drawings of one layer. "world" drawings expect the camera
  * transform on ctx (level coordinates); the others expect screen pixels
  * (CSS px) and the view size. With the game's pixel grid, everything is
  * drawn on it (in Play); without one, as given.
  */
-export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], which: 'under' | 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup, clock = 0, grid?: PixelGrid): void {
+export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: ScreenDrawing[], which: 'under' | 'world' | 'screen', view: { width: number; height: number }, looks: LookCache, images: ImageLookup, clock = 0, grid?: PixelGrid): number {
   // ("under": in the level, below everything in it; "world": in the level, over it; "screen": on the screen.)
   const layer = which === 'screen' ? 'screen' : 'world';
   const list = drawings.filter((d) => (d.anchor === 'world') === (layer === 'world') && (layer === 'screen' || !!d.under === (which === 'under'))).sort((a, b) => a.order - b.order);
+  // On the screen, in the pixel font: lines written under each other are kept under each other (keepLinesApart).
+  const moved = new Map<ScreenDrawing, number>();
+  const m0 = ctx.getTransform();
+  if (grid && layer === 'screen' && m0.b === 0 && m0.c === 0) {
+    // (Not the kit's own: a menu's lines are laid out for the text as drawn, and belong in their box.)
+    const texts = list.filter((d) => d.shape === 'text' && d.text.trim() !== '' && d.alpha > 0 && d.owner !== KIT);
+    const lines = texts.map((d): TextLine => {
+      const [ax, ay] = ANCHOR[d.anchor as Exclude<ScreenDrawing['anchor'], 'world'>];
+      const cx = m0.a * (ax * view.width + d.x) + m0.e;
+      const cy = m0.d * (ay * view.height + d.y) + m0.f;
+      const tall = d.size * Math.abs(m0.d);
+      const fit = fitPixelFont(tall, grid.cell, grid.font);
+      const box = pixelTextSize(d.text, fit.font);
+      const w = box.w * fit.scale;
+      const h = box.h * fit.scale;
+      // (gap: room for the line's shadow, a cell under it, and the font's own space between lines.)
+      const gap = (fit.font.line - fit.font.h) * fit.scale + grid.cell;
+      return { group: d.anchor, fromBottom: ay === 1, askedTop: cy - ay * tall, askedTall: tall, left: snapTo(cx - ax * w, 0, grid.cell), w, top: snapTo(cy - ay * h, 0, grid.cell), h, gap };
+    });
+    keepLinesApart(lines, grid.cell).forEach((top, i) => top !== lines[i].top && moved.set(texts[i], top - lines[i].top));
+  }
   for (const d of list) {
     const [ax, ay] = d.anchor === 'world' ? [0.5, 0.5] : ANCHOR[d.anchor];
     const px = d.anchor === 'world' ? d.x : ax * view.width + d.x;
@@ -130,14 +201,16 @@ export function drawScreenDrawings(ctx: CanvasRenderingContext2D, drawings: Scre
     ctx.save();
     ctx.globalAlpha *= d.alpha;
     const m = ctx.getTransform();
-    if (grid && m.b === 0 && m.c === 0) drawOnGrid(ctx, d, px, py, ax, ay, m, layer, grid, looks, images, clock);
+    if (grid && m.b === 0 && m.c === 0) drawOnGrid(ctx, d, px, py, ax, ay, m, layer, grid, looks, images, clock, moved.get(d) ?? 0);
     else drawFree(ctx, d, px, py, ax, ay, m, looks, images, clock);
     ctx.restore();
   }
+  // (How many lines of text were moved clear of the one above: for the browser tests.)
+  return moved.size;
 }
 
 /** One drawing on the game's pixel grid, in canvas pixels. */
-function drawOnGrid(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number, py: number, ax: number, ay: number, m: DOMMatrix, layer: 'world' | 'screen', grid: PixelGrid, looks: LookCache, images: ImageLookup, clock: number): void {
+function drawOnGrid(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number, py: number, ax: number, ay: number, m: DOMMatrix, layer: 'world' | 'screen', grid: PixelGrid, looks: LookCache, images: ImageLookup, clock: number, down = 0): void {
   const cell = grid.cell;
   // Where the level's pixels start on the canvas (in the level they move with the camera, in whole canvas pixels).
   const ox = layer === 'world' ? m.e : 0;
@@ -152,7 +225,8 @@ function drawOnGrid(ctx: CanvasRenderingContext2D, d: ScreenDrawing, px: number,
     // In the game, text keeps to its pixels too: the pixel font, as big as asked, on the grid (an ordinary font's
     // smooth letters break a pixel-art game's look).
     const fit = fitPixelFont(tall, cell, grid.font);
-    pixelLabel(ctx, d.text, cx, cy, ax, ay, fit.scale, d.color, cell, fit.font);
+    // (`down`: canvas pixels a line was moved to stay clear of the one above it.)
+    pixelLabel(ctx, d.text, cx, cy + down, ax, ay, fit.scale, d.color, cell, fit.font);
     return;
   }
   const look = d.shape === 'sprite' && d.object ? looks.get(d.object) : null;

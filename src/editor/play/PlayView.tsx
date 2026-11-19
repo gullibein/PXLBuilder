@@ -282,6 +282,7 @@ export function PlayView(props: PlayViewProps) {
       if (!ctx) return;
       const grid = drawPlayFrame(ctx, runtime, { project, scene, size, extraZoom, worldPerArt, images, looks, heartLook, startCamera }, banner);
       canvas.dataset.grid = String(grid.cell);
+      canvas.dataset.linesMoved = String(grid.linesMoved);
       canvas.dataset.drawings = [...runtime.drawings.keys()].join('|');
       // (A menu box as it is laid out, and how wide its longest line is drawn: for the browser tests.)
       const box = runtime.drawings.get(`${KIT}mf`);
