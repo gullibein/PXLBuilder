@@ -1993,10 +1993,10 @@ One thing found on the way that would be cheap whenever the camera is next touch
 
 | Part | What it says | Wrong when |
 |---|---|---|
-| 1. Runs | Runtime errors in any run (script errors, the game's own errors such as a level that isn't there, the engine stopping), each with the keys pressed in the run it showed in | There is one |
-| 2. Keys | For each key something in the level listens to: who listens, whether pressing it changed anything, what changed, and whether it only answered after another key | See failures |
-| 3. By itself | What happened with no key pressed, and whether the level is one where that is expected | See failures |
-| 4. Failures | What is wrong whatever the game is meant to be | Listed below |
+| 1. Runs | **Runtime faults** in any run: script errors, the game's own errors such as a level that isn't there, the engine stopping, a place or speed that is no number. Each with the keys pressed in the run it showed in | There is one: these are wrong whatever the game is |
+| 2. Keys | For each key something in the level listens to: who listens, whether pressing it changed anything, what changed, and whether it only answered after another key | Never by the probe: a caller says which keys must answer |
+| 3. By itself | What happened with no key pressed, and whether the level is one where that is expected | Never by the probe: a caller says whether things must act |
+| 4. Suspicious | Things that often mean a broken game and may as well be how this one is meant to play (listed below) | Never by the probe: only for a caller who says they aren't meant |
 
 Besides these: **notes** (things seen that may or may not be meant: "with no key pressed, Player died after 4.4 s") and **not judged** (what wasn't tried or couldn't be told, each with its reason).
 
@@ -2006,7 +2006,7 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 1. No key pressed, 6 s. Who listens to which key and what is set to act alone are read from this run.
 2. The same again, 2 s: if the two differ, the level doesn't repeat from the same seed and no key is judged (said, not guessed).
 3. Each listened-to key by itself, 4 s: a tap, a hold, a tap.
-4. Keys at random, 8 s: for errors and failures that only show when keys are combined.
+4. Keys at random, 8 s: for what only shows when keys are combined.
 5. Each key that did nothing though something always listens to it, again after each of up to three keys that did (a title to start from, a menu to open first).
 
 **Where expectations come from: the level as it runs, never the kind of game.**
@@ -2021,17 +2021,36 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 | Patrol, a path, Wander, Jumper | Things that ought to act with no key pressed |
 | Turns being taken, a menu or cursor up, or paused from the start | The level waits for the player: nothing moving is right |
 
-**What is a failure** (kept few, so that each can be trusted):
-- A character's own movement keys never changed its place (turning doesn't count). Not judged while a menu or turns have the keys.
-- A Shooter's key changed nothing.
-- Everything set to act alone stood still and nothing else happened. One of several standing still is a note.
-- In every run, whatever was pressed, a steered character died or was put back, or the level started over, within 2 s.
-- The level was won within 1 s with no key pressed.
-- A place or speed that is no number; 500 more things than at the start.
+**Two kinds of finding, never mixed** (refined after the review of V1.3):
 
-**What is never a failure:** nothing happening by itself in a level where nothing is set to; a key for some places only (a ladder's Up) doing nothing where it was tried; a level that takes turns, has a menu up or is paused, waiting.
+| | Confirmed runtime faults | Suspicious things seen |
+|---|---|---|
+| What | Script errors, the game's own errors, the engine stopping, a place or speed that is no number | The six measures below |
+| Wrong? | Yes, in any game: nothing can be meant to raise an error or be at no place | Not known: the probe can't tell a mistake from a design |
+| In the report | `errors` | `suspicious`, each with its kind |
+| `probeFound` | True | Never |
+| `probeUnmet` | Always counted (unless the caller turns that off) | Only the kinds the caller says aren't meant (`notMeant`) |
+| Debug tab | ● "Runs", with **✦ Fix** | ▲ "Worth a look · Often a mistake; may be meant", with **✦ Ask the AI** |
+| What the AI is sent | "Fix this problem: …" | What was seen, to say whether it looks meant, and to change nothing if it is |
 
-**What a caller who knows the kind of game asks:** `probeUnmet(report, { keys, byItself })` lists what of that wasn't seen. A shooter's caller asks for its fire key and for things acting by themselves, so moving alone is not enough; a tactics game's caller asks for neither. The tests use it for every family now; the real-AI evaluation (V1.5) is its next user.
+**The six suspicious things** (each a measure with a fixed limit; the limits are unchanged):
+
+| Kind | Seen when | Meant in, for example |
+|---|---|---|
+| `immobile` | A character's own movement keys never changed its place (turning doesn't count). Not judged while a menu or turns have the keys | A turret that only shoots; a hero held until something frees it |
+| `silent_shooter` | A Shooter's key changed nothing | A gun that is empty at the start |
+| `nothing_acts` | Everything set to act alone stood still and nothing else happened (one of several standing still is a note) | Guards that wait behind doors |
+| `early_setback` | In every run, whatever was pressed, a steered character died or was put back, or the level started over, within 2 s | An opening that kills |
+| `early_win` | The level was won within 1 s with no key pressed | A title card that goes on to the game; an idle game |
+| `many_things` | 500 more things than at the start (the probe stops that run there: its own bound) | A storm of particles |
+
+**What is not even suspicious:** nothing happening by itself in a level where nothing is set to; a key for some places only (a ladder's Up) doing nothing where it was tried; a level that takes turns, has a menu up or is paused, waiting.
+
+**What a caller who knows the kind of game asks:** `probeUnmet(report, { keys, byItself, notMeant })` lists what of that wasn't seen.
+- A shooter's caller asks for its fire key and for things acting by themselves, so moving alone is not enough; a tactics game's caller asks for neither.
+- A platformer's caller says a hero that can't be moved and a death at the start aren't meant (`notMeant: ['immobile', 'early_setback']`); a turret game's caller doesn't.
+- With nothing said, nothing suspicious is held against a game.
+- The tests use it for every family now; the real-AI evaluation (V1.5) is its next user.
 
 **Bounded and repeatable.**
 - A budget in seconds of the game's own time (default 90): the same on every machine. What doesn't fit is listed as not tried.
@@ -2041,20 +2060,30 @@ Besides these: **notes** (things seen that may or may not be meant: "with no key
 - It takes 0.05 to 0.5 s for the games of the regression suite, 1.3 s for the roguelike starter.
 
 **Where it shows.**
-- **Debug tab → Play check:** "Check by playing" runs it on the level and lists its lines by part, with the game's own key names. An error or a failure has "✦ Fix". After a change it is marked as older than the game.
-- **The AI:** `context.debug.playCheck` (the lines, the seed, whether the game changed since, and what the check doesn't say), only when the user ran one. One line in the debugging topic says what it is.
-- **Not automatic.** It is not run after a build, and a failure is not sent back to the AI by itself: both cost time or tokens on every build, and whether they pay is for the real-AI evaluation (V1.5) to measure. V1.7 is decided with that.
+- **Debug tab → Play check:** "Check by playing" runs it on the level and lists its lines by part, with the game's own key names. A runtime fault has "✦ Fix". Something suspicious has no Fix: it says "Often a mistake; may be meant" and has "✦ Ask the AI", which sends what was seen and asks whether it looks meant, to be changed only if it is a mistake. After a change the check is marked as older than the game.
+- **The AI:** `context.debug.playCheck` (the lines, each with its part; the seed; whether the game changed since; what the check doesn't say), only when the user ran one. The debugging topic says: "runs" are faults; "suspicious" lines may be how the game is meant to play, and the game is never changed for one unless the user says it isn't meant.
+- **Not automatic.** It is not run after a build, and nothing it finds is sent back to the AI by itself: both cost time or tokens on every build, and whether they pay is for the real-AI evaluation (V1.5) to measure. V1.7 is decided with that.
 
 **What it reported.**
 
 | Games | Result |
 |---|---|
-| 14 games of every family (the regression suite's and the starters) | No error, no failure; each shows what its kind is asked for |
-| 7 games saved by earlier versions | No error, no failure |
-| 13 games broken on purpose | Each flagged in its part |
-| A game paused at a title until Jump | First wrongly failed for its patrol standing still; found by its test and corrected: a paused level waits |
+| 14 games of every family (the regression suite's and the starters) | No fault, nothing suspicious; each shows what its kind is asked for |
+| 7 games saved by earlier versions | No fault, nothing suspicious |
+| 5 games with a runtime fault made on purpose | Each a fault, in the errors |
+| 9 games showing something suspicious, 4 of them meant (a title card, an opening onto spikes, one into a pit, a turret) | Each seen and said, none a fault; unmet only for a caller who says it isn't meant |
+| A game paused at a title until Jump | First wrongly marked for its patrol standing still; found by its test and corrected: a paused level waits |
 
-**Tests** (`runtime/playProbe.test.ts`, 39): every family with its expectations; saved games; a shooter without its gun (moves, and that is said not to be enough); turn-based and still games not failed for waiting; who listens, by source; a key only after another; one patrol shut in (note) and all of them (failure); a runtime error only a key brings out; a level that isn't there; a movement model that isn't there; a character that only turns; stuck paused; lost at once; won at once; things made without end; the engine stopping, a place that is no number, a level that doesn't repeat, a model that doesn't declare its keys; the same seed twice; the budget; too slow; a room template; no validator (uncertain stays uncertain; no verdict words); the AI's context. Browser: the Debug tab's check on a game seen from above, the same game broken, its failure sent to the AI and gone after the fix.
+**Tests** (`runtime/playProbe.test.ts`, 41):
+- Every family with its expectations; saved games; a shooter without its gun (moves, and that is said not to be enough); turn-based and still games not marked for waiting.
+- Who listens, by source; a key only after another; one patrol shut in (a note) and all of them (suspicious).
+- **Runtime faults:** an error only a key brings out; a level that isn't there; a movement model that isn't there; the engine stopping; a place that is no number.
+- **Suspicious, and meant:** a title card that completes its level (early win); an opening onto spikes and one into a pit (early setback); a turret that only shoots (immobile). For each: no fault, `probeFound` false, its line without a judgement, nothing unmet for a caller that says nothing, unmet for one that says it isn't meant.
+- **Suspicious, and a mistake for its caller:** a goal put on the start; a platformer's hero that only turns; a game paused for good; things made without end.
+- The six kinds are fixed, and no game of any family shows one.
+- Not judged: a level that doesn't repeat, a model that doesn't declare its keys, a room template, what the budget didn't fit, a level too slow.
+- The same seed twice; no validator (uncertain stays uncertain; no verdict words); the AI's context (a suspicious line marked as that, the guide saying to leave what is meant).
+- Browser: the Debug tab's check on a game seen from above; the same game paused for good: listed as worth a look with no Fix, asked about (not ordered to fix), and gone after the AI's change.
 
 **Limitations.**
 - **It starts at the level's start and stays near it.** Nothing later in a level is reached, so nothing there is seen.

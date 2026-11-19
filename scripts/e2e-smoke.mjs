@@ -336,9 +336,10 @@ function stubModel(body) {
     const scriptJson = JSON.stringify({ id: 'scr_stuck', name: 'Stuck', description: 'Pauses the game at its start.', vars: [], handlers: [{ when: { on: 'start' }, if: null, do: [{ do: 'pause' }] }] });
     return { kind: 'apply', message: 'The game now pauses at its start.', changes: ['Player: pauses the game at the start'], operations: [{ op: 'set_script', target: 'definition', id: player, scriptJson }] };
   }
-  if (req.startsWith('fix this problem: (found by playing the level)')) {
+  if (req.startsWith("the editor's play check saw this")) {
+    // (Asked to look into something suspicious: here it is a mistake, so its cause is removed.)
     const player = body.context.library.find((d) => d.name === 'Player').id;
-    return { kind: 'apply', message: 'Removed the script that paused the game.', changes: ['Player: no longer pauses the game'], operations: [{ op: 'remove_script', target: 'definition', id: player, scriptId: 'scr_stuck' }] };
+    return { kind: 'apply', message: 'That is a mistake: a script pauses the game at its start and nothing resumes it. Removed it.', changes: ['Player: no longer pauses the game'], operations: [{ op: 'remove_script', target: 'definition', id: player, scriptId: 'scr_stuck' }] };
   }
   if (req.includes('dodge roll test game')) {
     // A game seen from above: the hero with a (long) dodge roll, three hazards in a row on its way, a wall beyond.
@@ -5964,7 +5965,8 @@ try {
     await rp.getByTestId('play').click();
 
     // The play check (Debug tab): the editor plays the level by itself for a short time and says what it saw, its
-    // parts apart. Then the same game broken on purpose: the failure is listed, sent to the AI with the check, and gone.
+    // parts apart. Then the same game broken on purpose: what is seen is listed as worth a look (not as a fault to
+    // fix: a hero that stays put may be meant), the AI is asked to look into it, and after its change it is gone.
     step = 'the play check in the Debug tab';
     const openDebug = async () => {
       if (await rp.getByTestId('debug-panel').isVisible().catch(() => false)) return;
@@ -5977,30 +5979,32 @@ try {
     await check(async () => (await pk.innerText()).includes('plays the level by itself') && (await pk.getByTestId('probe-lines').count()) === 0, 'Debug offers a play check, with nothing played yet');
     await pk.getByTestId('probe-run').click();
     await pk.getByTestId('probe-lines').waitFor({ timeout: 20000 });
-    await check(async () => (await part('runs')).includes('It ran without runtime errors'), 'Check by playing: the level ran without runtime errors');
+    await check(async () => (await part('runs')).includes('It ran without runtime faults'), 'Check by playing: the level ran without runtime faults');
     await check(async () => /Left \(←\)[^\n]*Player moved/.test(await part('inputs')) && /Special \(Shift\)[^\n]*Player moved/.test(await part('inputs')), 'each key the level listens to, with what it changed (Left moves the hero; so does Shift: its roll)');
-    await check(async () => (await part('by_itself')).includes('With no key pressed, nothing happened') && (await pk.getByTestId('probe-failures').count()) === 0, 'nothing happens by itself in this level, said without calling it a failure');
+    await check(async () => (await part('by_itself')).includes('With no key pressed, nothing happened') && (await pk.getByTestId('probe-suspicious').count()) === 0, 'nothing happens by itself in this level, said without marking it');
     await check(async () => (await pk.getByTestId('probe-limits').innerText()).includes('does not say the level can be won'), 'and it says what it does not say: that the level can be won');
     await rp.screenshot({ path: `${OUT}/12n-play-check.png` });
     await rp.getByTestId('global-prompt-toggle').click();
     await gp.getByTestId('prompt-input').fill('Make it stuck at the start');
     await gp.getByTestId('prompt-input').press('Enter');
     await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
-    await check(aiRequests.at(-1).context.debug.playCheck?.lines.some((l) => l.startsWith('runs: It ran without runtime errors')) && aiRequests.at(-1).context.debug.playCheck.note.includes('Nothing was changed since this check'), 'the AI is given the play check with its requests (its lines, and that the game is as it was checked)');
+    await check(aiRequests.at(-1).context.debug.playCheck?.lines.some((l) => l.startsWith('runs: It ran without runtime faults')) && aiRequests.at(-1).context.debug.playCheck.note.includes('Nothing was changed since this check'), 'the AI is given the play check with its requests (its lines, and that the game is as it was checked)');
     await rp.keyboard.press('Escape');
     await openDebug();
     await check(async () => (await pk.innerText()).includes('the game changed since'), 'after a change the check is marked as older than the game');
     await pk.getByTestId('probe-run').click();
-    await check(async () => (await part('failures')).includes("Player can't be moved"), 'checked again, the broken game (paused for good at its start): "Player can\'t be moved", as a failure');
+    await check(async () => (await part('suspicious')).includes('Player never left its place') && (await part('suspicious')).includes('Worth a look') && (await part('suspicious')).includes('may be meant'), 'checked again, the broken game (paused for good at its start): "Player never left its place", as worth a look, which may be meant');
+    await check(async () => (await part('runs')).includes('It ran without runtime faults') && (await pk.getByTestId('fix-with-ai').count()) === 0, 'it is no runtime fault, and there is no "Fix" for it: the editor can\'t know it isn\'t meant');
     await check(async () => (await part('by_itself')).includes('waiting for the player is right'), '(a paused game waiting is not what is wrong with it)');
-    await pk.getByTestId('fix-with-ai').first().click();
+    await pk.getByTestId('probe-ask').first().click();
     await gp.locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
     const fixAsk = aiRequests.at(-1);
-    await check(fixAsk.request.startsWith("Fix this problem: (found by playing the level) Player can't be moved") && fixAsk.context.debug.playCheck.lines.some((l) => l.startsWith("failures: Player can't be moved")), '✦ Fix sends the failure to the AI, with the check it came from');
+    await check(fixAsk.request.startsWith("The editor's play check saw this, which may or may not be how the game is meant to play: Player never left its place") && fixAsk.request.includes('if it is how the game is meant to play, change nothing') && !/^fix/i.test(fixAsk.request), '✦ Ask the AI sends what was seen, not an order to fix it: change nothing if it is meant');
+    await check(fixAsk.context.debug.playCheck.lines.some((l) => l.startsWith('suspicious: Player never left its place')) && !fixAsk.context.debug.playCheck.lines.some((l) => /^(failures|fault)/.test(l)), 'and the AI gets the check with that line marked suspicious, not as a fault');
     await rp.keyboard.press('Escape');
     await openDebug();
     await pk.getByTestId('probe-run').click();
-    await check(async () => (await pk.getByTestId('probe-failures').count()) === 0 && /Left \(←\)[^\n]*Player moved/.test(await part('inputs')), 'after the fix, checked again: no failure, and the hero moves');
+    await check(async () => (await pk.getByTestId('probe-suspicious').count()) === 0 && /Left \(←\)[^\n]*Player moved/.test(await part('inputs')), 'the AI judged it a mistake and changed it; checked again: nothing suspicious, and the hero moves');
     await rc.close();
   }
 

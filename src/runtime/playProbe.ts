@@ -11,7 +11,7 @@
  * Bounded and repeatable: a budget in seconds of the game's own time, a seed for everything random in the level.
  */
 import type { ComponentRegistry } from '../core/components/registry';
-import type { ProbeAction, ProbeError, ProbeListener, ProbeReport } from '../core/debug/probeReport';
+import type { ProbeAction, ProbeError, ProbeListener, ProbeReport, ProbeSuspect } from '../core/debug/probeReport';
 import { partLevels } from '../core/generation/playGenerators';
 import type { Id, Project } from '../core/types';
 import { InputState, type Action } from './input';
@@ -226,7 +226,7 @@ interface Plan {
 interface Ran {
   looks: Look[];
   errors: ProbeError[];
-  failures: string[];
+  suspicious: ProbeSuspect[];
   /** The first death or respawn of a character the player steers, or the level starting over: when, and what. */
   setback: { t: number; what: string } | null;
   won: number | null;
@@ -260,7 +260,7 @@ const pattern = (action: ProbeAction, start = 0.5): Press[] => [
 ];
 
 function run(project: Project, sceneId: Id, registry: ComponentRegistry, seed: number, plan: Plan, deadline: number): Ran {
-  const out: Ran = { looks: [], errors: [], failures: [], setback: null, won: null, left: null, played: 0, stopped: null, turns: false, paused: true, actors: [] };
+  const out: Ran = { looks: [], errors: [], suspicious: [], setback: null, won: null, left: null, played: 0, stopped: null, turns: false, paused: true, actors: [] };
   const real = Math.random;
   Math.random = mulberry(seed);
   const keys = mulberry(seed ^ 0x51f15e);
@@ -340,13 +340,14 @@ function run(project: Project, sceneId: Id, registry: ComponentRegistry, seed: n
       for (const [e, a] of alone) if (!a.moved && (Math.abs(e.x - a.x) > 1 || Math.abs(e.y - a.y) > 1)) a.moved = true;
       const lost = rt.entities.find((e) => e.alive && !(Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.vx) && Number.isFinite(e.vy)));
       if (lost) {
-        out.failures.push(`${lost.name}'s place or speed stopped being a number after ${t.toFixed(1)} s${plan.pressing ? ` (pressing ${plan.pressing})` : ''}.`);
+        // (A fault whatever the game is: nothing can be meant to be at no place.)
+        fail(lost.name, `its place or speed stopped being a number after ${t.toFixed(1)} s`);
         out.stopped = 'a place stopped being a number';
         frame++;
         break;
       }
       if (rt.entities.length - startCount > TOO_MANY) {
-        out.failures.push(`More and more things are made and never go: ${rt.entities.length} after ${t.toFixed(1)} s (${startCount} at the start)${plan.pressing ? `, pressing ${plan.pressing}` : ''}.`);
+        out.suspicious.push({ kind: 'many_things', text: `Many things are made and stay: ${rt.entities.length} after ${t.toFixed(1)} s (${startCount} at the start)${plan.pressing ? `, pressing ${plan.pressing}` : ''}. The probe stopped that run there.` });
         out.stopped = 'too many things';
         frame++;
         break;
@@ -403,9 +404,13 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
     errors: [],
     inputs: [],
     byItself: { seen: false, what: [], hiddenOnly: false, expected: 'unknown', why: '', still: [] },
-    failures: [],
+    suspicious: [],
     notes: [],
     unjudged: [],
+  };
+  /** Something suspicious seen (each kind's words once): said as seen, never as a fault. */
+  const suspect = (kind: ProbeSuspect['kind'], text: string) => {
+    if (!report.suspicious.some((s) => s.kind === kind && s.text === text)) report.suspicious.push({ kind, text });
   };
   const all: Ran[] = [];
   let tooLong = false;
@@ -416,7 +421,7 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
     report.runs++;
     report.seconds.played += ran.played;
     for (const e of ran.errors) if (!report.errors.some((x) => x.where === e.where && x.message === e.message)) report.errors.push(e);
-    for (const f of ran.failures) if (!report.failures.includes(f)) report.failures.push(f);
+    for (const s of ran.suspicious) suspect(s.kind, s.text);
     if (ran.stopped === 'it took too long') tooLong = true;
     all.push(ran);
     return ran;
@@ -469,10 +474,10 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
     by.expected = 'yes';
     by.why = [...new Set(base.actors.map((a) => `${a.name} ${a.does}`))].slice(0, 3).join(', ');
   } else if (listeners.timed.size) by.why = `${[...listeners.timed].slice(0, 2).join(', ')} ${listeners.timed.size > 1 ? 'act' : 'acts'} by time`;
-  if (by.expected === 'yes' && !acting.length && !by.what.length && !stoppedEarly) report.failures.push(`Nothing acts by itself, though ${by.why}: in ${base.played.toFixed(0)} s with no key pressed, none of them moved and nothing else happened.`);
+  if (by.expected === 'yes' && !acting.length && !by.what.length && !stoppedEarly) suspect('nothing_acts', `Nothing set to act by itself did (${by.why}): in ${base.played.toFixed(0)} s with no key pressed, none of them moved and nothing else happened.`);
   else if (by.expected !== 'waits') for (const s of by.still) report.notes.push(`${s} didn't move in ${base.played.toFixed(0)} s with no key pressed.`);
 
-  if (base.won !== null && base.won < WON_AT_ONCE) report.failures.push(`The level is won by itself ${base.won.toFixed(1)} s after it starts, with no key pressed.`);
+  if (base.won !== null && base.won < WON_AT_ONCE) suspect('early_win', `The level was won ${base.won.toFixed(1)} s after it started, with no key pressed.`);
   else if (base.won !== null) report.notes.push(`With no key pressed, the level is won after ${base.won.toFixed(1)} s.`);
   if (base.left) report.notes.push(`With no key pressed, the game goes on to "${base.left.to}" after ${base.left.t.toFixed(1)} s.`);
   for (const u of listeners.undeclared) report.unjudged.push(`${u}: whether its keys move it isn't judged.`);
@@ -508,7 +513,7 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
         i.at = d.at;
       }
     }
-    // Keys at random, all together: for what only shows when keys are combined (errors, failures).
+    // Keys at random, all together: for what only shows when keys are combined.
     const mashed = play({ seconds: MASH, presses: [], mash: actions, pressing: 'keys at random' });
     // A key that did nothing: again after each key that did (a title to start from, a menu to open first).
     const opens = report.inputs.filter((i) => i.response === 'seen').map((i) => i.action);
@@ -547,7 +552,8 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
     if (!mashed) report.unjudged.push(`Keys pressed together were not tried: the budget (${budget} s of play) was used up.`);
     if (untried) report.unjudged.push(`Some keys that did nothing were not tried again after another key: the budget (${budget} s of play) was used up.`);
 
-    // What ought to answer whatever the game is: a character's own movement keys (one of them at least), a Shooter's key.
+    // What mostly answers: a character's own movement keys (one of them at least), a Shooter's key. When they
+    // don't, it is said as suspicious: a character may be meant to stay where it is.
     // (With a menu up or turns taken, the keys are the menu's: not judged.)
     for (const [who, own] of listeners.movers) {
       if (base.turns) {
@@ -556,19 +562,19 @@ export function probeLevel(project: Project, sceneId: Id, registry: ComponentReg
       }
       const tried = report.inputs.filter((i) => own.includes(i.action) && i.response !== 'not_tried');
       if (tried.length < own.length) continue;
-      if (!own.some((a) => moved.get(a)?.has(who))) report.failures.push(`${who} can't be moved: pressing ${own.join(', ')} never changed its place${tried.some((i) => i.response === 'seen') ? ' (it only turned, or something else changed)' : ''}.`);
+      if (!own.some((a) => moved.get(a)?.has(who))) suspect('immobile', `${who} never left its place: pressing ${own.join(', ')} didn't move it${tried.some((i) => i.response === 'seen') ? ' (it only turned, or something else changed)' : ''}.`);
     }
     for (const i of report.inputs) {
       if (i.response !== 'none') continue;
       const shooters = i.listeners.filter((l) => l.engine && l.when === 'always' && l.how.startsWith('shoots'));
-      if (shooters.length) report.failures.push(`Pressing ${i.action} changed nothing, though ${shooters.map((l) => l.who).join(', ')} shoots with it.`);
+      if (shooters.length) suspect('silent_shooter', `Pressing ${i.action} changed nothing, though ${shooters.map((l) => l.who).join(', ')} shoots with it.`);
     }
 
-    // Lost before the player can act: in every run, whatever was pressed.
+    // A setback before the player can act: in every run, whatever was pressed.
     const runs = [base, ...keyed.values(), ...(mashed ? [mashed] : [])];
     if (runs.length >= 3 && runs.every((r) => r.setback && r.setback.t < AT_ONCE)) {
       const whats = [...new Set(runs.map((r) => r.setback!.what))];
-      report.failures.push(`Whatever was pressed, ${whats.join(' or ')} within ${AT_ONCE} s of the start (${runs.length} runs).`);
+      suspect('early_setback', `Whatever was pressed, ${whats.join(' or ')} within ${AT_ONCE} s of the start (${runs.length} runs).`);
     } else if (base.setback) report.notes.push(`With no key pressed, ${base.setback.what} after ${base.setback.t.toFixed(1)} s.`);
   } else if (base.setback) report.notes.push(`With no key pressed, ${base.setback.what} after ${base.setback.t.toFixed(1)} s.`);
 

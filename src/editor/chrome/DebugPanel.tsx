@@ -120,8 +120,10 @@ function Dungeons({ report, sceneId }: { report: PlayReport; sceneId: Id }) {
 
 /**
  * "Check by playing": the editor plays the level by itself for a short time (the play probe) and says what it saw,
- * its four parts apart: runtime errors, what each key changed, what happens with no key pressed, plain failures.
- * Only when asked (it takes a moment); what it found wrong can be sent to the AI to fix.
+ * its four parts apart: runtime faults, what each key changed, what happens with no key pressed, suspicious things.
+ * Only when asked (it takes a moment). A runtime fault is wrong whatever the game is and can be sent to the AI to
+ * fix. Something suspicious may be how the game is meant to play: it can be sent to the AI to look into, which is
+ * told to change nothing if it is meant.
  */
 function PlayCheck() {
   const scene = useEditor(getActiveScene);
@@ -164,7 +166,11 @@ function PlayCheck() {
   );
 }
 
-const PROBE_PARTS: Record<ReturnType<typeof probeLines>[number]['part'], string> = { runs: 'Runs', inputs: 'Keys', by_itself: 'By itself', failures: 'Failures', notes: 'Seen', unjudged: 'Not judged' };
+const PROBE_PARTS: Record<ReturnType<typeof probeLines>[number]['part'], string> = { runs: 'Runs', inputs: 'Keys', by_itself: 'By itself', suspicious: 'Worth a look', notes: 'Seen', unjudged: 'Not judged' };
+
+/** What is sent to the AI about something suspicious: what was seen, and to change nothing if it is meant. */
+export const lookInto = (text: string) =>
+  `The editor's play check saw this, which may or may not be how the game is meant to play: ${text} Say whether it looks meant. Only if it is a mistake, fix its cause; if it is how the game is meant to play, change nothing.`;
 
 function ProbeLines({ report, sceneId }: { report: ProbeReport; sceneId: string }) {
   const controls = useEditor((s) => s.project.settings.controls);
@@ -178,13 +184,15 @@ function ProbeLines({ report, sceneId }: { report: ProbeReport; sceneId: string 
   return (
     <ul className="problems" data-testid="probe-lines">
       {lines.map((l, i) => {
-        // (A runtime error or a plain failure: something wrong. A key that did nothing though something always listens: worth a look.)
-        const wrong = l.ok === false && (l.part === 'runs' || l.part === 'failures');
-        const severity = wrong ? 'error' : l.ok === false ? 'warning' : 'note';
+        // (A runtime fault: wrong whatever the game is. Something suspicious, or a key that did nothing though something
+        // always listens: worth a look, and maybe meant.)
+        const wrong = l.ok === false && l.part === 'runs';
+        const look = l.part === 'suspicious' || l.ok === false;
+        const severity = wrong ? 'error' : look ? 'warning' : 'note';
         return (
           <li key={i} className={`problem ${severity}`} data-testid={`probe-${l.part}`} data-ok={String(l.ok)}>
             <span className="problem-mark" aria-label={severity}>
-              {wrong ? '●' : l.ok === false ? '▲' : l.ok ? '✓' : 'i'}
+              {wrong ? '●' : look ? '▲' : l.ok ? '✓' : 'i'}
             </span>
             <span className="grow">
               <b>{PROBE_PARTS[l.part]}</b> · {l.text}
@@ -192,6 +200,14 @@ function ProbeLines({ report, sceneId }: { report: ProbeReport; sceneId: string 
             {wrong && (
               <span className="problem-actions">
                 <FixButton problem={{ key: `probe:${l.text}`, severity: 'error', text: `(found by playing the level) ${l.text}`, entityIds: [] }} sceneId={sceneId} />
+              </span>
+            )}
+            {l.part === 'suspicious' && (
+              <span className="problem-actions">
+                <span className="fix-note">Often a mistake; may be meant.</span>
+                <button className="text-btn ai" data-testid="probe-ask" title="Asks the AI whether this looks meant; it only changes the game if it is a mistake" onClick={() => askLevel(lookInto(l.text))}>
+                  ✦ Ask the AI
+                </button>
               </span>
             )}
           </li>
