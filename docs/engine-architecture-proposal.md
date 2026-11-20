@@ -2311,3 +2311,155 @@ everything in the level are left where they are; when nothing overlaps, nothing 
 drawn as before). Known limits, not handled: text running into text beside it on the same row (drawn wider than
 asked), text over a box a script drew for it, and a column of lines too tall for the screen. A script function
 giving the real size of text stays a separate proposal.
+
+## 25. V1.5 — real-AI evaluation: implementation proposal (for review; nothing is built)
+
+### 25.1 What it is for
+
+Every test so far uses a stand-in for the AI. V1.5 tests the path that actually makes games: a real model gets a
+prompt, the app's real request flow handles its answers, and the game that comes out is **played and judged**,
+not only checked for valid operations. It answers three questions that nothing answers today:
+
+1. Can a model, with today's instructions, make a game of each family that plays?
+2. When the engine changes, do the games models made before still build and play?
+3. Do the play probe's findings (§24.5) justify running it after every build, and sending what it finds back to
+   the AI? (Left open in V1.3 for this evidence.)
+
+### 25.2 What exists already, and what is missing
+
+| Exists | Where |
+| --- | --- |
+| One interface every AI connection implements (`AIProvider.respond`) | `core/ai/provider.ts` |
+| Claude (direct, with usage and cost per request) and Gemini (direct) connections | `editor/ai/browserProvider.ts`, `editor/ai/geminiProvider.ts` |
+| The whole request flow, runnable without a browser with any provider put in (`setAIProvider`) | `editor/ai/runPrompt.ts` |
+| The play probe (runs, reacts to keys, acts by itself; seeded) and the level validators | `runtime/playProbe.ts`, validator registry |
+| Claude prices | `CLAUDE_MODELS` |
+
+Missing: a set of prompts with what each game must do; scripted play (choose a menu item, move the cursor, press
+keys, then look at what happened); recording and replaying answers; a cost estimate and a hard spending limit; a
+report. The Gemini connection reports no token counts today, and the repository has no Gemini prices.
+
+### 25.3 The parts
+
+**(1) An evaluation case** is data: an id, the family, the prompt (and follow-up prompts, e.g. "2 more levels"),
+the New-game choices (sprites drawn by the AI or the engine's), and its checks. About ten cases to start (25.5).
+
+**(2) The checks, in four layers, each reported apart:**
+
+| Layer | Asks | How |
+| --- | --- | --- |
+| Built | Did the flow end with the game applied? Requests, retries, anything left out or cut off? | From the flow's own outcome and trace |
+| Shape | Is it the kind of game asked for? | Facts about the project: a board game has no player-controlled character and a rules script; a platformer has a player, a goal and a level the validators confirm (or leave uncertain) |
+| Runs | No runtime fault; keys do something; things act by themselves where expected | The play probe, with the case's expectations |
+| Plays | Does it do what the prompt asked? | A scripted play written for the case (below) |
+
+A play script drives the game only through what the engine itself knows, never through names the AI chose: the
+kit's menu (pick the item whose text matches "2 players"), the kit's cursor (move to a square, press the action
+key), the player's keys, and time. It then reads what can be observed: which things moved and where, what
+appeared or disappeared, the menu and messages shown, whether the level was won. For chess: pick "2 Players"; a
+pawn asked to go two squares forward is two squares forward; a rook asked to jump over a pawn has not moved; a
+piece moved onto an enemy piece leaves one piece fewer; against the computer, a piece of the other side moves by
+itself within a time limit; the same position played on the weakest and the strongest setting over several seeded
+games gives measurably different replies (if not: "the settings do not differ", a failure).
+
+Every check ends as **pass**, **fail** or **not judged** (with the reason: "the game does not use the kit's
+cursor, so squares cannot be picked"). A case is a success only when every Plays check passes; one not judged
+leaves it **uncertain**. Running without errors is never success. What the model says it left out (check,
+castling) is recorded with the result, and a case can require it ("full chess" would fail; "simplified chess as
+stated" passes only if the statement matches what the play script finds).
+
+**(3) Recording and replay.** A live run saves, per case, the model's answers in order, with provider, model,
+prompt, tokens, cost and time for each request. No key and no request text beyond the prompt is saved; a test
+searches every recording for key-like text. `npm test` then **replays** each committed recording through the real
+request flow and runs the same checks: no network, no cost, a few seconds per case. That is the regression test
+for "games models made still build and play". A replay tests the engine, not the model: when the request the
+engine would send has changed since the recording, the report says so.
+
+Hand-made recordings cover the failures that cannot be ordered from a model: an answer cut off at the length
+limit, a lost connection, a script past the size limits. They check that each is reported as incomplete, first
+and plainly, and never as a finished game.
+
+**(4) Live runs, only when a person starts one.**
+- The runner lists the cases, the model, and for each an estimated cost: the cost of that case's last recorded
+  run, or, before any run, a range from the two chess builds on record ($1.4 to $2.3 for a new game the AI draws;
+  less for an edit). It then waits for a yes.
+- A spending limit is part of the command. Before each request the runner works out the most that request can
+  cost (its input size and the answer's token limit at the model's price); if that could pass the limit, it
+  stops there and reports the rest as not run. The limit is a guarantee, the estimate is not.
+- The live runner refuses to start inside the test runner, and no test imports it.
+- The key comes from the environment or the app's existing key store. It is never written to a file, a
+  recording, a log or the repository.
+
+**(5) Provider independence.** The harness takes any `AIProvider` plus a description (vendor, model, prices or
+"unknown"). One small addition to the interface: every answer reports its usage in one common form (tokens in and
+out, cost or unknown). Claude already has the numbers; the Gemini connection gets them from the API's own counts.
+Gemini's prices are entered when the Gemini run is prepared, from Google's price list at that time; until then its
+cost shows as unknown rather than a guess. Nothing else in the harness names a vendor.
+
+**(6) The report**: one row per case and model: Built / Shape / Runs / Plays (pass, fail, uncertain, with the
+failing check named), requests, retries, tokens, cost, time; then the totals. Saved with the recordings, and
+summarized in this document.
+
+### 25.4 Where live runs happen (a decision for the user)
+
+- **A. In the app (recommended).** A panel under ⋯ → Evaluation, in the published app, using the Anthropic key
+  already entered there (the chess builds ran this way). Pick cases, see the estimate, set the limit, run; at the
+  end "Save results" downloads one file. That file, sent back here, becomes the committed recordings. It fits how
+  the project is used now, and the key never leaves the user's browser.
+- **B. From the command line** (`npm run eval:live`), on the user's computer or in a session like this one, where
+  the key is entered in the secure credential form and never shown to the assistant. Needs the session's network
+  to allow the provider's address.
+
+The harness is the same code for both. Proposed: B's replay half in the first stage (it is needed for the tests),
+A for live runs in the second.
+
+### 25.5 The first set of cases (proposed)
+
+| # | Case | Family | Follow-up |
+| --- | --- | --- | --- |
+| 1 | A classic platformer, two levels | Platformer | "add a double jump" |
+| 2 | A precision platformer with a dash and a wall jump | Platformer (abilities) | |
+| 3 | A top-down adventure with keys, doors and wandering enemies | Top-down | |
+| 4 | A falling-block puzzle | Board | |
+| 5 | A space shooter | Shooter | |
+| 6 | Chess, the user's own prompt, word for word | Board | "2 more levels: other boards with matching pieces" |
+| 7 | Tic-tac-toe against the computer | Board (small) | |
+| 8 | A turn-based tactics skirmish | Turn-based | |
+| 9 | A roguelike with a new dungeon every play | Random levels | |
+| 10 | Two edits to a given game: "make the coin gold", and a seeded bug ("the player falls through the bridge") | Edits | |
+
+Original games only, described by what they do. Each case run once per model by default (one sample, said as
+such); a repeat count multiplies the cost.
+
+### 25.6 Stages, each stopped for review
+
+| Stage | Contents | Spends |
+| --- | --- | --- |
+| V1.5a | Cases, checks, play scripts (the kit's menu and cursor, keys), recording and replay, the hand-made failure recordings, the report, the common usage form. Proven on the regression games standing in for a model's answers | Nothing |
+| V1.5b | The live runner with estimate and limit (25.4); the first live Claude run, started by the user; its recordings committed; the report; the answer to "probe after every build?" | The user's run: roughly $15 to $25 and one to two hours for all ten on Claude Opus 5.5, by the two chess builds; one case alone about $2.50. A rough figure until the first run replaces it |
+| V1.5c | The same set on Gemini | The user's Gemini run |
+
+### 25.7 Not in V1.5
+
+No model judging another model's game (not repeatable, and it costs): judging is by checks and by the saved game
+a person can open. No automatic "finish the rest". No script subroutines and no text-size function for scripts
+(separate proposals). No change to the AI's instructions as part of the evaluation itself: what a run shows
+becomes its own proposal. No ranking of models: one sample per case does not support one.
+
+### 25.8 Risks, said plainly
+
+- **Play scripts can be wrong, or too strict.** A correct game played in a way its script did not expect would
+  fail. Each script is first proven on a game known to work (the user's chess file for case 6) and on a broken
+  variant that must fail.
+- **Games off the kit cannot be driven.** They end as "not judged", visibly, not as failures or passes.
+- **One sample is one sample.** A pass does not show the model always succeeds; a fail does not show it never does.
+- **Recordings age.** After the instructions change, a replay still tests the engine but no longer shows what
+  the model would do now; only a new live run does.
+- **Size.** About 50 to 100 KB per recorded case in the repository.
+
+### 25.9 Decisions asked of the user
+
+1. Live runs in the app (A), from the command line (B), or both?
+2. The case list: add, drop or change any?
+3. Model for the first run: Claude Opus 5.5 (the app's default), and a spending limit.
+4. May the saved results (prompts and the models' answers; no key) be committed to the repository?
