@@ -41,6 +41,11 @@ describe('guidance only some requests need', () => {
     // (Chess is no walk from square to square: the stepping guidance of Rogue and Sokoban stays out of it.)
     expect(topicsFor(level, 'make a chess game')).not.toContain('grid_games');
     expect(topicsFor(level, 'make a chess game')).toContain('turns');
+    // Every board game is played with the kit's cursor and menus, and none has enemies to choose.
+    for (const ask of ['make me a cool tic-tac-toe game', 'connect four', 'a memory game']) expect(topicsFor(level, ask, [], true), ask).toEqual(expect.arrayContaining(['turns', 'board_games']));
+    expect(topicsFor(level, 'make me a cool tic-tac-toe game', [], true)).not.toContain('enemies');
+    expect(topicsFor(level, 'a platformer about a frog', [], true)).toContain('enemies');
+    expect(topicsFor(level, 'a platformer about a frog', [], true)).not.toContain('turns');
     expect(topicsFor(level, 'a platformer with a checkered floor')).not.toContain('board_games');
     // (It goes on in the next request, which no longer says "chess".)
     expect(topicsFor(level, 'Build 2 more levels', [{ request: 'make a chess game' }])).toContain('board_games');

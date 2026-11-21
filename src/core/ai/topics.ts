@@ -118,7 +118,8 @@ export const TOPICS: Record<string, Topic> = {
   turns: {
     title: 'Turn-based games: tactics, strategy, RPG battles, menus and talking',
     scopes: [],
-    words: /turn[- ]?based|\bturns?\b.*\b(game|battle|combat)|tactic|strateg|\brpg\b|jrpg|role[- ]?play|final fantasy|fire emblem|advance wars|xcom|into the breach|chess|board game|battle menu|command menu|\bmenu\b|dialog|dialogue|talk to|\bnpc\b|party|grid cursor|move range|hit points|\bhp\b/i,
+    // (A board game is played with the kit's cursor and menus too, whatever it is called: tic-tac-toe was built with a hand-made cursor.)
+    words: new RegExp(`${/turn[- ]?based|\bturns?\b.*\b(game|battle|combat)|tactic|strateg|\brpg\b|jrpg|role[- ]?play|final fantasy|fire emblem|advance wars|xcom|into the breach|chess|board game|battle menu|command menu|\bmenu\b|dialog|dialogue|talk to|\bnpc\b|party|grid cursor|move range|hit points|\bhp\b/i.source}|${BOARD_GAME_WORDS.source}`, 'i'),
     text: `- TURN-BASED GAMES (tactics on a grid, strategy, RPG battles) and menus, use the engine's turn-based kit, never hand-made timers and key checks:
   * Turn-taking is a capability of the game beside its real time (context.game.profile says "turns team_turns" or "turns none"): the game's profile selects it by itself when a script that takes turns (start_turns, give_turn, done, end_turn, turn_order) is set; a game may mix both (an RPG's map runs in real time, its battles take turns). If context.game.works says turns are not selected, select them: set_game_profile {"turns": ["team_turns"]}. Menus, the cursor, highlights, walk_to and popups need no turn-taking: any game may use them.
   * Build on the top-down starter seen from above (no gravity), the board on the level's 32 px grid: units placed in the middle of squares (x, y = 16 + 32 * n), walls and obstacles as solid tiles. Units are objects with Health, a Sprite and a trigger Collider, tagged with their side ("hero", "enemy"); no CharacterController and no player-steered character (the cursor plays the game). A fixed camera that shows the board (set_camera fixedAt its middle, bounds "none").
@@ -279,7 +280,8 @@ export function topicsFor(ctx: AIContext, request: string, history: readonly { r
         t.scopes.includes(ctx.kind) ||
         t.words.test(text) ||
         (k === 'panels' && ctx.kind === 'object' && ctx.panel === true) ||
-        ((k === 'enemies' || t.newGame) && newGame) ||
+        // (A board game has no enemies to choose.)
+        ((k === 'enemies' ? !BOARD_GAME_WORDS.test(text) : !!t.newGame) && newGame) ||
         // (The camera card: about the camera.)
         (k === 'camera' && ctx.kind === 'level' && !!ctx.camera) ||
         (!!t.topDown && topDown),

@@ -1,3 +1,4 @@
+import { saveWithHistory } from '../historyFile';
 import { SPRITE_RESOLUTIONS } from '../../core/model/spriteResolution';
 import { applySpriteResolution } from '../quickCommands';
 import { useEffect, useRef, useState } from 'react';
@@ -347,6 +348,7 @@ function ProjectMenu({ onOpen }: { onOpen: () => void }) {
     { label: 'Open…', hint: 'Ctrl+O', run: onOpen, testId: 'menu-open' },
     { label: 'Save', hint: 'Ctrl+S', detail: "In one click (the Save button at the top does the same): into the game's file; in Chrome or Edge with no dialog once allowed", run: () => void quickSave(), testId: 'menu-quick-save' },
     { label: 'Save as file…', detail: 'Name the game and save it as a file on your computer', run: () => useEditor.getState().setSaveDialog(true), testId: 'menu-save' },
+    { label: 'Save with history…', detail: 'The game with everything about how it was made: every AI request and answer of this visit in full, the console and the last play. For analysing the engine; never contains your API key', run: () => void saveWithHistory(), testId: 'menu-save-history' },
     { label: 'Save to PXLGameSite…', detail: 'Put the game up for everyone using the app to play: its picture and name in the game shop', run: () => useEditor.getState().setGameSite('save'), testId: 'menu-gamesite-save', sep: true },
     { label: 'View PXLGameSite', detail: "Browse and play other people's games, or open a copy of one", run: () => useEditor.getState().setGameSite('view'), testId: 'menu-gamesite-view' },
     ...(canExportGame()

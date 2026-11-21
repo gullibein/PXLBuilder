@@ -29,3 +29,32 @@ describe('parts of an answer that are left out', () => {
     expect(scriptsLeftOut([{ op: 'set_script', target: 'definition', id: 'x', scriptJson: 'not json' }] as unknown as Operation[])).toEqual(['a script']);
   });
 });
+
+describe("a starter's object made into something else", () => {
+  it("loses the starter's description when it is renamed and a part is taken from it (the Coin made an X Mark is no \"collectible coin\"); one only renamed keeps it", async () => {
+    const { produce } = await import('immer');
+    const { applyOperations } = await import('./operations');
+    const project = createProject(registry, 'T', 'topdown');
+    const coin = project.definitions.find((d) => d.name === 'Coin')!;
+    const enemy = project.definitions.find((d) => d.name === 'Key')!;
+    expect(coin.description).not.toBe('');
+    const after = produce(project, (p) => {
+      applyOperations(
+        p,
+        [
+          { op: 'rename', target: 'definition', id: coin.id, name: 'X Mark' },
+          { op: 'remove_component', target: 'definition', id: coin.id, component: 'Collectible' },
+          { op: 'rename', target: 'definition', id: enemy.id, name: 'Goblin' },
+        ] as unknown as Operation[],
+        registry,
+      );
+    });
+    expect(after.definitions.find((d) => d.id === coin.id)).toMatchObject({ name: 'X Mark', description: '' });
+    expect(after.definitions.find((d) => d.id === enemy.id)).toMatchObject({ name: 'Goblin', description: enemy.description });
+    // (A part taken from it without a new name: still what it was called.)
+    const stripped = produce(project, (p) => {
+      applyOperations(p, [{ op: 'remove_component', target: 'definition', id: coin.id, component: 'Collectible' }] as unknown as Operation[], registry);
+    });
+    expect(stripped.definitions.find((d) => d.id === coin.id)!.description).toBe(coin.description);
+  });
+});

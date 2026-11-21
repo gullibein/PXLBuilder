@@ -821,6 +821,9 @@ export function applyOperations(
   // What is where in a level, while placing and drawing (anything else that changes the level drops it).
   let cover: CoverIndex | null = null;
   const coverOf = (sceneId: Id) => (cover?.sceneId === sceneId ? cover : (cover = new CoverIndex(sceneId, project, registry)));
+  // Library objects given another name here (with the description each had), and the ones a component was taken from.
+  const renamed = new Map<Id, string>();
+  const stripped = new Set<Id>();
 
   const applyOne = (given: Operation): void => {
     // A new object or entity made earlier in this list can be named by its ref ("make a Mushroom and draw it").
@@ -847,8 +850,10 @@ export function applyOperations(
         break;
       }
       case 'remove_component':
-        if (op.target === 'definition') m.removeDefinitionComponent(project, op.id, op.component);
-        else m.removeEntityComponent(project, sceneOfEntity(project, op.id), op.id, op.component);
+        if (op.target === 'definition') {
+          m.removeDefinitionComponent(project, op.id, op.component);
+          stripped.add(op.id);
+        } else m.removeEntityComponent(project, sceneOfEntity(project, op.id), op.id, op.component);
         break;
       case 'set_transform': {
         const entity = m.getEntity(project, sceneOfEntity(project, op.entityId), op.entityId);
@@ -863,8 +868,11 @@ export function applyOperations(
         break;
       }
       case 'rename':
-        if (op.target === 'definition') m.renameDefinition(project, op.id, op.name);
-        else m.renameEntity(project, sceneOfEntity(project, op.id), op.id, op.name);
+        if (op.target === 'definition') {
+          const def = project.definitions.find((d) => d.id === op.id);
+          if (def && !renamed.has(op.id)) renamed.set(op.id, def.description);
+          m.renameDefinition(project, op.id, op.name);
+        } else m.renameEntity(project, sceneOfEntity(project, op.id), op.id, op.name);
         break;
       case 'set_tags':
         if (op.target === 'definition') m.setDefinitionTags(project, op.id, op.tags);
@@ -1492,6 +1500,14 @@ export function applyOperations(
   settleOnSurfaces(project, result.createdEntityIds, registry);
   // (Pixel-perfect colliders follow pictures drawn anew.)
   refreshPixelColliders(project);
+  // A starter's object made into something else (the Coin renamed "X Mark", its Collectible taken away) no longer
+  // is what the starter said of it ("A collectible coin."): those words are dropped, rather than left for the
+  // library and for the AI's next request to read. (A description written since stays; so does that of an object
+  // only renamed: a Goblin made of the Enemy is still a patrolling enemy.)
+  for (const [id, was] of renamed) {
+    const def = project.definitions.find((d) => d.id === id);
+    if (def && stripped.has(id) && typeof def.metadata.starter === 'string' && def.description === was && def.name !== def.metadata.starter) def.description = '';
+  }
   return result;
 }
 

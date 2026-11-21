@@ -5062,6 +5062,29 @@ try {
     await bg.getByTestId('prompt-input').fill('Build 2 more levels');
     await bg.getByTestId('prompt-input').press('Enter');
     await check(async () => asked.length === 2 && /no player-controlled character/.test(asked[1].request) && /another board or set-up/.test(asked[1].request) && !/level to beat/i.test(asked[1].request) && asked[1].design === null, 'asked for more levels, the AI is told a level of this game is another board (no course to beat, no level idea)');
+    // Save with history: the game's file with both requests in full beside it (what was sent, what came back), the
+    // console and the app's version; it is a game file all the same.
+    await bg.locator('[data-testid="prompt-result"]').first().waitFor({ timeout: 10000 });
+    await bp.keyboard.press('Escape');
+    await bp.getByTestId('project-menu').click();
+    const [download] = await Promise.all([bp.waitForEvent('download'), bp.getByTestId('menu-save-history').click()]);
+    const saved = JSON.parse(readFileSync(await download.path(), 'utf8'));
+    const dg = saved.diagnostics ?? {};
+    await check(
+      async () =>
+        /\.with-history\.pxlproj\.json$/.test(download.suggestedFilename()) &&
+        saved.kind === 'pxlbuilder.bundle' &&
+        /^[0-9a-f]{7} · |^dev · /.test(dg.version ?? '') &&
+        dg.requests?.length === 2 &&
+        dg.requests[0].exchanges[0].answer.operations?.[0]?.op === 'draw_map' &&
+        dg.requests[0].exchanges[0].sent.topics.includes('board_games') &&
+        dg.requests[0].exchanges[0].sent.context.library.length > 3 &&
+        dg.requests[0].outcome.status === 'applied' &&
+        dg.requests[1].exchanges[0].answer.kind === 'clarify' &&
+        Array.isArray(dg.console) &&
+        dg.game.levelsToGetThrough === false,
+      `"Save with history" downloads the game with every AI request of the visit in full, the console and notes on the game (${download.suggestedFilename()})`,
+    );
     await bc.close();
   }
 

@@ -13,6 +13,7 @@ import { generatorStatus, generatorTarget, makeBackground, useBackgroundGen } fr
 import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core/ai/songIdeas';
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
+import { beginDiagnostics, type DiagnosticRecorder } from './diagnostics';
 import { BOARD_GAME_WORDS, TOPICS, topicsFor } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
@@ -199,7 +200,27 @@ export function withPictureNote(request: string, images: readonly AIPicture[] | 
   return `${request}\n[${images.length} picture${images.length === 1 ? '' : 's'} attached: ${images.map((p) => p.name).join(', ')}]`;
 }
 
+/**
+ * A request to the AI, from the user's words to what was applied. Everything about it is also kept in full for this
+ * visit ("Save with history": diagnostics.ts): every step uncut, what was sent each time and what came back.
+ */
 export async function runPrompt(ctx: AIContext, request: string, signal?: AbortSignal, trace?: TraceFn, options: PromptOptions = {}): Promise<PromptOutcome> {
+  const record = beginDiagnostics(useEditor.getState().project.id, request, contextKey(ctx));
+  const both: TraceFn = (kind, text) => {
+    record.step(kind, text);
+    trace?.(kind, text);
+  };
+  try {
+    const outcome = await runPromptRecorded(ctx, request, signal, both, options, record);
+    record.end({ status: outcome.status, message: 'message' in outcome ? outcome.message : '', changes: 'changes' in outcome ? outcome.changes : [] });
+    return outcome;
+  } catch (e) {
+    record.end({ status: (e as Error).name === 'AbortError' ? 'stopped' : 'error', message: (e as Error).message });
+    throw e;
+  }
+}
+
+async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortSignal | undefined, trace: TraceFn | undefined, options: PromptOptions, record: DiagnosticRecorder): Promise<PromptOutcome> {
   // A new game (from the New game window: nothing of the user's is in it yet) whose words name a kind that is
   // plainly built on one starter (chess, a board game: seen from above) is moved there before the AI is asked,
   // instead of paying for an answer that only says so (a chess game's first answer, 80 seconds, chose the starter).
@@ -413,7 +434,14 @@ export async function runPrompt(ctx: AIContext, request: string, signal?: AbortS
         written = Math.max(written, soFar.length);
         draft?.(soFar, channel);
       };
-      const answered = await provider.respond(b, sig, tr, timed);
+      let answered: AIResponse;
+      try {
+        answered = await provider.respond(b, sig, tr, timed);
+      } catch (e) {
+        record.exchange(b, { error: (e as Error).message }, sentAt);
+        throw e;
+      }
+      record.exchange(b, answered, sentAt);
       const r = { ...answered, changes: tidyChanges(answered.changes) };
       tr?.('note', answerTiming(sentAt, firstAt, Date.now(), written));
       const drawn = r.operations.flatMap((o) => (o.op === 'draw_sprite' && !o.situation ? [{ name: o.name, palette: o.palette, rows: o.rows }] : []));

@@ -2463,3 +2463,64 @@ becomes its own proposal. No ranking of models: one sample per case does not sup
 2. The case list: add, drop or change any?
 3. Model for the first run: Claude Opus 5.5 (the app's default), and a spending limit.
 4. May the saved results (prompts and the models' answers; no key) be committed to the repository?
+
+## 26. A tic-tac-toe build (one live run), and "Save with history"
+
+### 26.1 What the run showed
+
+The user built "a cool tic-tac-toe game" on 462f39f with Claude Opus 5.5 and sent the game and its log. It worked
+the first time and, by the user's account, plays well. **One run, not an evaluation.**
+
+| | Tic-tac-toe | Chess (§24.9) |
+| --- | --- | --- |
+| Time | 251 s | 639 s |
+| Cost | $1.25 | $2.30 |
+| Requests | 2 (objects; level) | 3 (one spent asking for code) |
+| Before the first word of part 1 | 162 s | 430 s |
+| Writing part 1 | 70 s, 19,000 characters | 179 s, 41,000 characters |
+| Rules script | 8,700 characters, 80 statements | most of part 1 |
+
+- **The app lost no time.** No answer spent choosing a starter, no retry, nothing left out, no request for code
+  (the scripts part 1 wrote went along with part 2). Of 251 s, 232 were the model on part 1: about two thirds of
+  that working it out before writing.
+- **The size limits mattered.** The script's three-in-a-row test is one formula of 714 characters: under the old
+  500-character limit the script would have been refused.
+- **That formula is written twice** (for the computer's move, and after each move): the same evidence as chess's
+  four copies for a way to write a test once (a separate proposal).
+- **The board is the pieces**, as the guidance asks: marks are things on squares, read with `thing_at`; 17
+  variables, none per square.
+
+What the app got wrong, fixed here:
+
+| Seen | Why | Change |
+| --- | --- | --- |
+| The AI built its own cursor from key handlers and a drawn sprite | The board games' guidance points to the kit's cursor "(topic turns)", but that topic came only with words like chess or "board game", not tic-tac-toe | Every board-game word brings the turn-based kit's guidance too |
+| The enemies' guidance went along | It goes with every new game | Not with a board game |
+| "X Mark: A collectible coin." "Game Master: Stairs down: reaching them wins the level." | A starter's object given another name keeps the starter's description, and no operation changes it; it is shown in the library and read by the AI on the next request | When an answer renames a starter's object and takes a component from it, the starter's description is dropped. One only renamed (the Enemy called Goblin) keeps it |
+
+Not changed: how long the model thinks (the "fast" setting and a cheaper model are untested on such games; that
+is what V1.5 measures).
+
+### 26.2 "Save with history"
+
+The user's proposal, for as long as the engine is being worked on: one file with the game and everything about
+how it was made, instead of a game file and a pasted log whose long answers are cut short.
+
+**⋯ project menu → Save with history…** downloads `<name>.with-history.pxlproj.json`. It opens as an ordinary game
+(the extra part is ignored) and does not replace or mark the game's own save. Beside the game it holds:
+
+- the app's version, the AI connection's settings (vendor, model, speed), what was spent, the screen's size;
+- **every AI request of this visit in full**: for each question to the AI what was sent (the request as the AI
+  got it with the app's notes, the game's data, the guidance and code that went along) and the answer as read,
+  uncut; every step under the hood, uncut; how it ended; times. Kept in memory for the visit (the AI History keeps
+  steps cut at 16,000 characters, for the last 20 requests): **a reload of the page loses the full record**, and
+  the file then holds the AI History's shorter one for those requests;
+- the console; the last play and the last play check;
+- notes on the game: whether the app takes it for levels to get through, and for each script its size against
+  the limits and the long formulas written more than once.
+
+Never an API key: requests do not carry one, the settings saved have none, and the text is searched for anything
+shaped like one before it is offered. Pictures the user attached are not in it (their kind and size only).
+
+This is also the recording V1.5 needs (§25.3, part 3) seen from the app's side: the answers in order, with what
+was sent. V1.5 can read these files rather than invent a second format.
