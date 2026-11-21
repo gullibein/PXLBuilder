@@ -10,7 +10,7 @@ import { InputState } from '../../runtime/input';
 import { Runtime } from '../../runtime/runtime';
 import { LookCache } from '../../render/screen';
 import { imageLookup, whenImageReady } from '../images';
-import { drawPlayFrame } from '../play/playFrame';
+import { cameraView, drawnZoom, drawPlayFrame } from '../play/playFrame';
 
 /** The screen the picture is taken on (CSS px): a common 16:9 game window. */
 const SCREEN = { width: 480, height: 270 };
@@ -46,7 +46,8 @@ export async function gameShot(project: Project): Promise<string | null> {
   canvas.height = Math.max(1, Math.round(SCREEN.height / shrink));
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  runtime.cam.setView(SCREEN.width / extraZoom, SCREEN.height / extraZoom);
+  const seen = cameraView(SCREEN, runtime.camera.zoom, drawnZoom(runtime.camera.zoom, extraZoom, canvas.width / SCREEN.width, worldPerArt, scene.camera));
+  runtime.cam.setView(seen.width, seen.height);
   runtime.screen = { w: SCREEN.width, h: SCREEN.height };
   runtime.cam.snap();
   // A moment of play, so what the scripts draw when it starts (scores, hearts) is there too.

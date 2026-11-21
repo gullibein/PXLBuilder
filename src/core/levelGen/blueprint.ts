@@ -55,7 +55,8 @@ export const blueprintSchema = z.object({
   length: z.enum(['short', 'medium', 'long']).nullable().default(null),
   seed: z.number().int().nullable().default(null),
   structure: z.enum(STRUCTURES).nullable().default(null),
-  focus: z.array(mechanicSchema).max(3).nullable().default(null).describe('Mechanics the level is about'),
+  // (More than three named: the first three count, rather than the whole level being refused and asked for again.)
+  focus: z.preprocess((v) => (Array.isArray(v) ? v.slice(0, 3) : v), z.array(mechanicSchema).max(3).nullable().default(null)).describe('Mechanics the level is about'),
   escalate: mechanicSchema.nullable().default(null).describe('A mechanic that gets harder each time it comes'),
   avoid: z.array(mechanicSchema).nullable().default(null),
   routes: z.enum(ROUTES).nullable().default(null),

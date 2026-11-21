@@ -427,7 +427,11 @@ describe('the dodge roll: an ability for characters seen from above', () => {
     expect(abilityKeys(play(arena('topdown', { key: 'fire' })).e)).toEqual([{ action: 'fire', does: 'rolls' }]);
     // A dash says its key too; a character without such an ability, none.
     const dasher = produce(mapLevel(registry, ['P...', '####']), (d) => void (controller(d).components.Dash = registry.createDefault('Dash')));
-    expect(abilityKeys(play(dasher).e)).toEqual([{ action: 'fire', does: 'dashes' }]);
+    expect(abilityKeys(play(dasher).e)).toEqual([{ action: 'fire', does: 'dashes', how: 'the way you hold (also up and diagonally)' }]);
+    expect(keyHints(dasher, false, false, false, false, false, abilityKeys(play(dasher).e))).toMatch(/X dashes the way you hold \(also up and diagonally\)/);
+    // (One that only goes sideways says no more than that.)
+    const sideways = produce(dasher, (d) => void ((controller(d).components.Dash as { directions: string }).directions = 'horizontal'));
+    expect(abilityKeys(play(sideways).e)).toEqual([{ action: 'fire', does: 'dashes' }]);
     expect(abilityKeys(play(arena('topdown', {}, false)).e)).toEqual([]);
   });
 });

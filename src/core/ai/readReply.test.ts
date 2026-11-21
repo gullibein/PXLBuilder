@@ -44,4 +44,17 @@ describe('reading an answer into the reply format', () => {
     const bad = Array.from({ length: 6 }, () => ({ op: 'no_such_op' }));
     expect(readReply({ kind: 'apply', message: 'm', changes: [], operations: [...bad, { op: 'set_sprite_resolution', resolution: 8 }] }).ok).toBe(false);
   });
+
+  it('the operations written as one text (the JSON of the list) are read as the list: a whole game was thrown away for "expected array, received string"', () => {
+    const operations = [{ op: 'set_sprite_resolution', resolution: 8 }, { op: 'rename', target: 'definition', id: 'def_1', name: 'Hero' }];
+    const r = readReply({ kind: 'preview', message: 'A game.', changes: ['Hero'], operations: JSON.stringify(operations) });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.response.operations.map((o) => o.op)).toEqual(['set_sprite_resolution', 'rename']);
+    expect(r.dropped).toEqual([]);
+    // (Text that is no list is still said as it is.)
+    const bad = readReply({ kind: 'preview', message: 'm', changes: [], operations: 'place a coin' });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.issues).toMatch(/operations/);
+  });
 });

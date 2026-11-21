@@ -138,7 +138,9 @@ export const dash: AbilityDefinition = {
     gravity: (e) => !(((e.ability.dash as DashState | undefined)?.t ?? 0) > 0),
     states: (e) => (((e.ability.dash as DashState | undefined)?.t ?? 0) > 0 ? ['dashing'] : []),
   },
-  keys: (c) => [{ action: c.Dash?.key === 'interact' ? 'interact' : 'fire', does: 'dashes' }],
+  // (Which ways it goes is said with its key: a level may need a dash up or at a slant, and "X dashes" alone left a
+  // player trying only sideways.)
+  keys: (c) => [{ action: c.Dash?.key === 'interact' ? 'interact' : 'fire', does: 'dashes', ...(c.Dash?.directions === 'horizontal' ? {} : { how: c.Dash?.directions === 'four' ? 'the way you hold (also up)' : 'the way you hold (also up and diagonally)' }) }],
   scriptNames: { dashing: { state: 'dashing', doc: 'mid-dash (Dash)' } },
   // Its speed for its duration; up too, unless it only goes sideways.
   reach: {

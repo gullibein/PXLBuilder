@@ -108,7 +108,8 @@ export interface AbilityDefinition {
    * The keys it listens to on a character with these components, and what each does in a word ("rolls"): the play
    * screen's key hints and its touch buttons show them. (A key the movement itself uses, as Jump, needs no entry.)
    */
-  keys?(components: ComponentMap): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string }[];
+  /** (`how`: a few more words for the key hint only, where the key alone doesn't say enough: which ways a dash goes.) */
+  keys?(components: ComponentMap): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string; how?: string }[];
   /** The AI guidance topic its component is described in (else: in the instructions every request carries). */
   topic?: string;
   /** What having it is called when the AI's work is told ("a double jump", "the ability to grab ledges"). */

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
 import { componentRegistry } from '../../core/components/builtin';
 import { LookCache } from '../../render/screen';
-import { drawPlayFrame } from './playFrame';
+import { cameraView, drawnZoom, drawPlayFrame } from './playFrame';
 import { audio, keepAudioAwake, playSound, prepareSounds } from '../audio/synth';
 import { instrumentsOf, playSong, songAsset, type SongPlayer } from '../audio/musicPlayer';
 import { browserPads, GamepadReader, InputState, type Action } from '../../runtime/input';
@@ -31,7 +31,7 @@ interface Hud {
   hasSwitches: boolean;
   canShoot: boolean;
   /** The keys the player's abilities listen to, each with what it does ("rolls"): from their definitions. */
-  abilityKeys: { action: Action; does: string }[];
+  abilityKeys: { action: Action; does: string; how?: string }[];
   /** The player walks in every direction (top-down): no jumping. */
   topDown: boolean;
   /** Played with menus and the grid cursor (the turn-based kit): the keys choose. */
@@ -77,7 +77,7 @@ export function isTouchScreen(): boolean {
  * drawing), or null for a plain ♥ (no Heart object, or one without a picture).
  */
 /** What the keys do, as the game has them ("Arrows move · Space jumps · E uses…", or its own keys). */
-export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean, choosing = false, abilities: { action: Action; does: string }[] = []): string {
+export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean, choosing = false, abilities: { action: Action; does: string; how?: string }[] = []): string {
   const own = project.settings.controls;
   const keys = controlsOf(own);
   // (Both Shift keys for one action: "Shift".)
@@ -91,7 +91,7 @@ export function keyHints(project: Project, topDown: boolean, use: boolean, shoot
   if (use) parts.push(`${first('interact')} uses`);
   if (shoot) parts.push(`${first('fire')} shoots`);
   // (What the player's abilities do, each on its key: "Shift rolls".)
-  for (const a of abilities) parts.push(`${first(a.action as keyof typeof keys)} ${a.does}`);
+  for (const a of abilities) parts.push(`${first(a.action as keyof typeof keys)} ${a.does}${a.how ? ` ${a.how}` : ''}`);
   if (menu) parts.push(`${first('menu')} menu`);
   return parts.join(' · ');
 }
@@ -225,8 +225,10 @@ export function PlayView(props: PlayViewProps) {
       canvas.width = Math.max(1, Math.round((rect.width * dpr) / shrink));
       canvas.height = Math.max(1, Math.round((rect.height * dpr) / shrink));
       canvas.dataset.pixels = `${canvas.width}x${canvas.height}`;
-      // The camera keeps to its limits for what the screen really shows at the game's zoom.
-      runtime.cam.setView(rect.width / extraZoom, rect.height / extraZoom);
+      // The camera keeps to its limits for what the screen really shows: at the zoom the level is drawn at, which is
+      // the game's zoom rounded so that every picture pixel is a whole number of canvas pixels.
+      const seen = cameraView(rect, runtime.camera.zoom, drawnZoom(runtime.camera.zoom, extraZoom, canvas.width / rect.width, worldPerArt, scene.camera));
+      runtime.cam.setView(seen.width, seen.height);
       runtime.screen = { w: rect.width, h: rect.height };
     };
     // Measured now, so the camera starts inside its limits for this screen; then on every resize.
@@ -416,7 +418,7 @@ export function playSummaryLine(report: PlayReport): string {
  * above, walking), jump (side view), use and shoot on the right when the game has switches or shooting. Each
  * button is held while a finger is on it; several fingers work at once (run and jump).
  */
-function TouchControls({ input, topDown, use, shoot, menu, abilities }: { input: React.RefObject<InputState | null>; topDown: boolean; use: boolean; shoot: boolean; menu: boolean; abilities: { action: Action; does: string }[] }) {
+function TouchControls({ input, topDown, use, shoot, menu, abilities }: { input: React.RefObject<InputState | null>; topDown: boolean; use: boolean; shoot: boolean; menu: boolean; abilities: { action: Action; does: string; how?: string }[] }) {
   const button = (action: Action, label: string, className: string) => (
     <button
       key={action}

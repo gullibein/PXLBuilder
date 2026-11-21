@@ -58,3 +58,29 @@ describe("a starter's object made into something else", () => {
     expect(stripped.definitions.find((d) => d.id === coin.id)!.description).toBe(coin.description);
   });
 });
+
+
+describe('small slips that are read as meant', () => {
+  it("rename with a level's id names the level (no other operation does; \"Level 1\" stayed \"Level 1\" while the answer called it \"Moonlit Halls\")", async () => {
+    const { produce } = await import('immer');
+    const { applyOperations, checkOperations } = await import('./operations');
+    const project = createProject(registry, 'T');
+    const sceneId = project.scenes[0].id;
+    for (const target of ['instance', 'definition']) {
+      const ops = [{ op: 'rename', target, id: sceneId, name: 'Moonlit Halls' }] as unknown as Operation[];
+      expect(checkOperations(project, ops, registry)).toBeNull();
+      const after = produce(project, (p) => void applyOperations(p, ops, registry));
+      expect(after.scenes[0].name).toBe('Moonlit Halls');
+    }
+    // (An id that is nothing is still refused, saying so.)
+    expect(checkOperations(project, [{ op: 'rename', target: 'instance', id: 'scn_nope', name: 'X' }] as unknown as Operation[], registry)).toMatch(/no placed object/);
+  });
+
+  it('a level blueprint naming more than three things it is about is built about the first three (it was refused and asked for again)', async () => {
+    const { blueprintSchema } = await import('../levelGen/blueprint');
+    const read = blueprintSchema.parse({ difficulty: 2, focus: ['dash', 'wall_jump', 'mover', 'enemy'] });
+    expect(read.focus).toEqual(['dash', 'wall_jump', 'mover']);
+    expect(blueprintSchema.parse({ difficulty: 2 }).focus).toBeNull();
+    expect(blueprintSchema.parse({ difficulty: 2, focus: ['dash'] }).focus).toEqual(['dash']);
+  });
+});

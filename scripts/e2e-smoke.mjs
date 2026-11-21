@@ -5130,6 +5130,49 @@ try {
     await mc.close();
   }
 
+  step = 'the camera on a screen at 125%';
+  {
+    // A screen at 125% draws 16×16 sprites at 3 canvas pixels a picture pixel: a zoom of 1.2, not 1. The camera keeps
+    // to the level's edges for what is drawn, so a player at the level's start is on the screen (it was 127 px off it).
+    const zc = await browser.newContext({ viewport: { width: 1524, height: 700 }, deviceScaleFactor: 1.25 });
+    const zp = await zc.newPage();
+    zp.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    await zp.route('**/api/ai', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      const lib = (n) => body.context.library.find((d) => d.name === n).id;
+      const legend = [{ char: '#', object: lib('Platform') }, { char: 'P', object: lib('Player') }, { char: 'G', object: lib('Goal') }];
+      const wide = 60;
+      const rows = [`#${'.'.repeat(wide - 2)}#`, `#.P${'.'.repeat(wide - 6)}G.#`, '#'.repeat(wide)];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A long hall.', changes: ['Level 1'], operations: [{ op: 'draw_map', sceneId: body.context.level.id, col: 0, row: 0, legend, rows, clear: true }] }) });
+    });
+    await zp.goto(URL);
+    await zp.getByTestId('viewport-canvas').waitFor();
+    if (!(await zp.getByTestId('game-chooser').count())) {
+      await zp.getByTestId('project-menu').click();
+      await zp.getByTestId('menu-new').click();
+    }
+    await zp.getByTestId('new-sprite-size-16').click();
+    await pickStarter(zp, 'platformer');
+    await zp.getByTestId('global-prompt-toggle').click();
+    await zp.getByTestId('global-prompt').getByTestId('prompt-input').fill('Draw a long hall');
+    await zp.getByTestId('global-prompt').getByTestId('prompt-input').press('Enter');
+    await zp.getByTestId('global-prompt').locator('[data-testid="prompt-result"][data-status="applied"]').waitFor({ timeout: 10000 });
+    await zp.keyboard.press('Escape');
+    await zp.getByTestId('play').click();
+    const zPlay = zp.getByTestId('play-canvas');
+    await zPlay.waitFor();
+    await zp.waitForTimeout(500);
+    await check(async () => {
+      const [px] = ((await zPlay.getAttribute('data-player')) ?? '').split(',').map(Number);
+      const [cx] = ((await zPlay.getAttribute('data-camera')) ?? '').split(',').map(Number);
+      const box = await zPlay.boundingBox();
+      // Where the player and the level's left edge are on the screen, at the zoom drawn (1.2).
+      const at = (x) => (x - cx) * 1.2 + box.width / 2;
+      return px > 0 && at(px) > 0 && at(px) < box.width && Math.abs(at(0)) <= 2;
+    }, `on a screen at 125% the level's left edge is at the screen's edge and the player at its start is in the picture (camera ${await zPlay.getAttribute('data-camera')})`);
+    await zc.close();
+  }
+
   step = 'a drawn new game in two parts';
   {
     const tc = await browser.newContext({ viewport: { width: 1300, height: 860 } });

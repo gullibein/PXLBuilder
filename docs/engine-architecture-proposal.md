@@ -2524,3 +2524,61 @@ shaped like one before it is offered. Pictures the user attached are not in it (
 
 This is also the recording V1.5 needs (§25.3, part 3) seen from the app's side: the answers in order, with what
 was sent. V1.5 can read these files rather than invent a second format.
+
+## 27. A dash and wall-jump platformer (one live build), from its "Save with history" file
+
+The user asked for "a cool platformer with fresh enemies and a hip player that can dash and wall jump" on 26276ae
+(Claude Opus 5.5) and sent the file. The page had been reloaded before saving, so the file held the AI History's
+shorter record of the three requests, not the full one (§26.2). **One build, not an evaluation.**
+
+### 27.1 What happened
+
+| Request | Time | Cost | Result |
+| --- | --- | --- | --- |
+| The game, first try | 185 s | $0.96 | **Lost whole**: "operations: expected array, received string" |
+| The game, again | 349 s | $0.96 (three answers) | Applied: objects, then two levels built by the engine; one answer sent back; one part left out |
+| "The player is not on the screen when the game starts" | 13 s | $0.67 | The AI set every level's camera to fit the screen's height |
+
+The second request spent about 48 s in the app itself after the last answer: the engine built and validated the
+two levels three times over (to check the answer, to check it again, to apply it). Not changed here; the same
+blueprint on the same game could be built once.
+
+### 27.2 What was the engine's, and is fixed
+
+| Seen | Why | Change |
+| --- | --- | --- |
+| The player was off the screen at the start | On a screen at 125%, 16×16 sprites are drawn at 3 canvas pixels a picture pixel: a zoom of 1.2 where the camera asked for 1. The camera kept to the level's edges for the screen's full width at zoom 1, so the first 127 px of the level were outside the picture | The camera reckons with the zoom that is drawn (`drawnZoom`, `cameraView`), when the screen is measured and on every frame. The AI's fix (fit to height) worked because a fitted level is drawn exactly as asked; it is no longer needed for this |
+| The first answer was thrown away | The model wrote the whole list of operations as one text (the JSON of the list) | Read as the list it is (`fillMissingNulls`) |
+| "generate_level: focus: Too big: expected array to have <=3 items", sent back | Four mechanics named | The first three count |
+| "There is no placed object with id scn_…", left out; Level 1 stayed "Level 1" though the answer called it "Moonlit Halls" | The AI named the level with `rename` and the level's id; no operation names an existing level | `rename` with a level's id names the level |
+
+### 27.3 The pit with the hanging plank (Level 1)
+
+The user could not find a way onto the plank. The section is the builder's `dash_cling` (spikes): a lip, a pit of
+six cells, a cliff face, a two-cell plank two rows up and one cell short of the face, the cliff's top three rows
+up. The builder's solver found a route and the route bot played it when the level was made.
+
+Played here on the user's own file with plain inputs (run, hold Jump, press Dash, press Jump on the wall), over
+144 combinations of when each is pressed:
+
+| How | Ends on the plank or the top | Otherwise |
+| --- | --- | --- |
+| Jump, then dash **up and right** | 60 of 72 | not finished in the time allowed |
+| Jump, dash right to the cliff, kick off it steering back | 18 of 36 | into the spikes (dashed too early) |
+| The same, still holding right | 5 of 36 | spikes, or back on the lip |
+
+So it can be passed, and a slanted dash makes it easy; but two things worked against a person finding that:
+
+- **The key hint said only "X dashes".** It now says which ways: "X dashes the way you hold (also up and
+  diagonally)", by the Dash's own setting.
+- **This was the first place in the game the dash was needed**, and it needs the wall jump too. The level's plan
+  was start, blocks, wall shaft, then this: the "teach" section taught neither ability. Proposed, not built
+  (it changes what is built for players with abilities, and the patterns of V1.4 were reviewed as they are): a
+  section needing two abilities comes only after each has had a section of its own in the game, and the teach
+  section of a level about an ability uses that ability.
+
+Also seen, not changed: with a slanted dash the top is reached without the wall jump, so the section does not
+strictly need both abilities for a player who dashes up (the builder's "each ability needed" test dashes level);
+and the result's "⚠ Not checked: whether the player gets everywhere" stood beside the builder's own "the route bot
+played it to the goal": both true (one is about every coin and ledge, the other about the goal), but they read as
+a contradiction.

@@ -40,6 +40,27 @@ export function hudOf(runtime: Runtime, banner: string | null): BuiltinHud {
 }
 
 /** Draws the frame; returns the pixel grid it used. */
+/**
+ * How far in the level is really drawn, for a camera asking for `zoom`: every picture pixel is a whole number of
+ * canvas pixels, so the zoom is rounded to the nearest that gives that (a level fitted to the screen's height or
+ * width is drawn exactly as asked). `canvasPerCss`: canvas pixels per screen px.
+ */
+export function drawnZoom(zoom: number, extraZoom: number, canvasPerCss: number, worldPerArt: number, camera: { fit?: string | null } | undefined | null): number {
+  const fitted = camera?.fit === 'height' || camera?.fit === 'width';
+  return fitted ? zoom * extraZoom : pixelPerfectZoom(zoom * extraZoom, canvasPerCss, worldPerArt);
+}
+
+/**
+ * The screen as the camera should reckon with it: its size divided by how much bigger (or smaller) than the camera's
+ * own zoom the level is drawn. On a screen at 125% with 16×16 sprites a zoom of 1 is drawn at 1.2: a camera that
+ * kept to the level's edges for the screen's full width left a strip at the level's start outside the picture,
+ * with the player in it.
+ */
+export function cameraView(size: { width: number; height: number }, zoom: number, drawn: number): { width: number; height: number } {
+  const k = zoom > 0 && drawn > 0 ? drawn / zoom : 1;
+  return { width: size.width / k, height: size.height / k };
+}
+
 export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f: FrameSetup, banner: string | null): PixelGrid & { linesMoved: number } {
   const { size, worldPerArt, images, looks } = f;
   const canvas = ctx.canvas;
@@ -47,8 +68,10 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
   // Every picture pixel the same size: the zoom is rounded to the nearest that gives whole canvas pixels.
   const frameNow = runtime.cam.frame();
   // (Fitted to the screen's height or width: exactly, as asked, even if a picture pixel is then not a whole number of canvas pixels.)
-  const fitted = f.scene.camera?.fit === 'height' || f.scene.camera?.fit === 'width';
-  const zoomNow = fitted ? frameNow.zoom * f.extraZoom : pixelPerfectZoom(frameNow.zoom * f.extraZoom, dpr, worldPerArt);
+  const zoomNow = drawnZoom(frameNow.zoom, f.extraZoom, dpr, worldPerArt, f.scene.camera);
+  // (The camera reckons with what is drawn from the next step on: its zoom may have changed since the screen was measured.)
+  const seen = cameraView(size, frameNow.zoom, zoomNow);
+  runtime.cam.setView(seen.width, seen.height);
   // The camera moves in whole canvas pixels (as on a real low-resolution screen), never between them.
   const snapAxis = (c: number, half: number) => (half - Math.round(dpr * (half - c * zoomNow)) / dpr) / zoomNow;
   let view = { ...frameNow, zoom: zoomNow, x: snapAxis(frameNow.x, size.width / 2), y: snapAxis(frameNow.y, size.height / 2) };

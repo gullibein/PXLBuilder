@@ -868,7 +868,10 @@ export function applyOperations(
         break;
       }
       case 'rename':
-        if (op.target === 'definition') {
+        // (A level's id: the level is given the name. No other operation names a level that exists, and this is
+        // what an AI reaches for: "Level 1" stayed "Level 1" while the answer called it "Moonlit Halls".)
+        if (project.scenes.some((s) => s.id === op.id)) m.renameScene(project, op.id, op.name);
+        else if (op.target === 'definition') {
           const def = project.definitions.find((d) => d.id === op.id);
           if (def && !renamed.has(op.id)) renamed.set(op.id, def.description);
           m.renameDefinition(project, op.id, op.name);

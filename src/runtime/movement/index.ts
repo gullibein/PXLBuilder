@@ -55,7 +55,7 @@ export function abilitiesFor(e: RuntimeEntity, model: LocomotionModel): Ability[
 }
 
 /** The keys a character's abilities listen to (their definitions say), each with what it does: for key hints and touch buttons. */
-export function abilityKeys(e: RuntimeEntity): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string }[] {
+export function abilityKeys(e: RuntimeEntity): { action: 'jump' | 'interact' | 'fire' | 'special'; does: string; how?: string }[] {
   if (!e.controller) return [];
   const model = locomotionFor(e.controller.movement);
   if (!model) return [];
