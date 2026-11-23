@@ -322,8 +322,18 @@ export function keepDungeon(project: Project, sceneId: Id, registry: ComponentRe
 export function setControls(project: Project, raw: unknown): void {
   const read = readControls(raw);
   if ('error' in read) throw new ModelError(read.error);
-  if (!Object.keys(read.controls).length) delete project.settings.controls;
-  else project.settings.controls = read.controls;
+  // (Names alone, {"names": {...}}: the keys stay as they are. "{}" puts everything back.)
+  const onlyNames = !!read.names && !Object.keys(read.controls).length;
+  if (!onlyNames) {
+    if (!Object.keys(read.controls).length) delete project.settings.controls;
+    else project.settings.controls = read.controls;
+  }
+  if (read.names) {
+    const names = { ...project.settings.keyNames, ...read.names };
+    for (const k of Object.keys(names) as (keyof typeof names)[]) if (!names[k]) delete names[k];
+    if (Object.keys(names).length) project.settings.keyNames = names;
+    else delete project.settings.keyNames;
+  } else if (!Object.keys(read.controls).length) delete project.settings.keyNames;
 }
 
 /** The game's resolution: picture pixels the screen shows top to bottom when played (null or 0: as big as the screen). */

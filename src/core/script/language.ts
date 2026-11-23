@@ -999,6 +999,17 @@ export function exprSlots(s: Stmt): string[] {
 }
 
 /** The {expression} parts of a message text. */
+/** The keys (actions) scripts listen to: a handler for one, or key(), pressed(), released() of one in an expression. */
+export function keysRead(scripts: readonly BehaviorScript[]): Set<string> {
+  const out = new Set<string>();
+  for (const script of scripts) {
+    if (!script.enabled) continue;
+    for (const h of script.handlers) if (h.when.on === 'key') out.add(h.when.key);
+    for (const m of JSON.stringify(script.handlers).matchAll(/\b(?:key|pressed|released)\(\s*\\?["'](\w+)\\?["']\s*\)/g)) out.add(m[1]);
+  }
+  return out;
+}
+
 /** The game reads the menu key (Escape / P / a controller's Start) somewhere: then Escape is the game's, not the editor's. */
 export function usesMenuKey(project: Project): boolean {
   const scripts = [...project.definitions.flatMap((d) => d.scripts ?? []), ...project.scenes.flatMap((s) => s.entities.flatMap((e) => e.scripts ?? []))];

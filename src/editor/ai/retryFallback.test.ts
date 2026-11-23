@@ -153,3 +153,109 @@ describe('small slips in scripts', () => {
     expect(parseScript.safeParse({ id: 's1', name: 'S', vars: [], handlers: [{ when: { on: 'tick' }, do: [{ do: 'camera_shake', strength: 3, seconds: 0.3 }] }] }).success).toBe(true);
   });
 });
+
+describe("a level problem in an answer that applies (the user's GTA: \"there is no Goal\")", () => {
+  // A city: a floor and the player, nothing that ends the level.
+  const city = () => {
+    useEditor.setState({ project: createProject(createBuiltinRegistry(), 'City', 'topdown') });
+    const project = useEditor.getState().project;
+    const lib = (n: string) => project.definitions.find((d) => d.name === n)!.id;
+    const draw = { op: 'draw_map', sceneId: project.scenes[0].id, col: 0, row: 0, legend: [{ char: '#', object: lib('Wall') }, { char: 'P', object: lib('Player') }], rows: ['######', '#.P..#', '######'], clear: true };
+    // (A big answer: the city and things renamed in it. A small one is asked for again whole, below.)
+    const renames = ['Wall', 'Floor', 'Coin', 'Key', 'Door'].map((n, i) => ({ op: 'rename', target: 'definition', id: lib(n), name: ['Building', 'Road', 'Cash', 'Car key', 'Garage'][i] }));
+    const first = { kind: 'preview', message: 'A city to roam.', changes: ['The city'], operations: [...renames, draw], needCode: null, starter: null } as unknown as AIResponse;
+    return { project, lib, first };
+  };
+
+  it('the answer is kept and only what fixes the level is asked for and added (the whole game was written again, six minutes of it)', async () => {
+    const { project, lib, first } = city();
+    const asked: string[] = [];
+    setAIProvider({
+      respond: async (body: { request: string }) => {
+        asked.push(body.request);
+        if (asked.length === 1) return first;
+        return { kind: 'preview', message: '', changes: ['Goal: at the east gate'], operations: [{ op: 'place_instance', sceneId: project.scenes[0].id, definitionRef: lib('Goal'), x: 144, y: 48, name: null, ref: null, onTop: null }], needCode: null, starter: null } as unknown as AIResponse;
+      },
+    } as unknown as AIProvider);
+    const outcome = await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'draw a little city');
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toMatch(/Your answer is kept as it is, but the level it makes has this problem: The level can't be won/);
+    expect(asked[1]).toMatch(/Send ONLY the operations that fix it/);
+    expect(asked[1]).not.toMatch(/send the complete corrected answer/);
+    expect(outcome.status).toBe('applied');
+    if (outcome.status !== 'applied') return;
+    // Both the first answer's level and the goal that was added are in the game.
+    const after = useEditor.getState().project;
+    const names = after.scenes[0].entities.map((e) => after.definitions.find((d) => d.id === e.definitionId)?.name);
+    expect(names).toContain('Goal');
+    expect(names.filter((n) => n === 'Building').length).toBeGreaterThan(10);
+    expect(outcome.changes).toEqual(['The city', 'Goal: at the east gate']);
+  });
+
+  it('a game meant to have no end stays as it is, saying so, without a warning (the GTA got a 10,000-point goal nobody asked for)', async () => {
+    const { project, first } = city();
+    const asked: string[] = [];
+    setAIProvider({
+      respond: async (body: { request: string }) => {
+        asked.push(body.request);
+        if (asked.length === 1) return first;
+        return { kind: 'answer', message: 'No ending: it is an open city to roam, played for the score.', changes: [], operations: [], needCode: null, starter: null } as unknown as AIResponse;
+      },
+    } as unknown as AIProvider);
+    const outcome = await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'draw a little city');
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toMatch(/If this game is meant to have no end .* a message that begins "No ending:"/);
+    expect(outcome.status).toBe('applied');
+    if (outcome.status !== 'applied') return;
+    expect(outcome.changes).toEqual(['The city', 'No ending (nothing to finish; you play as long as you like): it is an open city to roam, played for the score.']);
+    expect(outcome.changes.join(' ')).not.toMatch(/⚠/);
+    expect(useEditor.getState().project.scenes[0].entities.length).toBeGreaterThan(10);
+  });
+
+  it('an AI that sends its whole answer again (not the fix alone) is not applied twice over', async () => {
+    const { project, lib, first } = city();
+    const goal = { op: 'place_instance', sceneId: project.scenes[0].id, definitionRef: lib('Goal'), x: 144, y: 48, name: null, ref: null, onTop: null };
+    let calls = 0;
+    setAIProvider({
+      respond: async () => (++calls === 1 ? first : ({ ...first, message: 'A city with a way out.', changes: ['The city', 'A goal'], operations: [...first.operations, goal] } as unknown as AIResponse)),
+    } as unknown as AIProvider);
+    const outcome = await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'draw a little city');
+    expect(outcome.status).toBe('applied');
+    const after = useEditor.getState().project;
+    const names = after.scenes[0].entities.map((e) => after.definitions.find((d) => d.id === e.definitionId)?.name);
+    expect(names.filter((n) => n === 'Player')).toHaveLength(1);
+    expect(names.filter((n) => n === 'Goal')).toHaveLength(1);
+    if (outcome.status === 'applied') expect(outcome.changes).toEqual(['The city', 'A goal']);
+  });
+
+  it('a small answer with a level problem is asked for again whole, as before (its fix is to do the same thing otherwise)', async () => {
+    useEditor.setState({ project: createProject(createBuiltinRegistry(), 'City', 'topdown') });
+    const project = useEditor.getState().project;
+    const lib = (n: string) => project.definitions.find((d) => d.name === n)!.id;
+    const draw = { op: 'draw_map', sceneId: project.scenes[0].id, col: 0, row: 0, legend: [{ char: '#', object: lib('Wall') }, { char: 'P', object: lib('Player') }], rows: ['######', '#.P..#', '######'], clear: true };
+    const asked: string[] = [];
+    setAIProvider({
+      respond: async (body: { request: string }) => {
+        asked.push(body.request);
+        return { kind: 'preview', message: 'A room.', changes: ['The room'], operations: [draw], needCode: null, starter: null } as unknown as AIResponse;
+      },
+    } as unknown as AIProvider);
+    await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'draw a little room');
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toMatch(/Your previous answer could not be applied: The level can't be won/);
+  });
+
+  it('the fix lost (the AI unreachable): the answer is kept, with the problem said', async () => {
+    const { project, first } = city();
+    let calls = 0;
+    setAIProvider({
+      respond: async () => {
+        if (++calls === 1) return first;
+        throw new Error('unreachable');
+      },
+    } as unknown as AIProvider);
+    const outcome = await runPrompt({ kind: 'level', sceneId: project.scenes[0].id, point: null }, 'draw a little city');
+    expect(outcome.status).toBe('applied');
+    if (outcome.status === 'applied') expect(outcome.changes.join(' ')).toMatch(/⚠ The level can't be won/);
+  });
+});

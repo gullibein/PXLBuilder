@@ -235,6 +235,8 @@ export interface AIPayload {
     spriteResolution: number;
     /** The game's own keys, for the actions it changed (set_controls); missing: the engine's (see Controls). */
     controls?: Record<string, string[]>;
+    /** What a key does in this game, as the key hints say it (set_controls "names"). */
+    keyNames?: Record<string, string>;
     /**
      * For building or rebuilding a level: the layout to use this time (chosen at random by the app, so levels
      * differ), where the start and goal go, and the shapes of the game's other levels. Follow it unless the user
@@ -532,6 +534,7 @@ export function buildAIPayload(project: Project, ctx: AIContext, registry: Compo
       view: isTopDownScene(project, scene, registry) ? 'topdown' : 'side',
       spriteResolution: project.settings.spriteResolution ?? 32,
       ...(project.settings.controls ? { controls: project.settings.controls } : {}),
+      ...(project.settings.keyNames ? { keyNames: project.settings.keyNames } : {}),
       // A random level: its recipe, with names for the objects (and what the example the editor shows came out as).
       ...(scene.generator
         ? (() => {

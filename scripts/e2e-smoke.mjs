@@ -5143,7 +5143,7 @@ try {
       const legend = [{ char: '#', object: lib('Platform') }, { char: 'P', object: lib('Player') }, { char: 'G', object: lib('Goal') }];
       const wide = 60;
       const rows = [`#${'.'.repeat(wide - 2)}#`, `#.P${'.'.repeat(wide - 6)}G.#`, '#'.repeat(wide)];
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A long hall.', changes: ['Level 1'], operations: [{ op: 'draw_map', sceneId: body.context.level.id, col: 0, row: 0, legend, rows, clear: true }] }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'preview', message: 'A long hall.', changes: ['Level 1'], operations: [{ op: 'draw_map', sceneId: body.context.level.id, col: 0, row: 0, legend, rows, clear: true }, { op: 'set_script', target: 'definition', id: lib('Player'), scriptJson: JSON.stringify({ id: 'steal', name: 'Steal', description: 'Takes a car.', vars: [{ name: 'n', value: 0 }], states: [], handlers: [{ when: { on: 'key', key: 'interact', edge: 'pressed' }, state: null, if: null, do: [{ do: 'set', var: 'n', value: 'n + 1' }] }] }) }, { op: 'set_controls', controlsJson: '{"interact":["X"],"fire":["C"],"names":{"interact":"steals a car"}}' }] }) });
     });
     await zp.goto(URL);
     await zp.getByTestId('viewport-canvas').waitFor();
@@ -5170,6 +5170,7 @@ try {
       const at = (x) => (x - cx) * 1.2 + box.width / 2;
       return px > 0 && at(px) > 0 && at(px) < box.width && Math.abs(at(0)) <= 2;
     }, `on a screen at 125% the level's left edge is at the screen's edge and the player at its start is in the picture (camera ${await zPlay.getAttribute('data-camera')})`);
+    await check(async () => /· X steals a car ·/.test(await zp.locator('.hud-keys').innerText()), `a key the game's script listens to is in the key hints, with what the game says it does (${(await zp.locator('.hud-keys').innerText()).slice(0, 80)})`);
     await zc.close();
   }
 

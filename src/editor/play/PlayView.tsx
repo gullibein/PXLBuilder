@@ -1,6 +1,6 @@
 import { KIT } from '../../runtime/turns';
 import { resolutionZoom } from '../../core/model/camera';
-import { usesMenuKey } from '../../core/script/language';
+import { keysRead, usesMenuKey } from '../../core/script/language';
 import { useEffect, useMemo, useRef, useState } from 'react';
 // The console font of the game's text (banners, messages), built in: an exported game needs no internet.
 import consoleFontUrl from '@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff?url';
@@ -30,6 +30,8 @@ interface Hud {
   messages: string[];
   hasSwitches: boolean;
   canShoot: boolean;
+  /** The keys (actions) the game's scripts listen to. */
+  scriptKeys: string[];
   /** The keys the player's abilities listen to, each with what it does ("rolls"): from their definitions. */
   abilityKeys: { action: Action; does: string; how?: string }[];
   /** The player walks in every direction (top-down): no jumping. */
@@ -77,7 +79,7 @@ export function isTouchScreen(): boolean {
  * drawing), or null for a plain ♥ (no Heart object, or one without a picture).
  */
 /** What the keys do, as the game has them ("Arrows move · Space jumps · E uses…", or its own keys). */
-export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean, choosing = false, abilities: { action: Action; does: string; how?: string }[] = []): string {
+export function keyHints(project: Project, topDown: boolean, use: boolean, shoot: boolean, menu: boolean, choosing = false, abilities: { action: Action; does: string; how?: string }[] = [], scriptKeys: readonly string[] = []): string {
   const own = project.settings.controls;
   const keys = controlsOf(own);
   // (Both Shift keys for one action: "Shift".)
@@ -87,9 +89,15 @@ export function keyHints(project: Project, topDown: boolean, use: boolean, shoot
   // Moving: the engine's arrows, or the game's own four keys.
   const move = !own?.left && !own?.right && !own?.up && !own?.down ? 'Arrows' : topDown ? [first('up'), first('left'), first('down'), first('right')].join('') : `${first('left')} ${first('right')}`;
   const parts = [`${move} move`];
-  if (!topDown) parts.push(`${first('jump')} jumps`);
-  if (use) parts.push(`${first('interact')} uses`);
-  if (shoot) parts.push(`${first('fire')} shoots`);
+  // A key one of the game's scripts listens to is said too (a car stolen with the action key was in no hint), and
+  // what a key does in this game in the game's own words where it gave them (set_controls "names").
+  const named = project.settings.keyNames ?? {};
+  const reads = (a: string) => scriptKeys.includes(a);
+  if (!topDown) parts.push(`${first('jump')} ${named.jump ?? 'jumps'}`);
+  else if (reads('jump')) parts.push(`${first('jump')} ${named.jump ?? 'acts'}`);
+  if (use || reads('interact')) parts.push(`${first('interact')} ${named.interact ?? 'uses'}`);
+  if (shoot || reads('fire')) parts.push(`${first('fire')} ${named.fire ?? (shoot ? 'shoots' : 'fires')}`);
+  if (reads('special') && !abilities.some((a) => a.action === 'special')) parts.push(`${first('special')} ${named.special ?? 'acts'}`);
   // (What the player's abilities do, each on its key: "Shift rolls".)
   for (const a of abilities) parts.push(`${first(a.action as keyof typeof keys)} ${a.does}${a.how ? ` ${a.how}` : ''}`);
   if (menu) parts.push(`${first('menu')} menu`);
@@ -108,7 +116,7 @@ export function PlayView(props: PlayViewProps) {
   const heart = useMemo(() => heartPicture(props.project), [props.project]);
   // The game's controls, for the on-screen buttons.
   const inputRef = useRef<InputState | null>(null);
-  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, abilityKeys: [], topDown: false, choosing: false, banner: null });
+  const [hud, setHud] = useState<Hud>({ health: null, items: [], messages: [], hasSwitches: false, canShoot: false, scriptKeys: [], abilityKeys: [], topDown: false, choosing: false, banner: null });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -164,12 +172,14 @@ export function PlayView(props: PlayViewProps) {
     // What happens is recorded for the Debug tab and the AI ("why did the player die?").
     let recorder = new PlayRecorder(runtime);
     let hasSwitches = false;
+    let scriptKeysNow: string[] = [];
     let canShoot = false;
     let abilityKeysNow: Hud['abilityKeys'] = [];
     let topDown = false;
     const look = () => {
       topDown = runtime.entities.some((e) => e.controller?.movement === 'topdown');
       hasSwitches = runtime.entities.some((e) => e.switch);
+      scriptKeysNow = [...keysRead(runtime.entities.flatMap((e) => e.scripts.map((i) => i.script)))].sort();
       canShoot = runtime.entities.some((e) => e.controller && e.beh.shooter?.trigger === 'key');
       // (What the player's abilities listen to: a roll's own key, a dash's.)
       const seen = new Set<string>();
@@ -177,7 +187,7 @@ export function PlayView(props: PlayViewProps) {
     };
     look();
     // What the HUD shows when play starts (the first frame then shows the game's own: switches, top-down…).
-    let shown: Hud = { health: null, items: [], messages: [], hasSwitches: false, canShoot: false, abilityKeys: [], topDown: false, choosing: false, banner: null };
+    let shown: Hud = { health: null, items: [], messages: [], hasSwitches: false, canShoot: false, scriptKeys: [], abilityKeys: [], topDown: false, choosing: false, banner: null };
     const input = new InputState();
     inputRef.current = input;
 
@@ -329,6 +339,7 @@ export function PlayView(props: PlayViewProps) {
         messages: runtime.messages,
         hasSwitches,
         canShoot,
+        scriptKeys: scriptKeysNow,
         abilityKeys: abilityKeysNow,
         topDown,
         choosing: runtime.kit.turns !== null || runtime.kit.capturing(),
@@ -392,7 +403,7 @@ export function PlayView(props: PlayViewProps) {
         </div>
       )}
       {props.touchControls && isTouchScreen() && <TouchControls input={inputRef} topDown={hud.topDown} use={hud.hasSwitches} shoot={hud.canShoot} menu={menuKey} abilities={hud.abilityKeys} />}
-      {props.keyHints !== false && <div className="hud-keys">{keyHints(props.project, hud.topDown, hud.hasSwitches, hud.canShoot, menuKey, hud.choosing, hud.abilityKeys)} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
+      {props.keyHints !== false && <div className="hud-keys">{keyHints(props.project, hud.topDown, hud.hasSwitches, hud.canShoot, menuKey, hud.choosing, hud.abilityKeys, hud.scriptKeys)} · R restarts · or a game controller{props.stopHint ? ` · ${props.stopHint}` : ''}</div>}
     </div>
   );
 }

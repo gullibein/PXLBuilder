@@ -46,6 +46,10 @@ import type { GameType, Id, Project, Starter } from '../../core/types';
 import { switchStarter } from '../persistence';
 
 /** A change to what one library object is (its behavior or look), which can go to the object or to a new one. */
+/** An answer of this many operations (or this long) whose only problem is the level it makes is kept, and only the fix asked for. */
+const KEEP_FROM = 6;
+const KEEP_FROM_CHARS = 6000;
+
 /** The most script code that goes along with part 2 of a game built in two answers (characters). */
 const PART_CODE_MAX = 80_000;
 
@@ -612,6 +616,7 @@ async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortS
     const gameOps = (r: AIResponse) => r.operations.length > 0 && !r.operations.some(isEditorOperation);
     const broken = gameOps(response) ? checkOperations(useEditor.getState().project, response.operations, componentRegistry) : null;
     const stuck = gameOps(response) && !broken ? playability(ctx.sceneId, response.operations) : null;
+    let meantToHaveNoEnd = false;
     // Changes nobody asked for (a new object for a look, a built-in behavior removed): sent back too.
     // (Not while a game is being built from scratch, a new game or pictures on an empty level: reshaping the starter's
     // objects is then the point.)
@@ -698,6 +703,45 @@ async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortS
           // (The corrections were lost: what applies is kept, below.)
           trace?.('note', `The corrections couldn't be used (${(e as Error).message})`);
         }
+      } else if (stuck && problem === stuck.text && (response.operations.length >= KEEP_FROM || JSON.stringify(response.operations).length > KEEP_FROM_CHARS)) {
+        // (A big answer. A small one, a coin put where the player can't get to it, is simply asked for again: its
+        // fix is to do the same thing otherwise, not to add to it.)
+        // Only the level it makes has a problem; the answer itself applies. It is kept, and only what fixes the level
+        // is asked for. (A whole game was written again, six minutes of it, for "there is no Goal".) A game may also
+        // be meant to have no end (a city to roam, a game played for score): the AI can say so instead.
+        const noEnd = stuck.keys.length > 0 && stuck.keys.every((k) => k === 'win-no-goal');
+        trace?.('note', 'The answer applies as it is: kept, and only what fixes the level is asked for');
+        stage('Fixing the level');
+        const kept = response.operations;
+        const more = await ask(
+          {
+            ...body,
+            history: [...body.history, { request, reply: first }],
+            request: `${body.request}\n\n[Your answer is kept as it is, but the level it makes has this problem: ${stuck.text} Send ONLY the operations that fix it, added after your answer (kind "preview", message "", changes: a line only for what the player should know of it): e.g. place what is missing with place_instance (and connect it), edit_script a handler into a script you wrote (its id as you gave it), or draw_map the whole level again with clear true. Do not send anything of your answer again.${noEnd ? ' If this game is meant to have no end (a world to roam, a game played for score with nothing to finish), change nothing: answer kind "answer", no operations, and a message that begins "No ending:" and says why.' : ''}${mapText(stuck.map)}]`,
+          },
+          signal,
+          trace,
+        ).catch((e: Error) => {
+          if (e.name === 'AbortError') throw e;
+          trace?.('note', `The level fix couldn't be used (${e.message}); keeping the answer as it is`);
+          return null;
+        });
+        const sent = more?.operations.filter((o) => !isEditorOperation(o)) ?? [];
+        // (Asked for the fix alone, an AI may send its whole answer again all the same: then that is the corrected
+        // answer, in place of the first; added to it, everything would be there twice.)
+        const before = new Set(kept.map((o) => JSON.stringify(o)));
+        const repeated = sent.filter((o) => before.has(JSON.stringify(o))).length;
+        const again = repeated > 0 && repeated >= sent.length / 2;
+        const extra = sent.filter((o) => !before.has(JSON.stringify(o)));
+        if (again && more) {
+          trace?.('note', 'It sent its whole answer again, not the fix alone: that one is used, in place of the first');
+          response = { ...more, kind: 'preview', message: more.message.trim() || firstAnswer.message, changes: more.changes.length ? more.changes : firstAnswer.changes, operations: sent };
+        } else if (extra.length) response = { ...firstAnswer, kind: 'preview', operations: [...kept, ...extra], changes: [...firstAnswer.changes, ...(more?.changes ?? [])] };
+        else if (noEnd && more && /^\s*no ending\b/i.test(more.message)) {
+          meantToHaveNoEnd = true;
+          trace?.('note', `The AI means the game to have no end: ${more.message.trim().slice(0, 300)}`);
+          response = { ...firstAnswer, kind: 'preview', changes: [...firstAnswer.changes, more.message.trim().replace(/^no ending\s*:?\s*/i, 'No ending (nothing to finish; you play as long as you like): ')] };
+        } else response = { ...firstAnswer, kind: 'preview' };
       } else {
         try {
           response = await ask(
@@ -747,7 +791,9 @@ async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortS
         response = { ...response, kind: 'preview', changes: [...response.changes, `⚠ This also changed things you didn't ask for (${/removes/.test(stillUnasked) ? 'it removed a behavior or rule' : 'it made a new object'}); undo (Ctrl+Z) if you don't want that`] };
       }
       // Still not playable: show it for confirmation, with the problem.
-      const stillStuck = gameOps(response) ? (playability(ctx.sceneId, response.operations)?.text ?? null) : null;
+      const still = gameOps(response) ? playability(ctx.sceneId, response.operations) : null;
+      // (Meant to have no end, and that is all there is to say of it: no warning.)
+      const stillStuck = still && !(meantToHaveNoEnd && still.keys.every((k) => k === 'win-no-goal')) ? still.text : null;
       if (stillStuck) {
         state.logMessage('warn', `AI level still has a problem: ${stillStuck}`);
         trace?.('check', `Level still has a problem: ${stillStuck}`);
@@ -1086,7 +1132,7 @@ export function applyAIOperations(request: string, message: string, changes: str
  * player can't get to an item, the exit, a platform…), in words; null if
  * nothing. Problems that were there before the change don't count.
  */
-function playability(sceneId: Id, operations: Operation[]): { text: string; map: LevelMap | null } | null {
+function playability(sceneId: Id, operations: Operation[]): { text: string; map: LevelMap | null; keys: string[] } | null {
   const project = useEditor.getState().project;
   const problems = (pr: Project, id: Id) => [...levelReachProblems(pr, id, componentRegistry), ...winProblems(pr, id, componentRegistry)];
   const before = new Set(problems(project, sceneId).map((p) => p.key));
@@ -1101,12 +1147,12 @@ function playability(sceneId: Id, operations: Operation[]): { text: string; map:
   }
   const added = problems(after, sceneId).filter((p) => !before.has(p.key));
   // The level as the answer would leave it, so the AI can see what went wrong.
-  if (added.length) return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry) };
+  if (added.length) return { text: added.map((p) => p.text).join(' '), map: levelMap(after, sceneId, componentRegistry), keys: added.map((p) => p.key) };
   // New levels made in the same answer are checked too (everything in them is new).
   for (const id of created) {
     const found = problems(after, id);
     const scene = after.scenes.find((s) => s.id === id);
-    if (found.length && scene) return { text: `In the new level "${scene.name}": ${found.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry) };
+    if (found.length && scene) return { text: `In the new level "${scene.name}": ${found.map((p) => p.text).join(' ')}`, map: levelMap(after, id, componentRegistry), keys: found.map((p) => p.key) };
   }
   return null;
 }

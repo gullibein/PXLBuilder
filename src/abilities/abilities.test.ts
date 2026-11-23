@@ -13,14 +13,14 @@ import { ComponentRegistry } from '../core/components/registry';
 import { gameFacts } from '../core/engine/actual';
 import { modules } from '../core/engine/modules';
 import { checkGame, profileChoices, profileOf, projectFromPreset, setGameProfile } from '../core/engine/profile';
-import { instantiateDefinition } from '../core/model/factory';
+import { createProject, instantiateDefinition } from '../core/model/factory';
 import * as m from '../core/model/mutations';
 import { jumpTable } from '../core/model/reachability';
 import { resolveEntity } from '../core/model/resolve';
 import { playerReach, reachAbilityIds } from '../core/reach/reach';
-import { MEMBERS } from '../core/script/language';
+import { keysRead, MEMBERS, type BehaviorScript } from '../core/script/language';
 import { setScript } from '../core/script/mutations';
-import { checkComponents } from '../core/serialization/serialize';
+import { checkComponents, gameFromText, projectToBundle } from '../core/serialization/serialize';
 import type { Project } from '../core/types';
 import { boulderDash, spaceShooter } from '../regression/games/action';
 import { mapLevel } from '../regression/games/platformers';
@@ -556,5 +556,39 @@ describe('a respawn is a fresh start for a character\'s abilities (the rule, and
     // (Keys held through a respawn don't count until let go: none is held here.)
     rt.update(1 / 120, input);
     expect(roll()).toBe(true);
+  });
+});
+
+describe('the key hints say every key the game uses, and what it does here', () => {
+  const game = createProject(registry, 'City', 'topdown');
+  it('a key a script listens to is in the hints (a car was stolen with the action key, and no hint said so)', () => {
+    // No lever, no gun: only the arrows, as before.
+    expect(keyHints(game, true, false, false, false)).toBe('Arrows move');
+    // The game's script handles the action key, and reads the fire key.
+    expect(keyHints(game, true, false, false, false, false, [], ['interact'])).toBe('Arrows move · E uses');
+    expect(keyHints(game, true, false, false, false, false, [], ['fire', 'interact', 'jump'])).toBe('Arrows move · Space acts · E uses · X fires');
+    // (A gun says "shoots", with or without a script.)
+    expect(keyHints(game, true, false, true, false, false, [], ['fire'])).toBe('Arrows move · X shoots');
+    const script = { id: 's', name: 'Crime', description: '', enabled: true, vars: [], states: [], handlers: [{ when: { on: 'key', key: 'interact', edge: 'pressed' }, state: null, if: "pressed('fire') or key(\"jump\")", do: [] }] } as unknown as BehaviorScript;
+    expect([...keysRead([script])].sort()).toEqual(['fire', 'interact', 'jump']);
+    expect([...keysRead([{ ...script, enabled: false }])]).toEqual([]);
+  });
+
+  it('the game says what a key does in its own words (set_controls "names"), with its own keys', () => {
+    const named = produce(game, (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{"fire":["Space"],"interact":["X"],"jump":["Z"],"names":{"interact":"steals a car or gets out","fire":"shoots"}}' } as never], registry));
+    expect(named.settings.keyNames).toEqual({ interact: 'steals a car or gets out', fire: 'shoots' });
+    expect(keyHints(named, true, false, true, false, false, [], ['interact'])).toBe('Arrows move · X steals a car or gets out · Space shoots');
+    // Names alone leave the keys as they are; an empty name takes one away; "{}" puts everything back.
+    const more = produce(named, (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{"names":{"fire":""}}' } as never], registry));
+    expect(more.settings.controls).toEqual(named.settings.controls);
+    expect(more.settings.keyNames).toEqual({ interact: 'steals a car or gets out' });
+    const back = produce(named, (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{}' } as never], registry));
+    expect(back.settings.controls).toBeUndefined();
+    expect(back.settings.keyNames).toBeUndefined();
+    // Only the keys a game can give a meaning to; said plainly otherwise.
+    expect(() => produce(game, (d) => void applyOperations(d, [{ op: 'set_controls', controlsJson: '{"names":{"left":"turns"}}' } as never], registry))).toThrow(/a name can be given to jump, interact, fire, special/);
+    // They are saved with the game.
+    const { project: reopened } = gameFromText(JSON.stringify(projectToBundle(named)), registry);
+    expect(reopened.settings.keyNames).toEqual({ interact: 'steals a car or gets out', fire: 'shoots' });
   });
 });

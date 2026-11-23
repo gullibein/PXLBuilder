@@ -2582,3 +2582,40 @@ strictly need both abilities for a player who dashes up (the builder's "each abi
 and the result's "⚠ Not checked: whether the player gets everywhere" stood beside the builder's own "the route bot
 played it to the goal": both true (one is about every coin and ledge, the other about the goal), but they read as
 a contradiction.
+
+## 28. An open-world crime game (one live build), from its "Save with history" file
+
+The user asked for "a clone of the first GTA game" (guns, cars, pedestrians, police that chase, score, a wanted
+stat) on f24d215 with Claude Opus 5.5, then made three follow-up requests, and sent the file with the full record.
+**One build, not an evaluation.** (An original game of that kind; nothing of the named game's is in it.)
+
+### 28.1 What happened
+
+| Request | Time | Cost | What it did |
+| --- | --- | --- | --- |
+| The game | 873 s | $2.68 | Chose the top-down starter (3 s); built the game (487 s); **sent back for "there is no Goal" and wrote the whole game again (371 s, $0.94)**, this time with "reach 10,000 points to win" |
+| "The wanted meter never goes up, can't steal cars, shoots a huge yellow ball" | 70 s | $0.81 | Asked for code, then fixed its scripts: scoring ran after the bullet was gone; the car had to be closer than the parked one stood |
+| "The hints don't say E steals a car; Space should shoot, X steal" | 8 s | $0.16 | Changed the keys; said the hints would now show X. They did not |
+| "They still don't say X gets in or out of cars" | 15 s | $0.14 | Said it cannot add to the hint bar; drew its own "X: STEAL CAR" over the player |
+
+Played here in a browser on a screen like the user's, the game as sent works: the car is stolen, the score and the
+wanted star go up, police appear.
+
+### 28.2 What was the engine's, and is fixed
+
+| Seen | Why | Change |
+| --- | --- | --- |
+| The whole game written a second time | The first answer applied, but a city to roam has nothing that ends the level; "The level can't be won: there is no Goal" went back with "send the complete corrected answer" | When the level is the only problem and a big answer applies (six operations or more, or 6,000 characters; a small one is asked for again whole, as before: its fix is to do the same thing otherwise), the answer is **kept** and only the operations that fix the level are asked for and added. Where the problem is only that nothing ends the level, the AI may answer "No ending:" and why: the game stays as it is, the result says it has no ending, and there is no warning. An AI that sends its whole answer again all the same has that answer used in place of the first (added to it, everything would be there twice) |
+| A goal nobody asked for (10,000 points) | The same check | The same change: an open game can stay open |
+| The hint bar never showed the action key | It showed that key only where a lever is placed, not where a script listens to it | Every key a script listens to (a handler for it, or `key()`, `pressed()`, `released()` of it) is in the hints: "X uses" |
+| No way to say what a key does; the AI drew its own hint | The hint bar's words were fixed | `set_controls` takes `"names": {"interact": "steals a car"}`: said with the key in the hints, saved with the game (`settings.keyNames`), shown to the AI in the level's context. Names alone leave the keys as they are |
+| The AI said the hints showed the key when they did not | Nothing told it when a key is shown | The instructions say it (within their size limit: 119,99x of 120,000 characters) |
+
+Not established: why the first shots looked like "a huge yellow ball". The Bullet object was set as the gun's
+projectile from the start (8 px, a glow of 4 px); the AI's fix set it again, a shot size and a fainter glow, and
+called the earlier one "the built-in ball". The game as it was at that moment is not in the file.
+
+Not changed: the first answer's three seconds choosing the starter (its cost is mostly the instructions being
+cached, which the next request then reads at a tenth of the price); and on this screen (125%) a game of 32-pixel
+sprites is drawn at 0.8 (one canvas pixel a picture pixel), so the city is small with dark margins beside it:
+whole pixels were chosen over size there, and the camera fix of §27 centres the level in the wider view.

@@ -7,6 +7,10 @@
 export const CONTROL_ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'interact', 'fire', 'special', 'menu'] as const;
 export type ControlAction = (typeof CONTROL_ACTIONS)[number];
 export type Controls = Partial<Record<ControlAction, string[]>>;
+/** The actions a game can say the meaning of in the key hints (moving and the menu key say their own). */
+export const NAMED_ACTIONS = ['jump', 'interact', 'fire', 'special'] as const;
+export type NamedAction = (typeof NAMED_ACTIONS)[number];
+export type KeyNames = Partial<Record<NamedAction, string>>;
 
 /** What each action is called for people ("interact" is the E key's "use" / "action"). */
 export const ACTION_LABELS: Record<ControlAction, string> = {
@@ -124,12 +128,26 @@ export function keyMap(controls: Controls | undefined): Record<string, ControlAc
  * Checks and tidies a game's controls (from the AI or the Controls window): known actions, keys a game may use (plain
  * names are read: "W", "Space", "Up"), 1-4 keys an action, no key for two actions. Returns them, or why not.
  */
-export function readControls(raw: unknown): { controls: Controls } | { error: string } {
+export function readControls(raw: unknown): { controls: Controls; names?: KeyNames } | { error: string } {
   if (raw === null || raw === undefined) return { controls: {} };
   if (typeof raw !== 'object' || Array.isArray(raw)) return { error: 'Controls: expected an object of actions and their keys, e.g. {"jump":["W","Up"]}' };
   const out: Controls = {};
   const taken = new Map<string, string>();
+  // "names": what a key does in this game, for the key hints ({"interact": "steals a car"}; "" takes a name away).
+  let names: KeyNames | undefined;
+  const given = (raw as Record<string, unknown>).names;
+  if (given !== undefined && given !== null) {
+    if (typeof given !== 'object' || Array.isArray(given)) return { error: 'Controls: "names" is an object of actions and what each does here, e.g. {"interact":"steals a car"}' };
+    names = {};
+    for (const [action, text] of Object.entries(given as Record<string, unknown>)) {
+      const a = (action === 'action' || action === 'use' ? 'interact' : action) as NamedAction;
+      if (!NAMED_ACTIONS.includes(a)) return { error: `Controls: a name can be given to ${NAMED_ACTIONS.join(', ')} (not "${action}")` };
+      if (typeof text !== 'string') return { error: `Controls: the name for ${a} is a few words, e.g. "steals a car"` };
+      names[a] = text.trim().replace(/\s+/g, ' ').slice(0, 40);
+    }
+  }
   for (const [action, keys] of Object.entries(raw as Record<string, unknown>)) {
+    if (action === 'names') continue;
     const a = (action === 'action' || action === 'use' ? 'interact' : action) as ControlAction;
     if (!CONTROL_ACTIONS.includes(a)) return { error: `Controls: there is no action "${action}" (they are: ${CONTROL_ACTIONS.join(', ')})` };
     const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => k !== null && k !== '');
@@ -146,5 +164,5 @@ export function readControls(raw: unknown): { controls: Controls } | { error: st
     }
     out[a] = codes;
   }
-  return { controls: out };
+  return names ? { controls: out, names } : { controls: out };
 }

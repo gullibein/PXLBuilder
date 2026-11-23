@@ -145,6 +145,7 @@ export const projectSchema = z.object({
     spriteResolution: z.union([z.literal(8), z.literal(16), z.literal(32), z.literal(64)]).optional(),
     playPixels: z.number().int().min(0).max(2160).optional(),
     controls: z.record(z.string(), z.array(z.string())).optional(),
+    keyNames: z.record(z.string(), z.string()).optional(),
     profile: gameProfileSchema.optional(),
   }),
   startSceneId: id,
