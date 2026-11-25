@@ -170,7 +170,7 @@ export class Gameplay {
     // By grid cell: only what is near each moving thing is looked at (nothing moves during this; events are queued).
     const grid = this.touchGrid;
     // (A sleeping tile is where it was filed: only the things awake are looked at again.)
-    grid.sync(this.rt.entities, (o) => (o.alive && o.collider ? this.rt.boxOf(o) : null), this.rt.asleepFlags());
+    grid.sync(this.rt.entities, (o) => (o.alive && o.collider ? this.rt.boxOf(o) : null), this.rt.asleepFlags(), this.rt.awakePlaces());
     for (const e of this.rt.awake()) {
       if (!e.alive || !e.collider || e.body !== 'dynamic') continue;
       const box = this.rt.boxOf(e)!;

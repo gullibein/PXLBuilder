@@ -72,6 +72,36 @@ try {
       await page.mouse.up();
       await page.keyboard.up('Space');
       const view1 = await canvas.getAttribute('data-camera');
+      // A tile drawn by hand (the first object of the library, the pen, one click; then a stroke across): how long
+      // the editor takes to take it in and draw itself again.
+      const settled = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const count = async () => Number(await canvas.getAttribute('data-entities'));
+      let drawn = 'not measured';
+      try {
+        await page.getByTestId('dock-library').click();
+        await page.locator('[data-testid^="definition-"]').first().click();
+        const at = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.5 };
+        const n0 = await count();
+        await page.mouse.move(at.x, at.y);
+        let t1 = Date.now();
+        await page.mouse.down();
+        await page.mouse.up();
+        await settled();
+        const one = Date.now() - t1;
+        const n1 = await count();
+        await page.getByTestId('tool-pen').click().catch(() => {});
+        await page.mouse.move(at.x + 40, at.y + 40);
+        t1 = Date.now();
+        await page.mouse.down();
+        await page.mouse.move(at.x + 160, at.y + 40, { steps: 6 });
+        await page.mouse.up();
+        await settled();
+        const stroke = Date.now() - t1;
+        drawn = `one click ${one} ms (${n0} -> ${n1} things), a stroke ${stroke} ms (-> ${await count()})`;
+        await page.getByTestId('tool-select').click().catch(() => {});
+      } catch (e) {
+        drawn = `failed: ${String(e).slice(0, 80)}`;
+      }
       t = Date.now();
       await page.getByTestId('play').click();
       await page.getByTestId('play-canvas').waitFor({ timeout: 240000 });
@@ -95,7 +125,7 @@ try {
       await page.keyboard.up('ArrowRight');
       const camB = await camX();
       const who1 = await play.getAttribute('data-player');
-      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} (view ${view0} -> ${view1}) | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)}; the camera scrolled ${(camB - camA).toFixed(0)} px while measured (player ${who0?.split(',').slice(0, 2).join(',')} -> ${who1?.split(',').slice(0, 2).join(',')}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
+      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} (view ${view0} -> ${view1}) | drawn by hand: ${drawn} | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)}; the camera scrolled ${(camB - camA).toFixed(0)} px while measured (player ${who0?.split(',').slice(0, 2).join(',')} -> ${who1?.split(',').slice(0, 2).join(',')}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
     } catch (e) {
       say(`${f.replace('.pxlproj.json', '')}: ${things} things | FAILED: ${String(e).slice(0, 200)}`);
     }

@@ -137,7 +137,7 @@ export class ScriptSystem {
     if (!this.index) {
       const entities = this.rt.entities;
       const asleep = this.rt.asleepFlags();
-      this.things.sync(entities, (o) => (o.alive ? this.thingBox(o) : null), asleep);
+      this.things.sync(entities, (o) => (o.alive ? this.thingBox(o) : null), asleep, this.rt.awakePlaces());
       const solids = this.rt.solids;
       if (this.solidGrid?.from !== solids) this.solidGrid = { from: solids, grid: new PointGrid(solids, (b) => b) };
       // (Things that went stay listed under their tags: the one question asking by tag skips them.)

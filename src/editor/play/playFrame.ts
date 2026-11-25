@@ -30,7 +30,7 @@ export interface FrameSetup {
 
 /** The built-in display as the game shows it now. */
 export function hudOf(runtime: Runtime, banner: string | null): BuiltinHud {
-  const p = runtime.entities.find((e) => e.controller);
+  const p = runtime.controlled();
   return {
     health: p?.health && !runtime.builtinHidden.has('hearts') ? { current: p.health.current, max: p.health.max } : null,
     items: p?.inventory && !runtime.builtinHidden.has('items') ? [...p.inventory.entries()] : [],

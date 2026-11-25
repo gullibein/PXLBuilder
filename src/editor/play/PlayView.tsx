@@ -325,7 +325,7 @@ export function PlayView(props: PlayViewProps) {
       }
       canvas.dataset.camera = `${runtime.camera.x.toFixed(1)},${runtime.camera.y.toFixed(1)},${runtime.camera.zoom.toFixed(2)}`;
       // Observable play state for tests and debugging.
-      const player = runtime.entities.find((e) => e.controller);
+      const player = runtime.controlled();
       if (player) canvas.dataset.look = runtime.lookOf(player).situation + (runtime.lookOf(player).assetId ? ':image' : '');
       if (player) canvas.dataset.player = `${player.x.toFixed(1)},${player.y.toFixed(1)},${player.grounded ? 1 : 0},${player.climbing ? 1 : 0}`;
       canvas.dataset.events = runtime.eventLog

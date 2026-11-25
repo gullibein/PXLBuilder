@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
 import { diagnoseLevel, type Problem } from '../../core/debug/diagnose';
 import type { PlayEvent, PlayReport } from '../../core/debug/playReport';
@@ -12,11 +12,37 @@ import { setGenerator } from '../../core/model/mutations';
 import { startJob, useJobs } from '../ai/jobs';
 import { getActiveScene, useEditor } from '../store';
 
+/** The last level looked at for problems, and what was found (the chip and this panel ask for the same one). */
+let looked: { project: unknown; sceneId: string; problems: Problem[] } | null = null;
+const problemsOf = (project: Parameters<typeof diagnoseLevel>[0], sceneId: string): Problem[] => {
+  if (!looked || looked.project !== project || looked.sceneId !== sceneId) looked = { project, sceneId, problems: diagnoseLevel(project, sceneId, componentRegistry) };
+  return looked.problems;
+};
+/**
+ * From this many things in a level, its problems are looked for a moment after the last change, not at every one:
+ * the look goes through the whole level (a third of a second with 17,000 things, most of a second with 50,000),
+ * and drawing a row of tiles is a change per tile. Smaller levels are looked at at once, as always.
+ */
+const LOOK_LATER_FROM = 4000;
+const LOOK_LATER_MS = 400;
+
 /** Problems in the level as set up (errors and warnings; notes are informational). */
 export function useLevelProblems(): Problem[] {
   const project = useEditor((s) => s.project);
   const sceneId = useEditor((s) => s.activeSceneId);
-  return useMemo(() => diagnoseLevel(project, sceneId, componentRegistry), [project, sceneId]);
+  const big = (project.scenes.find((sc) => sc.id === sceneId)?.entities.length ?? 0) >= LOOK_LATER_FROM;
+  const [, lookedAgain] = useState(0);
+  useEffect(() => {
+    if (!big) return;
+    const t = setTimeout(() => {
+      problemsOf(project, sceneId);
+      lookedAgain((n) => n + 1);
+    }, LOOK_LATER_MS);
+    return () => clearTimeout(t);
+  }, [project, sceneId, big]);
+  // (A big level between changes: what was found last, until the look that follows.)
+  if (big) return looked && looked.sceneId === sceneId ? looked.problems : [];
+  return problemsOf(project, sceneId);
 }
 
 /** Sends a question or a fix request to the AI for the level, and shows its card. */

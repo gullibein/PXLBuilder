@@ -72,7 +72,8 @@ export class PlayRecorder {
   /** The entities worth tracing: players first, then things that move or can be hurt. */
   private watched(): RuntimeEntity[] {
     const score = (e: RuntimeEntity) => (e.controller ? 0 : e.health || e.scripts.length ? 1 : e.body === 'dynamic' || e.beh.patrol || e.moveTarget ? 2 : 9);
-    return this.rt.entities
+    // (Of the things awake: a sleeping tile is none of these.)
+    return [...this.rt.awake()]
       .filter((e) => !e.projectile && score(e) < 9)
       .sort((a, b) => score(a) - score(b))
       .slice(0, MAX_WATCHED);

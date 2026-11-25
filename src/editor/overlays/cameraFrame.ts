@@ -19,14 +19,25 @@ export interface CameraFrame {
 }
 
 /** `zoom`: the zoom Play will use (the game's resolution can set it; see resolutionZoom). */
+const frames = new WeakMap<ResolvedEntity[], { target: ResolvedEntity | null; level: ReturnType<typeof boundsOf> }>();
+
 export function cameraFrame(scene: Scene, entities: ResolvedEntity[], view: ViewSize, zoom = scene.camera.zoom): CameraFrame {
-  const target = entities.find((e) => e.components.CameraTarget) ?? null;
-  const level = boundsOf(
-    entities.map((e) => {
-      const s = getEntitySize(e);
-      return { x: e.transform.position.x, y: e.transform.position.y, w: s.x, h: s.y };
-    }),
-  );
+  // (What the camera follows and the level's box are the same for the same list of things: found once for it, not
+  // on every redraw: the editor redraws while the view is dragged, and a level may be tens of thousands of things.)
+  let found = frames.get(entities);
+  if (!found) {
+    found = {
+      target: entities.find((e) => e.components.CameraTarget) ?? null,
+      level: boundsOf(
+        entities.map((e) => {
+          const s = getEntitySize(e);
+          return { x: e.transform.position.x, y: e.transform.position.y, w: s.x, h: s.y };
+        }),
+      ),
+    };
+    frames.set(entities, found);
+  }
+  const { target, level } = found;
   const c = startCamera({ ...scene.camera, zoom }, target ? target.transform.position : null, level, view);
   const hw = view.width / 2 / zoom;
   const hh = view.height / 2 / zoom;

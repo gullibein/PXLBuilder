@@ -122,7 +122,7 @@ export class LiveGrid<T> {
    * `still`: a byte per item, 1 for those known not to have changed since they were filed (the runtime's sleeping
    * tiles): once filed, they are not looked at again.
    */
-  sync(items: readonly T[], boxOf: (item: T) => Box | null, still?: Uint8Array): void {
+  sync(items: readonly T[], boxOf: (item: T) => Box | null, still?: Uint8Array, moving?: readonly number[]): void {
     if (items !== this.source || items.length < this.entries.length) {
       this.source = items;
       this.entries = [];
@@ -130,7 +130,11 @@ export class LiveGrid<T> {
       this.big = [];
     }
     const filed = this.entries.length;
-    for (let order = 0; order < items.length; order++) {
+    // (`moving`: where in `items` everything that is not still is, in order, new items among them. With every item
+    // filed once, only those are looked at: a level of fifty thousand still tiles is not gone through each step.)
+    const count = still && moving && filed > 0 ? moving.length : items.length;
+    for (let n = 0; n < count; n++) {
+      const order = still && moving && filed > 0 ? moving[n] : n;
       if (still && still[order] && order < filed) continue;
       const box = boxOf(items[order]);
       const ok = !!box && box.hw >= 0 && box.hh >= 0;

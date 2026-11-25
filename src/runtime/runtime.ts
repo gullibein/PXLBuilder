@@ -1164,32 +1164,91 @@ export class Runtime {
       this.asleepFor = list;
       this.asleepAt = new Uint8Array(list.length);
       this.asleepPlace = new Map();
-      if (this.asleepSet.size)
-        for (let i = 0; i < list.length; i++)
-          if (this.asleepSet.has(list[i])) {
-            this.asleepAt[i] = 1;
-            this.asleepPlace.set(list[i], i);
-          }
+      this.awakeAt = [];
+      for (let i = 0; i < list.length; i++) {
+        if (this.asleepSet.size && this.asleepSet.has(list[i])) {
+          this.asleepAt[i] = 1;
+          this.asleepPlace.set(list[i], i);
+        } else this.awakeAt.push(i);
+      }
+      this.awakeCount = list.length;
+    } else if (this.awakeCount < list.length) {
+      // (New things come at the end of the list, awake.)
+      for (let i = this.awakeCount; i < list.length; i++) this.awakeAt.push(i);
+      this.awakeCount = list.length;
     }
     return this.asleepAt;
   }
 
+  /** Where in `entities` each thing awake is, in order (kept with the flags), and how much of the list it covers. */
+  private awakeAt: number[] = [];
+  private awakeCount = 0;
+  /** The loops over the things awake that are under way: where each has got to in `awakeAt`. */
+  private readonly awakeLoops: { list: RuntimeEntity[]; k: number }[] = [];
+
+  /** Where in `entities` the things awake are, in order (for what keeps a filing of the level up to date). */
+  awakePlaces(): readonly number[] {
+    this.asleepFlags();
+    return this.awakeAt;
+  }
+
   /**
    * Every thing awake, in the level's order: what a loop over `entities` gives, without the sleepers. Live: a thing
-   * woken while the loop runs, further on in the level, has its turn, as it would in a loop over all of them.
+   * woken while the loop runs, further on in the level, has its turn, as it would in a loop over all of them (and one
+   * woken further back does not, as it would not); things added while it runs have theirs.
    */
   *awake(): Generator<RuntimeEntity> {
     const list = this.entities;
-    const flags = this.asleepFlags();
-    for (let i = 0; i < list.length; i++) if (!flags[i]) yield list[i];
+    this.asleepFlags();
+    const loop = { list, k: 0 };
+    this.awakeLoops.push(loop);
+    /** Where in the list the last thing given is. */
+    let at = -1;
+    try {
+      for (;;) {
+        // (The filing was thrown away while this loop runs, everything woken or the level's list changed for
+        // another: it goes on through the list it began with, from where it was.)
+        if (this.asleepFor !== list) {
+          for (let i = at + 1; i < list.length; i++) if (!this.asleepSet.has(list[i])) yield list[i];
+          return;
+        }
+        if (this.awakeCount < list.length) this.asleepFlags();
+        if (loop.k >= this.awakeAt.length) return;
+        at = this.awakeAt[loop.k];
+        loop.k++;
+        yield list[at];
+      }
+    } finally {
+      this.awakeLoops.splice(this.awakeLoops.indexOf(loop), 1);
+    }
   }
 
   /** Wakes a thing (for good) before something acts on it. Nothing to do for one that is awake. */
   wake(e: RuntimeEntity | null | undefined): void {
     if (!e || !this.asleepSet.delete(e)) return;
     const i = this.asleepPlace.get(e);
-    if (i !== undefined && this.asleepFor === this.entities) this.asleepAt[i] = 0;
-    else this.asleepFor = null;
+    if (i === undefined || this.asleepFor !== this.entities) {
+      this.asleepFor = null;
+      return;
+    }
+    this.asleepAt[i] = 0;
+    this.asleepPlace.delete(e);
+    // Into its place among the things awake; a loop that is past that place stays where it is.
+    let lo = 0;
+    let hi = this.awakeAt.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.awakeAt[mid] < i) lo = mid + 1;
+      else hi = mid;
+    }
+    this.awakeAt.splice(lo, 0, i);
+    for (const loop of this.awakeLoops) if (loop.list === this.entities && lo < loop.k) loop.k++;
+  }
+
+  /** The first thing a player steers (the one the display and the camera's readout are about). */
+  controlled(): RuntimeEntity | undefined {
+    for (const e of this.awake()) if (e.controller) return e;
+    return undefined;
   }
 
   /** Wakes everything (the whole level is being changed: a flip). */
@@ -2322,7 +2381,7 @@ export class Runtime {
     if (!near) return this.renderList();
     const picked: number[] = [];
     for (const i of near) if (flags[i]) picked.push(i);
-    for (let i = 0; i < list.length; i++) if (!flags[i]) picked.push(i);
+    for (const i of this.awakePlaces()) picked.push(i);
     picked.sort((a, b) => a - b);
     for (const i of picked) {
       const r = this.renderOf(list[i]);
