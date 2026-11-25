@@ -5253,6 +5253,10 @@ try {
     const note = lp.getByTestId('level-build-note');
     await check(async () => /checked: playable/.test(await note.innerText()) && (await lp.getByTestId('scene-selector').innerText()).trim() === 'Level 2' && Number(await lp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20, `New level, built by the engine: a whole level at once, checked (${await note.innerText().catch(() => '-')})`);
     await check(async () => (await lp.getByTestId('undo').getAttribute('title')).includes('New level, built by the engine') && aiCalls === 0, '(one Undo step, and no AI asked)');
+    // How big: a first built level several screens (a "very long" one), said in cells; never the one-screen size.
+    const cellsOf = async () => /, (\d+) by (\d+) cells/.exec(await note.innerText())?.slice(1).map(Number) ?? [0, 0];
+    const firstSize = await cellsOf();
+    await check(async () => firstSize[0] * firstSize[1] >= 3 * 30 * 17, `the first level the engine builds is several screens (${firstSize.join(' by ')} cells; one screen is about 30 by 17)`);
     const layout = async () => (await lp.getByTestId('viewport-canvas').getAttribute('data-entities'));
     const was = await layout();
     await menu();
@@ -5262,6 +5266,28 @@ try {
     await menu();
     await lp.getByTestId('regen-level').click();
     await check(async () => /Undo brings the old level back/.test(await note.innerText()), 'Build this level again: a new level in its place');
+    // The next one: several screens (a "very long" level, 120 cells and more in a run, five floors in a climb), built
+    // and checked in a few seconds, and it plays: the camera follows the player through a level bigger than the screen.
+    await menu();
+    const t0 = Date.now();
+    await lp.getByTestId('new-scene-built').click();
+    await check(async () => /^Level 3: .*checked: playable/.test(await note.innerText()), `a second built level (${await note.innerText()})`);
+    const took = Date.now() - t0;
+    const secondSize = await cellsOf();
+    await check(async () => secondSize[0] * secondSize[1] >= 3 * 30 * 17 && took < 30000, `the game's next level is several screens: ${secondSize.join(' by ')} cells, built and checked in ${(took / 1000).toFixed(1)} s`);
+    await lp.getByTestId('play').click();
+    const bigPlay = lp.getByTestId('play-canvas');
+    await bigPlay.waitFor();
+    await check(async () => {
+      const box = await bigPlay.boundingBox();
+      const [, , z] = ((await bigPlay.getAttribute('data-camera')) ?? '0,0,1').split(',').map(Number);
+      // (What the screen shows of it, in cells: less than the level in at least one direction.)
+      const shown = [box.width / (32 * z), box.height / (32 * z)];
+      return !!(await bigPlay.getAttribute('data-player')) && (shown[0] < secondSize[0] || shown[1] < secondSize[1]);
+    }, 'played: the level is bigger than the screen shows at once');
+    await lp.keyboard.press('Escape');
+    await lp.getByTestId('viewport-canvas').waitFor();
+    await lp.getByTestId('undo').click();
     await lp.getByTestId('undo').click();
     await lp.getByTestId('undo').click();
     await lp.getByTestId('undo').click();

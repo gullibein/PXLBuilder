@@ -79,4 +79,14 @@ describe('the puzzle platformer: every puzzle needed', () => {
     // (Fast enough for the level menu: well under a second a level on average.)
     expect((performance.now() - started) / n).toBeLessThan(1000);
   });
+
+  it('a puzzle level is built no bigger than long (every puzzle in a bigger one took too long to prove needed), and says so', () => {
+    const r = generateLevel(project, sceneId, { difficulty: 3, structure: 'run', length: 'huge', seed: 2 }, registry, 'puzzle', { candidates: 1 });
+    expect(r.state).toBe('validated');
+    expect(r.madeBy.fingerprint).toMatchObject({ length: 'long' });
+    expect(r.rows[0].length).toBeLessThan(90);
+    expect(r.notes.join(' | ')).toMatch(/built long, not huge: a puzzle level is built no bigger/);
+    // (Asked for long, or nothing: no such note.)
+    expect(generateLevel(project, sceneId, { difficulty: 3, structure: 'run', length: 'long', seed: 2 }, registry, 'puzzle', { candidates: 1 }).notes.join(' | ')).not.toMatch(/no bigger/);
+  });
 });

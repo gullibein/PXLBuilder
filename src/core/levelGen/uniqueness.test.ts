@@ -95,10 +95,14 @@ describe('levels unlike each other', () => {
     expect(worst(3)).toBeLessThanOrEqual(worst(1));
   });
 
-  it("the AI is told the game's levels briefly (structure, what each is about, its sections)", () => {
+  it("the AI is told the game's levels briefly (structure, size, what each is about, its sections)", { timeout: 120000 }, () => {
     const { p } = tenLevels(300);
     const lines = builderInfo(p, registry)!.levels as string[];
     expect(lines).toHaveLength(10);
-    expect(lines[0]).toMatch(/^Level 2: (run|climb|descent|loop|hub), about \w+ \(/);
+    expect(lines[0]).toMatch(/^Level 2: (run|climb|descent|loop|hub), \d+ by \d+ cells, about \w+ \(/);
+    // (Ten levels as the level menu builds them: each bigger than one screen's 30 by 17 cells, most several times.)
+    const cells = lines.map((l) => /, (\d+) by (\d+) cells/.exec(l)!).map((x) => Number(x[1]) * Number(x[2]));
+    expect(cells.filter((n) => n <= 30 * 17)).toEqual([]);
+    expect(cells.filter((n) => n >= 3 * 30 * 17).length).toBeGreaterThanOrEqual(5);
   });
 });

@@ -317,4 +317,27 @@ describe('V1.4: players without these abilities get exactly the levels they got'
     expect(reachOf(doubler).capabilities).toEqual({});
     for (let seed = 1; seed <= 4; seed++) for (const id of ids) expect(has(build(doubler, { seed }).sections, id), `${id} seed ${seed}`).toBe(false);
   });
+
+  it('the big sizes for a player who dashes or wall-jumps: no bigger than can be proved playable, said; proved at that size', { timeout: 120000 }, () => {
+    const length = (r: GenerateResult) => (r.madeBy.fingerprint as { length: string }).length;
+    // One floor: very_long (the route bot plays it to the goal); stacked floors: long.
+    const run = build(DASH, { seed: 1, structure: 'run', length: 'huge' });
+    expect(length(run.r)).toBe('very_long');
+    expect(run.r.rows[0].length).toBeGreaterThanOrEqual(120);
+    expect(run.r.state, run.r.notes.join('; ')).toBe('validated');
+    expect(run.r.notes.join(' | ')).toMatch(/built very long, not huge: a run level for a player with dash is built no bigger \(a bigger one could not be proved playable\)/);
+    expect(run.r.notes.join(' | ')).toMatch(/the route bot played it to the goal/);
+    for (const [structure, seed] of [['climb', 2], ['loop', 3], ['descent', 4]] as const) {
+      const r = build(BOTH, { seed, structure, length: 'very_long' }).r;
+      expect(length(r), structure).toBe('long');
+      // (Proved or, when the bot fails a move on the way, said to be unproven: as at this size before.)
+      expect(r.state === 'validated' || /not proven playable/.test(r.notes.join(' ')), structure).toBe(true);
+      expect(r.notes.join(' | '), structure).toMatch(/built long, not very long/);
+    }
+    // A player with no such moves: as big as asked, nothing said.
+    const plain = build(PLAIN, { seed: 1, structure: 'run', length: 'huge' });
+    expect(length(plain.r)).toBe('huge');
+    expect(plain.r.state).toBe('validated');
+    expect(plain.r.notes.join(' | ')).not.toMatch(/no bigger/);
+  });
 });

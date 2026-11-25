@@ -47,6 +47,39 @@ describe('the level builder (classic platformer)', () => {
         }
   });
 
+  it('the big sizes (very_long, huge): several screens long, the stacked structures several high; every one checked playable', { timeout: 120000 }, () => {
+    const p = starter();
+    const size = (structure: string, length: string, seed = 1) => {
+      const r = build(p, { difficulty: 3, structure, seed, length });
+      expect(r.state, `${structure} ${length} seed ${seed}: ${r.notes.join('; ')}`).toBe('validated');
+      const after = apply(p, r);
+      expect(winProblems(after, after.scenes[0].id, registry)).toEqual([]);
+      expect(r.madeBy.fingerprint).toMatchObject({ structure, length });
+      return { w: r.rows[0].length, h: r.rows.length, sections: sections(r).length };
+    };
+    for (const structure of STRUCTURES) {
+      const long = size(structure, 'long');
+      const very = size(structure, 'very_long');
+      const huge = size(structure, 'huge', 2);
+      // Each a good deal bigger than the one before (in cells), with more sections to play through.
+      expect(very.w * very.h, structure).toBeGreaterThan(long.w * long.h * 1.4);
+      expect(huge.w * huge.h, structure).toBeGreaterThan(very.w * very.h * 1.25);
+      expect(very.sections, structure).toBeGreaterThan(long.sections);
+      expect(huge.sections, structure).toBeGreaterThan(very.sections);
+    }
+    // A run: four to six of a console's 16:9 screens long (a screen 15 rows high shows about 27 cells), and higher
+    // than one screen, so the ground rises and falls through the level.
+    expect(size('run', 'very_long')).toMatchObject({ w: 120, h: 19 });
+    expect(size('run', 'huge').w).toBeGreaterThanOrEqual(170);
+    expect(size('run', 'huge').h).toBe(21);
+    // A climb: five and six floors (a screen shows about three).
+    expect(size('climb', 'very_long').h).toBe(33);
+    expect(size('climb', 'huge').h).toBe(39);
+    // The sizes there were are as they were.
+    expect([size('run', 'short'), size('run', 'medium'), size('run', 'long')].map((x) => `${x.w}x${x.h}`)).toEqual(['30x15', '52x15', '76x15']);
+    expect(size('climb', 'long').h).toBe(27);
+  });
+
   it('the same blueprint and seed build the same level; another seed another one', () => {
     const p = starter();
     const a = build(p, { difficulty: 3, seed: 777 });

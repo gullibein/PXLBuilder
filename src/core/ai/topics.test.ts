@@ -3,7 +3,7 @@ import { createBuiltinRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import type { AIContext } from './context';
 import { userMessage } from './prompt';
-import { BOARD_GAME_WORDS, TOPICS, topicsFor } from './topics';
+import { BOARD_GAME_WORDS, TOPICS, topicsFor, topicsOnStarter } from './topics';
 import { SCRIPT_LIMITS, SCRIPT_WORK } from '../script/language';
 
 const level: AIContext = { kind: 'level', sceneId: 's', point: null };
@@ -65,5 +65,22 @@ describe('guidance only some requests need', () => {
     const body = { context: {} as never, request: 'A song for level 1', history: [], topics: ['music'] };
     expect(userMessage(body)).toContain(TOPICS.music.text);
     expect(userMessage({ ...body, topics: [] })).not.toContain(TOPICS.music.text.slice(0, 60));
+  });
+
+  it('a new game moved to another starter gets that starter\'s guidance (the top-down guide, not the level builder\'s)', () => {
+    // (A GTA-like game asked for on the platformer starter: the AI moved it to the top-down one, and it was built
+    // with the platformer level builder's guide and without the top-down one.)
+    expect(topicsOnStarter(['new_game', 'levels_builder', 'drawing', 'enemies'], true, false)).toEqual(['new_game', 'levels', 'drawing', 'enemies', 'topdown']);
+    expect(topicsOnStarter(['new_game', 'levels', 'drawing', 'topdown'], true, false)).toEqual(['new_game', 'levels', 'drawing', 'topdown']);
+    // The other way: a platformer with a level builder.
+    expect(topicsOnStarter(['new_game', 'levels', 'drawing', 'enemies', 'topdown'], false, true)).toEqual(['new_game', 'levels_builder', 'drawing', 'enemies']);
+    expect(topicsOnStarter(['new_game', 'levels', 'topdown'], false, false)).toEqual(['new_game', 'levels']);
+  });
+
+  it('how big: worlds to walk or drive around are several screens, and the level builder is told the sizes', () => {
+    expect(TOPICS.topdown.text).toMatch(/SEVERAL SCREENS EACH WAY/);
+    expect(TOPICS.topdown.text).toMatch(/at least 90 by 50 cells/);
+    expect(TOPICS.topdown.text).toMatch(/set_camera zoom 1\.5/);
+    for (const t of ['levels', 'levels_builder']) expect(TOPICS[t].text, t).toMatch(/very_long and huge several screens long/);
   });
 });

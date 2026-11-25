@@ -2619,3 +2619,105 @@ Not changed: the first answer's three seconds choosing the starter (its cost is 
 cached, which the next request then reads at a tenth of the price); and on this screen (125%) a game of 32-pixel
 sprites is drawn at 0.8 (one canvas pixel a picture pixel), so the city is small with dark margins beside it:
 whole pixels were chosen over size there, and the camera fix of §27 centres the level in the wider view.
+
+## 29. Maps and levels that were too small
+
+The user, after the open-world crime game of §28 and the platformers before it: a clone of a game with a big map
+"should at least be more than a part of a screen", and "a normal Super Mario level is several screens long and
+often high as well". Both were true of what was built. This section is what was found, what was changed, and
+one proposal that is not built.
+
+### 29.1 What was found
+
+| Seen | Measured | Why |
+| --- | --- | --- |
+| The crime game's city did not fill the screen across | 46 by 36 cells. On the user's screen (1522 by 696 at 125%, sprites of 32 pixels, drawn at 0.8) one screen shows about 59 by 27 cells | The top-down guidance said nothing about size. And it was never sent: the request began on the platformer starter, the AI moved the game to the top-down one, and the guidance stayed the platformer's (the level builder's guide, useless there). Found in the "Save with history" file's steps |
+| Platformer levels of about a screen | The builder had three sizes: a run of 30, 52 or 76 cells, 15 high; the dash game's levels were 52 to 55 | The AI was never told the builder takes a size (`length` was in the reply format, not in the guidance), so it left it out, and the builder then picked at random: the one-screen size a third of the time, the longest one time in six |
+| Levels the level menu builds (no AI) | The same three sizes, every fourth level "short" | The same random pick |
+
+Levels drawn by hand (`draw_map`) are told "compact, one screen" on purpose (the one-screen levels of the
+early stages); that is unchanged: whole platformer levels come from the builder.
+
+### 29.2 What was changed
+
+| Change | Where |
+| --- | --- |
+| Two bigger sizes, `very_long` and `huge`. A run: 120 by 19 and 170 by 21 cells (it was 76 by 15 at most), the ground with room to rise and fall, so the camera goes up and down too. A climb or descent: five and six floors, 46 by 33 and 58 by 39 (four floors, 34 by 27). A loop: 104 and 136 wide. A hub: 92 by 19 and 124 by 21. The three sizes there were are cell for cell what they were | `levelGen/blueprint.ts` `LENGTHS`, `generate.ts` `layout` |
+| When nobody gives a size: `very_long`, every third level `huge`, a breather every fourth `long`. The smaller sizes (one screen, a screen and a half) only when asked for. For the AI's `generate_level` without a length and for the level menu alike; the size chosen is kept in the level's record, so "build again" and "a variation" keep it | `build.ts` `usualLength`, `usualLengthFor`; `operations.ts` |
+| The builder's note and the level menu say how big the level came out ("run, very long: 120 by 19 cells, 16 sections, checked: playable"), and the AI's list of the game's levels has each one's size | `operations.ts`, `editor/levelBuild.ts`, `build.ts` `builderInfo` |
+| The AI is told the sizes, and that anything "like Mario" or "like Sonic" is several screens | the levels guidance (`guideSections.ts`); not the instructions sent with every request, which are full |
+| Top-down guidance, new: a game in one room or on one board is one screen; a world to walk or drive around (a city, an overworld, a town and its land, a circuit, a big dungeon) is several screens each way, at least 90 by 50 cells, a city 120 by 70 or more, the camera following and zoomed to 1.5; the big shapes as `draw_tiles` rectangles (a road or a block of buildings is one rectangle whatever its size, so a big map costs few words), `draw_map` for the detailed places | `TOPDOWN_GUIDE` |
+| A level's plan may name 64 sections (it was 16). The big levels are built of up to 45, and "A variation of this level" names them all: the browser tests caught it failing on the first very long level | `blueprint.ts` |
+| A game moved to another starter gets that starter's guidance: the top-down guide and the full levels guide in place of the level builder's, and the other way round | `topics.ts` `topicsOnStarter`, `runPrompt.ts` |
+
+### 29.3 What the bigger sizes cost, and where they stop
+
+Measured here (unit tests, one core); a browser is slower.
+
+| Player and builder | `very_long`, `huge` | Proved playable | Slowest build |
+| --- | --- | --- | --- |
+| Ordinary platformer, every structure, difficulty 1 to 5 | built as asked | 120 of 120 | 2.6 s (most under 1 s) |
+| The same with a double jump | built as asked | 40 of 40 | 1.5 s |
+| A player who dashes, or dashes and wall-jumps | one floor (run, hub): `very_long` at most. Stacked floors (climb, descent, loop): `long` at most | 60 of 60 at those sizes | 6.8 s |
+| Puzzle platformer | `long` at most | as before | as before |
+
+Two limits, each said by the builder when a bigger level was asked for ("built long, not huge: …"), never
+applied in silence:
+
+- **Puzzle levels stop at `long`.** Every puzzle in a level is proved needed (without its lever, key or crate
+  there is no way through). In the bigger sizes that took up to 37 seconds a level, failed for two of six
+  descents ("it can be won without the key at …"), and one build was still running after ten minutes when it
+  was stopped.
+- **A player with moves that are only estimated (a dash, a wall jump) gets smaller levels.** Such a level counts
+  as proved only when the route bot plays it to the goal. On routes of 200 moves and more the bot failed a jump
+  or a dash somewhere on the way in most stacked levels, and a huge run took 15 seconds. At the sizes kept, all
+  were played to the goal.
+
+One more change came out of this: when a build cannot be proved because it has moving platforms (the bot does
+not ride them) and needs a dash, the builds that follow in the same call are made without moving platforms. The
+bigger a level, the surer it had one, and nothing was proved. No existing level or golden changed with it.
+
+The play probe (36 seconds of play, eight runs) takes about four times as long on a huge level as on a medium
+one (4 to 6 s here, 1 s before): its cost grows with what is in the level.
+
+### 29.4 What is not proved
+
+- The top-down guidance is words to a model. No live build was run with it (live runs are the user's to start):
+  that a city now comes out several screens, drawn with rectangles, is expected, not shown.
+- Zoom 1.5 for a world: on the user's screen with sprites of 32 pixels it is drawn at 1.6 (whole pixels), about
+  30 by 14 cells a screen, so a city of 120 by 70 is four screens by five. On a 1920 by 1080 monitor at 100% it
+  is drawn at 2: about 30 by 15.
+
+### 29.5 Proposal, not built: a game's own screen
+
+How much of a level one screen shows depends on the monitor. At camera zoom 1:
+
+| Screen | Sprites of 16 pixels | Sprites of 32 pixels |
+| --- | --- | --- |
+| The user's (1522 by 696 at 125%) | about 40 by 17 cells (drawn at 1.2) | about 59 by 27 (drawn at 0.8) |
+| 1920 by 1080 at 100% | about 60 by 30 | about 60 by 30 |
+| A console of the time | 16 by 14 | |
+
+So the same 52-cell level is a screen and a third on one monitor and less than a screen on another, and a
+15-row platformer level on a big monitor sits in the middle with empty space above and below. Bigger levels
+do not fix that; a game that says how much its screen shows does.
+
+The engine has the means: the game resolution (Camera panel, "Play resolution"; `settings.playPixels`), which
+draws the game on a canvas so many picture pixels high, every pixel whole, whatever the monitor. Only a person
+can set it today, and no new game has one.
+
+Proposed: a new game gets a screen height in rows, kept as its game resolution: 15 rows for a platformer (240
+pixels with 16-pixel sprites), 13 for a top-down world, the whole board for a board game; the AI may set it
+("show more", "closer"); existing games keep what they have. A "long" level is then about three screens on
+every monitor, and the biggest six or seven.
+
+What it changes, which is why it is a question and not a fix: every new game would be drawn with coarse
+pixels (the look of §24.9's menu test: text in the pixel font, at the game's resolution), not at the
+monitor's sharpness. Three ways:
+
+- **A (recommended).** New games get it by default; the New game window shows it and lets it be turned off.
+- **B.** Only when the request asks for a retro look or the AI chooses it; everything else as now.
+- **C.** Leave it; rely on bigger levels and the zoom guidance.
+
+Also open, from this work: a city or overworld generator (as the dungeon generator builds rooms): no AI words
+for the map at all, and checked by walking. Not proposed in detail here.

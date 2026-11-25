@@ -35,11 +35,11 @@ import { isTopDownScene } from '../model/topDown';
 import { BACKGROUND_KINDS, type BackgroundKind } from '../model/backgroundArt';
 import { refreshPixelColliders } from '../model/colliderBoxes';
 import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
-import { STRUCTURES } from '../levelGen/blueprint';
+import { LENGTHS, STRUCTURES } from '../levelGen/blueprint';
 import { ZodError } from 'zod';
 import { GENRES, THEMES } from '../levelGen/profile';
 import { LevelGenError } from '../levelGen/generate';
-import { buildLevel } from '../levelGen/build';
+import { buildLevel, usualLengthFor } from '../levelGen/build';
 import { profileChangeSchema, setGameProfile, setLevelProfile, type ProfileChange } from '../engine/profile';
 import { current, isDraft } from 'immer';
 
@@ -286,7 +286,7 @@ export const operationSchema = z.union([
     sceneId: z.string(),
     difficulty: z.number().int().min(1).max(5),
     structure: z.enum(STRUCTURES).nullable(),
-    length: z.enum(['short', 'medium', 'long']).nullable(),
+    length: z.enum(LENGTHS).nullable(),
     focus: z.array(z.string()),
     escalate: z.string().nullable(),
     avoid: z.array(z.string()),
@@ -1351,6 +1351,8 @@ export function applyOperations(
         const { op: _op, sceneId, sections, ...rest } = op;
         const blueprint = {
           ...rest,
+          // (No length given: the game's usual one for this level, several screens. Said in the note below.)
+          length: rest.length ?? usualLengthFor(project, sceneId, registry),
           focus: rest.focus.length ? rest.focus : null,
           avoid: rest.avoid.length ? rest.avoid : null,
           sections: !sections.length ? null : sections.map((x) => ({
@@ -1373,11 +1375,11 @@ export function applyOperations(
         }
         for (const o of built.ops) applyOne(o);
         m.getScene(project, sceneId).madeBy = built.madeBy;
-        const f = built.madeBy.fingerprint as { structure?: string; sections?: string[] } | null;
+        const f = built.madeBy.fingerprint as { structure?: string; length?: string; sections?: string[]; size?: [number, number] } | null;
         const name = m.getScene(project, sceneId).name;
         result.notes = [
           ...(result.notes ?? []),
-          `${name}: built by the engine (${f?.structure ?? 'level'}, ${f?.sections?.length ?? 0} sections, ${built.state === 'validated' ? 'checked: playable' : 'not proven playable'}${built.notes.length ? `; ${built.notes.join('; ')}` : ''})`,
+          `${name}: built by the engine (${f?.structure ?? 'level'}, ${(f?.length ?? blueprint.length).replace('_', ' ')}${f?.size ? `: ${f.size[0]} by ${f.size[1]} cells` : ''}, ${f?.sections?.length ?? 0} sections, ${built.state === 'validated' ? 'checked: playable' : 'not proven playable'}${built.notes.length ? `; ${built.notes.join('; ')}` : ''})`,
         ];
         break;
       }

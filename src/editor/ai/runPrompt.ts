@@ -14,7 +14,7 @@ import { songIdea, songInstrumentsProblem, UNUSUAL_SONG_WORDS } from '../../core
 import { isoDrawingProblem, spriteSizeProblem } from '../../core/ai/isoDrawing';
 import { undrawnObjects } from '../../core/model/drawnLook';
 import { beginDiagnostics, type DiagnosticRecorder } from './diagnostics';
-import { BOARD_GAME_WORDS, TOPICS, topicsFor } from '../../core/ai/topics';
+import { BOARD_GAME_WORDS, TOPICS, topicsFor, topicsOnStarter } from '../../core/ai/topics';
 import { ENGINE_PART_INFO, scriptedPart } from '../../core/model/engineParts';
 import type { EnginePart } from '../../core/script/language';
 import { unaskedChanges } from '../../core/ai/unasked';
@@ -562,6 +562,15 @@ async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortS
         const now = useEditor.getState();
         body.context = buildAIPayload(now.project, ctx, componentRegistry, editorSettingsPayload(now.layout), null, Math.random);
         body.context.newGame = { current: to, starters: STARTERS, sprites };
+        // The guidance follows the starter (a game now seen from above gets the top-down guide, not the level builder's).
+        if (body.topics?.length) {
+          const sceneNow = now.project.scenes.find((x) => x.id === ctx.sceneId) ?? now.project.scenes[0];
+          const fitting = topicsOnStarter(body.topics, !!sceneNow && isTopDownScene(now.project, sceneNow, componentRegistry), !!body.context.level?.builder);
+          if (fitting.join() !== body.topics.join()) {
+            body.topics = fitting;
+            trace?.('note', `Guidance for this starter: ${fitting.join(', ')}`);
+          }
+        }
         // (The puzzles picked were for the starter it left, a bridge and a spring for a game now seen from above:
         // what this starter's levels get, if anything, is said in their place, and checked for afterwards.)
         const said = puzzlesSaid;

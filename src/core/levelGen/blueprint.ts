@@ -31,6 +31,14 @@ export type Mechanic = (typeof OWN_MECHANICS)[number] | (string & {});
 export const mechanics = (): Mechanic[] => [...OWN_MECHANICS, ...abilityDefinitions().filter((a) => a.reach).map((a) => a.id)];
 const mechanicSchema = z.string().refine((m) => mechanics().includes(m), { error: (issue) => `"${String(issue.input)}" is not a mechanic (there are: ${mechanics().join(', ')})` });
 
+/**
+ * How big a level is. short: about a screen (a first lesson, a breather). medium and long: two to three screens.
+ * very_long and huge: the levels of a classic console platformer, several screens long (and, in the structures that
+ * stack floors, several high).
+ */
+export const LENGTHS = ['short', 'medium', 'long', 'very_long', 'huge'] as const;
+export type Length = (typeof LENGTHS)[number];
+
 /** How many ways there are through: one; a bonus route up above; a choice of two ways; a risky shortcut beside a slow safe way. */
 export const ROUTES = ['one', 'bonus_above', 'choice', 'risky_shortcut'] as const;
 
@@ -52,7 +60,7 @@ export const sectionSchema = z.object({
 
 export const blueprintSchema = z.object({
   difficulty: z.number().int().min(1).max(5),
-  length: z.enum(['short', 'medium', 'long']).nullable().default(null),
+  length: z.enum(LENGTHS).nullable().default(null),
   seed: z.number().int().nullable().default(null),
   structure: z.enum(STRUCTURES).nullable().default(null),
   // (More than three named: the first three count, rather than the whole level being refused and asked for again.)
@@ -62,7 +70,8 @@ export const blueprintSchema = z.object({
   routes: z.enum(ROUTES).nullable().default(null),
   secrets: z.number().int().min(0).max(3).nullable().default(null),
   concept: z.string().max(300).nullable().default(null),
-  sections: z.array(sectionSchema).max(16).nullable().default(null),
+  // (As many as the biggest level has: a huge climb is built of some 45, and its variation names them all.)
+  sections: z.array(sectionSchema).max(64).nullable().default(null),
 });
 
 export type Blueprint = z.infer<typeof blueprintSchema>;

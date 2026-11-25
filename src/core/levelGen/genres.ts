@@ -2,7 +2,7 @@
  * How each genre's levels are put together: which structures it uses, how often each pattern comes up in each kind
  * of section, and how a level is paced. The patterns themselves are shared (patterns/); a genre is its choices.
  */
-import type { Mechanic, SectionRole, Structure } from './blueprint';
+import type { Length, Mechanic, SectionRole, Structure } from './blueprint';
 
 export interface GenreBuild {
   id: string;
@@ -18,6 +18,11 @@ export interface GenreBuild {
    * set, a level needs at least one section about one of them (a puzzle level without a puzzle is built again).
    */
   core?: Mechanic[];
+  /**
+   * The biggest level it builds (absent: any). A puzzle level is built only as long as "long": every puzzle in it is
+   * proved needed, and in the bigger sizes that takes half a minute a level and more, and fails for some.
+   */
+  longest?: Length;
 }
 
 export const CLASSIC_BUILD: GenreBuild = {
@@ -68,6 +73,7 @@ export const CLASSIC_BUILD: GenreBuild = {
  */
 export const PUZZLE_BUILD: GenreBuild = {
   id: 'puzzle',
+  longest: 'long',
   version: 2,
   structures: { run: 3, climb: 2, loop: 1.5, hub: 2, descent: 1 },
   weights: {

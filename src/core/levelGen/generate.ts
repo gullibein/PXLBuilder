@@ -17,7 +17,7 @@ import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
 import { resolveEntity } from '../model/resolve';
 import type { Id, LevelMadeBy, Project } from '../types';
-import { CUSTOM_PARTS, readBlueprint, STRUCTURES, type Blueprint, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
+import { CUSTOM_PARTS, LENGTHS, readBlueprint, STRUCTURES, type Blueprint, type Length, type CustomSection, type Mechanic, type SectionRole, type SectionSpec, type Structure } from './blueprint';
 import { GENRE_BUILDS, type GenreBuild } from './genres';
 import { closest, fingerprintOfScene, shapeOfRows, type Fingerprint } from './fingerprint';
 import { movesWithout, reachMeasure } from '../reach/probe';
@@ -102,12 +102,14 @@ function possibleStructures(roles: Roles, lim: Limits): Structure[] {
 }
 
 /** The floors and runs of a structure, at a length. */
-function layout(structure: Structure, length: 'short' | 'medium' | 'long'): Layout {
-  const pickW = (s: number, m: number, l: number) => (length === 'short' ? s : length === 'medium' ? m : l);
+function layout(structure: Structure, length: Length): Layout {
+  const at = LENGTHS.indexOf(length);
+  const pickW = (...sizes: [number, number, number, number, number]) => sizes[at];
   if (structure === 'run' || structure === 'hub') {
-    const width = structure === 'run' ? pickW(30, 52, 76) : pickW(40, 52, 64);
-    const height = 15;
-    const band: Band = { slab: height - 3, maxUp: 4, top: 1, fill: height - 1, bottom: true };
+    const width = structure === 'run' ? pickW(30, 52, 76, 120, 170) : pickW(40, 52, 64, 92, 124);
+    // (The biggest are higher too: the ground has more room to rise and fall, and the camera goes up and down with it.)
+    const height = pickW(15, 15, 15, 19, 21);
+    const band: Band = { slab: height - 3, maxUp: pickW(4, 4, 4, 8, 10), top: 1, fill: height - 1, bottom: true };
     if (structure === 'run') return { width, height, runs: [{ band, dir: 1, start: 1, length: width - 2, entry: band.slab, first: true, end: 'goal' }] };
     const mid = Math.floor(width / 2);
     // The start pad in the middle (a run of its own), then a branch each way.
@@ -121,8 +123,8 @@ function layout(structure: Structure, length: 'short' | 'medium' | 'long'): Layo
       ],
     };
   }
-  const floors = structure === 'loop' ? 2 : length === 'long' ? 4 : 3;
-  const width = structure === 'loop' ? pickW(30, 44, 58) : pickW(24, 30, 34);
+  const floors = structure === 'loop' ? 2 : pickW(3, 3, 4, 5, 6);
+  const width = structure === 'loop' ? pickW(30, 44, 58, 104, 136) : pickW(24, 30, 34, 46, 58);
   const height = 3 + floors * (ROOM + 1);
   const bandOf = (k: number): Band => {
     const slab = height - 3 - k * (ROOM + 1);
@@ -366,7 +368,18 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
   const fresh = possible.filter((s) => !avoidStructures.includes(s) && (build.structures[s] ?? 0) > 0);
   const lean = (st: Structure) => leaning.reduce((w, m) => w * (STRUCTURE_LEAN[m]?.[st] ?? 1), 1);
   const structure = bp.structure ?? rnd.weighted(fresh.length ? fresh : possible, (st) => (build.structures[st] ?? 0) * lean(st));
-  const length = bp.length ?? rnd.weighted(['short', 'medium', 'long'] as const, (l) => (l === 'medium' ? 3 : l === 'short' ? 2 : 1));
+  const asked: Length = bp.length ?? rnd.weighted(['short', 'medium', 'long'] as const, (l) => (l === 'medium' ? 3 : l === 'short' ? 2 : 1));
+  // No bigger than can be proved playable (said, never built smaller in silence): this builder's biggest; and for
+  // a player with moves that are only estimated (a dash, a wall jump), which the route bot has to play to the goal,
+  // very_long in one-floor levels and long in stacked ones (bigger, the bot failed somewhere on a route of 200 moves
+  // and more, or took half a minute).
+  const byBot: Length | null = opts.estimatedMoves ? (structure === 'run' || structure === 'hub' ? 'very_long' : 'long') : null;
+  const longest = [build.longest ?? null, byBot].filter((l): l is Length => !!l).sort((a, b) => LENGTHS.indexOf(a) - LENGTHS.indexOf(b))[0] ?? null;
+  const length = longest && LENGTHS.indexOf(asked) > LENGTHS.indexOf(longest) ? longest : asked;
+  if (length !== asked)
+    notes.push(
+      `built ${length.replace('_', ' ')}, not ${asked.replace('_', ' ')}: ${longest === byBot && byBot !== build.longest ? `a ${structure} level for a player with ${opts.estimatedMoves!.join(' and ')} is built no bigger (a bigger one could not be proved playable)` : `a ${build.id} level is built no bigger`}`,
+    );
   const plan = layout(structure, length);
   const grid = new LevelGrid(plan.width, plan.height, roles);
   // Walls at both ends, the whole height.
@@ -377,7 +390,7 @@ function buildOnce(bp: Blueprint, rnd: Random, roles: Roles, lim: Limits, reach:
   const k: Pick = { rnd, lim, roles, caps, without, build, bp, used: [], seen: new Map(), avoid, signature };
   // Two ways through (a choice, a risky shortcut): sections of their own in place of tests and twists.
   const twoWays = bp.routes === 'choice' || bp.routes === 'risky_shortcut' ? bp.routes : null;
-  let routes = twoWays && roles.oneway ? (length === 'long' ? 2 : 1) : 0;
+  let routes = twoWays && roles.oneway ? (LENGTHS.indexOf(length) >= 2 ? 2 : 1) : 0;
   if (twoWays && !roles.oneway) notes.push(`a ${twoWays === 'choice' ? 'choice of ways' : 'risky shortcut'} needs jump-through platforms, and the game has none`);
   const built: Built[] = [];
   let refs = 0;
@@ -609,6 +622,8 @@ export interface GenerateOptions {
   fixedSize?: boolean;
   /** Told about every checked build's grid (its moving platforms as bridges), for tools and tests. */
   onBuilt?: (grid: LevelGrid) => void;
+  /** (Set by the builder itself: the player's moves that are only estimated, when it has any.) */
+  estimatedMoves?: string[];
 }
 
 export function generateLevel(project: Project, sceneId: Id, blueprint: unknown, registry: ComponentRegistry, genre = 'classic', options: GenerateOptions = {}): GenerateResult {
@@ -646,12 +661,20 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
   let lastProblems: string[] = [];
   // (Still too like another level after those: a few more builds, while there are tries left.)
   const enough = () => found.length >= wanted && (found.length >= MAX_CANDIDATES || !history.length || Math.min(...found.map((f) => f.score)) < TOO_ALIKE);
+  /**
+   * Set when a build could not be proved playable because it has moving platforms and needs a move that is only
+   * estimated (a dash): the route bot, which plays such moves, does not ride platforms. The builds that follow are
+   * made without moving platforms, so they can be played and proved. (The bigger a level, the surer it had one: the
+   * two biggest sizes came out unproven for a dashing player in most of the stacked structures.)
+   */
+  let stillOnly = false;
+  if (description.approximate.length) options = { ...options, estimatedMoves: [...description.approximate] };
   for (let attempt = 0; attempt < ATTEMPTS && !enough(); attempt++) {
     const rnd = makeRandom((seed ^ Math.imul(attempt, 0x9e3779b1)) >>> 0);
     const tried: string[] = [];
     let out: ReturnType<typeof buildOnce>;
     try {
-      out = buildOnce(bp, rnd, roles, lim, reach, description.capabilities, (ids) => reachMeasure(description, ids), build, tried, options);
+      out = buildOnce(bp, rnd, roles, lim, reach, description.capabilities, (ids) => reachMeasure(description, ids), build, tried, stillOnly ? { ...options, avoidMechanics: [...(options.avoidMechanics ?? []), 'mover'] } : options);
     } catch (e) {
       if (e instanceof LevelGenError) throw e;
       if (!(e instanceof GridError)) throw e;
@@ -730,6 +753,7 @@ export function generateLevel(project: Project, sceneId: Id, blueprint: unknown,
       },
     };
     if (check.state === 'validated') found.push({ result, score: near?.score ?? 0, closestName: near ? history[near.index].name : null });
+    if (check.state === 'uncertain' && moving && needs.length && !bp.sections && !(bp.focus ?? []).includes('mover') && bp.escalate !== 'mover') stillOnly = true;
     // Uncertain: kept, in case nothing better comes (said so).
     else if (!uncertain) uncertain = { ...result, notes: [...result.notes, `not proven playable: ${check.problems.join('; ')}`], why: check.problems };
   }

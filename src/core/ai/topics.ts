@@ -270,6 +270,22 @@ for (const r of EXAMPLE_ROUTING) {
   if (x) TOPICS[`example_${r.key}`] = { title: `Example: ${x.title}`, scopes: [], words: r.words, text: `Example: ${x.title}\n${x.json}` };
 }
 
+/**
+ * The guidance for a new game after it moved to another starter (the AI chose it): what it was sent for the starter
+ * it left no longer fits. Seen from above: the top-down guide comes, and the full levels guide in place of the level
+ * builder's (nothing builds levels there). Back to a platformer: the other way round. (A game moved to the top-down
+ * starter kept the platformer builder's guide and never got the top-down one.)
+ */
+export function topicsOnStarter(topics: readonly string[], topDown: boolean, builder: boolean): string[] {
+  const out = topics.flatMap((t) => {
+    if (topDown) return t === 'levels_builder' ? ['levels'] : [t];
+    if (t === 'topdown') return [];
+    return t === 'levels' && builder ? ['levels_builder'] : [t];
+  });
+  if (topDown && !out.includes('topdown')) out.push('topdown');
+  return [...new Set(out)];
+}
+
 /** The topics a request needs: by the card it was asked on, and the words in it (or in what it follows up on). */
 export function topicsFor(ctx: AIContext, request: string, history: readonly { request: string }[] = [], newGame = false, topDown = false): string[] {
   const text = [request, ...history.slice(-2).map((h) => h.request)].join('\n');

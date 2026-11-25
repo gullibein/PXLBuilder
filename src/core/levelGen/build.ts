@@ -9,7 +9,7 @@ import { createLevelFor } from '../model/factory';
 import * as m from '../model/mutations';
 import type { Id, Project, Scene } from '../types';
 import { produce } from 'immer';
-import { mechanics, ROUTES, STRUCTURE_INFO, type Blueprint, type Mechanic, type Structure } from './blueprint';
+import { LENGTHS, mechanics, ROUTES, STRUCTURE_INFO, type Blueprint, type Length, type Mechanic, type Structure } from './blueprint';
 import { allPatterns, patternById } from './patterns/index';
 import { patternFits } from './pattern';
 import { playerReach } from '../reach/reach';
@@ -47,7 +47,7 @@ export type BuildKind = 'new' | 'regenerate' | 'variation';
 
 /**
  * How hard the game's n-th built level is: rising a step every two levels, every fourth a breather (2, 2, 3, 2, 4, 4, 5, 4…):
- * a step easier and short; never more than a step easier than the level before, never past 5.
+ * a step easier and shorter; never more than a step easier than the level before, never past 5.
  */
 export function difficultyCurve(n: number, previous: number): { difficulty: number; breather: boolean } {
   const breather = n % 4 === 0;
@@ -57,12 +57,35 @@ export function difficultyCurve(n: number, previous: number): { difficulty: numb
 }
 
 /**
+ * How big the game's n-th built level is when nobody says: several screens, as a console platformer's levels are
+ * (every third the biggest), a breather two to three. The smaller sizes (one screen, a screen and a half) only when
+ * asked for.
+ */
+export function usualLength(n: number, breather = n % 4 === 0): Length {
+  if (breather) return 'long';
+  return n % 3 === 0 ? 'huge' : 'very_long';
+}
+
+/**
+ * The usual length for a level of the game built now (counted among its built levels; a new one comes after them),
+ * no bigger than the game's builder builds (`registry` given: a puzzle platformer's levels stop at long). (A player
+ * who dashes or wall-jumps gets smaller ones in some structures: the builder says so when it builds.)
+ */
+export function usualLengthFor(project: Project, sceneId: Id | null, registry?: ComponentRegistry, breather?: boolean): Length {
+  const built = project.scenes.filter((s) => s.madeBy || s.id === sceneId);
+  const at = sceneId ? built.findIndex((s) => s.id === sceneId) : -1;
+  const usual = usualLength(at >= 0 ? at + 1 : built.length + 1, breather);
+  const longest = registry ? GENRE_BUILDS[builderFor(project, registry) ?? '']?.longest : undefined;
+  return longest && LENGTHS.indexOf(usual) > LENGTHS.indexOf(longest) ? longest : usual;
+}
+
+/**
  * What to ask the builder for. new: a level a step harder than the game's hardest built one (else 2), of another
  * structure than the last ones. regenerate: the level's own blueprint (else a plain one) with a new seed. variation:
  * the same structure, length and sections (patterns and variants) with a new seed: the same plan, built afresh.
  * Null when there is nothing to vary (a level not built by the engine).
  */
-export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKind, seed: number): { blueprint: Record<string, unknown>; avoidStructures: Structure[]; recentSignatures?: Mechanic[] } | null {
+export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKind, seed: number, registry?: ComponentRegistry): { blueprint: Record<string, unknown>; avoidStructures: Structure[]; recentSignatures?: Mechanic[] } | null {
   const scene = sceneId ? project.scenes.find((s) => s.id === sceneId) : undefined;
   const made = scene?.madeBy;
   if (kind === 'new') {
@@ -71,7 +94,7 @@ export function blueprintFor(project: Project, sceneId: Id | null, kind: BuildKi
     const avoid = built.slice(-2).map((s) => fingerprintOf(s)?.structure).filter((x): x is Structure => !!x);
     const recentSignatures = built.slice(-3).map((s) => fingerprintOf(s)?.signature).filter((x): x is Mechanic => !!x);
     const { difficulty, breather } = difficultyCurve(built.length + 1, last);
-    return { blueprint: { difficulty, ...(breather ? { length: 'short' } : {}), seed }, avoidStructures: avoid, recentSignatures };
+    return { blueprint: { difficulty, length: usualLengthFor(project, null, registry, breather), seed }, avoidStructures: avoid, recentSignatures };
   }
   if (kind === 'regenerate') return { blueprint: { ...(made?.blueprint ?? { difficulty: 2 }), seed }, avoidStructures: [] };
   if (!made) return null;
@@ -160,7 +183,7 @@ export function builderInfo(project: Project, registry: ComponentRegistry): Reco
       const f = fingerprintOfScene(project, s, registry);
       if (!f) return [];
       const parts = f.sections.filter((x) => !/^(intro|finale):/.test(x)).map((x) => x.split(':')[1].split('@')[0].split('/')[0]);
-      return [`${s.name}: ${f.structure ?? 'made by hand'}${f.signature ? `, about ${f.signature}` : ''}${parts.length ? ` (${[...new Set(parts)].slice(0, 6).join(', ')})` : ''}`];
+      return [`${s.name}: ${f.structure ?? 'made by hand'}, ${f.size[0]} by ${f.size[1]} cells${f.signature ? `, about ${f.signature}` : ''}${parts.length ? ` (${[...new Set(parts)].slice(0, 6).join(', ')})` : ''}`];
     }),
     routes: ROUTES.join(', '),
     patterns,

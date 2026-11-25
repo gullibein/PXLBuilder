@@ -7,7 +7,7 @@ import { createProject } from '../model/factory';
 import * as m from '../model/mutations';
 import { levelReachability } from '../model/reachability';
 import type { Project } from '../types';
-import { applyBuilt, blueprintFor, builderFor, builderInfo, buildLevel, difficultyCurve, newBuiltLevel, noBuilderReason, themeAvoids } from './build';
+import { applyBuilt, blueprintFor, builderFor, builderInfo, buildLevel, difficultyCurve, newBuiltLevel, noBuilderReason, themeAvoids, usualLength, usualLengthFor } from './build';
 
 const registry = createBuiltinRegistry();
 const ops = (p: Project, list: unknown[]) => produce(p, (d) => void applyOperations(d, list as Operation[], registry));
@@ -25,7 +25,7 @@ describe('levels built into a game', () => {
     expect(scene.madeBy).toMatchObject({ generator: 'classic', blueprint: { difficulty: 2, structure: 'climb', focus: ['spring'], concept: 'springs up' } });
     expect(scene.entities.length).toBeGreaterThan(40);
     expect(levelReachability(after, scene.id, registry).status).not.toBe('no-player');
-    expect(notes.some((n) => /Level 2: built by the engine \(climb, \d+ sections, checked: playable/.test(n))).toBe(true);
+    expect(notes.some((n) => /Level 2: built by the engine \(climb, short: 2\d by 21 cells, \d+ sections, checked: playable/.test(n))).toBe(true);
   });
 
   it("generate_level says what's wrong: a mechanic that isn't one, a level that can't be built", () => {
@@ -66,7 +66,8 @@ describe('levels built into a game', () => {
   it('New level / Regenerate / Variation: what each asks for', () => {
     let p = createProject(registry);
     // No level built by the engine yet: a new one is difficulty 2; there is nothing to vary.
-    expect(blueprintFor(p, null, 'new', 5)!.blueprint).toEqual({ difficulty: 2, seed: 5 });
+    // (Its size is the game's usual one: several screens.)
+    expect(blueprintFor(p, null, 'new', 5)!.blueprint).toEqual({ difficulty: 2, length: 'very_long', seed: 5 });
     expect(blueprintFor(p, p.scenes[0].id, 'variation', 5)).toBeNull();
     const built = buildLevel(p, p.scenes[0].id, { difficulty: 3, seed: 8, focus: ['pipe'] }, registry);
     p = produce(p, (d) => void applyBuilt(d, d.scenes[0].id, built, registry));
@@ -74,7 +75,7 @@ describe('levels built into a game', () => {
     // another mechanic to build around than the last.
     const next = blueprintFor(p, null, 'new', 6)!;
     // (The 2nd built level: 2 on the curve; the first was 3, so not less than 2.)
-    expect(next.blueprint).toEqual({ difficulty: 2, seed: 6 });
+    expect(next.blueprint).toEqual({ difficulty: 2, length: 'very_long', seed: 6 });
     expect(next.avoidStructures).toEqual([(built.madeBy.fingerprint as { structure: string }).structure]);
     // Regenerate: the same blueprint, another seed.
     expect(blueprintFor(p, p.scenes[0].id, 'regenerate', 9)!.blueprint).toMatchObject({ difficulty: 3, focus: ['pipe'], seed: 9 });
@@ -89,6 +90,59 @@ describe('levels built into a game', () => {
     // (In the same order; with room left over at another seed, the builder may add a rest after them.)
     expect(middle(again).slice(0, middle(built).length)).toEqual(middle(built));
     expect(again.rows).not.toEqual(built.rows);
+  });
+
+  it('how big a game\'s levels are when nobody says: several screens, never the one-screen size', () => {
+    // Several screens (every third the biggest); a breather every fourth, two to three.
+    expect(Array.from({ length: 9 }, (_, i) => usualLength(i + 1))).toEqual(['very_long', 'very_long', 'huge', 'long', 'very_long', 'huge', 'very_long', 'long', 'huge']);
+    // The AI's generate_level without a length gets it, and the note says how big the level came out.
+    const p = createProject(registry);
+    const id = p.scenes[0].id;
+    let notes: string[] = [];
+    const first = produce(p, (d) => void (notes = applyOperations(d, [gen(id, { length: null, structure: 'run', seed: 3 }) as never], registry).notes ?? []));
+    expect(first.scenes[0].madeBy!.blueprint.length).toBe('very_long');
+    expect(notes.join(' ')).toMatch(/built by the engine \(run, very long: 12\d by 19 cells, \d+ sections, checked: playable/);
+    // (Asked for: kept, a short one too.)
+    const short = produce(p, (d) => void applyOperations(d, [gen(id, { structure: 'run', seed: 3 }) as never], registry));
+    expect(short.scenes[0].madeBy!.blueprint.length).toBe('short');
+    // The game's second level: several screens long, and higher than one screen's 15 rows.
+    const two = produce(first, (d) => {
+      const made = applyOperations(d, [{ op: 'create_level', ref: 'l2', name: 'Level 2' } as never, gen('l2', { length: null, structure: 'run', seed: 4 }) as never], registry);
+      notes = made.notes ?? [];
+    });
+    expect(two.scenes[1].madeBy!.blueprint.length).toBe('very_long');
+    const size = (two.scenes[1].madeBy!.fingerprint as { size: [number, number] }).size;
+    expect(size[0]).toBeGreaterThanOrEqual(120);
+    expect(size[1]).toBe(19);
+    expect(usualLengthFor(two, two.scenes[1].id)).toBe('very_long');
+    expect(usualLengthFor(two, null)).toBe('huge');
+    // A puzzle platformer: never bigger than its builder builds.
+    const puzzle = produce(two, (d) => void setLevelProfile(d, 'puzzle', 'forest', registry));
+    expect(builderFor(puzzle, registry)).toBe('puzzle');
+    expect(usualLengthFor(puzzle, null, registry)).toBe('long');
+    expect(usualLengthFor(two, null, registry)).toBe('huge');
+    expect(blueprintFor(puzzle, null, 'new', 1, registry)!.blueprint.length).toBe('long');
+  });
+
+  it('a big level can be varied and built again: the same plan (all its sections, 16 and more), the same size', { timeout: 120000 }, () => {
+    // (A variation names every section of the level; plans were limited to 16, and the big levels have up to 45.)
+    for (const [structure, length, seed] of [['climb', 'very_long', 1], ['run', 'huge', 2], ['loop', 'huge', 3], ['descent', 'huge', 4]] as const) {
+      let p = createProject(registry);
+      const id = p.scenes[0].id;
+      const built = buildLevel(p, id, { difficulty: 3, structure, seed, length }, registry);
+      p = produce(p, (d) => void applyBuilt(d, id, built, registry));
+      const fp = (r: typeof built) => r.madeBy.fingerprint as { length: string; sections: string[]; size: [number, number] };
+      expect(fp(built).sections.length, `${structure} ${length}`).toBeGreaterThan(16);
+      const v = buildLevel(p, id, blueprintFor(p, id, 'variation', 77, registry)!.blueprint, registry);
+      expect(v.state, `${structure} ${length} variation: ${v.notes.join('; ')}`).toBe('validated');
+      expect(fp(v).length).toBe(length);
+      // (Nearly all of them fit again: at another seed a few come out wider, and the last ones find no room.)
+      expect(fp(v).sections.length).toBeGreaterThanOrEqual(fp(built).sections.length * 0.8);
+      expect(v.rows).not.toEqual(built.rows);
+      const again = buildLevel(p, id, blueprintFor(p, id, 'regenerate', 78, registry)!.blueprint, registry);
+      expect(again.state, `${structure} ${length} again`).toBe('validated');
+      expect(fp(again).length).toBe(length);
+    }
   });
 
   it('the difficulty across a game: up a step every two levels, a short breather every fourth, never past 5', () => {

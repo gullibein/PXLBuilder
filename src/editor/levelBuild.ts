@@ -16,9 +16,11 @@ export type BuildOutcome = { ok: true; message: string; sceneIds: Id[] } | { ok:
 
 /** In words: what was built and how it checked out. */
 function summary(built: GenerateResult): string {
-  const f = built.madeBy.fingerprint as { structure?: string; sections?: string[] } | null;
+  const f = built.madeBy.fingerprint as { structure?: string; sections?: string[]; size?: [number, number] } | null;
   const how = built.state === 'validated' ? 'checked: playable' : `not proven playable (${built.notes.at(-1) ?? 'the checker could not judge it'})`;
-  return `${f?.structure ?? 'level'}, ${f?.sections?.length ?? 0} sections, difficulty ${built.madeBy.blueprint.difficulty} · ${how}`;
+  // (Built smaller than asked, because a bigger one could not be proved: said.)
+  const smaller = built.notes.find((n) => /^built [\w ]+, not [\w ]+: /.test(n));
+  return `${f?.structure ?? 'level'}${f?.size ? `, ${f.size[0]} by ${f.size[1]} cells` : ''}, ${f?.sections?.length ?? 0} sections, difficulty ${built.madeBy.blueprint.difficulty} · ${how}${smaller ? ` · ${smaller}` : ''}`;
 }
 
 const fail = (e: unknown): BuildOutcome => {
@@ -35,7 +37,7 @@ export function engineBuild(kind: BuildKind): BuildOutcome {
   const seed = newLevelSeed();
   try {
     if (kind === 'new') {
-      const ask = blueprintFor(project, null, 'new', seed)!;
+      const ask = blueprintFor(project, null, 'new', seed, componentRegistry)!;
       const { scene, built } = newBuiltLevel(project, `Level ${project.scenes.length + 1}`, ask.blueprint, componentRegistry, ask);
       const ok = state.edit(`New level, built by the engine`, (p) => {
         addScene(p, scene);
@@ -47,7 +49,7 @@ export function engineBuild(kind: BuildKind): BuildOutcome {
       return { ok: true, message: `${scene.name}: ${summary(built)}`, sceneIds: [scene.id] };
     }
     const sceneId = state.activeSceneId;
-    const ask = blueprintFor(project, sceneId, kind, seed);
+    const ask = blueprintFor(project, sceneId, kind, seed, componentRegistry);
     if (!ask) return { ok: false, message: 'Only a level the engine built can be varied: use Regenerate to build this one anew' };
     const built = buildLevel(project, sceneId, ask.blueprint, componentRegistry, ask);
     const label = kind === 'regenerate' ? 'Level built again by the engine' : 'A variation of the level, by the engine';
@@ -68,7 +70,7 @@ export function engineMoreLevels(n: number): BuildOutcome {
   let soFar: Project = state.project;
   try {
     for (let i = 0; i < n; i++) {
-      const ask = blueprintFor(soFar, null, 'new', newLevelSeed())!;
+      const ask = blueprintFor(soFar, null, 'new', newLevelSeed(), componentRegistry)!;
       const r = newBuiltLevel(soFar, `Level ${soFar.scenes.length + 1}`, ask.blueprint, componentRegistry, ask);
       made.push(r);
       // (The next one is built knowing about this one: harder, another structure.)
