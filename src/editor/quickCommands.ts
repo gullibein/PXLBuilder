@@ -3,6 +3,7 @@
  * core/commands/quickCommands): on the card's objects, or the selection.
  * Also the clipboard for placed objects (Ctrl+C / Ctrl+X / Ctrl+V use it too).
  */
+import { least, most } from '../core/model/extremes';
 import type { AIContext } from '../core/ai/context';
 import { QUICK_COMMAND_HELP, stepOf, type QuickCommand } from '../core/commands/quickCommands';
 import type { ApplyResult } from '../core/commands/operations';
@@ -57,7 +58,7 @@ export function pasteObjects(at: Vec2 | null = null): Id[] {
   if (at) {
     const xs = source.map((e) => e.transform.position.x);
     const ys = source.map((e) => e.transform.position.y);
-    const mid = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+    const mid = { x: (least(xs, (v) => v) + most(xs, (v) => v)) / 2, y: (least(ys, (v) => v) + most(ys, (v) => v)) / 2 };
     offset = { x: Math.round((at.x - mid.x) / g) * g, y: Math.round((at.y - mid.y) / g) * g };
   } else {
     const n = clipboard.pasted + 1;
@@ -160,7 +161,7 @@ export function runQuickCommand(ctx: AIContext | null, cmd: QuickCommand): Promp
         for (let i = 1; i <= cmd.count; i++) {
           const step = cmd.direction ? stepOf(cmd.direction, 1) : { x: 1, y: 1 };
           const offset = cmd.direction ? { x: step.x * Math.max(g, span.x) * i, y: step.y * Math.max(g, span.y) * i } : { x: g * i, y: g * i };
-          created.push(...duplicateEntities(p, sceneId, ids, offset));
+          for (const made of duplicateEntities(p, sceneId, ids, offset)) created.push(made);
         }
       });
       if (!ok) return failed();
@@ -186,8 +187,8 @@ function spanOf(ids: Id[]): Vec2 {
   const g = project.settings.gridSize;
   const boxes = resolveSceneEntities(project, activeSceneId).filter((e) => ids.includes(e.id)).map(getWorldBounds);
   if (!boxes.length) return { x: g, y: g };
-  const w = Math.max(...boxes.map((b) => b.maxX)) - Math.min(...boxes.map((b) => b.minX));
-  const h = Math.max(...boxes.map((b) => b.maxY)) - Math.min(...boxes.map((b) => b.minY));
+  const w = most(boxes, (b) => b.maxX) - least(boxes, (b) => b.minX);
+  const h = most(boxes, (b) => b.maxY) - least(boxes, (b) => b.minY);
   return { x: Math.ceil(w / g - 0.01) * g, y: Math.ceil(h / g - 0.01) * g };
 }
 

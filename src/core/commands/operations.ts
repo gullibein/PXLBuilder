@@ -959,7 +959,7 @@ export function applyOperations(
           if (gone.length) {
             m.removeEntities(project, op.sceneId, gone);
             index.remove(gone);
-            result.removedEntityIds.push(...gone);
+            for (const id of gone) result.removedEntityIds.push(id);
           }
         }
         m.addEntity(project, op.sceneId, entity);
@@ -1247,7 +1247,7 @@ export function applyOperations(
                 if (covered.length) {
                   m.removeEntities(project, op.sceneId, covered.map((c) => c.id));
                   index.remove(covered.map((c) => c.id));
-                  result.removedEntityIds.push(...covered.map((c) => c.id));
+                  for (const c of covered) result.removedEntityIds.push(c.id);
                 }
               }
               fresh.push(entity);
@@ -1314,7 +1314,7 @@ export function applyOperations(
             .filter((e) => e !== player && e.transform.position.x >= x0 && e.transform.position.x < x0 + width * LEVEL_CELL && e.transform.position.y >= y0 && e.transform.position.y < y0 + op.rows.length * LEVEL_CELL)
             .map((e) => e.id);
           m.removeEntities(project, op.sceneId, gone);
-          result.removedEntityIds.push(...gone);
+          for (const id of gone) result.removedEntityIds.push(id);
           cover = null;
         }
         const used = grid.map((r) => r.map(() => false));
@@ -1425,7 +1425,7 @@ export function applyOperations(
           .filter((e) => (defId === null || e.definitionId === defId) && e.transform.position.x >= x0 && e.transform.position.x < x0 + op.width * LEVEL_CELL && e.transform.position.y >= y0 && e.transform.position.y < y0 + op.height * LEVEL_CELL)
           .map((e) => e.id);
         m.removeEntities(project, op.sceneId, gone);
-        result.removedEntityIds.push(...gone);
+        for (const id of gone) result.removedEntityIds.push(id);
         break;
       }
       case 'create_relationship': {

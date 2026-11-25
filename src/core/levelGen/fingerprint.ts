@@ -9,6 +9,7 @@
  * changes little of it: two levels of the same sections in the same order, with the same shape, score high
  * whatever their exact numbers.
  */
+import { least, most } from '../model/extremes';
 import type { ComponentRegistry } from '../components/registry';
 import { getEntitySize } from '../model/geometry';
 import { LEVEL_CELL } from '../model/placement';
@@ -71,10 +72,10 @@ export function rowsOfScene(project: Project, scene: Scene, registry: ComponentR
     for (let dy = 0; dy < Math.max(1, Math.round(size.y / LEVEL_CELL)); dy++) for (let dx = 0; dx < Math.max(1, Math.round(size.x / LEVEL_CELL)); dx++) cells.push({ c: c0 + dx, r: r0 + dy, ch });
   }
   if (!cells.length) return [];
-  const minC = Math.min(...cells.map((x) => x.c));
-  const minR = Math.min(...cells.map((x) => x.r));
-  const w = Math.max(...cells.map((x) => x.c)) - minC + 1;
-  const h = Math.max(...cells.map((x) => x.r)) - minR + 1;
+  const minC = least(cells, (x) => x.c);
+  const minR = least(cells, (x) => x.r);
+  const w = most(cells, (x) => x.c) - minC + 1;
+  const h = most(cells, (x) => x.r) - minR + 1;
   if (w * h > 200 * 120) return [];
   const grid = Array.from({ length: h }, () => Array<string>(w).fill('.'));
   for (const x of cells) grid[x.r - minR][x.c - minC] = x.ch;

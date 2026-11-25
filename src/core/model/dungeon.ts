@@ -6,6 +6,7 @@
  * dungeon (the editor's example, a play to repeat). Whatever is placed by hand stays where it is: the generator
  * leaves its squares free.
  */
+import { least, most } from './extremes';
 import type { ComponentRegistry } from '../components/registry';
 import type { DungeonGenerator, DungeonSpawn, EntityInstance, Id, Project, Scene } from '../types';
 import { instantiateDefinition } from './factory';
@@ -417,10 +418,10 @@ function templateLayout(project: Project, scene: Scene, registry: ComponentRegis
   const things = scene.entities.filter((e) => !resolveEntity(project, e, registry).components.CharacterController);
   if (!things.length) return { w: 0, h: 0, things: [], solid: [] };
   const cell = (v: number) => Math.floor(v / LEVEL_CELL);
-  const i0 = Math.min(...things.map((e) => cell(e.transform.position.x)));
-  const j0 = Math.min(...things.map((e) => cell(e.transform.position.y)));
-  const i1 = Math.max(...things.map((e) => cell(e.transform.position.x)));
-  const j1 = Math.max(...things.map((e) => cell(e.transform.position.y)));
+  const i0 = least(things, (e) => cell(e.transform.position.x));
+  const j0 = least(things, (e) => cell(e.transform.position.y));
+  const i1 = most(things, (e) => cell(e.transform.position.x));
+  const j1 = most(things, (e) => cell(e.transform.position.y));
   const solid: [number, number][] = [];
   for (const e of things) {
     const c = resolveEntity(project, e, registry).components;

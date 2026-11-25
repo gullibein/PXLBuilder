@@ -59,6 +59,9 @@ try {
       await page.getByTestId('open-file-input').setInputFiles({ name: f, mimeType: 'application/json', buffer: Buffer.from(text) });
       await page.waitForFunction((n) => Number(document.querySelector('[data-testid="viewport-canvas"]')?.getAttribute('data-entities')) === n, things, { timeout: 240000 });
       const opened = Date.now() - t;
+      // (CAPACITY_SETTLE_MS: wait this long first. The level's check runs once, a moment after a level is opened or
+      // changed, in one piece; without the wait it can fall inside the three seconds measured next.)
+      if (process.env.CAPACITY_SETTLE_MS) await page.waitForTimeout(Number(process.env.CAPACITY_SETTLE_MS));
       // The editor's view dragged about (Space + drag), for three seconds.
       const box = await canvas.boundingBox();
       const view0 = await canvas.getAttribute('data-camera');

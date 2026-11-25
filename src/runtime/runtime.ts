@@ -6,6 +6,7 @@
  * same data the editor shows (components, world settings); there is no
  * separate demo logic. Rendering uses the shared renderer.
  */
+import { most } from '../core/model/extremes';
 import { gameTurns } from '../core/engine/turns';
 import { makeTurnSystem, type TurnSystem } from './turnSystem';
 import { gamePlayGenerators } from '../core/engine/generators';
@@ -788,7 +789,7 @@ export class Runtime {
     this.rebuildLadders();
 
     const bottoms = this.entities.map((e) => e.y + getEntitySize(e.base).y);
-    this.fallLimit = (bottoms.length ? Math.max(...bottoms) : 0) + FALL_MARGIN;
+    this.fallLimit = (bottoms.length ? most(bottoms, (v) => v) : 0) + FALL_MARGIN;
 
     // Only what the project says: the camera follows the entity with a CameraTarget. Without one it
     // stays still, on the middle of the level (there is no hidden fallback to the player).

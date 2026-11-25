@@ -2968,3 +2968,236 @@ several of them in the same level, each where the last ends; a level plays smoot
 things; so the ground is the background colour, not a tile in every cell. "Several in the same level make one
 level" is tested, not asserted: a map of 120 by 70 in one operation is refused, the same map as two halves
 side by side is one level, walked from end to end with nothing walled off at the seam.
+
+### 30.11 W0 and W1: what was done, what each part costs before and after, what is still limited
+
+W0 and W1 are done; nothing of W2 to W5 is started. This section is the report asked for: what changed, each
+part of the work measured by itself before and after, the evidence that games behave as they did, and what
+is still limited.
+
+**W0: the baseline and the "same answers" harness (no engine change).**
+
+- *Same answers* (`src/regression/sameAnswers.ts`, a setup file of the unit suite). Every test that steps a
+  game is fingerprinted while it runs: after each step, the full state of every thing that is doing anything
+  (and of every thing on the first step and every eighth), the camera, the messages, and every event in the
+  order it was raised; `Math.random` is seeded from the test's name. The fingerprints were recorded on the
+  engine as it was (three runs, kept only where all three agree: 458 tests, some 862,000 steps of play) and
+  `npm test` compares every run with them. A different collision answer, a different order of events, a script
+  that ran differently or a level generated differently changes a fingerprint and fails the test that did it,
+  whatever the test itself asserts. A picture is never compared.
+- *Capacity* (`src/regression/capacity.ts`, `worlds.ts`, `scripts/capacity-browser.mjs`). Test worlds of three
+  kinds (a city seen from above, a mine of solid ground with tunnels, a side-on run of platforms) at sizes
+  from 591 to 150,106 things, and for each: saving, opening, starting play, a step of play standing and
+  walking, a tile drawn, a hundred drawn, a thing moved, a thing placed (each as one operation), the level's
+  check, the AI's map, the AI's whole context; and in the real app in a browser: opening, the editor's view
+  dragged, a tile drawn by hand, play starting, frames of play standing and walking with the camera scrolling.
+
+**W1: what changed.** None of it changes what a game does; all of it changes what the engine looks at to do it.
+
+1. *Collision asks what is near.* The solid things of a level are filed by place (`runtime/geometry/boxGrid.ts`).
+   A moving thing is tested against what lies in the area its move can reach, in the list's own order. The
+   result is used only if the thing never left the area looked up; otherwise the move is worked out again
+   against everything, as before. So the answer is the old one by construction, not by tuning.
+2. *Tiles that do nothing are not visited.* A thing made only of a picture, a collision shape and a still
+   body, with no script, is left out of the per-step loops until something touches it (a script names it, a
+   rule's result lands on it, it is dug, moved, hidden, hurt, a level flips): from then on it is visited like
+   any other, for good. Whether a thing is asleep is kept outside the thing, so nothing a game can read
+   differs. This is not the "sleeping far away" of W4: nothing that acts is ever paused, near or far.
+3. *Lists made once.* What can be pushed, what is liquid, things by id, and line of sight no longer read
+   the whole level on each use.
+4. *An object's make-up worked out once.* Plain copies of one object share one worked-out, frozen
+   definition instead of each working out its own (opening a level, the checks, the AI's context).
+5. *Checks by place.* "What covers this", "what is stacked here", and what a tile drawn would overlap were
+   each every-thing-against-every-thing; they ask by place now (`core/model/rectIndex.ts`).
+6. *Drawing asks what is in view.* The list drawn each frame is what lies in the view, in the same order.
+7. *The editor.* The level's problems are worked out once and shared by the panels that show them, and from
+   4,000 things on, a moment (0.4 s) after the last change, not on every change.
+8. *More things than one call can take.* "The largest of these numbers" was written as one call with every
+   thing as an argument, which fails beyond some 125,000 (found by the 150,106-thing world: play did not
+   start, on the old code too). The same numbers are now found by a loop (`core/model/extremes.ts`).
+
+**What did not change:** the saved format, the model (a level is still one list of things; a tile is still
+a whole thing), every operation, what the AI is told (still "about 4,000 placed things", 6,000 cells in a
+`draw_map`, 3,000 in a `draw_tiles`), the level builder's sizes, the AI's view of a level (140 by 48 cells).
+
+**Measured.** One machine (this container), node 22 and headless Chromium, one run each: small figures
+differ by tens of per cent from run to run, the big differences do not. "Before" is the code of commit
+d1b6af7 (W0) run on the same worlds by the same scripts. Every cell is before → after.
+
+*Play (node): the simulation and collision of one step, and starting.*
+
+| World | Things | Play starts | A step, standing | A step, walking |
+|---|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 15.8 ms → 4.9 ms | 1.4 ms → 0.3 ms | 0.7 ms → 0.2 ms |
+| city 60 by 34 | 1,028 | 21.9 ms → 15.6 ms | 1.1 ms → 0.1 ms | 0.9 ms → 0.2 ms |
+| run 40 by 600 | 1,324 | 28.1 ms → 15.2 ms | 1.0 ms → 0.1 ms | 1.0 ms → 0.1 ms |
+| run 600 by 60 | 2,078 | 27.3 ms → 11.5 ms | 7.8 ms → 0.5 ms | 5.1 ms → 0.4 ms |
+| city 100 by 60 | 2,759 | 42.7 ms → 33.0 ms | 5.0 ms → 0.2 ms | 3.2 ms → 0.2 ms |
+| city 250 by 150 | 17,127 | 204 ms → 59.0 ms | 127 ms → 0.9 ms | 114 ms → 0.8 ms |
+| mine 80 by 400 | 31,132 | 334 ms → 163 ms | 63.6 ms → 0.2 ms | 58.6 ms → 0.2 ms |
+| city 400 by 300 | 53,869 | 809 ms → 328 ms | 1.1 s → 3.3 ms | 1.1 s → 5.5 ms |
+| mine 120 by 600 | 70,694 | 1.0 s → 322 ms | 198 ms → 0.4 ms | 214 ms → 0.3 ms |
+| mine 160 by 950 | 150,106 | does not start → 893 ms | does not start → 0.3 ms | does not start → 0.2 ms |
+
+A step no longer grows with the level: 0.3 ms at 150,106 things. (The city of 53,869 costs more, 3 to 5 ms:
+it has 200 enemies wandering in it, and a thing that acts costs what it did.)
+
+*Editing by operation (node): what one answer of the AI, or one command, costs to apply.*
+
+| World | Things | One tile drawn | 100 tiles drawn | One thing moved | One thing placed |
+|---|---:|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 97.7 ms → 16.2 ms | 112 ms → 33.4 ms | 0.9 ms → 1.4 ms | 94.8 ms → 17.5 ms |
+| city 60 by 34 | 1,028 | 101 ms → 24.7 ms | 80.8 ms → 14.9 ms | 2.0 ms → 1.8 ms | 71.9 ms → 7.9 ms |
+| run 40 by 600 | 1,324 | 260 ms → 40.9 ms | 220 ms → 30.8 ms | 2.0 ms → 1.8 ms | 193 ms → 26.3 ms |
+| run 600 by 60 | 2,078 | 335 ms → 51.8 ms | 436 ms → 58.6 ms | 3.1 ms → 2.3 ms | 335 ms → 52.0 ms |
+| city 100 by 60 | 2,759 | 185 ms → 23.4 ms | 213 ms → 24.2 ms | 2.6 ms → 10.6 ms | 140 ms → 9.4 ms |
+| city 250 by 150 | 17,127 | 1.1 s → 134 ms | 1.1 s → 170 ms | 20.9 ms → 20.6 ms | 1.3 s → 67.3 ms |
+| mine 80 by 400 | 31,132 | 5.7 s → 817 ms | 5.3 s → 875 ms | 40.6 ms → 57.2 ms | 5.3 s → 850 ms |
+| city 400 by 300 | 53,869 | 3.8 s → 467 ms | 4.0 s → 661 ms | 63.1 ms → 73.7 ms | 3.5 s → 250 ms |
+| mine 120 by 600 | 70,694 | 14 s → 2.3 s | 14 s → 2.0 s | 95.5 ms → 97.7 ms | 14 s → 2.0 s |
+| mine 160 by 950 | 150,106 | not measured → 3.7 s | not measured → 4.2 s | not measured → 508 ms | not measured → 3.2 s |
+
+*The level's check, the AI's map and the AI's whole context (node).*
+
+| World | Things | Level check | The AI's map | The AI's context |
+|---|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 67.3 ms → 19.6 ms | 28.5 ms → 8.8 ms | 115 ms → 32.0 ms |
+| city 60 by 34 | 1,028 | 85.4 ms → 20.2 ms | 45.3 ms → 13.9 ms | 202 ms → 44.3 ms |
+| run 40 by 600 | 1,324 | 86.2 ms → 17.1 ms | 52.2 ms → 6.6 ms | 282 ms → 36.4 ms |
+| run 600 by 60 | 2,078 | 166 ms → 31.5 ms | 101 ms → 20.6 ms | 542 ms → 95.4 ms |
+| city 100 by 60 | 2,759 | 135 ms → 43.4 ms | 74.8 ms → 27.2 ms | 578 ms → 74.7 ms |
+| city 250 by 150 | 17,127 | 1.1 s → 200 ms | 526 ms → 174 ms | 15 s → 574 ms |
+| mine 80 by 400 | 31,132 | 12 s → 459 ms | 7.2 s → 249 ms | 62 s → 1.0 s |
+| city 400 by 300 | 53,869 | 3.3 s → 595 ms | 2.2 s → 457 ms | not measured → 1.2 s |
+| mine 120 by 600 | 70,694 | 29 s → 1.2 s | 38 s → 548 ms | not measured → 2.0 s |
+| mine 160 by 950 | 150,106 | not measured → 1.7 s | not measured → 1.3 s | not measured → 3.8 s |
+
+(Before, the context of the two biggest was not measured: at 31,132 things it took a minute.)
+
+*Saving and opening a file (node).* Unchanged, as intended: they were never the limit.
+
+| World | Things | Saving | Opening |
+|---|---:|---:|---:|
+| run 170 by 21 | 591 | 3.1 ms → 3.1 ms | 8.4 ms → 11.0 ms |
+| city 60 by 34 | 1,028 | 3.1 ms → 4.5 ms | 22.0 ms → 25.2 ms |
+| run 40 by 600 | 1,324 | 6.9 ms → 3.7 ms | 9.7 ms → 9.9 ms |
+| run 600 by 60 | 2,078 | 5.4 ms → 5.1 ms | 7.0 ms → 9.9 ms |
+| city 100 by 60 | 2,759 | 5.4 ms → 7.0 ms | 19.9 ms → 22.3 ms |
+| city 250 by 150 | 17,127 | 24.6 ms → 28.8 ms | 54.3 ms → 58.4 ms |
+| mine 80 by 400 | 31,132 | 74.0 ms → 68.8 ms | 99.9 ms → 110 ms |
+| city 400 by 300 | 53,869 | 74.9 ms → 82.8 ms | 176 ms → 158 ms |
+| mine 120 by 600 | 70,694 | 190 ms → 160 ms | 242 ms → 223 ms |
+| mine 160 by 950 | 150,106 | not measured → 366 ms | not measured → 356 ms |
+
+*The level builder (node): one level built, checked and proved.* The same game and seed on both codes; the
+level built is the same thing for thing in all nine (compared by content).
+
+| Built | Size | Things | Before → after |
+|---|---:|---:|---:|
+| run, short | 30 by 15 | 175 | 135 ms → 59 ms |
+| run, long | 79 by 15 | 387 | 207 ms → 57 ms |
+| run, huge | 170 by 21 | 883 | 648 ms → 157 ms |
+| climb, short | 24 by 21 | 205 | 126 ms → 28 ms |
+| climb, long | 34 by 27 | 372 | 308 ms → 78 ms |
+| climb, huge | 58 by 39 | 738 | 770 ms → 177 ms |
+| hub, short | 40 by 15 | 182 | 103 ms → 25 ms |
+| hub, long | 64 by 15 | 227 | 186 ms → 44 ms |
+| hub, huge | 124 by 21 | 448 | 404 ms → 89 ms |
+
+*The real app in a browser: opening, drawing by hand, starting play.*
+
+| World | Things | Opens | One tile drawn by hand | A stroke of tiles | Play starts |
+|---|---:|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 219 ms → 238 ms | 128 ms → 99 ms | 240 ms → 180 ms | 228 ms → 162 ms |
+| city 60 by 34 | 1,028 | 210 ms → 195 ms | 134 ms → 98 ms | 242 ms → 206 ms | 198 ms → 152 ms |
+| run 40 by 600 | 1,324 | 304 ms → 236 ms | 198 ms → 109 ms | 302 ms → 200 ms | 368 ms → 140 ms |
+| run 600 by 60 | 2,078 | 556 ms → 319 ms | 321 ms → 143 ms | 424 ms → 227 ms | 946 ms → 201 ms |
+| city 100 by 60 | 2,759 | 471 ms → 333 ms | 394 ms → 153 ms | 462 ms → 216 ms | 460 ms → 222 ms |
+| city 250 by 150 | 17,127 | 9.8 s → 850 ms | 10 s → 239 ms | 8.9 s → 555 ms | 757 ms → 345 ms |
+| mine 80 by 400 | 31,132 | 37 s → 1.0 s | 41 s → 272 ms | 40 s → 506 ms | 443 ms → 600 ms |
+| city 400 by 300 | 53,869 | 81 s → 1.7 s | 84 s → 628 ms | 83 s → 924 ms | 736 ms → 304 ms |
+| mine 120 by 600 | 70,694 | 159 s → 5.4 s | 171 s → 592 ms | 172 s → 964 ms | 1.0 s → 1.2 s |
+| mine 160 by 950 | 150,106 | not measured → 3.8 s | not measured → 1.3 s | not measured → 2.3 s | does not start → 859 ms |
+
+*The real app in a browser: a frame (the middle one of three seconds, and how many frames there were;
+180 is sixty a second).*
+
+| World | Things | Play, standing | Play, walking (the camera scrolling) | Editor, the view dragged |
+|---|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 17 ms (179) → 17 ms (179) | 17 ms (179) → 17 ms (179) | 17 ms (180) → 17 ms (180) |
+| city 60 by 34 | 1,028 | 17 ms (180) → 17 ms (180) | 17 ms (179) → 17 ms (178) | 17 ms (179) → 17 ms (179) |
+| run 40 by 600 | 1,324 | 17 ms (179) → 17 ms (179) | 17 ms (170) → 17 ms (179) | 17 ms (180) → 17 ms (180) |
+| run 600 by 60 | 2,078 | 117 ms (23) → 17 ms (179) | 150 ms (19) → 17 ms (179) | 17 ms (180) → 17 ms (180) |
+| city 100 by 60 | 2,759 | 17 ms (152) → 17 ms (180) | 100 ms (31) → 17 ms (180) | 17 ms (180) → 17 ms (181) |
+| city 250 by 150 | 17,127 | no frame → 17 ms (180) | no frame → 17 ms (180) | 17 ms (179) → 17 ms (135) |
+| mine 80 by 400 | 31,132 | 17 ms (4) → 17 ms (179) | no frame → 17 ms (179) | 17 ms (179) → 17 ms (84) |
+| city 400 by 300 | 53,869 | 33 ms (4) → 17 ms (161) | no frame → 17 ms (178) | 17 ms (170) → 17 ms (180) |
+| mine 120 by 600 | 70,694 | 50 ms (7) → 17 ms (153) | no frame → 17 ms (178) | 17 ms (134) → 17 ms (180) |
+| mine 160 by 950 | 150,106 | does not start → 17 ms (144) | does not start → 17 ms (179) | not measured → 17 ms (136) |
+
+Three notes on the browser figures. On the old code, play was far slower in this script (8 frames a second
+standing at 2,078 things, 10 walking at 2,759; measured twice) than in W0's first measurement of the same
+worlds (60), which did not draw by hand before playing; which part of the old code that was, was not found
+out, and it is gone on the new. The
+editor's view dragged shows fewer frames after W1 at 17,127 and 31,132 things: one long frame (0.7 s and
+1.3 s), which is the editor's check of the level, put off by 0.4 s and falling inside the three seconds;
+with that check held back the same drag is 180 frames of 17 ms (measured both ways). And "play starts" in
+the browser is within its own noise at these sizes (node's figure above is the engine's part).
+
+**The same answers: the evidence.**
+
+- 455 tests recorded on the old engine and never recorded again give the same fingerprint, step by step,
+  on the new one. (The three capacity tests' own worlds were changed, so theirs were recorded again; with the
+  tests W1 added, 464 are compared from here on.)
+- Sleeping tiles, both ways: fifteen games (the three test worlds, a built platformer level, the space
+  shooter, mining, Boulder Dash, Tetris, Dr. Mario, tactics, the RPG, the dig room, and the roguelike,
+  isometric and RPG starters) are played with tiles asleep and again with every thing awake, and the whole
+  state compared after every step (`runtime/asleep.test.ts`). The same was done once with the games saved
+  from real builds (the chess game, both dash and wall-jump games, the crime game, tic-tac-toe: twelve
+  levels, 1,200 steps each): the same after every step.
+- No test in the suite leaves a sleeping tile changed (the harness fails a test in which one is).
+- What is drawn: the list for a view equals the whole list filtered to that view, in the same order.
+- Generation: the nine levels above are identical on both codes, and the builder's own golden levels in the
+  suite are unchanged.
+- The suites: 1,284 unit tests pass (3 skipped, 1 to do), with every cross-genre regression game among them.
+  The browser suite passes: 1,111 checks. (Once during W1 its "no AI connection" step timed out on a click
+  and passed when run again at once; the final run passed first time.)
+
+**Found on the way.**
+
+- The 125,000-thing failure above (fixed, tested at 150,106 things in `npm test`).
+- A new game's levels differ from another new game's with the same blueprint and seed. That is by design
+  (a game with no theme chosen takes one from its own id, and the theme decides which obstacles are built),
+  not a fault: within one game the same blueprint and seed give the same level. (The first comparison of the
+  builder on the two codes made a new game each time and so compared different levels.)
+
+**Still limited.**
+
+- *The editor's check after a change.* It runs in one piece 0.4 s after a level is opened or last changed:
+  0.7 s at 17,127 things, 1.3 s at 31,132, during which the editor does not respond. Above that it was not
+  timed in the browser (in node the check is 0.6 s at 53,869 and 1.7 s at 150,106; the browser took about
+  three times node's). Doing it in slices, off the main thread, or on request in big levels changes when the
+  problems list updates, so it is a decision, not a silent fix.
+- *Drawing by hand:* 0.24 to 0.27 s a click at 17,000 to 31,000 things, 0.6 s at 54,000 to 71,000, 1.3 s at
+  150,000. It grows with the level because the level is one list that is copied and re-read on a change.
+- *Editing by operation* costs in proportion to the level for each answer applied: 0.13 s at 17,127 things,
+  0.5 to 2.3 s at 54,000 to 71,000, 3.7 s at 150,000. The mine costs more than a city of its size; why was
+  not looked into.
+- *What is solid changing during play* (a dig, a block broken, a door): the list of solid things and its
+  filing are made again, 17 to 37 ms in the mine of 31,132 things and 40 to 53 ms in the one of 70,694: a
+  frame or two dropped at each dig. A thing removed during play (a spent shot) re-files in the same way; not
+  measured in a big world.
+- *Whatever wakes many tiles* costs what it did before for those tiles from then on: a level flip wakes all,
+  a rule or script aimed at a tag or group wakes every thing that has it.
+- *Many things that act.* The test worlds are mostly tiles. A world with thousands of things that move or
+  run scripts was not measured, and W1 does nothing for it beyond collision by place. That is W4's subject.
+- *What the AI can make is unchanged,* on purpose: the caps on one `draw_map` and one `draw_tiles`, the 4,000
+  things it is told about, its view of 140 by 48 cells, the builder's sizes. The engine now plays far more
+  than the AI is allowed to ask for; raising what it is told belongs with W2 and W3.
+- *Not measured:* memory, worlds beyond 150,106 things, other machines and real graphics hardware.
+
+**What this says about the decisions put off.** Chunked tiles are not needed for play at these sizes: a
+step and a frame no longer depend on the level's size. What still grows with the level is editing (by hand
+and by operation), the check, the AI's context, and the file, all because a tile is a whole thing in one
+list. A tile layer (W2's subject) is what would cut those, and the figures above are the case for or against
+it; chunks for play can stay deferred.

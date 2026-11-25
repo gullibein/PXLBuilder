@@ -6,6 +6,7 @@
  * is the cell free, is there headroom above the platform, can the player get
  * there from a spot it already reaches.
  */
+import { least, most } from './extremes';
 import { rampOf, wholeRamp } from './ramps';
 import { onlyOnTouch, touchHarm } from './ruleScripts';
 import type { ComponentRegistry } from '../components/registry';
@@ -127,10 +128,10 @@ export function levelMap(project: Project, sceneId: Id, registry: ComponentRegis
     }
   }
 
-  let minC = Math.min(...things.map((t) => t.cols[0])) - MARGIN;
-  let maxC = Math.max(...things.map((t) => t.cols[1])) + MARGIN;
-  let minR = Math.min(...things.map((t) => t.rows[0])) - MARGIN - 2;
-  let maxR = Math.max(...things.map((t) => t.rows[1])) + MARGIN;
+  let minC = least(things, (t) => t.cols[0]) - MARGIN;
+  let maxC = most(things, (t) => t.cols[1]) + MARGIN;
+  let minR = least(things, (t) => t.rows[0]) - MARGIN - 2;
+  let maxR = most(things, (t) => t.rows[1]) + MARGIN;
   let cropped: string | undefined;
   if (maxC - minC + 1 > MAX_COLS || maxR - minR + 1 > MAX_ROWS) {
     // Keep the part around the player start.

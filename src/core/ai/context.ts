@@ -6,6 +6,7 @@
  * the project the model needs: the targets in full, everything else in brief.
  * The model never receives the raw project file.
  */
+import { least, most } from '../model/extremes';
 import { playGeneratorFor } from '../generation/playGenerators';
 import { checkGame, describeProfile, profileChoices, profileOf, storedGameProfile } from '../engine/profile';
 import { gameFacts } from '../engine/actual';
@@ -376,7 +377,8 @@ function occupiedCells(scene: Scene): AIPayload['level']['grid']['occupied'] {
   if (!scene.entities.length) return null;
   const cols = scene.entities.map((e) => Math.floor(e.transform.position.x / LEVEL_CELL));
   const rows = scene.entities.map((e) => Math.floor(e.transform.position.y / LEVEL_CELL));
-  return { minCol: Math.min(...cols), maxCol: Math.max(...cols), minRow: Math.min(...rows), maxRow: Math.max(...rows) };
+  const same = (v: number) => v;
+  return { minCol: least(cols, same), maxCol: most(cols, same), minRow: least(rows, same), maxRow: most(rows, same) };
 }
 
 /** Reach of the level's player character (the first placed one, else the library's). */

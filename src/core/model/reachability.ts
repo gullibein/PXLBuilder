@@ -10,6 +10,7 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
+import { least, most } from './extremes';
 import { RectIndex } from './rectIndex';
 import { tableBoosts } from '../../abilities/index';
 import { gameGeometry } from '../engine/geometry';
@@ -479,9 +480,9 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   const things = all.filter((r) => important(r) && !within(boxOf(r))).map((r) => ({ id: r.id, name: r.name }));
 
   // An enclosed level's roof (the top of its ceiling, across nearly all of it) is no platform to get onto.
-  const levelLeft = Math.min(...boxes.map(({ b }) => b.left));
-  const levelRight = Math.max(...boxes.map(({ b }) => b.right));
-  const levelTop = Math.min(...boxes.map(({ b }) => b.top));
+  const levelLeft = least(boxes, ({ b }) => b.left);
+  const levelRight = most(boxes, ({ b }) => b.right);
+  const levelTop = least(boxes, ({ b }) => b.top);
   const roof = (s: Span) => s.top <= levelTop + EDGE && s.right - s.left >= (levelRight - levelLeft) * 0.8 && s.top < pBox.top;
   const platforms = spans
     .map((s, i) => ({ s, i }))
@@ -517,10 +518,10 @@ function topDownReachability(scene: Project['scenes'][number], all: ResolvedEnti
   }
   // The level's extent, one cell beyond everything: walking past it leads nowhere.
   const boxes = all.map(boxOf);
-  const minC = Math.floor(Math.min(...boxes.map((b) => b.left)) / C) - 1;
-  const maxC = Math.floor(Math.max(...boxes.map((b) => b.right)) / C) + 1;
-  const minR = Math.floor(Math.min(...boxes.map((b) => b.top)) / C) - 1;
-  const maxR = Math.floor(Math.max(...boxes.map((b) => b.bottom)) / C) + 1;
+  const minC = Math.floor(least(boxes, (b) => b.left) / C) - 1;
+  const maxC = Math.floor(most(boxes, (b) => b.right) / C) + 1;
+  const minR = Math.floor(least(boxes, (b) => b.top) / C) - 1;
+  const maxR = Math.floor(most(boxes, (b) => b.bottom) / C) + 1;
   const inside = (c: number, r: number) => c >= minC && c <= maxC && r >= minR && r <= maxR;
   const cellOf = (p: Vec2) => [Math.floor(p.x / C), Math.floor(p.y / C)] as const;
 

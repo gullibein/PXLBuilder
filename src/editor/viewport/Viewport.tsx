@@ -1353,7 +1353,7 @@ function commitIsoStroke(stroke: Extract<Drag, { kind: 'paint' }>, iso: IsoStrok
       return newVol && v ? v.bottom < newVol.top - 0.5 && newVol.bottom < v.top - 0.5 : !newVol && !v && Math.abs(isoLiftOf(e) - lift) < 1 && isoLookOf(e) === isoLookOf(preview);
     });
     if (same.some((e) => e.definitionId === def.id && Math.abs(isoLiftOf(e) - lift) < 0.5)) continue;
-    replace.push(...same.map((e) => e.id));
+    for (const e of same) replace.push(e.id);
     const e = instantiateDefinition(def, at, n++ === 0 ? def.name : `${def.name} ${n}`);
     if (lift !== 0) e.components = { ...e.components, Sprite: { ...(e.components.Sprite ?? {}), isoLift: lift } };
     created.push(e);

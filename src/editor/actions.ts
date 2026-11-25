@@ -93,7 +93,7 @@ export function extendSelection(ids: string[], offsets: Vec2[], selection: strin
     const created: string[] = [];
     const ok = edit(`Extend (${n} ${n === 1 ? 'copy' : 'copies'})${overwrite.length ? `, replacing ${overwrite.length}` : ''}`, (p) => {
       if (overwrite.length) removeEntities(p, activeSceneId, overwrite);
-      for (const o of offsets) created.push(...duplicateEntities(p, activeSceneId, ids, o));
+      for (const o of offsets) for (const made of duplicateEntities(p, activeSceneId, ids, o)) created.push(made);
     });
     if (ok) selectEntities([...new Set([...selection, ...created])]);
   });

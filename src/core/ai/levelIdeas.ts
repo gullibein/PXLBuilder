@@ -7,6 +7,7 @@
  * other levels, so a new level is something else. The AI follows the idea
  * unless the user asked for something specific.
  */
+import { least, most } from '../model/extremes';
 import { rampOf } from '../model/ramps';
 import type { ComponentRegistry } from '../components/registry';
 import { getEntitySize } from '../model/geometry';
@@ -126,10 +127,10 @@ export function levelShape(project: Project, scene: Scene, registry: ComponentRe
     const s = getEntitySize(r);
     return { r, x: r.transform.position.x, y: r.transform.position.y, w: s.x, h: s.y };
   });
-  const left = Math.min(...boxes.map((b) => b.x - b.w / 2));
-  const right = Math.max(...boxes.map((b) => b.x + b.w / 2));
-  const top = Math.min(...boxes.map((b) => b.y - b.h / 2));
-  const bottom = Math.max(...boxes.map((b) => b.y + b.h / 2));
+  const left = least(boxes, (b) => b.x - b.w / 2);
+  const right = most(boxes, (b) => b.x + b.w / 2);
+  const top = least(boxes, (b) => b.y - b.h / 2);
+  const bottom = most(boxes, (b) => b.y + b.h / 2);
   const where = (x: number, y: number) => {
     const fx = (x - left) / Math.max(1, right - left);
     const fy = (y - top) / Math.max(1, bottom - top);
@@ -164,10 +165,10 @@ export function levelStats(project: Project, scene: Scene, registry: ComponentRe
     const sz = getEntitySize(r);
     return { r, l: r.transform.position.x - sz.x / 2, t: r.transform.position.y - sz.y / 2, w: sz.x, h: sz.y };
   });
-  const left = Math.min(...box.map((b) => b.l));
-  const right = Math.max(...box.map((b) => b.l + b.w));
-  const top = Math.min(...box.map((b) => b.t));
-  const bottom = Math.max(...box.map((b) => b.t + b.h));
+  const left = least(box, (b) => b.l);
+  const right = most(box, (b) => b.l + b.w);
+  const top = least(box, (b) => b.t);
+  const bottom = most(box, (b) => b.t + b.h);
   // Standable rows: solid cells with an empty cell above, in runs of 2+ in a row.
   const solidAt = new Set<string>();
   for (const b of box) {

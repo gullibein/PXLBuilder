@@ -371,7 +371,7 @@ export function addEntities(project: Project, sceneId: Id, entities: EntityInsta
     ids.add(entity.id);
     if (entity.definitionId !== null) getDefinition(project, entity.definitionId);
   }
-  scene.entities.push(...entities.map((e) => cloneValue(e)));
+  for (const e of entities) scene.entities.push(cloneValue(e));
 }
 
 export function removeEntities(project: Project, sceneId: Id, entityIds: Id[]): void {
