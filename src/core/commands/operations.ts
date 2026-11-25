@@ -615,7 +615,10 @@ class CoverIndex {
     project: Project,
     registry: ComponentRegistry,
   ) {
-    for (const e of m.getScene(project, sceneId).entities) this.add(project, e, registry);
+    // (Read from the game as it stands, not through the draft being changed: looking at every thing of a big level
+    // through a draft makes a draft of each, which costs far more than the looking.)
+    const now = isDraft(project) ? (current(project) as Project) : project;
+    for (const e of m.getScene(now, sceneId).entities) this.add(now, e, registry);
   }
 
   private static cellsOf(b: Rect): string[] {

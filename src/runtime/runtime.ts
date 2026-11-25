@@ -23,6 +23,7 @@ import type { ComponentRegistry } from '../core/components/registry';
 import { itemNameOf } from '../core/graph/graph';
 import { createStandaloneEntity, instantiateDefinition } from '../core/model/factory';
 import { getEntitySize } from '../core/model/geometry';
+import { RectIndex } from '../core/model/rectIndex';
 import { resolveEntity, type ResolvedEntity } from '../core/model/resolve';
 import type { EntityInstance, Id, Project, Scene, Vec2 } from '../core/types';
 import type { DrawAnchor, DrawShape } from '../core/script/language';
@@ -423,6 +424,16 @@ export function colliderOf(c: ResolvedEntity['components'], transform: ResolvedE
   return { ox, oy, hw: w / 2, hh: h / 2, ...base };
 }
 
+/** What a plain tile is made of, and nothing else (see Runtime.asleepSet). */
+const PLAIN_PARTS = new Set(['Sprite', 'Collider', 'PhysicsBody']);
+
+/** A wall, a floor, a block: a picture, a collision box, a body that doesn't move; no scripts, nothing that acts. */
+function plainTile(e: RuntimeEntity): boolean {
+  if (e.scripts.length || (e.body !== 'static' && e.body !== 'none') || e.vx !== 0 || e.vy !== 0 || !e.alive) return false;
+  for (const k in e.base.components) if (!PLAIN_PARTS.has(k)) return false;
+  return true;
+}
+
 function buildEntity(project: Project, instance: EntityInstance, registry: ComponentRegistry, geometry: ReadonlySet<string>): RuntimeEntity {
   return entityFrom(project, resolveEntity(project, instance, registry), geometry);
 }
@@ -700,6 +711,7 @@ export class Runtime {
       get entities() {
         return rt.entities;
       },
+      wake: (e) => rt.wake(e),
       get time() {
         return rt.time;
       },
@@ -806,6 +818,7 @@ export class Runtime {
     }
     // Scripts can add to what was built (a key in a room, a boss before the stairs): the signal "level_built".
     if (gen) this.gameplay.emit('signal', null, null, { name: 'level_built' });
+    this.settle();
   }
 
   /** Starts the level again from the beginning (a rule action, or R in play). */
@@ -859,14 +872,14 @@ export class Runtime {
     }
 
     // Trails: where each one with a tail was, for the last moments.
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       if (!e.trail) continue;
       const pts = e.trail.points;
       if (e.alive) pts.push({ x: e.x, y: e.y, t: this.time });
       while (pts.length && this.time - pts[0].t > e.trail.length) pts.shift();
     }
     // Turning (scripts' rotate over time, and spin).
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       const before = e.angle;
       if (e.spin) e.angle = (e.angle + e.spin * dt) % 360;
       else if (e.turn) {
@@ -880,7 +893,7 @@ export class Runtime {
       if (e.angle !== before) this.refreshCollider(e);
     }
     // Things a switch is moving glide toward their target (solids move with them).
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       const t = e.moveTarget;
       if (!t) continue;
       const dx = t.x - e.x;
@@ -905,7 +918,7 @@ export class Runtime {
       this.solidsDirty = false;
     }
     // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
-    for (const e of this.entities) if (e.body === 'dynamic' && e.alive && !e.moveTarget) this.applyFriction(e, dt);
+    for (const e of this.awake()) if (e.body === 'dynamic' && e.alive && !e.moveTarget) this.applyFriction(e, dt);
     this.gameplay.steer();
     // A menu or the grid cursor has the keys: nothing else is steered by them (also in the step one closes).
     const captured = this.kit.capturing();
@@ -915,7 +928,7 @@ export class Runtime {
     this.scripts.before(dt, steer);
     const kinematicSolids: Box[] = [];
     const movingOneWays: Box[] = [];
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       // (A thing with no body that a script gave a speed moves by it too, through everything: a shot bubble, a
       // floating label. Only solid ones stay put: they are part of the level's fixed walls.)
       const drifts = e.body === 'none' && (e.vx !== 0 || e.vy !== 0) && !this.isSolid(e);
@@ -930,7 +943,7 @@ export class Runtime {
     // Liquids (water to swim in): what each moving thing's middle is in.
     const liquids = this.made().liquid.filter((e) => e.alive && e.collider);
 
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       if (e.body !== 'dynamic' || !e.alive) continue;
       e.prevY = e.y;
       // (On the ground as the step begins: walking off onto a ramp going down, it keeps to it.)
@@ -1076,8 +1089,8 @@ export class Runtime {
     this.gameplay.update(dt, steer);
     // Characters that died wait out their Health.respawnDelay (their death animation), then come back: counted
     // after this step's events were handled, so a "died" handler always runs before the respawn, never after it.
-    for (const e of this.entities) if (e.vanishing > 0) e.vanishing = Math.max(0, e.vanishing - dt);
-    for (const e of this.entities) {
+    for (const e of this.awake()) if (e.vanishing > 0) e.vanishing = Math.max(0, e.vanishing - dt);
+    for (const e of this.awake()) {
       if (e.dying <= 0) continue;
       e.dying -= dt;
       if (e.dying <= 0) this.respawn(e, 'died');
@@ -1085,7 +1098,7 @@ export class Runtime {
     // Fog of war: what the player sees now (again only when it changed square, or something solid changed).
     if (this.fog) {
       const lights: { x: number; y: number; r: number }[] = [];
-      for (const e of this.entities) {
+      for (const e of this.awake()) {
         const l = e.alive ? e.base.components.Light : undefined;
         if (l && l.on !== false) lights.push({ x: e.x, y: e.y, r: typeof l.radius === 'number' ? l.radius : 3 });
       }
@@ -1105,6 +1118,7 @@ export class Runtime {
 
   /** Its collision box after its size, scale or rotation changed. */
   refreshCollider(e: RuntimeEntity): void {
+    this.wake(e);
     e.collider = gatedCollider(colliderOf(e.base.components, e.base.transform, e.angle), this.geometry);
     if (e.body !== 'dynamic') this.solidsDirty = true;
   }
@@ -1112,6 +1126,81 @@ export class Runtime {
   /** Whether it blocks movement (a wall, floor, closed door…), for scripts' group checks. */
   solidFor(e: RuntimeEntity): boolean {
     return this.isSolid(e);
+  }
+
+  // ---------------------------------------------------------------- asleep (W1, docs §30)
+
+  /**
+   * Plain tiles nothing has acted on since the level was made are ASLEEP: the loops of a step that go through
+   * "every thing" skip them, so a level of fifty thousand walls costs a step what its few hundred moving things
+   * cost, not fifty thousand looks forty times over.
+   *
+   * What makes that the same game: a thing is asleep only if it was made of nothing but a picture, a collision box
+   * and a body that doesn't move (no scripts, no behaviour, no health, nothing a loop of the step looks for), and
+   * it is woken, for good, the moment anything could change it: before a script, a rule or a relationship is given
+   * it to act on, before the engine itself changes it (dug out, moved by a switch, flipped). A sleeping thing is
+   * therefore exactly as it was made, and for a thing as it was made each of those loops does nothing. It is still
+   * a wall: found by place by everything that collides with it, touches it or looks at it, and drawn.
+   *
+   * (The tests check both halves: every step of every game played in a test has the same fingerprint as before
+   * there was sleep, and a sleeping thing found changed fails the test: src/regression/sameAnswers.ts.)
+   */
+  private asleepSet = new Set<RuntimeEntity>();
+  /** One byte per thing in `entities` (1: asleep), for the list they were made for; and where each sleeper is in it. */
+  private asleepFor: RuntimeEntity[] | null = null;
+  private asleepAt = new Uint8Array(0);
+  private asleepPlace = new Map<RuntimeEntity, number>();
+
+  /** The level as just made: its plain tiles fall asleep. */
+  private settle(): void {
+    this.asleepSet = new Set(this.entities.filter((e) => plainTile(e)));
+    this.asleepFor = null;
+  }
+
+  /** The flags for the level's list as it is now (made again when the list is another one: a shot was taken out). */
+  asleepFlags(): Uint8Array {
+    const list = this.entities;
+    if (this.asleepFor !== list) {
+      this.asleepFor = list;
+      this.asleepAt = new Uint8Array(list.length);
+      this.asleepPlace = new Map();
+      if (this.asleepSet.size)
+        for (let i = 0; i < list.length; i++)
+          if (this.asleepSet.has(list[i])) {
+            this.asleepAt[i] = 1;
+            this.asleepPlace.set(list[i], i);
+          }
+    }
+    return this.asleepAt;
+  }
+
+  /**
+   * Every thing awake, in the level's order: what a loop over `entities` gives, without the sleepers. Live: a thing
+   * woken while the loop runs, further on in the level, has its turn, as it would in a loop over all of them.
+   */
+  *awake(): Generator<RuntimeEntity> {
+    const list = this.entities;
+    const flags = this.asleepFlags();
+    for (let i = 0; i < list.length; i++) if (!flags[i]) yield list[i];
+  }
+
+  /** Wakes a thing (for good) before something acts on it. Nothing to do for one that is awake. */
+  wake(e: RuntimeEntity | null | undefined): void {
+    if (!e || !this.asleepSet.delete(e)) return;
+    const i = this.asleepPlace.get(e);
+    if (i !== undefined && this.asleepFor === this.entities) this.asleepAt[i] = 0;
+    else this.asleepFor = null;
+  }
+
+  /** Wakes everything (the whole level is being changed: a flip). */
+  wakeAll(): void {
+    if (!this.asleepSet.size) return;
+    this.asleepSet.clear();
+    this.asleepFor = null;
+  }
+
+  isAsleep(e: RuntimeEntity): boolean {
+    return this.asleepSet.has(e);
   }
 
   /**
@@ -1155,6 +1244,7 @@ export class Runtime {
     if (this.world.isDug(col, row)) return false;
     const tile = this.entities.find((o) => o.alive && o.tags.includes(tag) && this.isSolid(o) && o.body !== 'dynamic' && !o.pushable && Math.floor(o.x / CELL) === col && Math.floor(o.y / CELL) === row);
     if (!tile) return false;
+    this.wake(tile);
     tile.alive = false;
     this.world.markDug(col, row, tile.base.id, seconds > 0 ? this.time + seconds : Infinity, fill);
     this.markSolidsDirty();
@@ -1197,6 +1287,7 @@ export class Runtime {
     };
     for (const { id, fill } of this.world.refills(this.time, occupied)) {
       const tile = tileAt(id);
+      this.wake(tile);
       if (!tile) continue;
       const caught = fill === 'trap' ? this.caughtIn(tile) : [];
       tile.alive = true;
@@ -1208,7 +1299,7 @@ export class Runtime {
   /** The level's camera zones now: each object with a Camera Zone, its area (its size and scale, where it is). */
   private cameraZones(): CameraZone[] {
     const out: CameraZone[] = [];
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       const z = e.base.components.CameraZone;
       if (!z || !e.alive) continue;
       const size = getEntitySize(e.base);
@@ -1299,6 +1390,8 @@ export class Runtime {
    */
   flipLevel(way: 'upside_down' | 'left_right', at: number | null, seconds: number, wave: number): boolean {
     if (this.flip) return false;
+    // (Every thing in the level is moved: none of them sleeps through it, or after.)
+    this.wakeAll();
     const up = way === 'upside_down';
     const things = this.entities.filter((e) => e.alive);
     if (!things.length) return false;
@@ -1438,12 +1531,26 @@ export class Runtime {
     return boxOf(e);
   }
 
+  /** The thing with this id (the first in the level's order, as looking through the list finds it). */
   byId(id: Id): RuntimeEntity | undefined {
-    return this.entities.find((e) => e.id === id);
+    const list = this.entities;
+    if (this.idsFor !== list) {
+      this.idsFor = list;
+      this.ids = new Map();
+      this.idsCount = 0;
+    }
+    // (New things come at the end of the list: filed as they come.)
+    for (; this.idsCount < list.length; this.idsCount++) if (!this.ids.has(list[this.idsCount].id)) this.ids.set(list[this.idsCount].id, list[this.idsCount]);
+    return this.ids.get(id);
   }
+
+  private idsFor: RuntimeEntity[] | null = null;
+  private ids = new Map<Id, RuntimeEntity>();
+  private idsCount = 0;
 
   /** Moves an entity to a point over time (a switch's "move"). */
   moveTo(e: RuntimeEntity, to: Vec2, speed: number): void {
+    this.wake(e);
     e.moveTarget = { x: to.x, y: to.y, speed };
   }
 
@@ -1820,7 +1927,7 @@ export class Runtime {
     for (let i = 1; i < steps; i++) {
       const x = a.x + ((b.x - a.x) * i) / steps;
       const y = a.y + ((b.y - a.y) * i) / steps;
-      if (this.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh)) return false;
+      if (this.world.solidAt(x, y)) return false;
     }
     return true;
   }
@@ -1965,7 +2072,7 @@ export class Runtime {
   nearestPlayer(e: RuntimeEntity): RuntimeEntity | null {
     let best: RuntimeEntity | null = null;
     let bestD = Infinity;
-    for (const o of this.entities) {
+    for (const o of this.awake()) {
       if (o === e || !o.alive || !o.controller) continue;
       const d = Math.hypot(o.x - e.x, o.y - e.y);
       if (d < bestD) {
@@ -2051,7 +2158,7 @@ export class Runtime {
   /** Things with Stay On Screen never leave what the camera shows: its edges stop them as walls do. */
   private keepOnScreen(): void {
     let view: ReturnType<CameraController['visible']> | null = null;
-    for (const e of this.entities) {
+    for (const e of this.awake()) {
       const keep = e.alive ? e.base.components.StayOnScreen : undefined;
       if (!keep) continue;
       view ??= this.cam.visible();
@@ -2076,6 +2183,7 @@ export class Runtime {
 
   /** Puts an entity back at its start with full health (after falling out of the level or dying). */
   respawn(e: RuntimeEntity, reason: 'fell' | 'died' | 'rule' | 'script' = 'rule'): void {
+    this.wake(e);
     // (A dug-out tile comes back only when its square fills in.)
     if (this.world.holdsTile(e.base.id)) return;
     e.dying = 0;
@@ -2131,6 +2239,7 @@ export class Runtime {
    * again, knows nothing of it: a level left for a visit keeps its own.
    */
   setCheckpoint(e: RuntimeEntity, at: Vec2, by: RuntimeEntity | null, keep: boolean): void {
+    this.wake(e);
     // (The same place again, the same way: nothing new, and nothing said.)
     if (e.spawn.x === at.x && e.spawn.y === at.y && e.checkpoint === (by?.id ?? null) && this.kept.has(e.base.id) === keep) return;
     e.spawn = { x: at.x, y: at.y };
@@ -2179,12 +2288,59 @@ export class Runtime {
    * Open things are faded, a switch that is on is drawn mirrored, and a
    * character that was just hurt blinks.
    */
-  renderList(): RenderEntity[] {
+  renderList(shown?: { left: number; right: number; top: number; bottom: number } | null): RenderEntity[] {
     const out: RenderEntity[] = [];
-    for (const e of this.entities) {
-      if (!e.alive && !(e.vanishing > 0)) continue;
+    const list = this.entities;
+    if (!shown) {
+      for (const e of list) {
+        const r = this.renderOf(e);
+        if (r) out.push(r);
+      }
+      return out;
+    }
+    // Only what can be on the screen (docs §30, W1): every thing awake, and the sleeping tiles filed near the area
+    // shown, in the level's order. The renderer leaves out what is off the screen by the same measure (and looks
+    // at the tiles just beyond it for their joins): what it draws is what it drew from the whole list.
+    const flags = this.asleepFlags();
+    if (this.drawnFor !== list) {
+      this.drawnFor = list;
+      this.drawnAt = new RectIndex<number>();
+      for (let i = 0; i < list.length; i++) {
+        if (!flags[i]) continue;
+        const e = list[i];
+        const size = getEntitySize(e.base);
+        const { rotation, scale, position } = e.base.transform;
+        const w = Math.abs(size.x * scale.x);
+        const h = Math.abs(size.y * scale.y);
+        // (The renderer's own measure of how far a thing reaches, and the margin it looks beyond the screen by.)
+        const hx = (rotation % 360 !== 0 ? Math.hypot(w, h) : w) / 2 + 1 + w;
+        const hy = (rotation % 360 !== 0 ? Math.hypot(w, h) : h) / 2 + 1 + h;
+        this.drawnAt.add({ left: position.x - hx, right: position.x + hx, top: position.y - hy, bottom: position.y + hy }, i);
+      }
+    }
+    const near = this.drawnAt.near(shown);
+    if (!near) return this.renderList();
+    const picked: number[] = [];
+    for (const i of near) if (flags[i]) picked.push(i);
+    for (let i = 0; i < list.length; i++) if (!flags[i]) picked.push(i);
+    picked.sort((a, b) => a - b);
+    for (const i of picked) {
+      const r = this.renderOf(list[i]);
+      if (r) out.push(r);
+    }
+    return out;
+  }
+
+  /** The level's list the sleeping tiles were filed by place for (where each is drawn), and that filing. */
+  private drawnFor: RuntimeEntity[] | null = null;
+  private drawnAt = new RectIndex<number>();
+
+  /** A thing as the renderer expects it, or null when it is not drawn now. */
+  private renderOf(e: RuntimeEntity): RenderEntity | null {
+    {
+      if (!e.alive && !(e.vanishing > 0)) return null;
       // In the fog: creatures out of the player's sight are not seen.
-      if (this.fog && e.health && e !== this.fog.viewer && !this.fog.sees(e.x, e.y)) continue;
+      if (this.fog && e.health && e !== this.fog.viewer && !this.fog.sees(e.x, e.y)) return null;
       const t = e.base.transform;
       const mirrored = e.switch?.on === true || e.facing === -1;
       const nx = e.nudge?.x ?? 0;
@@ -2208,9 +2364,8 @@ export class Runtime {
       if (e.trail && e.trail.points.length > 1) r = { ...r, trail: e.trail.points.map((p) => ({ x: p.x, y: p.y })) };
       // Isometric: drawn at the height it is at (movers follow the ground).
       if (r.components.Sprite && e.z !== (r.components.Sprite.isoLift ?? 0)) r = { ...r, components: { ...r.components, Sprite: { ...r.components.Sprite, isoLift: e.z } } };
-      out.push(r);
+      return r;
     }
-    return out;
   }
 
   /**
@@ -2248,6 +2403,9 @@ export class Runtime {
   }
 
   find(name: string): RuntimeEntity | undefined {
-    return this.entities.find((e) => e.name === name && e.alive) ?? this.entities.find((e) => e.name === name);
+    const found = this.entities.find((e) => e.name === name && e.alive) ?? this.entities.find((e) => e.name === name);
+    // (Given out by name to whoever asks, who may change it.)
+    this.wake(found);
+    return found;
   }
 }

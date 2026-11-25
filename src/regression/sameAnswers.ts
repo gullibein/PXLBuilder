@@ -15,65 +15,27 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect } from 'vitest';
 import { Gameplay } from '../runtime/gameplay';
 import { Runtime, type RuntimeEntity } from '../runtime/runtime';
+import { StateText } from './stateText';
 
 const MODE = process.env.SAME_ANSWERS ?? 'on';
 const RECORD = process.env.SAME_ANSWERS_RECORD ?? '';
 const GOLDEN_FILE = new URL('./sameAnswers.golden.json', import.meta.url);
 
-/** Fields that are not state of play: what a thing is made from (the same every frame), and functions. */
-const SKIP = new Set(['base', 'script', 'project', 'registry', 'scene']);
-/** Ids are random each time a game is made: named by the order they first appear in. */
-const ID = /^(ent|def|scn|ast|rel|rule|scr|trg|tx)_[0-9a-f]{6,}$/;
+/** The fields that differ between two things' texts. */
+function diff(a: string, b: string): string {
+  const fa = a.split(';');
+  const fb = b.split(';');
+  return fa.flatMap((x, i) => (x !== fb[i] ? [`${x} -> ${fb[i] ?? ''}`] : [])).slice(0, 4).join(', ');
+}
 
 class Trace {
   readonly hash: Hash = createHash('sha256');
   frames = 0;
-  private readonly ids = new Map<string, string>();
+  private readonly state = new StateText();
   private readonly events: string[] = [];
-  private index = new Map<object, number>();
-
-  private idOf(s: string): string {
-    let k = this.ids.get(s);
-    if (!k) this.ids.set(s, (k = `${s.slice(0, s.indexOf('_'))}#${this.ids.size}`));
-    return k;
-  }
-
-  /** A value as text: numbers exactly, things by their place in the level, ids by first appearance. */
-  private text(v: unknown, depth: number): string {
-    if (v === null || v === undefined) return 'n';
-    const t = typeof v;
-    if (t === 'number') return Object.is(v, -0) ? '-0' : String(v);
-    if (t === 'boolean') return v ? 'T' : 'F';
-    if (t === 'string') return ID.test(v as string) ? this.idOf(v as string) : `"${v as string}"`;
-    if (t !== 'object') return '';
-    const at = this.index.get(v as object);
-    if (at !== undefined) return `#${at}`;
-    if (depth <= 0) return '…';
-    let out = '';
-    if (Array.isArray(v)) {
-      for (const x of v) out += `${this.text(x, depth - 1)},`;
-      return `[${out}]`;
-    }
-    if (v instanceof Map) {
-      for (const [k, x] of v) out += `${this.text(k, depth - 1)}>${this.text(x, depth - 1)},`;
-      return `M(${out})`;
-    }
-    if (v instanceof Set) {
-      for (const x of v) out += `${this.text(x, depth - 1)},`;
-      return `S(${out})`;
-    }
-    if (ArrayBuffer.isView(v)) return `A(${Array.from(v as unknown as ArrayLike<number>).join(',')})`;
-    for (const k in v as object) {
-      if (SKIP.has(k)) continue;
-      const x = (v as Record<string, unknown>)[k];
-      if (typeof x === 'function') continue;
-      out += `${k}:${this.text(x, depth - 1)};`;
-    }
-    return `{${out}}`;
-  }
 
   event(type: string, subject: RuntimeEntity | null, other: RuntimeEntity | null, detail: unknown): void {
-    this.events.push(`${type}(${subject ? (this.index.get(subject) ?? subject.name) : ''},${other ? (this.index.get(other) ?? other.name) : ''},${this.text(detail, 3)})`);
+    this.events.push(`${type}(${subject ? (this.state.index.get(subject) ?? subject.name) : ''},${other ? (this.state.index.get(other) ?? other.name) : ''},${this.state.text(detail, 3)})`);
   }
 
   /**
@@ -82,8 +44,8 @@ class Trace {
    * door that opened, shows there at the latest, and its event the step it happened).
    */
   frame(rt: Runtime): void {
-    if (this.index.size !== rt.entities.length || this.listed !== rt.entities) {
-      this.index = new Map(rt.entities.map((e, i) => [e as object, i]));
+    if (this.state.index.size !== rt.entities.length || this.listed !== rt.entities) {
+      this.state.index = new Map(rt.entities.map((e, i) => [e as object, i]));
       this.listed = rt.entities;
     }
     this.frames++;
@@ -94,7 +56,15 @@ class Trace {
     for (let i = 0; i < rt.entities.length; i++) {
       const e = rt.entities[i];
       if (!whole && e.body !== 'dynamic' && e.body !== 'kinematic' && !e.controller && !e.scripts.length && e.vx === 0 && e.vy === 0) continue;
-      out += `${i}${this.thing(e)}\n`;
+      const text = this.state.thing(e);
+      out += `${i}${text}\n`;
+      // A sleeping tile (docs §30, W1) is exactly as it was made: one found changed was changed by something that
+      // did not wake it first, and the loops that skip sleepers may have missed what it should then have done.
+      if (whole && rt.isAsleep(e)) {
+        const was = this.asMade.get(e);
+        if (was === undefined) this.asMade.set(e, text);
+        else if (was !== text && this.changedAsleep.length < 5) this.changedAsleep.push(`${e.name} (thing ${i}) at step ${this.frames}: ${diff(was, text)}`);
+      }
     }
     // (The camera as it is, not its frame(): a shaking camera's frame draws random numbers, and asking would change the game.)
     const cam = rt.cam.camera;
@@ -102,17 +72,10 @@ class Trace {
   }
 
   private listed: readonly RuntimeEntity[] | null = null;
+  private readonly asMade = new WeakMap<RuntimeEntity, string>();
+  /** Sleeping tiles found changed (the first few). */
+  readonly changedAsleep: string[] = [];
 
-  private thing(e: RuntimeEntity): string {
-    let out = '';
-    for (const k in e) {
-      if (k === 'id' || SKIP.has(k)) continue;
-      const x = (e as unknown as Record<string, unknown>)[k];
-      if (typeof x === 'function') continue;
-      out += `${k}:${this.text(x, 4)};`;
-    }
-    return out;
-  }
 }
 
 let tracing = true;
@@ -187,8 +150,10 @@ if (MODE !== 'off') {
     for (const t of stepped) all.update(`${t.frames}:${t.hash.digest('hex')}\n`);
     const print = `${stepped.length} games, ${stepped.reduce((n, t) => n + t.frames, 0)} steps: ${all.digest('hex').slice(0, 20)}`;
     const key = nameOf(ctx.task as never);
+    const changed = stepped.flatMap((t) => t.changedAsleep);
     traces.clear();
     order = [];
+    if (ctx.task.result?.state !== 'fail') expect(changed, `${key}: a sleeping tile was changed without being woken`).toEqual([]);
     if (RECORD) appendFileSync(RECORD, `${JSON.stringify([key, print])}\n`);
     else if (golden && key in golden && ctx.task.result?.state !== 'fail') expect(print, `${key}: play is not what it was (every thing's state and every event, each step)`).toBe(golden[key]);
   });

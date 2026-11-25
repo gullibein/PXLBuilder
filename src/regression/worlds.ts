@@ -48,7 +48,8 @@ export function makeWorld(kind: WorldKind, cols: number, rows: number, registry:
           const block = (r - 2) % 9 < 6 && (c - 2) % 12 < 8 && r >= 2 && c >= 2 && r < rows - 2 && c < cols - 2;
           if (edge || block) put(solid, c, r);
         }
-      put(player, 1, 1);
+      // (At a crossing of two streets, three and four cells wide: room to walk, whichever way.)
+      put(player, 11, 9);
       const count = Math.min(400, Math.floor((cols * rows) / 600));
       for (let i = 0; i < count; i++) put(enemy, 1 + ((i * 12) % (cols - 2)), 1 + ((Math.floor((i * 12) / (cols - 2)) * 9) % Math.max(1, rows - 2)));
     } else if (kind === 'mine') {

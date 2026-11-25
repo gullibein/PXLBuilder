@@ -61,6 +61,7 @@ try {
       const opened = Date.now() - t;
       // The editor's view dragged about (Space + drag), for three seconds.
       const box = await canvas.boundingBox();
+      const view0 = await canvas.getAttribute('data-camera');
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.keyboard.down('Space');
       await page.mouse.down();
@@ -70,6 +71,7 @@ try {
       const dragged = await stopFrames(page);
       await page.mouse.up();
       await page.keyboard.up('Space');
+      const view1 = await canvas.getAttribute('data-camera');
       t = Date.now();
       await page.getByTestId('play').click();
       await page.getByTestId('play-canvas').waitFor({ timeout: 240000 });
@@ -78,14 +80,22 @@ try {
       await startFrames(page);
       await page.waitForTimeout(3000);
       const still = await stopFrames(page);
-      const cam0 = await page.getByTestId('play-canvas').getAttribute('data-camera');
+      // Walking right: first until the camera has left the level's edge and scrolls (up to 10 s), then measured.
+      const play = page.getByTestId('play-canvas');
+      const camX = async () => Number(((await play.getAttribute('data-camera')) ?? '0').split(',')[0]);
+      const who0 = await play.getAttribute('data-player');
+      const cam0 = await camX();
       await page.keyboard.down('ArrowRight');
+      const walkUntil = Date.now() + 10000;
+      while (Date.now() < walkUntil && (await camX()) === cam0) await page.waitForTimeout(250);
+      const camA = await camX();
       await startFrames(page);
       await page.waitForTimeout(3000);
       const walking = await stopFrames(page);
       await page.keyboard.up('ArrowRight');
-      const cam1 = await page.getByTestId('play-canvas').getAttribute('data-camera');
-      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)} (camera ${cam0} -> ${cam1}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
+      const camB = await camX();
+      const who1 = await play.getAttribute('data-player');
+      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} (view ${view0} -> ${view1}) | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)}; the camera scrolled ${(camB - camA).toFixed(0)} px while measured (player ${who0?.split(',').slice(0, 2).join(',')} -> ${who1?.split(',').slice(0, 2).join(',')}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
     } catch (e) {
       say(`${f.replace('.pxlproj.json', '')}: ${things} things | FAILED: ${String(e).slice(0, 200)}`);
     }

@@ -23,7 +23,8 @@ export class BehaviorSystem {
 
   before(dt: number, input: InputState): void {
     // Spawned shots are appended while we loop; only look at what existed at the start.
-    const list = this.rt.entities.slice();
+    // (The things awake: a sleeping tile has no behaviour.)
+    const list = [...this.rt.awake()];
     for (const e of list) {
       if (!e.alive) continue;
       const b = e.beh;
@@ -78,7 +79,7 @@ export class BehaviorSystem {
 
   after(dt: number): void {
     let removed = false;
-    for (const shot of this.rt.entities) {
+    for (const shot of this.rt.awake()) {
       if (!shot.alive || !shot.projectile) continue;
       shot.projectile.left -= Math.hypot(shot.vx, shot.vy) * dt;
       const box = this.rt.boxOf(shot);
@@ -97,7 +98,7 @@ export class BehaviorSystem {
         if (inWall && !hit.has('\u0000wall')) this.rt.gameplay.emit('shot_hit', shot, null);
         if (inWall) hit.add('\u0000wall');
         else hit.delete('\u0000wall');
-        for (const v of this.rt.entities) {
+        for (const v of this.rt.awake()) {
           if (v === shot || !v.alive || v.projectile || v.id === shot.projectile.owner || !v.health || v.dying > 0 || v.invincible > 0) continue;
           if (v.tags.some((t) => shot.projectile!.team.includes(t)) || hit.has(v.id)) continue;
           const vb = this.rt.boxOf(v);
@@ -116,7 +117,7 @@ export class BehaviorSystem {
         continue;
       }
       if (!box) continue;
-      for (const v of this.rt.entities) {
+      for (const v of this.rt.awake()) {
         if (v === shot || !v.alive || v.projectile || v.id === shot.projectile.owner || !v.health) continue;
         const vb = this.rt.boxOf(v);
         if (vb && overlaps(box, vb) && touchesParts(box, v) && this.rt.gameplay.tryHurt(shot, v)) {
@@ -307,7 +308,7 @@ export class BehaviorSystem {
     const pb = this.rt.boxOf(platform);
     if (!pb || platform.collider?.trigger || (mx === 0 && my === 0)) return;
     const top = pb.y - pb.hh;
-    for (const r of this.rt.entities) {
+    for (const r of this.rt.awake()) {
       if (r === platform || !r.alive || r.body !== 'dynamic' || r.climbing || r.hanging) continue;
       const rb = this.rt.boxOf(r);
       if (!rb || Math.abs(rb.y + rb.hh - top) > 1 || Math.abs(rb.x - pb.x) >= rb.hw + pb.hw || r.vy < 0) continue;

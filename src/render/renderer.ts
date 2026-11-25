@@ -360,7 +360,8 @@ function placeOnScreen(ctx: CanvasRenderingContext2D, m: DOMMatrix, position: { 
 }
 
 /** The part of the level the canvas shows (in the coordinates of the current transform), or null when it can't be told. */
-function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: number; top: number; bottom: number } | null {
+/** The part of the level the canvas shows, as it is set up now (null: it can't be told; everything is drawn). */
+export function visibleArea(ctx: CanvasRenderingContext2D): { left: number; right: number; top: number; bottom: number } | null {
   const m = ctx.getTransform();
   if (m.b !== 0 || m.c !== 0) {
     // Seen at an angle: the box round the canvas's four corners in the level (a margin for what stands tall).

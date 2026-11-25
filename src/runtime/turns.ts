@@ -46,6 +46,8 @@ export function wrapWords(text: string, fits: number): string[] {
 /** What the kit needs from the runtime (kept small: tests can give a stand-in). */
 export interface KitHost {
   entities: RuntimeEntity[];
+  /** Wakes a thing before it is acted on (the runtime's sleeping tiles: docs §30). */
+  wake(e: RuntimeEntity | null): void;
   time: number;
   drawings: Map<string, ScreenDrawing>;
   /** The play screen's size (px), for placing the menu. */
@@ -193,6 +195,7 @@ export class TurnKit {
       if (e.health) return e;
       any ??= e;
     }
+    this.host.wake(any);
     return any;
   }
 
@@ -350,7 +353,9 @@ export class TurnKit {
 
   private unitsOf(tag: string): RuntimeEntity[] {
     // In reading order (top row first, left to right): the same every time.
-    return this.host.entities.filter((e) => e.alive && !e.projectile && e.tags.includes(tag)).sort((a, b) => (this.priority.get(b) ?? 0) - (this.priority.get(a) ?? 0) || a.y - b.y || a.x - b.x);
+    const units = this.host.entities.filter((e) => e.alive && !e.projectile && e.tags.includes(tag)).sort((a, b) => (this.priority.get(b) ?? 0) - (this.priority.get(a) ?? 0) || a.y - b.y || a.x - b.x);
+    for (const u of units) this.host.wake(u);
+    return units;
   }
 
   /** The next team's turn (skipping teams with no one left). */

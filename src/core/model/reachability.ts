@@ -10,6 +10,7 @@
  * a problem but should not report one that isn't there. Levels with moving
  * solids or player scripts (a jetpack…) are marked uncertain and not judged.
  */
+import { RectIndex } from './rectIndex';
 import { tableBoosts } from '../../abilities/index';
 import { gameGeometry } from '../engine/geometry';
 import { rampOf as rampShape } from './ramps';
@@ -206,8 +207,14 @@ export function levelReachability(project: Project, sceneId: Id, registry: Compo
   // (A collider of several boxes: each is a wall or floor of its own.)
   const boxes = solids.flatMap((r) => partsOfResolved(r).map((b) => ({ r, b })));
   const tops: Span[] = [];
+  // (Whether something sits on a box is asked of the boxes near its top, not of every box in the level: the same
+  // test, of the only ones that can pass it. A level full of earth asked a billion times.)
+  const byPlace = new RectIndex<(typeof boxes)[number]>();
+  for (const x of boxes) byPlace.add(x.b, x);
+  const sitsOn = (r: ResolvedEntity, b: Box) => ({ r: o, b: ob }: (typeof boxes)[number]) => o !== r && ob.bottom >= b.top - 4 && ob.bottom <= b.top + EDGE && ob.left < b.right - EDGE && ob.right > b.left + EDGE;
   for (const { r, b } of boxes) {
-    const covered = boxes.some(({ r: o, b: ob }) => o !== r && ob.bottom >= b.top - 4 && ob.bottom <= b.top + EDGE && ob.left < b.right - EDGE && ob.right > b.left + EDGE);
+    const near = byPlace.near({ left: b.left, right: b.right, top: b.top - 5, bottom: b.top + EDGE + 1 });
+    const covered = near ? [...near].some(sitsOn(r, b)) : boxes.some(sitsOn(r, b));
     if (!covered && !(r.components.Climbable && r.components.Collider?.isTrigger)) tops.push({ left: b.left, right: b.right, top: b.top, ids: [r.id] });
   }
   // Merge side-by-side tops at the same height into spans.

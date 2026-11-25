@@ -118,14 +118,20 @@ export class LiveGrid<T> {
   private readonly cells = new Map<number, LiveEntry<T>[]>();
   private big: LiveEntry<T>[] = [];
 
-  sync(items: readonly T[], boxOf: (item: T) => Box | null): void {
+  /**
+   * `still`: a byte per item, 1 for those known not to have changed since they were filed (the runtime's sleeping
+   * tiles): once filed, they are not looked at again.
+   */
+  sync(items: readonly T[], boxOf: (item: T) => Box | null, still?: Uint8Array): void {
     if (items !== this.source || items.length < this.entries.length) {
       this.source = items;
       this.entries = [];
       this.cells.clear();
       this.big = [];
     }
+    const filed = this.entries.length;
     for (let order = 0; order < items.length; order++) {
+      if (still && still[order] && order < filed) continue;
       const box = boxOf(items[order]);
       const ok = !!box && box.hw >= 0 && box.hh >= 0;
       const was = this.entries[order] ?? null;

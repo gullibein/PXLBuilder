@@ -79,7 +79,7 @@ export class Gameplay {
 
   /** Called once per step, after everything has moved. */
   update(dt: number, input: InputState): void {
-    for (const e of this.rt.entities) {
+    for (const e of this.rt.awake()) {
       if (e.invincible > 0) e.invincible = Math.max(0, e.invincible - dt);
       if (e.stompGrace > 0) e.stompGrace = Math.max(0, e.stompGrace - dt);
     }
@@ -102,9 +102,9 @@ export class Gameplay {
   }
 
   private standOnGoals(): void {
-    for (const p of this.rt.entities) {
+    for (const p of this.rt.awake()) {
       if (!p.alive || !p.controller) continue;
-      for (const g of this.rt.entities) {
+      for (const g of this.rt.awake()) {
         if (!g.alive || !g.base.components.Goal || ownPart(g, 'goal') || !this.standsOn(p, g)) continue;
         const box = this.rt.boxOf(g);
         if (box && Math.abs(p.x - box.x) <= box.hw && Math.abs(p.y - box.y) <= box.hh) this.rt.completeLevel(p);
@@ -169,8 +169,9 @@ export class Gameplay {
   private updateTouches(): void {
     // By grid cell: only what is near each moving thing is looked at (nothing moves during this; events are queued).
     const grid = this.touchGrid;
-    grid.sync(this.rt.entities, (o) => (o.alive && o.collider ? this.rt.boxOf(o) : null));
-    for (const e of this.rt.entities) {
+    // (A sleeping tile is where it was filed: only the things awake are looked at again.)
+    grid.sync(this.rt.entities, (o) => (o.alive && o.collider ? this.rt.boxOf(o) : null), this.rt.asleepFlags());
+    for (const e of this.rt.awake()) {
       if (!e.alive || !e.collider || e.body !== 'dynamic') continue;
       const box = this.rt.boxOf(e)!;
       const grown: Box = { ...box, hw: box.hw + TOUCH_SLOP, hh: box.hh + TOUCH_SLOP };
@@ -187,7 +188,7 @@ export class Gameplay {
 
   private useSwitches(input: InputState): void {
     if (!input.wasPressed('interact')) return;
-    for (const e of this.rt.entities) {
+    for (const e of this.rt.awake()) {
       if (!e.alive || !e.controller) continue;
       for (const id of e.touching) {
         const s = this.rt.byId(id);
@@ -211,7 +212,7 @@ export class Gameplay {
    */
   private collectAndHurt(): void {
     const scripts = this.rt.scripts;
-    for (const e of this.rt.entities) {
+    for (const e of this.rt.awake()) {
       if (!e.alive || e.body !== 'dynamic' || e.dying > 0 || e.projectile) continue;
       for (const id of e.touching) {
         const o = this.rt.byId(id);
@@ -219,7 +220,7 @@ export class Gameplay {
       }
     }
     const ran = new Set<string>();
-    for (const e of this.rt.entities) {
+    for (const e of this.rt.awake()) {
       if (!e.alive || e.body !== 'dynamic') continue;
       for (const id of e.touching) {
         const o = this.rt.byId(id);
@@ -294,6 +295,7 @@ export class Gameplay {
   }
 
   hurt(victim: RuntimeEntity, amount: number, source: RuntimeEntity | null): void {
+    this.rt.wake(victim);
     if (!victim.health || !victim.alive || victim.dying > 0) return;
     // Being hurt done by a script of its own instead (its "Being hurt" script): its "hurt" handlers do it all.
     if (ownPart(victim, 'being_hurt')) return this.rt.scripts.onHurt(victim, source, amount);
@@ -308,6 +310,7 @@ export class Gameplay {
 
   /** Shoved away from `source` for a moment, as a hit does: `force` divided by its mass (heavier things are shoved less). */
   knockBack(victim: RuntimeEntity, source: RuntimeEntity | null, force: number): void {
+    this.rt.wake(victim);
     const strength = force / victim.mass;
     if (victim.body === 'dynamic' && source && strength > 0) {
       // A small knock back, away from what hurt it (seen from above: straight away from it), for a moment.
@@ -334,6 +337,7 @@ export class Gameplay {
    * handlers ran: they never run on the character that already came back.)
    */
   die(victim: RuntimeEntity, source: RuntimeEntity | null): void {
+    this.rt.wake(victim);
     if (!victim.alive || victim.dying > 0) return;
     if (victim.health) victim.health.current = 0;
     this.emit('died', victim, source);
@@ -346,6 +350,7 @@ export class Gameplay {
 
   /** A player that died stays where it died, without controls, `seconds`, then comes back at its start. */
   waitToRespawn(victim: RuntimeEntity, seconds: number): void {
+    this.rt.wake(victim);
     victim.dying = Math.max(seconds, 1e-6);
     victim.knock = null;
     victim.vx = 0;
@@ -355,6 +360,7 @@ export class Gameplay {
 
   /** A script's "defeated": it leaves play as the engine's defeated things do. */
   defeated(e: RuntimeEntity): void {
+    this.rt.wake(e);
     e.dying = 0;
     this.gone(e);
   }
@@ -373,7 +379,7 @@ export class Gameplay {
 
   /** Health set to 0 some other way than a hit (a script's set_field, a rule): a death too. */
   private dieAtZero(): void {
-    for (const e of this.rt.entities) if (e.alive && e.dying <= 0 && e.health && e.health.current <= 0) this.die(e, null);
+    for (const e of this.rt.awake()) if (e.alive && e.dying <= 0 && e.health && e.health.current <= 0) this.die(e, null);
   }
 
   /**
@@ -404,11 +410,13 @@ export class Gameplay {
   }
 
   addItem(e: RuntimeEntity, item: string, count: number): void {
+    this.rt.wake(e);
     e.inventory ??= new Map();
     e.inventory.set(item, (e.inventory.get(item) ?? 0) + count);
   }
 
   takeItem(e: RuntimeEntity, item: string, count: number): void {
+    this.rt.wake(e);
     if (!e.inventory) return;
     const left = (e.inventory.get(item) ?? 0) - count;
     if (left > 0) e.inventory.set(item, left);
@@ -417,6 +425,7 @@ export class Gameplay {
 
   /** Taken out of play by a switch or a rule (and brought back by them); things removed any other way stay gone. */
   setHidden(e: RuntimeEntity, hidden: boolean): void {
+    this.rt.wake(e);
     if (hidden && e.alive) {
       e.alive = false;
       e.hiddenBySwitch = true;
@@ -428,6 +437,7 @@ export class Gameplay {
   }
 
   setOpen(e: RuntimeEntity, open: boolean, by: RuntimeEntity | null): void {
+    this.rt.wake(e);
     if (e.open === open || !e.alive) return;
     e.open = open;
     this.rt.markSolidsDirty();
@@ -544,9 +554,10 @@ export class Gameplay {
 
   /** The live entities a reference points at, in the context of an event. */
   private resolve(ref: EntityRef, ev: EventEntities, includeRemoved = false): RuntimeEntity[] {
-    if (ref.kind === 'subject') return ev.subject ? [ev.subject as RuntimeEntity] : [];
-    if (ref.kind === 'other') return ev.other ? [ev.other as RuntimeEntity] : [];
-    return this.rt.entities.filter((e) => (includeRemoved || e.alive) && refMatches(ref, e, ev));
+    const found = ref.kind === 'subject' ? (ev.subject ? [ev.subject as RuntimeEntity] : []) : ref.kind === 'other' ? (ev.other ? [ev.other as RuntimeEntity] : []) : this.rt.entities.filter((e) => (includeRemoved || e.alive) && refMatches(ref, e, ev));
+    // (What a rule or a relationship points at may be acted on: awake from here on.)
+    for (const e of found) this.rt.wake(e);
+    return found;
   }
 
   check(conditions: Condition[], ev: EventEntities): boolean {

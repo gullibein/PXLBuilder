@@ -11,10 +11,14 @@ import { join } from 'node:path';
 
 const GOLDEN = 'src/regression/sameAnswers.golden.json';
 const check = process.argv.includes('--check');
+// --merge <test files…>: only these files are run and recorded; their fingerprints replace the ones on file (a
+// test's own world was changed, or a test is new: the engine's answers for the other tests stay as recorded).
+const mergeAt = process.argv.indexOf('--merge');
+const only = mergeAt >= 0 ? process.argv.slice(mergeAt + 1) : [];
 const dir = mkdtempSync(join(tmpdir(), 'same-answers-'));
 const run = (n) => {
   const file = join(dir, `run${n}.txt`);
-  const r = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run'], { env: { ...process.env, SAME_ANSWERS_RECORD: file }, encoding: 'utf8', maxBuffer: 1 << 28 });
+  const r = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', ...only], { env: { ...process.env, SAME_ANSWERS_RECORD: file }, encoding: 'utf8', maxBuffer: 1 << 28 });
   const tests = /Tests\s+(.*)/.exec(r.stdout ?? '')?.[1] ?? '?';
   console.log(`run ${n}: ${tests.trim()}`);
   const out = new Map();
@@ -44,6 +48,14 @@ if (check) {
   console.log(changed.length ? `CHANGED (${changed.length}):\n  ${changed.join('\n  ')}` : 'every fingerprint recorded before is the same now');
   if (gone.length) console.log(`no longer the same twice, or gone (${gone.length}):\n  ${gone.slice(0, 20).join('\n  ')}`);
   process.exit(changed.length ? 1 : 0);
+}
+if (only.length) {
+  const was = JSON.parse(readFileSync(GOLDEN, 'utf8'));
+  const kept = Object.fromEntries(Object.entries(was).filter(([k]) => !only.some((f) => k.startsWith(`${f} > `))));
+  const merged = Object.fromEntries(Object.entries({ ...kept, ...stable }).sort((x, y) => (x[0] < y[0] ? -1 : 1)));
+  console.log(`${Object.keys(was).length - Object.keys(kept).length} fingerprints of ${only.join(', ')} replaced by ${Object.keys(stable).length}; ${Object.keys(kept).length} others kept as recorded`);
+  writeFileSync(GOLDEN, `${JSON.stringify(merged, null, 1)}\n`);
+  process.exit(0);
 }
 writeFileSync(GOLDEN, `${JSON.stringify(stable, null, 1)}\n`);
 console.log(`wrote ${GOLDEN}`);

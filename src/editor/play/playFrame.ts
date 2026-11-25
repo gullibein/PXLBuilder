@@ -8,7 +8,7 @@ import { pixelFontFor, pixelTextMetrics } from '../../render/pixelFont';
 import { drawFog } from '../../runtime/fog';
 import type { Project, Scene } from '../../core/types';
 import { drawBuiltinHud, type BuiltinHud } from '../../render/hud';
-import { applyCamera, drawBackground, drawEntities, isoProject, isoUnproject, pixelPerfectZoom, type ImageLookup } from '../../render/renderer';
+import { applyCamera, drawBackground, drawEntities, isoProject, isoUnproject, pixelPerfectZoom, visibleArea, type ImageLookup } from '../../render/renderer';
 import type { ResolvedEntity } from '../../core/model/resolve';
 import { drawScreenDrawings, type LookCache, type PixelGrid } from '../../render/screen';
 import type { Runtime } from '../../runtime/runtime';
@@ -96,7 +96,8 @@ export function drawPlayFrame(ctx: CanvasRenderingContext2D, runtime: Runtime, f
     applyCamera(ctx, view, size, dpr);
   }
   // (Animations hold still too once the level is won.)
-  drawEntities(ctx, runtime.renderList(), images, 0, runtime.completed ?? runtime.time, worldPerArt);
+  // (Asked only for what the canvas shows: the renderer leaves the rest out anyway.)
+  drawEntities(ctx, runtime.renderList(visibleArea(ctx)), images, 0, runtime.completed ?? runtime.time, worldPerArt);
   drawScreenDrawings(ctx, drawings, 'world', size, looks, images, runtime.time, grid);
   // Fog of war over the level (under the screen's own drawings: the HUD stays readable).
   if (runtime.fog) drawFog(ctx, runtime.fog);

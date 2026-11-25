@@ -90,6 +90,7 @@ function show(v: Value): string {
 
 /** Changes one field; returns an error message, or null when done. A thing without the component gets it first. */
 export function writeField(rt: Runtime, e: RuntimeEntity, component: string, path: string, value: Value): string | null {
+  rt.wake(e);
   const target = resolveField(rt.registry, component, path);
   if ('error' in target) return target.error;
   const v = coerce(target.schema, target.axis, value);
@@ -121,6 +122,7 @@ function writeTransform(rt: Runtime, e: RuntimeEntity, target: FieldTarget, n: n
 
 /** Gives it a component (with default values); nothing happens when it has it already. */
 export function addComponent(rt: Runtime, e: RuntimeEntity, component: string): string | null {
+  rt.wake(e);
   if (!rt.registry.has(component)) return `there is no component "${component}"`;
   if (e.base.components[component]) return null;
   e.base = { ...e.base, components: { ...e.base.components, [component]: rt.registry.createDefault(component) } };
@@ -129,6 +131,7 @@ export function addComponent(rt: Runtime, e: RuntimeEntity, component: string): 
 }
 
 export function removeComponent(rt: Runtime, e: RuntimeEntity, component: string): string | null {
+  rt.wake(e);
   if (!rt.registry.has(component)) return `there is no component "${component}"`;
   if (!e.base.components[component]) return null;
   const components = { ...e.base.components };

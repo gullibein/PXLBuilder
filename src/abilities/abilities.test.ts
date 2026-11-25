@@ -29,6 +29,7 @@ import { keyHints } from '../editor/play/PlayView';
 import { InputState, PAD_BUTTONS, type Action } from '../runtime/input';
 import { abilityComponents, abilityKeys } from '../runtime/movement/index';
 import { Runtime } from '../runtime/runtime';
+import { writeField } from '../runtime/fields';
 import { abilityDefinitions, registerAbility, unregisterAbility } from './index';
 import type { AbilityDefinition } from './types';
 
@@ -498,13 +499,14 @@ describe('a respawn is a fresh start for a character\'s abilities (the rule, and
 
   it('two extra jumps: two after a respawn, not more; a setting lowered in play is the most it has', () => {
     const p = inTheAir(['DoubleJump']);
-    (p.e.base.components.DoubleJump as { extraJumps: number }).extraJumps = 2;
+    // (Changed the way play changes a setting: a thing's settings are its object's, shared, until one is set for it.)
+    expect(writeField(p.rt, p.e, 'DoubleJump', 'extraJumps', 2)).toBeNull();
     p.rt.respawn(p.e, 'died');
     p.tick(3);
     expect([p.airJump(), (p.tick(20), p.airJump()), (p.tick(20), p.airJump())]).toEqual([true, true, false]);
     p.rt.respawn(p.e, 'died');
     p.tick(3);
-    (p.e.base.components.DoubleJump as { extraJumps: number }).extraJumps = 1;
+    expect(writeField(p.rt, p.e, 'DoubleJump', 'extraJumps', 1)).toBeNull();
     expect([p.airJump(), (p.tick(20), p.airJump())]).toEqual([true, false]);
   });
 

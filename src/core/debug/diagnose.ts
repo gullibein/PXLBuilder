@@ -16,6 +16,7 @@ import { itemNameOf } from '../graph/graph';
 import { resolveRef } from '../logic/refs';
 import { relationshipRegistry } from '../logic/vocabulary';
 import { getWorldBounds } from '../model/geometry';
+import { RectIndex } from '../model/rectIndex';
 import { levelReachProblems } from '../validation/levelProblems';
 import { resolveEntity, type ResolvedEntity } from '../model/resolve';
 import { checkScript, type Stmt } from '../script/language';
@@ -62,7 +63,9 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
     const groups = new Map<string, Placed[]>();
     for (const p of list) {
       const k = p.definitionId ?? p.id;
-      groups.set(k, [...(groups.get(k) ?? []), p]);
+      const group = groups.get(k);
+      if (group) group.push(p);
+      else groups.set(k, [p]);
     }
     return [...groups.entries()];
   };
@@ -198,10 +201,17 @@ export function diagnoseLevel(project: Project, sceneId: Id, registry: Component
     return c && !c.isTrigger && Number(p.r.components.Sprite?.layer ?? 0) >= 0;
   });
   const stacked = new Map<string, { names: [string, string]; ids: Id[] }>();
+  // (Each solid against the solids near it, in the order every pair was gone through before: first by the one,
+  // then by the other. Every pair of a level of walls was hundreds of millions of looks.)
+  const bounds = solids.map((p) => getWorldBounds(p.r));
+  const solidsByPlace = new RectIndex<number>();
+  bounds.forEach((b, i) => solidsByPlace.add({ left: b.minX, right: b.maxX, top: b.minY, bottom: b.maxY }, i));
   for (let i = 0; i < solids.length; i++) {
-    const a = getWorldBounds(solids[i].r);
-    for (let j = i + 1; j < solids.length; j++) {
-      const b = getWorldBounds(solids[j].r);
+    const a = bounds[i];
+    const near = solidsByPlace.near({ left: a.minX, right: a.maxX, top: a.minY, bottom: a.maxY });
+    const others = near ? [...near].filter((j) => j > i).sort((x, y) => x - y) : Array.from({ length: solids.length - i - 1 }, (_, k) => i + 1 + k);
+    for (const j of others) {
+      const b = bounds[j];
       // (Isometric: one on top of the other is a stack, on purpose.)
       if (scene.world.view === 'iso' && Number(solids[i].r.components.Sprite?.isoLift ?? 0) !== Number(solids[j].r.components.Sprite?.isoLift ?? 0)) continue;
       const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);

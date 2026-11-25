@@ -136,12 +136,14 @@ export class ScriptSystem {
     if (!this.indexing) return null;
     if (!this.index) {
       const entities = this.rt.entities;
-      this.things.sync(entities, (o) => (o.alive ? this.thingBox(o) : null));
+      const asleep = this.rt.asleepFlags();
+      this.things.sync(entities, (o) => (o.alive ? this.thingBox(o) : null), asleep);
       const solids = this.rt.solids;
       if (this.solidGrid?.from !== solids) this.solidGrid = { from: solids, grid: new PointGrid(solids, (b) => b) };
       // (Things that went stay listed under their tags: the one question asking by tag skips them.)
       const t = this.tagMap;
-      if (!t || t.from !== entities || t.tags.length !== entities.length || entities.some((o, i) => o.tags !== t.tags[i])) {
+      // (A sleeping tile's tags are the ones it was made with.)
+      if (!t || t.from !== entities || t.tags.length !== entities.length || entities.some((o, i) => !asleep[i] && o.tags !== t.tags[i])) {
         this.tagMap = { from: entities, tags: entities.map((o) => o.tags), map: byTag(entities) };
       }
       this.index = { things: this.things, solids: this.solidGrid.grid, tags: this.tagMap!.map };
@@ -162,7 +164,8 @@ export class ScriptSystem {
     this.input = input;
     this.stepBudget = STEP_BUDGET;
     const gen = this.generation;
-    for (const e of this.rt.entities.slice()) {
+    // (The things awake, as they are when the step's scripts begin: a sleeping tile has no script.)
+    for (const e of [...this.rt.awake()]) {
       if (!e.alive || !e.scripts.length) continue;
       // Keys held through a respawn don't count for it until let go; nor do any while it is dying.
       const keys: InputView = e.dying > 0 ? NO_KEYS : this.rt.inputFor(e, input);
@@ -300,6 +303,8 @@ export class ScriptSystem {
 
   private run(e: RuntimeEntity, inst: ScriptInstance, h: Handler, other: RuntimeEntity | null, chain = 0, amount = 0): void {
     if (h.state !== null && h.state !== inst.state) return;
+    // (What the handler is told of, it may change.)
+    this.rt.wake(other);
     const ctx: Ctx = { self: e, inst, other, it: null, i: 0, amount };
     this.budget = RUN_BUDGET;
     try {
@@ -377,6 +382,7 @@ export class ScriptSystem {
           this.report(e, ctx.inst, `"each ${s.tag}" went through only the first ${MAX_EACH} of ${all.length}`);
           all = all.slice(0, MAX_EACH);
         }
+        for (const o of all) this.rt.wake(o);
         const prev = ctx.it;
         for (const o of all) {
           ctx.it = o;
@@ -991,7 +997,14 @@ export class ScriptSystem {
     return this.value(e, ctx);
   }
 
+  /** What an expression gives. A thing it gives is awake from here on: a script that holds it may change it. */
   private value(e: Expr, ctx: Ctx): Value {
+    const v = this.valueOf(e, ctx);
+    if (typeof v === 'object' && v !== null) this.rt.wake(v);
+    return v;
+  }
+
+  private valueOf(e: Expr, ctx: Ctx): Value {
     this.tick(ctx);
     switch (e.k) {
       case 'num':
@@ -1156,7 +1169,9 @@ export class ScriptSystem {
 
   /** The living entities with the tag (a group moved or turned together). */
   private group(tag: string): RuntimeEntity[] {
-    return this.rt.entities.filter((o) => o.alive && o.tags.includes(tag)).slice(0, MAX_EACH);
+    const all = this.rt.entities.filter((o) => o.alive && o.tags.includes(tag)).slice(0, MAX_EACH);
+    for (const o of all) this.rt.wake(o);
+    return all;
   }
 
   /**
