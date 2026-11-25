@@ -2948,3 +2948,23 @@ budgets are numbers in the tests, set at W0 and W1, not adjectives.
 5. **The guidance fault of §30.4.** One sentence of guidance (a map over 6,000 cells is sent in pieces) now,
    before any of this, or wait.
 6. **V1.5** (§25) is still waiting for review. Which comes first.
+
+### 30.10 Review, and what was authorised
+
+The review agreed with the direction and decided: capacity first (W0, then W1, then stop); sleeping far away
+as an opt-in policy with several levels of activity, never a blanket pause; chunks deferred to W1's
+measurements; the size catalogue kept as a compatibility layer until W2 and W3; the guidance fault corrected
+at once; V1.5 after W1, not dropped. It added requirements held from here on: W1 measures every part of the
+work (opening and saving, editing, rendering and scrolling, collision, simulation, the AI's context, checking
+and generating), each reported by itself; "the same" means the same collision answers, order of events, script
+behaviour and generated levels, not the same picture; bounds must not force rectangular play, and empty space
+needs no objects; shapes are described in the game's own terms, legs being one way among others; a level is
+not playable because each section is: joins, keys and whatever carries across are checked too.
+
+**The guidance fault, corrected.** The top-down guidance no longer says "a city 120 by 70 or more" or "one
+rect each, whatever its size". It says what the engine does today, quoted from the numbers the operations
+enforce (`core/engine/limits.ts`): one `draw_map` holds 6,000 cells and one `draw_tiles` 3,000; a bigger map is
+several of them in the same level, each where the last ends; a level plays smoothly up to about 4,000 placed
+things; so the ground is the background colour, not a tile in every cell. "Several in the same level make one
+level" is tested, not asserted: a map of 120 by 70 in one operation is refused, the same map as two halves
+side by side is one level, walked from end to end with nothing walled off at the seam.

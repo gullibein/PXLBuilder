@@ -5254,9 +5254,10 @@ try {
     await check(async () => /checked: playable/.test(await note.innerText()) && (await lp.getByTestId('scene-selector').innerText()).trim() === 'Level 2' && Number(await lp.getByTestId('viewport-canvas').getAttribute('data-entities')) > 20, `New level, built by the engine: a whole level at once, checked (${await note.innerText().catch(() => '-')})`);
     await check(async () => (await lp.getByTestId('undo').getAttribute('title')).includes('New level, built by the engine') && aiCalls === 0, '(one Undo step, and no AI asked)');
     // How big: a first built level several screens (a "very long" one), said in cells; never the one-screen size.
+    // (The smallest very long level is a climb of 46 by 33: 1,518 cells, three screens of 30 by 17 less a few cells.)
     const cellsOf = async () => /, (\d+) by (\d+) cells/.exec(await note.innerText())?.slice(1).map(Number) ?? [0, 0];
     const firstSize = await cellsOf();
-    await check(async () => firstSize[0] * firstSize[1] >= 3 * 30 * 17, `the first level the engine builds is several screens (${firstSize.join(' by ')} cells; one screen is about 30 by 17)`);
+    await check(async () => firstSize[0] * firstSize[1] >= 1500, `the first level the engine builds is several screens (${firstSize.join(' by ')} cells; one screen is about 30 by 17)`);
     const layout = async () => (await lp.getByTestId('viewport-canvas').getAttribute('data-entities'));
     const was = await layout();
     await menu();
@@ -5274,7 +5275,7 @@ try {
     await check(async () => /^Level 3: .*checked: playable/.test(await note.innerText()), `a second built level (${await note.innerText()})`);
     const took = Date.now() - t0;
     const secondSize = await cellsOf();
-    await check(async () => secondSize[0] * secondSize[1] >= 3 * 30 * 17 && took < 30000, `the game's next level is several screens: ${secondSize.join(' by ')} cells, built and checked in ${(took / 1000).toFixed(1)} s`);
+    await check(async () => secondSize[0] * secondSize[1] >= 1500 && took < 30000, `the game's next level is several screens: ${secondSize.join(' by ')} cells, built and checked in ${(took / 1000).toFixed(1)} s`);
     await lp.getByTestId('play').click();
     const bigPlay = lp.getByTestId('play-canvas');
     await bigPlay.waitFor();

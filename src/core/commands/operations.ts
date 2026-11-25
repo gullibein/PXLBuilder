@@ -40,6 +40,7 @@ import { ZodError } from 'zod';
 import { GENRES, THEMES } from '../levelGen/profile';
 import { LevelGenError } from '../levelGen/generate';
 import { buildLevel, usualLengthFor } from '../levelGen/build';
+import { ENGINE_LIMITS } from '../engine/limits';
 import { profileChangeSchema, setGameProfile, setLevelProfile, type ProfileChange } from '../engine/profile';
 import { current, isDraft } from 'immer';
 
@@ -482,7 +483,7 @@ export interface ApplyResult {
 }
 
 /** Largest number of cells one draw_tiles may fill. */
-const MAX_DRAW_CELLS = 3000;
+const MAX_DRAW_CELLS = ENGINE_LIMITS.drawTilesCells;
 
 /**
  * Replaces temporary names from earlier operations in this list with the real
@@ -1289,7 +1290,7 @@ export function applyOperations(
           );
         }
         const width = usual;
-        if (width * op.rows.length > MAX_DRAW_CELLS * 2) throw new m.ModelError(`draw_map: ${width}x${op.rows.length} is too big at once (at most ${MAX_DRAW_CELLS * 2} cells)`);
+        if (width * op.rows.length > ENGINE_LIMITS.drawMapCells) throw new m.ModelError(`draw_map: ${width}x${op.rows.length} is too big at once (at most ${ENGINE_LIMITS.drawMapCells} cells)`);
         const byChar = new Map<string, ObjectDefinition>();
         for (const { char, object } of op.legend) {
           const ch = [...char][0];

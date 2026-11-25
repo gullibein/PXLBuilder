@@ -5,6 +5,7 @@ import type { AIContext } from './context';
 import { userMessage } from './prompt';
 import { BOARD_GAME_WORDS, TOPICS, topicsFor, topicsOnStarter } from './topics';
 import { SCRIPT_LIMITS, SCRIPT_WORK } from '../script/language';
+import { ENGINE_LIMITS } from '../engine/limits';
 
 const level: AIContext = { kind: 'level', sceneId: 's', point: null };
 
@@ -81,6 +82,12 @@ describe('guidance only some requests need', () => {
     expect(TOPICS.topdown.text).toMatch(/SEVERAL SCREENS EACH WAY/);
     expect(TOPICS.topdown.text).toMatch(/at least 90 by 50 cells/);
     expect(TOPICS.topdown.text).toMatch(/set_camera zoom 1\.5/);
+    // What it is told about size is what the engine does: the operations' own limits, and the measured size a level
+    // plays smoothly at (it was told "a city 120 by 70 or more", a map the engine refuses: 8,400 cells in one draw_map).
+    expect(TOPICS.topdown.text).not.toMatch(/120 by 70 or more|whatever its size/);
+    expect(TOPICS.topdown.text).toContain(`one draw_map holds at most ${ENGINE_LIMITS.drawMapCells.toLocaleString('en-US')} cells`);
+    expect(TOPICS.topdown.text).toContain(`one draw_tiles ${ENGINE_LIMITS.drawTilesCells.toLocaleString('en-US')} cells`);
+    expect(TOPICS.topdown.text).toContain(`up to about ${ENGINE_LIMITS.smoothThings.toLocaleString('en-US')} placed things`);
     for (const t of ['levels', 'levels_builder']) expect(TOPICS[t].text, t).toMatch(/very_long and huge several screens long/);
   });
 });
