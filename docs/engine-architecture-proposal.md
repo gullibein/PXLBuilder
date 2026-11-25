@@ -2721,3 +2721,230 @@ monitor's sharpness. Three ways:
 
 Also open, from this work: a city or overworld generator (as the dungeon generator builds rooms): no AI words
 for the map at all, and checked by walking. Not proposed in detail here.
+
+## 30. Worlds of any size and shape: investigation and proposal (nothing built)
+
+The user's review of §29: the catalogue of level sizes is bigger, but a catalogue is the wrong design. The
+engine should make the world the game needs: a long level with real height, a tower hundreds of cells up, a
+mine far down, a city wide both ways, a small board that stays small, rooms and regions that are not one
+rectangle. This section is what the engine does today, measured; what limits it, layer by layer; and a plan in
+stages. Nothing in it is implemented. The measuring code was temporary and is not in the repository.
+
+### 30.1 How a world is represented today
+
+- **A level is a list.** `Scene.entities` is one flat, ordered list. Every tile is a full entity (id, name,
+  object, position, own components, tags, metadata). There is no tile layer, no grid, no chunk.
+- **A level has no size.** Its extent is the box round whatever is placed in it, worked out when play starts
+  (`runtime.ts`, `boundsOf`). The camera's "level" limits, and the line below which something has "fallen out"
+  (the lowest thing plus 800 pixels), come from that box. Open space with nothing in it (sky above a tower,
+  sea round an island) cannot be part of a level.
+- **Positions are free.** World pixels as plain numbers; cells are 32 pixels by convention, not by the model.
+  Nothing in the data model stops a world of any size or shape.
+- **Several levels make a game.** Scripts go from level to level (`go_to_level`, `visit_level` and back). Camera
+  zones mark rooms inside a level. Random dungeons carry a recipe and are built when played.
+
+### 30.2 What limits size and shape, layer by layer
+
+"Engine" = a limit of how the engine works that needs engineering. "Arbitrary" = a number someone chose.
+"Generator" and "Checker" = limits of those parts only.
+
+| Layer | What it does today | Kind |
+| --- | --- | --- |
+| Data model | No limit on size, shape or count. One list per level; saved as about 105 bytes a thing (66,790 things: 7 MB, saved in 0.16 s, loaded in 0.24 s) | none |
+| Coordinates | Plain numbers: exact far beyond any world here. The scripts' point index packs cell numbers into ±32,768 cells of 64 pixels (±65,000 tiles) | Engine, far away |
+| Camera | Follows in world pixels, kept inside the level's box. World size and screen size are already separate: nothing scales a world to fit a screen unless the game's camera is set to fit. The box is the contents', not a stated world | Engine: no stated bounds |
+| Collision | Every moving thing is tested against every solid in the level, three times a step (`moveAndCollide` over `staticSolids`). Wall checks by behaviours scan the same list | Engine |
+| Simulation | Every step loops over every thing in the level many times, tiles included (the runtime has 37 loops over the whole list; behaviours and scripts add theirs); everything everywhere is simulated, however far from the player | Engine |
+| Renderer | Draws only what is on screen, but finds it by looking at every thing every frame | Engine |
+| Operations | `draw_tiles`: 3,000 cells a call. `draw_map`: 6,000 cells a call. Each operation re-reads every thing in the level, so drawing one tile takes 0.2 s in a level of 2,600 things and 5 s in one of 31,000 | Arbitrary; Engine |
+| Level builder (platformers) | Five structures, each a fixed shape (one floor; stacked floors; out and back; a hub), five sizes from a table. At most 40 sections a floor. Its output goes through one `draw_map`, so nothing over 6,000 cells can be built whatever the table says. Tried with 18 and 48 floors, it fails ("enemy at 23,17: the cell has ground"; not looked into) | Generator; Arbitrary |
+| Dungeon generator | Any width and height from 10 to 120, 1 to 40 rooms. Bigger numbers are cut to 120 without a word | Generator; Arbitrary |
+| Worlds drawn by the AI | Whatever fits in an answer: one character a cell. The crime game's answer was 37,888 characters, written in 142 s; a map of 300 by 200 alone is 60,000 | cost |
+| What the AI sees | A window of 140 by 48 cells round the start. The rest of a bigger level is not shown to it at all. Building the context took 16 s at 16,000 things and 57 s at 31,000 | Arbitrary; Engine |
+| Level checker | Re-reads every thing; 0.15 s at 2,600 things, 3.2 s at 67,000. Grows evenly with size | Engine, mild |
+| Route solver | One search over the whole level. With the 6,000-cell limit lifted for the test, runs of 340, 680, 1,360 and 2,720 cells were all proved, in 1.5, 4, 9 and 20 s: it grows evenly, it does not explode. At most 400,000 states | Checker, mild |
+| Route bot (dash, wall jump) | Plays the whole route in one go, 120 game seconds, 8 runs. One missed jump anywhere fails the level; no moving platforms | Checker |
+| Puzzle proof | "Every puzzle is needed": one search of the whole level per puzzle; up to 37 s and failures at the bigger sizes (§29.3) | Checker |
+| Editor | Opening a file: 0.5 s at 2,600 things, 8.6 s at 16,000, 27.5 s at 31,000 (cause not yet found). Panning and dragging in big levels: not measured | Engine |
+
+### 30.3 Measured: where it stops today
+
+Worlds made for the test: a city (blocks of walls on a street grid, about a third solid, enemies spread through
+it), a tower, a mine full of dirt. Node, one core, this machine; "frame" is the real app in a headless browser.
+
+| World | Cells | Things | One step of play | Play in the browser | One tile drawn | File |
+| --- | --- | --- | --- | --- | --- | --- |
+| City 100 by 60 | 6,000 | 2,630 | 4 to 5 ms | 17 ms a frame (smooth) | 0.2 s | 0.3 MB |
+| City 150 by 90 | 13,500 | 5,682 | 15 ms | | 0.4 s | 0.6 MB |
+| Run 400 by 30 | 12,000 | 5,628 | 19 ms | | 0.4 s | 0.6 MB |
+| City 200 by 120 | 24,000 | 10,660 | 46 ms | | 0.8 s | 1.1 MB |
+| Tower 40 by 600 | 24,000 | 10,820 | 74 ms | | 1.1 s | 1.2 MB |
+| City 250 by 150 | 37,500 | 16,218 | 100 to 113 ms | over 1 s a frame | 1.0 s | 1.7 MB |
+| Mine 80 by 400 | 32,000 | 31,573 | 440 to 460 ms | no frame in 3 s while walking | 5.3 s | 3.4 MB |
+| City 500 by 300 | 150,000 | 66,790 | 1.4 s | | 4.5 s | 7.0 MB |
+
+A step has 16.7 ms at 60 frames a second. **Today the engine plays smoothly up to about 5,000 things in a
+level and not beyond.** The biggest level §29 added (170 by 21) has under 900. A profile of the 16,000-thing
+city: a third of a step in `moveAndCollide`, a sixth in behaviours' wall checks, the rest in loops over
+everything.
+
+The data is not the problem. Saving, loading and holding 67,000 things is cheap. Every cost above comes from
+doing work per thing in the whole level where only the things nearby matter, and that is fixable without
+changing what a level is.
+
+### 30.4 Genuine limits and chosen ones
+
+- **Genuine, today:** about 5,000 things for smooth play; edits and the AI's context slow down from a few
+  thousand. These are how the engine looks things up, not what it can represent.
+- **Chosen numbers:** 3,000 and 6,000 cells an operation; the builder's size table, 40 sections a floor and
+  five structures; the dungeon's 120; the AI's 140 by 48 window.
+- **Checker limits, not world limits:** the route bot's one-go play, the puzzle proof, the solver's single
+  search. The solver is in better shape than §29 said: on one-floor levels it scales evenly to 2,720 cells.
+- **What §29 did that this review rules out:** it built smaller than asked when a level could not be proved
+  (puzzle levels at "long", dashing players at "very long" and "long"). It said so each time, but it still
+  forced the size. Under the rule proposed below those levels are built as asked and reported as unproven,
+  with where.
+- **A fault in §29's guidance, found here:** it tells the AI a city is "120 by 70 or more" and to draw the
+  detailed places with `draw_map`. A `draw_map` of 120 by 70 is 8,400 cells and is refused (6,000 at most);
+  a floor under the whole city as one rectangle is refused too (3,000). The answer would come back with an
+  error and be written again. Not yet fixed: see the decisions.
+
+### 30.5 Proposed design
+
+Seven parts. None is specific to a genre.
+
+**1. Engine capacity (no change to what a level is).** Look things up by place.
+
+- Solids in a grid of cells inside `CollisionWorld`. Its questions (`GeometryQuery`: sweep, probe, wall beside,
+  floor in, cell) keep their meaning; each asks only the cells it touches. Candidates come back in the level's
+  order, so every answer is the one given today (the scripts' point index already works to that rule).
+- The step visits only things that do something (a body, a behaviour, a script, a timer). A tile that just
+  stands there is in the grid and nowhere else.
+- The renderer finds what is on screen through the same grid.
+- An object's resolved form is worked out once per object, not once per placed copy.
+- Operations, the level checker and the AI's context ask the grid; none re-reads the level.
+
+**2. A stated world.** `world.bounds`, optional: the level's extent in cells, or several rectangles for a
+world that is not one rectangle. Absent, the extent is the contents' box as now, so every existing game is
+untouched. The camera's limits, the fall line, generators, the checker and the editor's frame use it.
+
+**3. Regions.** Named rectangles in a level ("Docks", "Shaft 2", "Boss room"), one concept in place of three
+(camera zones, dungeon rooms, the builder's sections). A region is what the AI points at, what a generator
+fills, what the checker reports on, what the camera can keep to, and what may sleep when far away.
+
+**4. Sizes as data, not names.** A level builder takes the size asked for, in cells, and a shape: a list of
+legs ("right 180, up 5 floors, right 120, down 40"). The builder already works this way inside: a layout is a
+list of runs, each with a direction, a length and a floor (`RunPlan`). Only the function that makes layouts
+from the table is fixed. The five structures and five size names stay as shorthands for particular layouts,
+cell for cell what they are now, so the goldens hold. Generators' output is applied directly, not through an
+operation meant for the AI's hand-drawn maps.
+
+**5. Limits in one place, with reasons.** One module of technical limits (things in a level, cells in one
+operation, work per check), each set from a measurement and changeable in a game's settings. Past a limit the
+engine refuses with the number and the reason. It never builds smaller in silence, and never builds smaller
+because a check could not finish: then it builds what was asked and reports what it could not prove.
+
+**6. Checking by parts.**
+
+- *Built levels:* each section is checked by itself, in its own window: the solver from its way in to its way
+  out, and for estimated moves the bot played from its way in. Then the joins (one section's way out is the
+  next one's way in) and what carries across sections (keys and the doors they open) as a small graph. Cost
+  grows evenly with size. A failed section is rebuilt by itself; today one failure throws the whole level away
+  and builds another, up to twelve times.
+- *The result names places:* "44 sections, 41 proved, 3 not: section 17 (a dash over a pit, columns 310 to
+  322): the bot missed the dash". The level is "uncertain", not smaller.
+- *Drawn worlds:* regions and the ways between them: every region can be reached, everything needed can be
+  got to, pockets walled off are listed with where.
+- *Agreement:* for levels small enough for today's whole-level search, both ways must give the same verdict
+  on every golden. That test is the guard.
+- *What it does not prove:* things that cross a join (an enemy that walks into the next section, a platform
+  that rides through two). Sections get a margin, and the play probe still plays the whole level; a crossing
+  thing leaves that join "uncertain".
+
+**7. Big worlds without big answers.** The AI describes; the engine builds.
+
+- *Region fillers:* general generators that fill a rectangle of any size: a street grid with blocks, caves,
+  rooms and corridors (the dungeon generator, freed of its 120), layers by depth (soil, rock, ore: a mine), a
+  platform run (the section builder), a maze, open ground with scattered things. Each checked as above.
+- *Stamps:* a small map drawn once (a house, a room) and placed many times.
+- *What the AI sees:* an overview (one character for a block of cells, regions named) and, when it asks, the
+  detail of one region. Today's 140 by 48 window becomes the detail view.
+- *Sleeping far away:* optional per game, off for every existing game. See the decisions.
+
+**Not proposed now: tiles stored in chunks.** Keeping plain tiles as numbers in chunks would carry worlds of
+millions of cells, but it touches every operation, selection in the editor, scripts that ask what is at a
+place, autotiling, files and migration. Parts 1 and 3 put every reader behind questions asked by place, which
+is the first half of that change and useful by itself. Whether the second half is needed is a measurement at
+the end of stage W1, not a guess now.
+
+### 30.6 Stages
+
+Each ends with the suites, the regression games and a report, and stops for review.
+
+| Stage | What | Done when |
+| --- | --- | --- |
+| W0 | Before any change: speed baselines as tests for the existing games at their sizes; a harness that asks every collision question both ways (all solids, and by grid) on every regression game and compares | The baselines and the comparison are in `npm test` |
+| W1 | Part 1: capacity. No model change, no new feature | Every golden and movement trace unchanged. Budgets met on test worlds of 20,000, 60,000 and 150,000 things: a step, opening the file, one tile drawn, the AI's context |
+| W2 | Parts 2, 4 and 5: stated bounds; sizes and shapes as data; the limits module; the chosen numbers of §30.4 removed or moved into it | A level of any asked size is built or refused with a reason. Existing blueprints build the same levels |
+| W3 | Part 6: checking by parts; §29's forced sizes removed | Same verdicts as today on all goldens. A long level for a dashing player is built as asked and reported section by section |
+| W4 | Parts 3 and 7: regions, fillers, stamps, overview maps; sleeping far away (if approved) | The test worlds of §30.7 are made from requests of a few lines |
+| W5 | Tiles in chunks | Only if W1's measurements show the list cannot meet the budgets at the sizes wanted |
+
+W1 comes first because a world that can be asked for but not played is worse than one that cannot be asked
+for.
+
+**Reused as it is:** the data model; world coordinates and the camera; `GeometryQuery`; the scripts' point
+index and its "same answer as looking at everything" rule; `RunPlan` layouts, patterns sized from the player's
+reach; the validator registry and its three verdicts; the dungeon generator; camera zones; levels joined by
+scripts; the regression games and goldens.
+
+**Changed inside, same face:** `CollisionWorld`; the step loops; the renderer's search; how operations, the
+checker and the context read a level; `layout()`.
+
+**New:** stated bounds; regions; the limits module; section and region checks; fillers and stamps; overview
+maps.
+
+### 30.7 How it would be tested
+
+Worlds of very different sizes and shapes, as fixtures, each made the way a user's game would be (a request's
+operations, or a generator), each with the same questions asked:
+
+| World | Shape | Why |
+| --- | --- | --- |
+| A board | 3 by 3 and 8 by 8 | Stays small: nothing pads it, the camera frames it |
+| An arena | one screen | The same, with movement |
+| A long level | 600 across, legs up and down 60 | Length and height together |
+| A tower | 30 by 800 | Height alone; the fall line; a camera that climbs |
+| A mine | 120 by 600, full of dirt, dug through | The most things per cell; cells that change in play |
+| A city | 400 by 300, six regions, 500 moving things | Width both ways; many actors; sleeping far away |
+| Rooms | twelve of different sizes, joined in a ring and a branch | Not one rectangle |
+| A game of levels | five levels joined by doors, one visited and left | Regions as separate levels |
+| Every existing family | at its usual size | Nothing got slower or different |
+
+For each: it is built within the limits or refused with a reason; it opens in the editor within the budget; a
+step stays within the budget wherever the player is, corner to corner; the camera reaches every edge and never
+shows past the bounds; one tile drawn and one object moved stay within the budget; the checker's report names
+regions or sections; what the AI is sent stays within its size; saved and loaded it is the same world. The
+budgets are numbers in the tests, set at W0 and W1, not adjectives.
+
+### 30.8 What this does not settle
+
+- The numbers after W1 are targets until measured. The profile says where the time goes, not what is left.
+- Why opening a large file takes so long is not found yet.
+- The fillers are the largest new piece and the least designed here: each needs its own proposal (what it
+  takes, what it guarantees, how it is checked).
+- A screen's size in cells is a camera matter and stays one. §29.5 proposed a default game resolution to make
+  levels feel bigger; that mixed two concerns and is withdrawn in that form.
+
+### 30.9 Decisions asked of the user
+
+1. **Order of work.** W0 and W1 first (capacity), then W2 to W4, as above? Or sizes as data (W2) first.
+2. **Sleeping far away.** In a big world, may things far from the player stop until the player comes near
+   (as games of this kind do), as a choice per game, off for all existing games? It changes play: a distant
+   enemy does not move. Without it a city of thousands of actors is simulated whole, every step.
+3. **Tiles in chunks.** Decide at the end of W1 from measurements (recommended), or commit now.
+4. **§29 in the meantime.** Leave the catalogue and its forced sizes until W2 and W3 replace them
+   (recommended: they are tested and say what they do), or take them out now.
+5. **The guidance fault of §30.4.** One sentence of guidance (a map over 6,000 cells is sent in pieces) now,
+   before any of this, or wait.
+6. **V1.5** (§25) is still waiting for review. Which comes first.
