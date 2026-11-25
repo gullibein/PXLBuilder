@@ -4,7 +4,8 @@
  * with ramps generalised to slopes of any height (a 45° ramp computes exactly as before), the GeometryQuery
  * interface (probes with surface normals, grid cells), and cells that can be dug out and refill.
  */
-import { moveAndCollide, overlaps, standingOn, type Box, type MoveResult } from '../physics';
+import { moveAndCollide, moveNear, overlaps, standingOn, type Box, type MoveResult } from '../physics';
+import { BoxGrid } from './boxGrid';
 import { partsOf } from '../parts';
 import type { RuntimeEntity } from '../runtime';
 import type { CellInfo, GeometryQuery, Ladder, Slope, Surface } from './types';
@@ -75,28 +76,72 @@ export class CollisionWorld implements GeometryQuery {
     return pushed.length ? [...this.staticSolids, ...pushed] : this.staticSolids;
   }
 
+  // ---- by place (docs §30, W1): the same lists, asked only about what is near. Every answer is the whole list's.
+
+  private solidGrid: BoxGrid | null = null;
+  private oneWayGrid: BoxGrid | null = null;
+
+  /** The fixed solids by place (made anew when the list is: `rebuild`, or the list set by hand). */
+  private get byPlace(): BoxGrid {
+    if (this.solidGrid?.boxes !== this.staticSolids) this.solidGrid = new BoxGrid(this.staticSolids);
+    return this.solidGrid;
+  }
+
+  private get oneWaysByPlace(): BoxGrid {
+    if (this.oneWayGrid?.boxes !== this.oneWays) this.oneWayGrid = new BoxGrid(this.oneWays);
+    return this.oneWayGrid;
+  }
+
+  /** The fixed solids that can overlap an area, in the order of `staticSolids`. */
+  staticsNear(area: Box): readonly Box[] {
+    return this.byPlace.near(area);
+  }
+
+  /** The fixed jump-through platforms that can overlap an area, in the order of `oneWays`. */
+  oneWaysNear(area: Box): readonly Box[] {
+    return this.oneWaysByPlace.near(area);
+  }
+
+  /** Whether a box overlaps a fixed solid. */
+  overlapsStatic(box: Box): boolean {
+    return this.byPlace.overlapsAny(box);
+  }
+
+  /** Whether a box overlaps anything solid (`solids.some(overlaps)`: the fixed ones, and pushable things where they are now). */
+  overlapsSolid(box: Box): boolean {
+    return this.byPlace.overlapsAny(box) || this.pushed().some((s) => overlaps(box, s));
+  }
+
+  /** A box moved by (dx, dy) against `solids` (moveAndCollide with that list: the same result). */
+  moveAgainstSolids(box: Box, dx: number, dy: number): MoveResult {
+    const pushed = this.pushed();
+    return moveNear(box, dx, dy, (reach) => (pushed.length ? [...this.byPlace.near(reach), ...pushed] : this.byPlace.near(reach)), () => (pushed.length ? [...this.staticSolids, ...pushed] : this.staticSolids));
+  }
+
   /** Moves a box by (dx, dy) against these surfaces (physics.ts, behind the interface). */
   sweep(box: Box, dx: number, dy: number, surfaces: readonly Box[]): MoveResult {
     return moveAndCollide(box, dx, dy, surfaces as Box[]);
   }
 
   solidAt(x: number, y: number): boolean {
-    return this.solids.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh);
+    return this.byPlace.holds(x, y) || this.pushed().some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh);
   }
 
   wallBeside(box: Box, dir: 1 | -1): boolean {
     const probe: Box = { x: box.x + dir * (box.hw + 1), y: box.y, hw: 1, hh: box.hh * 0.6 };
-    return this.staticSolids.some((s) => overlaps(probe, s));
+    return this.byPlace.overlapsAny(probe);
   }
 
   /** Floor under this box: something solid, or the top of a ladder (or a jump-through platform, a slope). */
   floorIn(box: Box): boolean {
-    return this.solids.some((s) => overlaps(box, s)) || this.ladderTops.some((t) => overlaps(box, t)) || this.oneWays.some((t) => overlaps(box, t)) || this.slopes.some((t) => overlaps(box, t));
+    return this.overlapsSolid(box) || this.ladderTops.some((t) => overlaps(box, t)) || this.oneWaysByPlace.overlapsAny(box) || this.slopes.some((t) => overlaps(box, t));
   }
 
   /** Standing on a jump-through platform (and nothing solid besides). */
   onJumpThrough(box: Box): boolean {
-    return standingOn(box, this.oneWays) && !standingOn(box, this.solids as Box[]);
+    // (standingOn: the box half a pixel lower overlaps one.)
+    const probe = { ...box, y: box.y + 0.5 };
+    return this.oneWaysByPlace.overlapsAny(probe) && !this.overlapsSolid(probe);
   }
 
   /** Standing on solid ground (not on a ladder's top). */
@@ -174,7 +219,13 @@ export class CollisionWorld implements GeometryQuery {
     const len = Math.hypot(dir.x, dir.y) || 1;
     const ux = dir.x / len;
     const uy = dir.y / len;
-    const solids = this.solids;
+    // (Only what the ray can reach, in the lists' order: the first box a point is in is the same one.)
+    const ex = from.x + ux * maxDist;
+    const ey = from.y + uy * maxDist;
+    const along: Box = { x: (from.x + ex) / 2, y: (from.y + ey) / 2, hw: Math.abs(ex - from.x) / 2 + 1, hh: Math.abs(ey - from.y) / 2 + 1 };
+    const pushed = this.pushed();
+    const solids = Number.isFinite(maxDist) ? (pushed.length ? [...this.byPlace.near(along), ...pushed] : this.byPlace.near(along)) : this.solids;
+    const oneWays = Number.isFinite(maxDist) ? this.oneWaysByPlace.near(along) : this.oneWays;
     for (let d = 0; d <= maxDist; d += 0.5) {
       const x = from.x + ux * d;
       const y = from.y + uy * d;
@@ -200,7 +251,7 @@ export class CollisionWorld implements GeometryQuery {
         return { point, normal, angle: normal.y !== 0 ? (normal.y < 0 ? 0 : Math.PI) : Math.PI / 2, curvature: 0, kind: 'solid', friction: b.friction ?? 0.2 };
       }
       if (uy > 0)
-        for (const t of this.oneWays) {
+        for (const t of oneWays) {
           const top = t.y - t.hh;
           if (Math.abs(x - t.x) < t.hw && y >= top && y - uy * 0.5 < top) return { point: { x, y: top }, normal: { x: 0, y: -1 }, angle: 0, curvature: 0, kind: 'oneWay', friction: t.friction ?? 0.2 };
         }

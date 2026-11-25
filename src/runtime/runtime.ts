@@ -34,7 +34,7 @@ import { DEFEATED_LOOK, Gameplay, ownPart, type LoggedEvent } from './gameplay';
 import { instantiateScripts, ScriptSystem, type ScriptInstance } from './scripts';
 import { ALL_ACTIONS, InputState, type Action, type InputView } from './input';
 import { TurnKit } from './turns';
-import { groundUnder, moveAndCollide, overlaps, standingOn, type Box } from './physics';
+import { groundUnder, liesIn, moveAndCollide, nowhere, overlaps, reachOf, standingOn, stayedIn, type Box } from './physics';
 import { abilitiesFor, locomotionFor, motionStates, movementValues, type MotionSnapshot, type MovementHost } from './movement/index';
 import { DEFAULT_FRICTION } from './movement/grip';
 import { CollisionWorld } from './geometry/world';
@@ -901,7 +901,7 @@ export class Runtime {
       this.fogDirty = true;
       // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
       const fixed = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none'));
-      this.world.rebuild(fixed, this.ladderZones(), () => this.entities.filter((e) => e.pushable && this.isSolid(e)).map((e) => boxOf(e)!));
+      this.world.rebuild(fixed, this.ladderZones(), () => this.made().pushable.filter((e) => this.isSolid(e)).map((e) => boxOf(e)!));
       this.solidsDirty = false;
     }
     // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
@@ -926,9 +926,9 @@ export class Runtime {
       }
     }
     const solids = kinematicSolids.length ? [...this.world.staticSolids, ...kinematicSolids] : this.world.staticSolids;
-    const pushables = this.entities.filter((e) => e.pushable && this.isSolid(e));
+    const pushables = this.made().pushable.filter((e) => this.isSolid(e));
     // Liquids (water to swim in): what each moving thing's middle is in.
-    const liquids = this.entities.filter((e) => e.liquid && e.alive && e.collider);
+    const liquids = this.made().liquid.filter((e) => e.alive && e.collider);
 
     for (const e of this.entities) {
       if (e.body !== 'dynamic' || !e.alive) continue;
@@ -991,20 +991,45 @@ export class Runtime {
         // Ladder tops hold you up unless you are climbing (or already below them).
         const prevBottom = box.y + box.hh;
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => ({ ...boxOf(p)!, friction: p.friction })) : [];
-        const base = others.length ? [...solids, ...others] : solids;
         // Jump-through platforms hold it only from above (not while it drops through them).
         if (e.dropThrough > 0) e.dropThrough = Math.max(0, e.dropThrough - dt);
-        const tops = e.dropThrough > 0 ? [] : [...this.world.oneWays, ...movingOneWays].filter((t) => prevBottom <= t.y - t.hh + 0.01);
-        let surfaces = e.climbing ? base : [...base, ...this.world.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01), ...tops];
         // Isometric: ground more than a block above it is a wall to it.
         const iso = this.cam.camera.iso === true;
-        if (iso) surfaces = [...surfaces, ...this.cliffsAround(e).map((b) => ({ ...b, friction: DEFAULT_FRICTION }))];
+        const cliffs = iso ? this.cliffsAround(e).map((b) => ({ ...b, friction: DEFAULT_FRICTION })) : [];
+        /**
+         * What it can run into, in this order: the fixed solids, the moving ones, pushable things, the tops of
+         * ladders, jump-through platforms (fixed, then moving), cliffs. Made from the fixed solids and platforms
+         * given: those near it (W1, docs §30), or all of them.
+         */
+        const surfacesOf = (fixed: readonly Box[], fixedOneWays: readonly Box[]): Box[] => {
+          const hard = kinematicSolids.length ? [...fixed, ...kinematicSolids] : (fixed as Box[]);
+          const base = others.length ? [...hard, ...others] : hard;
+          const tops = e.dropThrough > 0 ? [] : [...fixedOneWays, ...movingOneWays].filter((t) => prevBottom <= t.y - t.hh + 0.01);
+          let made = e.climbing ? base : [...base, ...this.world.ladderTops.filter((t) => prevBottom <= t.y - t.hh + 0.01), ...tops];
+          if (iso) made = [...made, ...cliffs];
+          // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at
+          // the top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
+          if (this.world.slopes.length && !e.climbing) made = this.besideRamps(box, made);
+          return made;
+        };
         const goingDown = e.vy > 0;
-        // While its middle is over a ramp, the ramp holds its feet: the low edge of the ground beside the ramp (at the
-        // top it walks onto, or the one it walks off down the ramp) neither holds it up nor stops it. Walls do.
-        if (this.world.slopes.length && !e.climbing) surfaces = this.besideRamps(box, surfaces);
         const rising = e.vy < 0;
-        const r = moveAndCollide(box, e.vx * dt * ease.x, e.vy * dt * ease.y, surfaces);
+        // Only the fixed surfaces near it are looked at. The answer is the one all of them give: if working the move
+        // out took it outside the area looked up (thrown far out of something it was deep inside), all are asked.
+        const moveX = e.vx * dt * ease.x;
+        const moveY = e.vy * dt * ease.y;
+        const reach = reachOf(box, moveX, moveY);
+        let everything: Box[] | null = null;
+        const all = () => (everything ??= surfacesOf(this.world.staticSolids, this.world.oneWays));
+        const went = nowhere();
+        let surfaces = surfacesOf(this.world.staticsNear(reach), this.world.oneWaysNear(reach));
+        let r = moveAndCollide(box, moveX, moveY, surfaces, went);
+        if (!stayedIn(went, box, reach)) {
+          surfaces = all();
+          r = moveAndCollide(box, moveX, moveY, surfaces);
+        }
+        /** The surfaces to ask about a box afterwards: those near, if it lies in the area they were looked up for. */
+        const around = (b: Box) => (surfaces === everything || liesIn(b, reach) ? surfaces : all());
         e.x = r.x - e.collider!.ox;
         e.y = r.y - e.collider!.oy;
         // Its head bumped into something above it: that thing's "hit_from_below" handlers (a "?" block, a brick).
@@ -1013,7 +1038,7 @@ export class Runtime {
         if (iso) this.followGround(e, dt);
         if (r.hitX) e.vx = 0;
         if (r.hitY) e.vy = 0;
-        e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, surfaces));
+        e.grounded = r.grounded || (e.vy >= 0 && standingOn(boxOf(e)!, around(boxOf(e)!)));
         // Ramps: its feet (under its middle) go on the ramp's surface.
         const wasOnSlope = e.onSlope;
         e.onSlope = false;
@@ -1028,7 +1053,7 @@ export class Runtime {
           }
         }
         // What it stands on decides its grip (only looked for when something uses it: characters, things sliding).
-        if (e.grounded && (e.controller || (e.vx !== 0 && e.friction > 0))) e.groundFriction = groundUnder(boxOf(e)!, surfaces)?.friction ?? DEFAULT_FRICTION;
+        if (e.grounded && (e.controller || (e.vx !== 0 && e.friction > 0))) e.groundFriction = groundUnder(boxOf(e)!, around(boxOf(e)!))?.friction ?? DEFAULT_FRICTION;
         // Climbing down onto the floor (or standing on it) ends the climb.
         // (An enemy lining up with a ladder on the floor hasn't started down or up yet.)
         if (e.climbing && e.grounded && e.vy >= 0 && (e.controller || goingDown || e.climbDir === 0)) {
@@ -1087,6 +1112,20 @@ export class Runtime {
   /** Whether it blocks movement (a wall, floor, closed door…), for scripts' group checks. */
   solidFor(e: RuntimeEntity): boolean {
     return this.isSolid(e);
+  }
+
+  /**
+   * The things made to be pushed, and the liquids, in the level's order (W1, docs §30). What a thing is made as does
+   * not change in play, and new things come at the end of the list, so these are the lists `entities.filter` gives,
+   * kept until the level's list is another one or longer; asked for many times a step, they are not made by
+   * looking through the whole level each time.
+   */
+  private madeAs: { list: RuntimeEntity[]; count: number; pushable: RuntimeEntity[]; liquid: RuntimeEntity[] } | null = null;
+
+  private made(): NonNullable<Runtime['madeAs']> {
+    const m = this.madeAs;
+    if (m && m.list === this.entities && m.count === this.entities.length) return m;
+    return (this.madeAs = { list: this.entities, count: this.entities.length, pushable: this.entities.filter((e) => e.pushable), liquid: this.entities.filter((e) => e.liquid) });
   }
 
   private isSolid(e: RuntimeEntity): boolean {
@@ -1580,14 +1619,16 @@ export class Runtime {
     if (!box) return;
     const face = box.x + dir * box.hw;
     const myTop = box.y - box.hh;
-    for (const s of this.world.staticSolids) {
+    // (A wall whose face is within 2 px of its own and whose top is near its head reaches into this area: only those
+    // near are looked at, in the list's order: the first that fits is the one grabbed.)
+    for (const s of this.world.staticsNear({ x: face, y: myTop + 5, hw: 4, hh: 11 })) {
       const wallFace = dir > 0 ? s.x - s.hw : s.x + s.hw;
       if (Math.abs(face - wallFace) > 2) continue;
       const top = s.y - s.hh;
       if (top < myTop - 4 || top > myTop + 14) continue;
       // Room to stand on top of the ledge (also rules out the seam between two stacked tiles).
       const above: Box = { x: wallFace + dir * (box.hw + 1), y: top - box.hh - 0.5, hw: box.hw, hh: box.hh - 0.5 };
-      if (this.world.staticSolids.some((o) => overlaps(above, o))) continue;
+      if (this.world.overlapsStatic(above)) continue;
       e.hanging = { side: dir, top, edgeX: wallFace };
       e.y += top - 2 - myTop;
       e.vx = 0;
@@ -1620,6 +1661,11 @@ export class Runtime {
   /** Solids (walls, floors, and pushable things where they are now), for behaviors and shots looking at what is in the way. */
   get solids(): readonly Box[] {
     return this.world.solids;
+  }
+
+  /** Whether a box overlaps anything solid (`solids.some(overlaps)`, asked by place). */
+  overlapsSolid(box: Box): boolean {
+    return this.world.overlapsSolid(box);
   }
 
   /**
@@ -1886,7 +1932,7 @@ export class Runtime {
     // (On a ramp, the ground at its top is no wall: only what is higher than a ramp's rise under it counts.)
     const step = dx !== 0 && e.onSlope ? box.hw + 1 : 0;
     const front: Box = dx !== 0 ? { x: box.x + dx * (box.hw + 1), y: box.y - step / 2, hw: 1, hh: box.hh - 1 - step / 2 } : { x: box.x, y: box.y + dy * (box.hh + 1), hw: box.hw - 1, hh: 1 };
-    return this.solids.some((s) => overlaps(front, s));
+    return this.world.overlapsSolid(front);
   }
 
   /** No floor just ahead of its feet that way (a ladder's top is floor). */

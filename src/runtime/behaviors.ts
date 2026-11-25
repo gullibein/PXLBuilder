@@ -7,7 +7,7 @@
  * have moved (shots flying into walls and targets).
  */
 import type { InputState } from './input';
-import { moveAndCollide, overlaps, type Box } from './physics';
+import { overlaps, type Box } from './physics';
 import { ownPart } from './gameplay';
 import type { Runtime, RuntimeEntity } from './runtime';
 import { touchesParts } from './parts';
@@ -93,7 +93,7 @@ export class BehaviorSystem {
         if (!box) continue;
         let hit = this.shotHits.get(shot);
         if (!hit) this.shotHits.set(shot, (hit = new Set()));
-        const inWall = this.rt.solids.some((s) => overlaps(box, s));
+        const inWall = this.rt.overlapsSolid(box);
         if (inWall && !hit.has('\u0000wall')) this.rt.gameplay.emit('shot_hit', shot, null);
         if (inWall) hit.add('\u0000wall');
         else hit.delete('\u0000wall');
@@ -110,7 +110,7 @@ export class BehaviorSystem {
         removed = true;
         continue;
       }
-      if (box && this.rt.solids.some((s) => overlaps(box, s))) {
+      if (box && this.rt.overlapsSolid(box)) {
         shot.alive = false;
         removed = true;
         continue;
@@ -312,7 +312,7 @@ export class BehaviorSystem {
       const rb = this.rt.boxOf(r);
       if (!rb || Math.abs(rb.y + rb.hh - top) > 1 || Math.abs(rb.x - pb.x) >= rb.hw + pb.hw || r.vy < 0) continue;
       // Sideways it can bump into walls; up and down it stays on the platform.
-      const res = moveAndCollide(rb, mx, 0, this.rt.solids);
+      const res = this.rt.world.moveAgainstSolids(rb, mx, 0);
       r.x += res.x - rb.x;
       r.y += my;
     }
