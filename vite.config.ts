@@ -25,6 +25,10 @@ export default defineConfig(({ command, mode, isPreview }) => ({
   build: mode === 'single-file' ? { assetsInlineLimit: 100_000, rollupOptions: { output: { inlineDynamicImports: true } } } : {},
   test: {
     include: ['src/**/*.test.ts'],
+    // (W0: every runtime a test steps is fingerprinted, step by step, and compared with what it was: docs §30.)
+    setupFiles: ['src/regression/sameAnswers.ts'],
+    // (Fingerprinting takes a little time in tests that play long: a few sat close to the usual 5 seconds.)
+    testTimeout: 15000,
     environment: 'node',
   },
 }));
