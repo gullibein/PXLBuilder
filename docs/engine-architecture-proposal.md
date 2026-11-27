@@ -2464,6 +2464,80 @@ becomes its own proposal. No ranking of models: one sample per case does not sup
 3. Model for the first run: Claude Opus 5.5 (the app's default), and a spending limit.
 4. May the saved results (prompts and the models' answers; no key) be committed to the repository?
 
+
+### 25.10 The plan brought up to date (after W1.1; for review; nothing is built)
+
+§25.1 to §25.9 stand. This says what has changed since they were written, what the reviews since have added,
+and what the first stage would be now.
+
+**What exists now that did not.**
+
+- *The recording format* (§26.2): "Save with history" writes one file with the game, every request as sent
+  and every answer as read, the settings, what was spent. V1.5 reads these files; it does not make a second
+  format. The files of the dash and crime-game builds were sent this way; whether they hold the answers in full
+  (the page had not been reloaded) is checked first, in V1.5a.
+- *Four real builds analysed by hand* (§24.9, §26 to §28): chess $2.30 and 639 s, tic-tac-toe $1.25 and 251 s,
+  the dash platformer about $2.60 over three requests, the crime game $2.68 and 873 s for the first build.
+  These replace the two-build estimate of §25.3: a new game costs $1.25 to $2.70 and four to fifteen minutes.
+- *What the engine can run* (§30.11, §30.13): measured limits for tiles and for each kind of thing that acts.
+
+**Added by the reviews since.**
+
+1. *The cases cover every family*, not platformers with a few others. The list, each described by what it
+   does, in its own words, never by the name of an existing game: a classic platformer of two levels; a
+   precision platformer with a dash and a wall jump; a top-down adventure with keys, doors and wandering
+   enemies; a falling-block puzzle where full rows clear; a falling-pairs puzzle where four of a colour clear;
+   a scrolling space shooter; a mining game dug downward; a digging game with falling boulders and gems;
+   chess (the user's own prompt, word for word); tic-tac-toe against the computer; a turn-based tactics
+   skirmish; a small role-playing game with a map and battles; a roguelike with a new dungeon each play; an
+   isometric room; an open city seen from above with cars and people; and two edits to a given game. Sixteen
+   cases where §25.5 had ten.
+2. *A fifth layer in the report, "Size and load"*, so that a game that builds and yet asks more of the engine
+   than it can run is seen as that, not as a success:
+   - each level's size in cells and in screens, and how many things are in it;
+   - how many things act, by kind (walkers, patrollers, hunters, shooters, moving solids, things with
+     scripts, things that can be pushed), each against the number measured in §30.13: within, over half, over;
+   - a frame of play as measured on the built game itself (the middle one and the worst, over the play
+     probe's run), against a frame's time.
+3. *Size asked and size built are their own check*, apart from load: a case that asks for a world to walk or
+   drive around says how big it must at least be (in screens), and the report says what was built. "A big
+   world was made" and "many things act in it" are two capabilities and two columns.
+4. *What cannot be judged is said.* A limit of the engine met by a build (the 100 shots, an actor count over
+   the measured number, a level bigger than the AI's view of it) is listed with the case.
+
+**Where a live run can happen** (§25.4), one thing new: this kind of session has a secure form for a key (the
+key goes to the provider's address only, and is never shown to the assistant or written anywhere in the
+repository). So option B can be run here: the estimate is shown, the user says go, the runner holds to the
+spending limit given. Whether the app's request flow reaches the provider from here is tried in V1.5a with a
+request that sends nothing billable. Option A (in the app) stays possible; the harness is the same for both.
+
+**V1.5a now (spends nothing):**
+
+| Part | What |
+| --- | --- |
+| Cases | The sixteen, as data: prompt, follow-ups, choices, what each must do, how big it must at least be |
+| Replay | A "with history" file's answers run again through the real request flow, without a network |
+| Checks | Built, Shape (with "size as asked"), Runs (the play probe), Plays (a script per case), Size and load |
+| Play scripts | Driving a game through the kit's menu and cursor, the player's keys and time; reading what moved, appeared, was shown, was won |
+| Proven on | The regression games standing in for a model's answers (each must pass its case; a broken variant of each must fail), and the saved builds already in hand if they may be committed |
+| Failures | Hand-made recordings: an answer cut off, a lost connection, a script past the limits; each reported as incomplete, never as a game |
+| Report | One row per case: the five layers, requests, retries, tokens, cost, time |
+| Not in it | Any request to a model |
+
+Then V1.5b (the first live run, started by the user: by the four builds on record, sixteen cases on Claude
+Opus 5.5 come to roughly $20 to $45 and one to four hours; a subset costs in proportion) and V1.5c (the same
+on Gemini), as in §25.6.
+
+**Decisions still asked** (§25.9, unchanged, plus one):
+
+1. Live runs here with the secure form (B), in the app (A), or both.
+2. The case list above: add, drop or change any.
+3. The model for the first run and a spending limit.
+4. Whether saved results (prompts and answers; never a key) may be committed, and whether the four saved
+   builds already sent may be, as the first recordings.
+5. New: run all sixteen in the first live run, or a first six (one per family furthest apart: platformer,
+   falling blocks, shooter, chess, tactics, the open city) and the rest after seeing what the six show.
+
 ## 26. A tic-tac-toe build (one live run), and "Save with history"
 
 ### 26.1 What the run showed
@@ -3563,3 +3637,47 @@ as this one, "W1.2: things that act": the five per-actor look-ups asked by place
 the crowd table measured again. It is small, it is the same discipline as W1 and W1.1, and it decides whether
 "a city with traffic" is a few hundred things or a few thousand before the AI is ever asked for one. If V1.5
 should come first, nothing in it depends on W1.2; its builds would simply be judged against the limits above.
+
+### 30.14 After the review of W1.1: V1.5 next, and what is kept in view
+
+W1.1 was accepted. The review recommended V1.5 next and W1.2 kept as a proposal; I had recommended W1.2
+first (§30.13, point 7). The user left the choice to me, with the remark that "it was the order agreed" is
+not a reason. It is not. The choice is **V1.5 next**, for these reasons:
+
+- *Nothing the AI builds today comes near the limits W1.2 would lift.* The crime game, the biggest build on
+  record, has 1,684 things of which 28 are more than plain tiles; the dash levels have 9 to 24 each; the
+  lowest limit measured is 240. W1.2 would change no game that can be asked for now. Its worth arrives with W2 to W4, when populated
+  worlds can be asked for.
+- *V1.5 is the one piece of work on the list whose result is not known.* W1.2's outcome is predictable (five
+  look-ups asked by place, same answers). What sixteen real builds across every family show is not, and it
+  can reorder everything after it, the world work included.
+- *It has been put off three times by a stage that was small and reasonable each time* (W0 and W1, W1.1, and
+  now W1.2 by my own recommendation). A fourth is how it never happens.
+- *W1.2 loses nothing by waiting.* The causes, the profiles, the crowd worlds and the in-place checks are in
+  the repository.
+
+What I recommended it for still holds, as an order to keep: W1.2 comes before the AI is told it may populate a
+big world, so before W2's limits are written into its guidance, or with them.
+
+**Kept in view** (none of it solved; each stays on the roadmap until it is):
+
+| What | Measured | Where it goes |
+| --- | --- | --- |
+| Five look-ups made once for every actor each step (the nearest player, the shots in the air, a shooter's target, a platform's riders, the things that can be pushed) | Hunters, shooters, platforms and crates pass a frame's time at 240 to 560; four grow with the square of their number | W1.2, proposed, not approved |
+| Past the limit play falls from 60 frames a second to about 7 at once (up to twelve steps a frame) | In the browser: 300 hunters or 300 crates | W1.2 to raise the limit; the policy itself is a decision with W4 |
+| At most 100 shots in a level, a chosen number with no reason given | `MAX_SHOTS` | W2's limits module: a reason, or no cap |
+| Memory while played | 2.7 KB a thing; 400 MB for 150,106 things | Weighed with the tile-layer decision (§30.12) |
+| Drawing by hand in a big level | 0.28 s a click at 31,132 things, 0.6 s at 70,694: the editor draws every thing in view at each change and saves the whole game after each edit | Not scheduled; its own proposal when big worlds can be asked for |
+| The check's waiting and asked-for states are not in the browser suite | Covered by unit tests and by measurements only | With the next change to the check or the suite |
+| Taking things out by an edit reads the level through the change tracker; a check asked for runs in one piece (0.5 to 2 s) | §30.13 | Not scheduled |
+
+**The fingerprints, said once more so it cannot be read otherwise.** Before-and-after equivalence is claimed
+for the tests whose recorded fingerprint is unchanged: 455 from before W1 through W1.1, 459 across W1.1 alone.
+The five capacity tests were changed (they now dig, spawn and take things out) and recorded again: their old
+and new fingerprints are of different plays, and they are evidence of nothing about W1.1. They guard what
+comes after.
+
+**Two capabilities, kept apart from here on:** making a big world (W2 to W4), and running many things that
+act in one (W1.2, W4). Neither implies the other, and V1.5 reports them in separate columns (§25.10).
+
+The V1.5 plan as it stands now is §25.10. Nothing of it is built; W1.2 and W2 are not started.
