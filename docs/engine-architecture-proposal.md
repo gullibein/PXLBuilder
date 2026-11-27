@@ -3146,9 +3146,9 @@ the browser is within its own noise at these sizes (node's figure above is the e
 
 **The same answers: the evidence.**
 
-- 455 tests recorded on the old engine and never recorded again give the same fingerprint, step by step,
-  on the new one. (The three capacity tests' own worlds were changed, so theirs were recorded again; with the
-  tests W1 added, 464 are compared from here on.)
+- 456 of the 458 tests recorded on the old engine give the same fingerprint, step by step, on the new one
+  (1,318 games, 862,243 steps). The other two are tests whose own world was changed; six more were added by
+  W1. The exact account is in §30.12.
 - Sleeping tiles, both ways: fifteen games (the three test worlds, a built platformer level, the space
   shooter, mining, Boulder Dash, Tetris, Dr. Mario, tactics, the RPG, the dig room, and the roguelike,
   isometric and RPG starters) are played with tiles asleep and again with every thing awake, and the whole
@@ -3199,5 +3199,145 @@ the browser is within its own noise at these sizes (node's figure above is the e
 **What this says about the decisions put off.** Chunked tiles are not needed for play at these sizes: a
 step and a frame no longer depend on the level's size. What still grows with the level is editing (by hand
 and by operation), the check, the AI's context, and the file, all because a tile is a whole thing in one
-list. A tile layer (W2's subject) is what would cut those, and the figures above are the case for or against
-it; chunks for play can stay deferred.
+list. Keeping plain tiles as cells of a grid instead of whole things is what would cut those. That is not
+W2 (W2 is bounds, sizes as data and the limits module): it is the first half of what §30.6 called W5, and
+§30.12 separates the two halves and says where each stands. Chunks for play can stay deferred.
+
+### 30.12 After the review of W1: two clarifications, the roadmap restated, the next stage proposed (nothing built)
+
+W0 and W1 were accepted. The review asked for two clarifications and a proposal for what comes next, with the
+limits W1 left kept in view. Nothing in this section is built.
+
+**1. The fingerprint counts, exactly.** Three numbers appeared (458, 455, 464) and one of them was wrong.
+
+| | Tests | What they are |
+|---|---:|---|
+| Recorded on the old engine at W0 | 458 | Every test that steps a game, each giving the same fingerprint in three runs: 862,365 steps |
+| Of those, the same fingerprint on the new engine | **456** | 1,318 games, 862,243 steps, 45 test files. This is the complete before-and-after coverage |
+| Of those, recorded again because the test's own world was changed | 2 | The capacity tests "city 60 by 34" and "city 100 by 60": the player's start was moved so it could walk. Old and new fingerprints are of two different worlds, so they say nothing about W1 either way |
+| Added by W1, recorded on the new engine only | 6 | Three in `runtime/asleep.test.ts`, three in `regression/capacity.test.ts`. They guard later changes; they are not evidence about W1 |
+| Compared in `npm test` from here on | 464 | 456 + 2 + 6 |
+
+The report said 455. That counted a third capacity test ("run 170 by 21") as recorded again: it was run again
+by the same command as the two cities, but its world had not changed and its fingerprint came out the same as
+on the old engine, so it belongs with the 456. Checked by comparing the file of fingerprints at the W0 commit
+(d1b6af7) with today's, entry by entry: 456 identical, 2 different, 6 new, none gone.
+
+Not fingerprinted, by design: the play probe's own 27 tests (`runtime/playProbe.test.ts`), because the probe
+stops on real time and fingerprinting every step would spend the time it counts; the games it plays are also
+played by fingerprinted tests. Tests that never step a game have nothing to fingerprint.
+
+**2. The roadmap, with four things kept apart.** §30.11 called a tile layer "W2's subject". That was wrong,
+and §30.6 itself had folded two decisions into one line ("tiles in chunks"). The four things:
+
+| | What it is | What it would buy | Stage | Needs |
+|---|---|---|---|---|
+| A. Stated bounds, sizes and shapes as data, limits in one place | A level can say how big it is and what shape; a builder takes a size in cells and a shape instead of one of five names; every limit is a number with a reason | The right-sized world can be asked for, or refused with a reason | **W2** (as approved; unchanged) | Nothing of B, C or D |
+| B. Named regions and making large worlds | Regions as one concept; generators that fill a region of any size; stamps; an overview for the AI; checking by parts | A big world from a request of a few lines, checked and reported place by place | **W3** (checking by parts), **W4** (regions, fillers, stamps, overview, sleeping far away if approved) | A. Not C or D |
+| C. Terrain as tiles | A plain tile is a cell of a grid (a number naming its object), not a whole thing in the level's list. Things that act stay things | Editing, the level's check, the AI's context and the file stop growing with every tile; a dig changes one cell | **W5a**, conditional, not scheduled | Nothing of D. Touches every operation, selection in the editor, scripts that ask what is at a place, the saved format and a migration |
+| D. Terrain stored in chunks | The grid of C cut into blocks that are loaded, saved and held separately | Worlds of millions of cells: memory and file size, not speed of play | **W5b**, conditional, not scheduled | C |
+
+W2, W3 and W4 are as §30.6 had them. The only change to the roadmap is that W5 is now two decisions, because
+C can be wanted without D and D makes no sense without C.
+
+**Is a tile layer needed? Recommendation: no, not now. The list of things can stay while W2 to W4 are built.**
+
+- *Play does not need it.* A step and a frame no longer depend on the level's size, measured to 150,106 things.
+- *It is the most invasive change on the roadmap* and every genre goes through the code it touches. It should
+  be bought with a measurement, not ahead of one.
+- *Part of what it would fix can be fixed without it* (the stage proposed next), and what is left after that
+  is the honest case for or against C.
+- *What would make it needed.* Dense terrain is where a thing per tile costs most: a mine with dirt in every
+  cell is 71,000 things at 120 by 600 cells and 150,000 at 160 by 950. On the screen measured in §29 (about
+  59 by 27 cells) that is some 45 and 95 screens of solid ground. A city a third built-up is 54,000 things at
+  400 by 300 cells (about 75 screens); a platformer run a hundred screens long is some 30,000. So the list
+  carries worlds of tens of screens of dense ground and a hundred or more of ordinary levels. C is needed when
+  a world wanted is denser or bigger than that, when memory (not yet measured) turns out to be the limit, or
+  when editing is still too slow after the next stage. D only after C, for worlds of millions of cells.
+
+**3. The limits W1 left, and where each goes.** None is dropped.
+
+| Limit | Measured | Where it goes |
+|---|---|---|
+| The editor's check of the level blocks the editor after a change | 0.7 s at 17,127 things, 1.3 s at 31,132; not timed above | W1.1 below |
+| One edit costs in proportion to the level | By hand 0.24 s to 1.3 s a click; by operation 0.13 s to 3.7 s an answer (17,000 to 150,000 things) | W1.1 for what can be done with the same answers; what is left is the case for C |
+| A dig or a broken block during play | 17 to 37 ms at 31,132 things, 40 to 53 ms at 70,694 | W1.1 |
+| A thing removed during play re-files the level | Not measured in a big world | W1.1: measured, then fixed if it shows |
+| Many things that act | Not measured: the biggest test world has 200 enemies | W1.1: measured only. The figures are what W4's "sleeping far away" policies must be designed from |
+| Whatever wakes many tiles (a flip, a rule or script aimed at a tag) | By construction: those tiles cost what they did | Stays as it is; reported per game if it shows in W1.1's worlds |
+| Memory; worlds beyond 150,106 things; other machines | Not measured | Memory in W1.1. The others when a world wanted calls for them |
+
+**4. The next stage proposed: W1.1, "large worlds stay editable and their limits are known".** Small, engine
+and editor only, no new feature, nothing the AI is told changes. It comes before W2 because W2 is the first
+stage that lets bigger worlds be asked for, and the editor should not freeze on what it then makes.
+
+1. *The level's check off the editor's hands.* Recommended: it runs in a worker thread on the level's saved
+   form (plain data), the list of problems shows "checking" until the answer arrives, and an answer for a
+   level that has changed since is thrown away. The answer is the same list as today, later. If a worker
+   proves awkward (the check needs the game's registered parts, which are code, not data), the fallback is
+   the check on request above a size, said in the panel. Which of the two is a decision for the review; the first is preferred because
+   nothing then needs asking for.
+2. *A dig changes one place.* When what is solid changes, the filing by place is updated for that one thing
+   instead of made again. Same answers, held by the fingerprints (the digging games of the regression suite
+   are among the 456).
+3. *An edit does not re-read the level.* The index by place that an operation builds for the whole level is
+   kept between operations and between hand edits while the level's list is the same one. Same results,
+   held by the operations' tests.
+4. *Measured, nothing changed:* worlds with 500, 2,000 and 5,000 things that act (walkers, enemies with
+   behaviours, things with scripts), a step and a frame; a thing removed during play in a big world; memory
+   in the browser at each size. Reported as a table like §30.11's.
+
+Done when: the same 464 fingerprints; the capacity table again with the three costs above before and after;
+the editor's view stays at sixty frames a second through a check at 31,132 and 70,694 things; the
+measurements of point 4 written down, whatever they say.
+
+**5. After W1.1: W2 as approved, set out for review before it starts.**
+
+- *A stated world.* A level may carry `world.bounds`: one rectangle or several, in cells. Absent, the extent
+  is the box of what is in the level, as now, so every existing game is untouched. The camera's limits, the
+  line below which a thing has fallen out, the editor's frame, the checker and the generators read it. Bounds
+  say where the world is; they are not walls, and space inside them needs no objects (the ground of a city is
+  the background). A world that is not a rectangle is several rectangles.
+- *Sizes and shapes as data.* The level builder takes a size in cells and, for levels that turn, a list of
+  legs ("right 180, up 5 floors, right 120"). The five names stay as presets that build, cell for cell, what
+  they build today. Shapes are said in each kind of game's own terms: legs for a built platformer level,
+  rectangles for a drawn world, width and height for a dungeon. No one shape language is forced on all.
+- *Limits in one place.* Each limit a number with the measurement behind it, changeable per game; past one
+  the engine refuses with the number and the reason. The silent ones found in §30.2 and during W1 (the dungeon clamped to
+  10 to 120, the builder's output passed through an operation capped at 6,000 cells, the forty-section guard)
+  are lifted or become refusals. What the AI is told quotes these numbers, set from W1.1's figures.
+- *A size asked for is never made smaller in silence.* A named size keeps §29's behaviour until W3. A size
+  given in cells is built as asked; what the check could not prove is reported as not proved, with the reason.
+- *Not in W2:* checking by parts (W3), regions, fillers, stamps (W4). So after W2 a platformer level of 400
+  by 60 cells or a tower 30 by 800 can be asked for and built; a big city still has to be drawn piece by
+  piece by the AI, which is slow and costly, until W4's fillers.
+
+One change to the roadmap is proposed here and needs a yes or no: bring "what the AI sees" (an overview of
+the whole level, and one region in detail on request) forward from W4 into W2. Today the AI sees 140 by 48
+cells around the start, which is already less than the builder's two biggest sizes; from W2 on it could ask
+for levels several times that and then be unable to see what it made.
+
+**6. V1.5 stays on the roadmap** (§25, still awaiting review). A recommendation on order, to be decided:
+W1.1, then V1.5, then W2. V1.5 is the only way to know whether a request for a large city or a long level
+gets one, and W2 to W4 change what the AI is told, so real builds before them are the baseline they would be
+judged against. The other order (W2 before V1.5) reaches bigger worlds sooner and measures later.
+
+**7. Asked alongside: can the engine make a procedurally generated platformer?** In one sense yes, in
+another not yet.
+
+- *Yes, when the game is made.* The level builder makes whole platformer levels from a short recipe and a
+  seed: structure, size, difficulty, which mechanics it is about; sized from what the player can really do
+  (its jump, dash, wall jump); checked playable by search, and by play where a move is only estimated. The
+  AI uses it, and the editor's level menu can build a new level, build one again, or build a variation of
+  one. The level made is then an ordinary level, stored in the game: every play is the same level.
+- *Yes, anew at each play, for games seen from above.* The dungeon generator builds a different dungeon each
+  time the level starts (rooms, caves or a maze, deeper floors, a locked door and its key, rooms made by
+  hand mixed in), from a seed a script can read; scripts can also change its recipe for the next build.
+- *Not yet: a platformer that is different at each play* (a new level each run, or an endless one built ahead
+  of the player). The two halves exist, the builder and the one interface by which a generator builds a
+  level at play, of which the dungeon is the only one so far. Joining them is a piece of work of its own:
+  the builder would have to ship inside the exported game (it does not today), build and prove a level within the time a level
+  takes to start (a "huge" level is built and checked in about 0.2 s since W1), and say what it does when a
+  build cannot be proved. An endless level also needs things added and taken away during play cheaply,
+  which is one of the limits listed above. It is not on the roadmap; it would be a proposal of its own, and
+  fits best after W2, when the builder takes sizes and shapes as data.
