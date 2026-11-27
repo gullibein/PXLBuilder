@@ -600,6 +600,8 @@ export class Runtime {
   readonly playGenerators: ReadonlySet<string>;
   /** Recomputed only when something opens, closes, appears or goes away. */
   private solidsDirty = true;
+  /** The things whose blocking changed since the level's fixed solids were last brought up to date. */
+  private solidsTouched = new Set<RuntimeEntity>();
   fallLimit = 0;
   /** Things below the fall line whose own script heard "fell_off" (once per fall). */
   private readonly fallen = new Set<RuntimeEntity>();
@@ -746,6 +748,7 @@ export class Runtime {
       this.dungeon = built.built;
     }
     this.entities = this.scene.entities.map((e) => buildEntity(this.project, e, this.registry, this.geometry));
+    this.levelCount = this.entities.length;
     // The level is as it was made again: no flip is in effect or under way.
     this.flip = null;
     this.flips = { upside_down: 0, left_right: 0 };
@@ -909,15 +912,9 @@ export class Runtime {
         e.x += (dx / dist) * stepLen;
         e.y += (dy / dist) * stepLen;
       }
-      if (e.collider && e.body !== 'dynamic') this.solidsDirty = true;
+      if (e.collider && e.body !== 'dynamic') this.solidsTouched.add(e);
     }
-    if (this.solidsDirty) {
-      this.fogDirty = true;
-      // Pushable things move, so they are looked up where they are each step instead (pushBoxes).
-      const fixed = this.entities.filter((e) => this.isSolid(e) && !e.pushable && (e.body === 'static' || e.body === 'none'));
-      this.world.rebuild(fixed, this.ladderZones(), () => this.made().pushable.filter((e) => this.isSolid(e)).map((e) => boxOf(e)!));
-      this.solidsDirty = false;
-    }
+    if (this.solidsDirty || this.solidsTouched.size) this.refreshSolids();
     // Friction first: whatever sets a speed this step (behaviors, scripts, chasing) then moves exactly that fast.
     for (const e of this.awake()) if (e.body === 'dynamic' && e.alive && !e.moveTarget) this.applyFriction(e, dt);
     this.gameplay.steer();
@@ -939,7 +936,9 @@ export class Runtime {
         if (this.isSolid(e)) (e.collider?.oneWay ? movingOneWays : kinematicSolids).push(...partsOf(e).map((b) => ({ ...b, friction: e.friction })));
       }
     }
-    const solids = kinematicSolids.length ? [...this.world.staticSolids, ...kinematicSolids] : this.world.staticSolids;
+    // (The whole list, for pushing things along: made only if something is pushed this step.)
+    let allSolids: readonly Box[] | null = null;
+    const solids = () => (allSolids ??= kinematicSolids.length ? [...this.world.staticSolids, ...kinematicSolids] : this.world.staticSolids);
     const pushables = this.made().pushable.filter((e) => this.isSolid(e));
     // Liquids (water to swim in): what each moving thing's middle is in.
     const liquids = this.made().liquid.filter((e) => e.alive && e.collider);
@@ -1001,7 +1000,7 @@ export class Runtime {
         e.y += e.vy * dt;
       } else {
         // Pushing something heavier slows the pusher's steps (not its speed, which its controls keep up).
-        const ease = pushables.length && !e.pushable ? this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids, pushables) : { x: 1, y: 1 };
+        const ease = pushables.length && !e.pushable ? this.pushAlong(e, box, e.vx * dt, this.floats(e) ? e.vy * dt : 0, solids(), pushables) : { x: 1, y: 1 };
         // Ladder tops hold you up unless you are climbing (or already below them).
         const prevBottom = box.y + box.hh;
         const others = pushables.length ? pushables.filter((p) => p !== e).map((p) => ({ ...boxOf(p)!, friction: p.friction })) : [];
@@ -1121,7 +1120,7 @@ export class Runtime {
   refreshCollider(e: RuntimeEntity): void {
     this.wake(e);
     e.collider = gatedCollider(colliderOf(e.base.components, e.base.transform, e.angle), this.geometry);
-    if (e.body !== 'dynamic') this.solidsDirty = true;
+    if (e.body !== 'dynamic') this.solidsTouched.add(e);
   }
 
   /** Whether it blocks movement (a wall, floor, closed door…), for scripts' group checks. */
@@ -1224,6 +1223,109 @@ export class Runtime {
     }
   }
 
+  /** How many things the level began with: things made during play (shots, spawned things) come after them. */
+  private levelCount = 0;
+  private readonly listCuts: ((from: number) => void)[] = [];
+  /** How many times the level's list lost things in place (for whoever keeps something by the list being the same one). */
+  listCutCount = 0;
+  /** Whoever keeps a filing of the level's list by place in it is told when the list loses items from a place on. */
+  onListCut(cut: (from: number) => void): void {
+    this.listCuts.push(cut);
+  }
+
+  /**
+   * Spent shots are taken out of the level's list, so a long game doesn't pile them up. The list stays the list:
+   * shots are among the things made during play, at its end, so only that end is closed up and filed again, and
+   * everything kept about the level's own things (which sleep, where each is, what is where) stays as it is. (It
+   * used to be a new list, and everything kept for the old one was made again from the whole level: W1.1.)
+   */
+  dropSpent(): void {
+    const list = this.entities;
+    const spent = (e: RuntimeEntity) => !e.alive && !!e.projectile;
+    let from = Math.min(this.levelCount, list.length);
+    while (from < list.length && !spent(list[from])) from++;
+    if (from >= list.length) return;
+    // (A loop over the things awake under way, or what is kept is of another list: the plain way, a new list.)
+    this.asleepFlags();
+    if (this.awakeLoops.length || this.asleepFor !== list) {
+      this.entities = list.filter((e) => !spent(e));
+      this.levelCount = Math.min(this.levelCount, this.entities.length);
+      return;
+    }
+    this.listCutCount++;
+    const was = list.length;
+    const kept: RuntimeEntity[] = [];
+    const gone: RuntimeEntity[] = [];
+    for (let i = from; i < was; i++) (spent(list[i]) ? gone : kept).push(list[i]);
+    for (const cut of this.listCuts) cut(from);
+    // Ids: the ones gone are forgotten, and the end of the list is read again.
+    if (this.idsFor === list) {
+      for (let i = from; i < Math.min(was, this.idsCount); i++) if (this.ids.get(list[i].id) === list[i]) this.ids.delete(list[i].id);
+      this.idsCount = Math.min(this.idsCount, from);
+    }
+    const m = this.madeAs;
+    const madeNow = !!m && m.list === list && m.count === was;
+    // The things awake from there on, and any flag set there, are taken out; then put back for what is kept.
+    let lo = 0;
+    let hi = this.awakeAt.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.awakeAt[mid] < from) lo = mid + 1;
+      else hi = mid;
+    }
+    this.awakeAt.length = lo;
+    for (let i = from; i < Math.min(was, this.asleepAt.length); i++) {
+      if (this.asleepAt[i]) this.asleepPlace.delete(list[i]);
+      this.asleepAt[i] = 0;
+    }
+    list.length = from;
+    for (const e of kept) list.push(e);
+    for (let i = from; i < list.length; i++) {
+      if (!this.asleepSet.has(list[i])) this.awakeAt.push(i);
+      else if (i < this.asleepAt.length) {
+        this.asleepAt[i] = 1;
+        this.asleepPlace.set(list[i], i);
+        // (A sleeping tile made during play that moved up the list: where the sleepers are drawn is filed again.)
+        this.drawnFor = null;
+      } else this.asleepFor = null;
+    }
+    this.awakeCount = list.length;
+    if (madeNow) {
+      const out = new Set(gone);
+      m!.pushable = m!.pushable.filter((e) => !out.has(e));
+      m!.liquid = m!.liquid.filter((e) => !out.has(e));
+      m!.count = list.length;
+    }
+    if (Runtime.checkSolids) {
+      const differs = this.keptDiffersFromFresh();
+      if (differs) throw new Error(`What is kept about the level's list, after spent shots were taken out in place, is not what it is made afresh: ${differs}`);
+    }
+  }
+
+  /** For tests: what differs between what is kept about the level's list and the same made afresh ('' when nothing). */
+  private keptDiffersFromFresh(): string {
+    const list = this.entities;
+    const awake: number[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const asleep = this.asleepSet.has(list[i]);
+      if (!!this.asleepAt[i] !== asleep) return `thing ${i} is ${asleep ? 'asleep' : 'awake'}, flagged otherwise`;
+      if (asleep && this.asleepPlace.get(list[i]) !== i) return `sleeper ${i} is filed at ${this.asleepPlace.get(list[i])}`;
+      if (!asleep) awake.push(i);
+    }
+    for (let i = list.length; i < this.asleepAt.length; i++) if (this.asleepAt[i]) return `a flag is set past the end of the list (${i})`;
+    if (awake.length !== this.awakeAt.length || awake.some((v, k) => v !== this.awakeAt[k])) return `the things awake are ${this.awakeAt.length} kept, ${awake.length} afresh`;
+    if (this.asleepPlace.size !== this.asleepSet.size) return `${this.asleepPlace.size} sleepers filed, ${this.asleepSet.size} asleep`;
+    if (this.idsFor === list) for (const [id, e] of this.ids) if (list.find((x) => x.id === id) !== e) return `id ${id} is kept for a thing that is not the first with it`;
+    const m = this.madeAs;
+    if (m && m.list === list && m.count === list.length) {
+      const pushable = list.filter((e) => e.pushable);
+      const liquid = list.filter((e) => e.liquid);
+      if (pushable.length !== m.pushable.length || pushable.some((e, k) => e !== m.pushable[k])) return 'the things that can be pushed differ';
+      if (liquid.length !== m.liquid.length || liquid.some((e, k) => e !== m.liquid[k])) return 'the liquids differ';
+    }
+    return '';
+  }
+
   /** Wakes a thing (for good) before something acts on it. Nothing to do for one that is awake. */
   wake(e: RuntimeEntity | null | undefined): void {
     if (!e || !this.asleepSet.delete(e)) return;
@@ -1307,7 +1409,7 @@ export class Runtime {
     this.wake(tile);
     tile.alive = false;
     this.world.markDug(col, row, tile.base.id, seconds > 0 ? this.time + seconds : Infinity, fill);
-    this.markSolidsDirty();
+    this.markSolidsDirty(tile);
     return true;
   }
 
@@ -1351,7 +1453,7 @@ export class Runtime {
       if (!tile) continue;
       const caught = fill === 'trap' ? this.caughtIn(tile) : [];
       tile.alive = true;
-      this.markSolidsDirty();
+      this.markSolidsDirty(tile);
       for (const o of caught) this.gameplay.die(o, tile);
     }
   }
@@ -1371,10 +1473,55 @@ export class Runtime {
     return out;
   }
 
-  markSolidsDirty(): void {
-    this.solidsDirty = true;
+  /**
+   * Something that can block changed: it opened, closed, appeared, went, moved, changed shape. With the thing
+   * named, only its own places among the level's fixed solids are brought up to date (at the same moment of the
+   * next step at which the lists were always made); with none, the lists are made afresh from the whole level.
+   */
+  markSolidsDirty(e?: RuntimeEntity): void {
+    if (e) this.solidsTouched.add(e);
+    else this.solidsDirty = true;
     this.fogDirty = true;
     this.isoGround = null;
+  }
+
+  /** Whether a thing can be one of the level's fixed solids at all (in play and closed, or not). */
+  private couldBeFixed(e: RuntimeEntity): boolean {
+    // (A goal is reached, never bumped into. Pushable things move, so they are looked up where they are each step.)
+    return !!e.collider && !e.collider.trigger && !e.base.components.Goal && !e.pushable && (e.body === 'static' || e.body === 'none');
+  }
+
+  /** Tests set this: every change made in place is compared with lists made afresh, and a difference is an error. */
+  static checkSolids = false;
+  /** How many times the level's fixed solids were made afresh from the whole level (the first is at the start). */
+  solidsAfresh = 0;
+
+  /** The level's fixed solids brought up to date: the things that changed, in place; else all of them afresh. */
+  private refreshSolids(): void {
+    this.fogDirty = true;
+    const isIn = (e: RuntimeEntity) => e.alive && !e.open;
+    let afresh = this.solidsDirty;
+    let ladders = false;
+    if (!afresh)
+      for (const e of this.solidsTouched) {
+        if (e.climbable) ladders = true;
+        if (!this.world.update(e, this.couldBeFixed(e), isIn(e))) {
+          afresh = true;
+          break;
+        }
+      }
+    if (afresh) {
+      this.solidsAfresh++;
+      this.world.rebuild(this.entities.filter((e) => this.couldBeFixed(e)), isIn, this.ladderZones(), () => this.made().pushable.filter((e) => this.isSolid(e)).map((e) => boxOf(e)!));
+    } else {
+      if (ladders) this.rebuildLadders();
+      if (Runtime.checkSolids) {
+        const differs = this.world.differsFromFresh(this.entities.filter((e) => this.couldBeFixed(e)), isIn, this.ladderZones());
+        if (differs) throw new Error(`The level's solids changed in place are not what they are made afresh: ${differs}`);
+      }
+    }
+    this.solidsTouched.clear();
+    this.solidsDirty = false;
   }
 
   /**
@@ -1621,7 +1768,8 @@ export class Runtime {
     if (!def) return null;
     const e = buildEntity(this.project, instantiateDefinition(def, at), this.registry, this.geometry);
     this.entities.push(e);
-    this.solidsDirty = true;
+    // (A new thing has no place among the fixed solids: if it is one, the lists are made afresh.)
+    this.solidsTouched.add(e);
     return e;
   }
 
@@ -2282,7 +2430,7 @@ export class Runtime {
     if (e.health) e.health.current = e.health.max;
     if (!e.alive) {
       e.alive = true;
-      this.solidsDirty = true;
+      this.solidsTouched.add(e);
     }
     e.vanishing = 0;
     e.respawns++;

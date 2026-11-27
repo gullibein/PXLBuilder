@@ -15,6 +15,7 @@ import type { ComponentRegistry } from '../components/registry';
 import { createTopDownStarterAssets, createTopDownStarterDefinitions, type TopDownStarterAssets } from './topDownStarters';
 import { CAMERA_HELP, checkCamera, type CameraSettings } from './camera';
 import { validateField } from '../components/schema';
+import { current, isDraft } from 'immer';
 import { generateId } from '../ids';
 import { createImageAsset, createPixelArtAsset, createStarterAssets, createStarterDefinitions, instantiateDefinition, MAX_FRAMES, pixelArtFields, type StarterAssets } from './factory';
 import { checkPixelArt, type PixelArt } from './pixelArt';
@@ -43,9 +44,17 @@ export function getScene(project: Project, sceneId: Id): Scene {
 }
 
 export function getEntity(project: Project, sceneId: Id, entityId: Id): EntityInstance {
-  const entity = getScene(project, sceneId).entities.find((e) => e.id === entityId);
+  const list = getScene(project, sceneId).entities;
+  // (In a game being changed, the place is found in the list as it stands, plain; only the one thing is then taken
+  // through the draft. Looking through the draft makes a draft of every thing looked at: all of a big level's.)
+  const entity = isDraft(list) ? list[asIs(list).findIndex((e) => e.id === entityId)] : list.find((e) => e.id === entityId);
   if (!entity) throw new ModelError(`Entity "${entityId}" not found in scene "${sceneId}"`);
   return entity;
+}
+
+/** A list of a game being changed, as it stands now, plain (the list itself when the game is not a draft). */
+export function asIs<T>(list: T[]): readonly T[] {
+  return isDraft(list) ? (current(list as never) as T[]) : list;
 }
 
 export function getDefinition(project: Project, definitionId: Id): ObjectDefinition {
@@ -356,7 +365,7 @@ export function addAsset(project: Project, asset: AssetRecord): void {
 
 export function addEntity(project: Project, sceneId: Id, entity: EntityInstance): void {
   const scene = getScene(project, sceneId);
-  if (scene.entities.some((e) => e.id === entity.id)) throw new ModelError(`Entity "${entity.id}" already exists`);
+  if (asIs(scene.entities).some((e) => e.id === entity.id)) throw new ModelError(`Entity "${entity.id}" already exists`);
   if (entity.definitionId !== null) getDefinition(project, entity.definitionId);
   scene.entities.push(cloneValue(entity));
 }
@@ -365,7 +374,7 @@ export function addEntity(project: Project, sceneId: Id, entity: EntityInstance)
 export function addEntities(project: Project, sceneId: Id, entities: EntityInstance[]): void {
   if (!entities.length) return;
   const scene = getScene(project, sceneId);
-  const ids = new Set(scene.entities.map((e) => e.id));
+  const ids = new Set(asIs(scene.entities).map((e) => e.id));
   for (const entity of entities) {
     if (ids.has(entity.id)) throw new ModelError(`Entity "${entity.id}" already exists`);
     ids.add(entity.id);
@@ -377,6 +386,8 @@ export function addEntities(project: Project, sceneId: Id, entities: EntityInsta
 export function removeEntities(project: Project, sceneId: Id, entityIds: Id[]): void {
   const scene = getScene(project, sceneId);
   const ids = new Set(entityIds);
+  // (Through the draft, so each thing kept is a draft: what is changed later in the same change, after things were
+  // removed, must still be changeable. This reads the whole level; taking things out is the one edit that does.)
   scene.entities = scene.entities.filter((e) => !ids.has(e.id));
   // Relationships and rules about a deleted entity go with it (undo brings them back).
   pruneLogic(scene, (ref) => ref.kind === 'entity' && ids.has(ref.id));

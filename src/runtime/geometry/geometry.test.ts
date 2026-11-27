@@ -125,7 +125,7 @@ describe('F3: ramps of any height', () => {
 describe('F3: probes (GeometryQuery.probe): what a sensor ray meets, which way it faces, how steep', () => {
   const world = new CollisionWorld();
   const tile = (x: number, y: number, extra: Record<string, unknown> = {}) => ({ x, y, collider: { ox: 0, oy: 0, hw: 16, hh: 16, trigger: false, ...extra }, friction: 0.2 }) as never;
-  world.rebuild([tile(16, 48), tile(80, 16), tile(144, 16, { slope: 1 }), tile(208, 16, { slope: 1, rise: [0, 0.5] }), tile(272, 48, { oneWay: true })], [], () => []);
+  world.rebuild([tile(16, 48), tile(80, 16), tile(144, 16, { slope: 1 }), tile(208, 16, { slope: 1, rise: [0, 0.5] }), tile(272, 48, { oneWay: true })], () => true, [], () => []);
 
   it('a floor faces up, flat; a wall faces the way the ray came from, upright', () => {
     const floor = world.probe({ x: 16, y: 0 }, { x: 0, y: 1 }, 64)!;

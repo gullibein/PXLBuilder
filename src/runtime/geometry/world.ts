@@ -36,11 +36,22 @@ export function slopeSurface(s: Slope, x: number): number {
   return s.y + s.hh - (s.lo + (s.hi - s.lo) * u) * 2 * s.hh;
 }
 
+/** The boxes a fixed solid thing puts into the level's lists: its parts, each with the thing's friction. */
+const boxesOf = (e: RuntimeEntity): Box[] => partsOf(e).map((p) => ({ ...p, friction: e.friction }));
+const slopeOf = (e: RuntimeEntity): Slope => ({ ...boxOf(e)!, friction: e.friction, dir: e.collider!.slope!, lo: e.collider!.rise?.[0] ?? 0, hi: e.collider!.rise?.[1] ?? 1 });
+/** Which of the three lists a thing with a collider belongs to. */
+const listOf = (e: RuntimeEntity): 'solid' | 'oneWay' | 'slope' => (e.collider!.slope ? 'slope' : e.collider!.oneWay ? 'oneWay' : 'solid');
+
 export class CollisionWorld implements GeometryQuery {
-  /** Walls and floors that don't move (rebuilt when something solid changes). */
-  staticSolids: Box[] = [];
-  /** Jump-through platforms: hold things up from above only. */
-  oneWays: Box[] = [];
+  /**
+   * Walls and floors that don't move, and jump-through platforms (they hold things up from above only), each
+   * kept by place. Every thing that can be one of them has its own places in its list, in the level's order,
+   * whether it is in now or out (a tile dug out, a door open): a change to one thing changes its places and
+   * nothing else, and the lists stay in the order a list made afresh would have (docs §30, W1.1).
+   */
+  private solidGrid = new BoxGrid<Box>([]);
+  private oneWayGrid = new BoxGrid<Box>([]);
+  private placeOf = new Map<RuntimeEntity, { list: 'solid' | 'oneWay' | 'slope'; at: number; n: number }>();
   slopes: Slope[] = [];
   ladders: Ladder[] = [];
   /** The top of each ladder: a one-way platform to stand on and climb down from. */
@@ -53,16 +64,95 @@ export class CollisionWorld implements GeometryQuery {
     return this._version;
   }
 
-  /** Rebuilds the fixed shapes from the level's fixed solid entities and its ladders (their screen areas). */
-  rebuild(fixed: RuntimeEntity[], ladderZones: Box[], pushed: () => Box[]): void {
+  /** Walls and floors that don't move, in the level's order. */
+  get staticSolids(): readonly Box[] {
+    return this.solidGrid.boxes;
+  }
+  set staticSolids(list: readonly Box[]) {
+    this.solidGrid = new BoxGrid<Box>([...list]);
+    this.placeOf.clear();
+  }
+
+  /** Jump-through platforms that don't move, in the level's order. */
+  get oneWays(): readonly Box[] {
+    return this.oneWayGrid.boxes;
+  }
+  set oneWays(list: readonly Box[]) {
+    this.oneWayGrid = new BoxGrid<Box>([...list]);
+    this.placeOf.clear();
+  }
+
+  /**
+   * Makes the fixed shapes afresh. `could`: every thing that can be a fixed solid (it has a collider that
+   * blocks, stands still and can't be pushed), in the level's order; `isIn`: whether it is one now (it is in play
+   * and not open). Also the level's ladders (their screen areas).
+   */
+  rebuild(could: readonly RuntimeEntity[], isIn: (e: RuntimeEntity) => boolean, ladderZones: Box[], pushed: () => Box[]): void {
     // (Jump-through platforms and slopes are surfaces of their own, not walls.)
     // (A collider of several boxes: each of them is a wall or floor of its own.)
-    this.staticSolids = fixed.filter((e) => !e.collider!.oneWay && !e.collider!.slope).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
-    this.oneWays = fixed.filter((e) => e.collider!.oneWay).flatMap((e) => partsOf(e).map((b) => ({ ...b, friction: e.friction })));
-    this.slopes = fixed.filter((e) => e.collider!.slope).map((e) => ({ ...boxOf(e)!, friction: e.friction, dir: e.collider!.slope!, lo: e.collider!.rise?.[0] ?? 0, hi: e.collider!.rise?.[1] ?? 1 }));
+    const solids: (Box | null)[] = [];
+    const oneWays: (Box | null)[] = [];
+    this.slopes = [];
+    this.placeOf.clear();
+    for (const e of could) {
+      const list = listOf(e);
+      const inNow = isIn(e);
+      if (list === 'slope') {
+        this.placeOf.set(e, { list, at: -1, n: 0 });
+        if (inNow) this.slopes.push(slopeOf(e));
+        // (A slope that is also jump-through is in both lists, as it always was. A slope is never changed in place.)
+        if (inNow && e.collider!.oneWay) oneWays.push(...boxesOf(e));
+        continue;
+      }
+      const into = list === 'oneWay' ? oneWays : solids;
+      const boxes = boxesOf(e);
+      this.placeOf.set(e, { list, at: into.length, n: boxes.length });
+      for (const b of boxes) into.push(inNow ? b : null);
+    }
+    this.solidGrid = new BoxGrid<Box>(solids);
+    this.oneWayGrid = new BoxGrid<Box>(oneWays);
     this.rebuildLadders(ladderZones);
     this.pushed = pushed;
     this._version++;
+  }
+
+  /**
+   * One thing changed (it moved, went, came back, opened, closed): its own places are brought up to date and
+   * nothing else is touched. False: this can't be done in place (it has no places, or its shape or its list
+   * changed, or it is a slope): the lists must be made afresh (`rebuild`).
+   */
+  update(e: RuntimeEntity, could: boolean, inNow: boolean): boolean {
+    const place = this.placeOf.get(e);
+    // (Not among the fixed solids before and not one now: nothing of it is in the lists.)
+    if (!place) return !could;
+    if (place.list === 'slope') return false;
+    if (!could) inNow = false;
+    else if (listOf(e) !== place.list) return false;
+    const grid = place.list === 'oneWay' ? this.oneWayGrid : this.solidGrid;
+    if (!inNow) {
+      for (let k = 0; k < place.n; k++) grid.set(place.at + k, null);
+    } else {
+      const boxes = boxesOf(e);
+      if (boxes.length !== place.n) return false;
+      for (let k = 0; k < place.n; k++) grid.set(place.at + k, boxes[k]);
+    }
+    this._version++;
+    return true;
+  }
+
+  /**
+   * For tests: what differs between the lists as they are and lists made afresh from the level now ('' when
+   * nothing does). Changes made in place must leave exactly what `rebuild` would make.
+   */
+  differsFromFresh(could: readonly RuntimeEntity[], isIn: (e: RuntimeEntity) => boolean, ladderZones: Box[]): string {
+    const fresh = new CollisionWorld();
+    fresh.rebuild(could, isIn, ladderZones, () => []);
+    const same = (name: string, a: readonly unknown[], b: readonly unknown[]): string => {
+      if (a.length !== b.length) return `${name}: ${a.length} in place, ${b.length} afresh`;
+      for (let i = 0; i < a.length; i++) if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) return `${name} ${i}: ${JSON.stringify(a[i])} in place, ${JSON.stringify(b[i])} afresh`;
+      return '';
+    };
+    return same('solids', this.staticSolids, fresh.staticSolids) || same('jump-through platforms', this.oneWays, fresh.oneWays) || same('slopes', this.slopes, fresh.slopes) || same('ladders', this.ladders, fresh.ladders);
   }
 
   rebuildLadders(ladderZones: Box[]): void {
@@ -78,17 +168,12 @@ export class CollisionWorld implements GeometryQuery {
 
   // ---- by place (docs §30, W1): the same lists, asked only about what is near. Every answer is the whole list's.
 
-  private solidGrid: BoxGrid | null = null;
-  private oneWayGrid: BoxGrid | null = null;
-
-  /** The fixed solids by place (made anew when the list is: `rebuild`, or the list set by hand). */
+  /** The fixed solids by place. */
   private get byPlace(): BoxGrid {
-    if (this.solidGrid?.boxes !== this.staticSolids) this.solidGrid = new BoxGrid(this.staticSolids);
     return this.solidGrid;
   }
 
   private get oneWaysByPlace(): BoxGrid {
-    if (this.oneWayGrid?.boxes !== this.oneWays) this.oneWayGrid = new BoxGrid(this.oneWays);
     return this.oneWayGrid;
   }
 

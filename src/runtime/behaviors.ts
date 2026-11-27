@@ -31,14 +31,14 @@ export class BehaviorSystem {
       if (b.mover && e.body !== 'kinematic') {
         // It moves itself; whatever the object says, nothing pushes it around.
         e.body = 'kinematic';
-        this.rt.markSolidsDirty();
+        this.rt.markSolidsDirty(e);
       }
       // (Each of these is done by its script instead where one took it over: Moving, Hopping, Shooting, Timer.)
       if (b.mover && !ownPart(e, 'moving')) this.moveOnPath(e, dt);
       if ((b.patrol || b.wander) && (e.body === 'static' || e.body === 'none')) {
         // Something that never moved on its own now does: it moves without gravity.
         e.body = 'kinematic';
-        this.rt.markSolidsDirty();
+        this.rt.markSolidsDirty(e);
       }
       // (Done by its script instead, where its "Patrol" / "Wander" script took it over.)
       if (b.patrol && !ownPart(e, 'patrolling') && !e.chasing && e.invincible <= 0) this.patrol(e, dt);
@@ -128,7 +128,7 @@ export class BehaviorSystem {
       }
     }
     // Spent shots are dropped, so a long game doesn't pile them up.
-    if (removed) this.rt.entities = this.rt.entities.filter((e) => e.alive || !e.projectile);
+    if (removed) this.rt.dropSpent();
   }
 
   /**

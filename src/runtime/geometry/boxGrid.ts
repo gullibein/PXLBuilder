@@ -20,29 +20,84 @@ export class BoxGrid<T extends Box = Box> {
   private readonly big: number[] = [];
   private readonly seen: Uint32Array;
   private stamp = 0;
+  /**
+   * The list, each box in its own place: `null` where a box is out for now (a tile dug out, a door open). The
+   * order of the places is the list's order, so a box put back is found where it was. `boxes` is the list itself.
+   */
+  private readonly slots: (T | null)[];
+  private dense: readonly T[] | null;
 
-  constructor(readonly boxes: readonly T[]) {
-    this.seen = new Uint32Array(boxes.length);
-    for (let i = 0; i < boxes.length; i++) {
-      const b = boxes[i];
-      const x0 = Math.floor((b.x - b.hw) / SIZE);
-      const x1 = Math.floor((b.x + b.hw) / SIZE);
-      const y0 = Math.floor((b.y - b.hh) / SIZE);
-      const y1 = Math.floor((b.y + b.hh) / SIZE);
-      // (A box with no size, or one not a number, overlaps nothing: found nowhere, as in the list.)
-      if (!(x1 >= x0) || !(y1 >= y0)) continue;
-      if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_SQUARES || !Number.isFinite(x0 + x1 + y0 + y1)) {
-        this.big.push(i);
-        continue;
-      }
-      for (let cx = x0; cx <= x1; cx++)
-        for (let cy = y0; cy <= y1; cy++) {
-          const k = key(cx, cy);
-          const cell = this.cells.get(k);
-          if (cell) cell.push(i);
-          else this.cells.set(k, [i]);
-        }
+  constructor(list: readonly (T | null)[]) {
+    this.slots = list as (T | null)[];
+    this.dense = list.includes(null) ? null : (list as readonly T[]);
+    this.seen = new Uint32Array(list.length);
+    for (let i = 0; i < list.length; i++) if (list[i]) this.file(i, list[i]!, false);
+  }
+
+  /** The list: every box that is in, in order. */
+  get boxes(): readonly T[] {
+    return (this.dense ??= this.slots.filter((b): b is T => b !== null));
+  }
+
+  /** How many places the list has (boxes in and out). */
+  get places(): number {
+    return this.slots.length;
+  }
+
+  /** The box in place `i` is now this one (moved, changed), or out (`null`). Everything else stays as it is. */
+  set(i: number, box: T | null): void {
+    const was = this.slots[i];
+    if (was) this.unfile(i, was);
+    this.slots[i] = box;
+    if (box) this.file(i, box, true);
+    this.dense = null;
+  }
+
+  private squares(b: Box): [number, number, number, number] | 'none' | 'big' {
+    const x0 = Math.floor((b.x - b.hw) / SIZE);
+    const x1 = Math.floor((b.x + b.hw) / SIZE);
+    const y0 = Math.floor((b.y - b.hh) / SIZE);
+    const y1 = Math.floor((b.y + b.hh) / SIZE);
+    // (A box with no size, or one not a number, overlaps nothing: found nowhere, as in the list.)
+    if (!(x1 >= x0) || !(y1 >= y0)) return 'none';
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_SQUARES || !Number.isFinite(x0 + x1 + y0 + y1)) return 'big';
+    return [x0, y0, x1, y1];
+  }
+
+  /** `sorted`: the place may come before ones already filed (a box put back): kept in order. */
+  private file(i: number, b: T, sorted: boolean): void {
+    const sq = this.squares(b);
+    if (sq === 'none') return;
+    if (sq === 'big') {
+      if (sorted) insertSorted(this.big, i);
+      else this.big.push(i);
+      return;
     }
+    for (let cx = sq[0]; cx <= sq[2]; cx++)
+      for (let cy = sq[1]; cy <= sq[3]; cy++) {
+        const k = key(cx, cy);
+        const cell = this.cells.get(k);
+        if (!cell) this.cells.set(k, [i]);
+        else if (sorted) insertSorted(cell, i);
+        else cell.push(i);
+      }
+  }
+
+  private unfile(i: number, b: T): void {
+    const sq = this.squares(b);
+    if (sq === 'none') return;
+    if (sq === 'big') {
+      const at = this.big.indexOf(i);
+      if (at >= 0) this.big.splice(at, 1);
+      return;
+    }
+    for (let cx = sq[0]; cx <= sq[2]; cx++)
+      for (let cy = sq[1]; cy <= sq[3]; cy++) {
+        const cell = this.cells.get(key(cx, cy));
+        if (!cell) continue;
+        const at = cell.indexOf(i);
+        if (at >= 0) cell.splice(at, 1);
+      }
   }
 
   /** Indices of the boxes whose squares the region touches, in the list's order. Null: too wide a region (ask the list). */
@@ -80,7 +135,7 @@ export class BoxGrid<T extends Box = Box> {
     const ids = this.indices(region.x - region.hw, region.y - region.hh, region.x + region.hw, region.y + region.hh);
     if (!ids) return this.boxes;
     const out = new Array<T>(ids.length);
-    for (let k = 0; k < ids.length; k++) out[k] = this.boxes[ids[k]];
+    for (let k = 0; k < ids.length; k++) out[k] = this.slots[ids[k]]!;
     return out;
   }
 
@@ -88,7 +143,7 @@ export class BoxGrid<T extends Box = Box> {
   overlapsAny(box: Box): boolean {
     const ids = this.indices(box.x - box.hw, box.y - box.hh, box.x + box.hw, box.y + box.hh);
     if (!ids) return this.boxes.some((s) => overlaps(box, s));
-    for (const i of ids) if (overlaps(box, this.boxes[i])) return true;
+    for (const i of ids) if (overlaps(box, this.slots[i]!)) return true;
     return false;
   }
 
@@ -97,9 +152,16 @@ export class BoxGrid<T extends Box = Box> {
     const ids = this.indices(x, y, x, y);
     if (!ids) return this.boxes.some((s) => Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh);
     for (const i of ids) {
-      const s = this.boxes[i];
+      const s = this.slots[i]!;
       if (Math.abs(x - s.x) < s.hw && Math.abs(y - s.y) < s.hh) return true;
     }
     return false;
   }
+}
+
+/** `i` put into a list of numbers kept in rising order (a short list: a grid square's, or the few big boxes). */
+function insertSorted(list: number[], i: number): void {
+  let at = list.length;
+  while (at > 0 && list[at - 1] > i) at--;
+  list.splice(at, 0, i);
 }

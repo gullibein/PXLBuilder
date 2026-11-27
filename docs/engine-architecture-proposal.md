@@ -3341,3 +3341,225 @@ another not yet.
   build cannot be proved. An endless level also needs things added and taken away during play cheaply,
   which is one of the limits listed above. It is not on the roadmap; it would be a proposal of its own, and
   fits best after W2, when the builder takes sizes and shapes as data.
+
+### 30.13 W1.1: done and measured; where things that act stop scaling (stops for review)
+
+**Decided in the review of §30.12**, and held from here on:
+
+- W1.1 approved: the three limits W1 left (the editor's check, a dig, an edit) and the measurements. For the
+  check: in the background if that can be done cleanly, on request in big levels if not; either way the editor
+  says when a check is waiting or its results are from before a change.
+- Things that act are measured by kind (walking and patrolling, hunting and attacking, scripts and what they
+  listen for, shots and other moving things, bodies meeting the level's walls and floors), each reported by
+  itself with the number at which it stops keeping up.
+- Order: W1.1, then V1.5 (real builds across every family of game, not platformers alone), then W2, W3, W4.
+- "What the AI sees" moves from W4 into W2: an overview of the whole world, detail of one area on request,
+  the structure without every thing in the context. Named regions, generators for a region and stamps stay W4,
+  and W2 must not depend on them.
+- A platformer built anew during play (a new level as the player goes on, an endless one) is a stage of its
+  own, proposed after W2: generation during play, things added and taken away cheaply, progress kept. Not
+  part of W2.
+
+W1.1 is done. Nothing after it is started.
+
+**1. The level's check no longer holds up the editor** (`editor/levelCheck.ts`).
+
+- A level under 4,000 things is checked at once at every change, as always.
+- A bigger one is checked by itself when the editor has been left alone for 0.7 s (nothing pressed, typed or
+  scrolled), if the check is expected to take no more than 0.15 s. The expectation is the time the last check
+  really took on this machine, for each thing.
+- A level too big for that is checked when asked: the Debug panel says how many things it has, about how long
+  a check takes, and has a "Check now" button.
+- What is shown in between is what was found last, faded, under a line that says so ("The level changed since
+  it was checked: what is listed is from before", or "Not checked yet"); the count on the Debug chip carries a
+  question mark. While it runs: "Checking…".
+
+It is not done in a background thread. Three reasons, in order of weight: the app is published as one file,
+so the worker would carry a second copy of the model, the checker and the solver inside it; the page the app
+runs in may not allow a worker made that way, and that cannot be tested from here; and a level handed to a
+worker is copied first, on the editor's own thread. I took that to be "not clean" in the review's sense and
+used the fallback it allowed. Two faults found on the way made the check itself cheaper: a game just opened
+from a file was not marked as never changed in place, so every reader that shares work between copies of one
+object worked each copy out by itself until the first edit (the first check of the 31,132-thing mine took
+1.6 s in the browser, every later one 0.33 s); and a closed "export pictures" dialog read the whole game for
+the pictures in use at every change.
+
+**2. One thing that blocks, changed in place** (`runtime/geometry/world.ts`, `boxGrid.ts`). Every thing that
+can be a fixed solid has its own places in the level's lists, in the level's order, whether it is in now or
+out. When it goes, comes back, moves, opens or closes, its places are brought up to date and nothing else is
+read. The lists stay in the order lists made afresh would have, which is part of the answer (collision
+resolves in that order). What had made the lists afresh from the whole level turned out to be far more than a
+dig: every coin collected, every enemy defeated, every door, every switch-moved wall (each step it glides),
+every thing hidden or shown, and every shot fired. The same was done for spent shots, which were taken out by
+making a new list of the whole level, after which everything kept for the old list was made again: they are
+now taken out of the list's end in place (`Runtime.dropSpent`).
+
+*A step of play in which something changes (node; before → after).*
+
+| World | Things | A solid thing changed | A thing appeared | A spent shot taken out | An ordinary step |
+|---|---:|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 0.9 ms → 0.3 ms | 0.5 ms → 0.4 ms | 0.9 ms → 0.3 ms | 0.3 ms |
+| city 60 by 34 | 1,028 | 0.5 ms → 0.1 ms | 0.6 ms → 0.3 ms | 1.0 ms → 0.2 ms | 0.1 ms |
+| run 40 by 600 | 1,324 | 0.5 ms → under 0.1 ms | 0.5 ms → 0.1 ms | 0.9 ms → 0.1 ms | under 0.1 ms |
+| run 600 by 60 | 2,078 | 2.0 ms → 0.8 ms | 1.9 ms → 0.8 ms | 2.1 ms → 0.6 ms | 0.8 ms |
+| city 100 by 60 | 2,759 | 1.1 ms → 0.2 ms | 1.1 ms → 0.3 ms | 2.9 ms → 0.2 ms | 0.2 ms |
+| city 250 by 150 | 17,127 | 9.2 ms → 0.8 ms | 9.5 ms → 1.3 ms | 15.7 ms → 0.6 ms | 1.0 ms |
+| mine 80 by 400 | 31,132 | 20.5 ms → 0.3 ms | 21.1 ms → 1.9 ms | 45.3 ms → 0.5 ms | 0.5 ms |
+| city 400 by 300 | 53,869 | 39.3 ms → 1.8 ms | 53.2 ms → 3.6 ms | 79.4 ms → 1.9 ms | 2.1 ms |
+| mine 120 by 600 | 70,694 | 54.0 ms → 0.2 ms | 42.9 ms → 2.8 ms | 78.5 ms → 0.2 ms | 0.2 ms |
+| mine 160 by 950 | 150,106 | 119 ms → 0.3 ms | 133 ms → 11.3 ms | 216 ms → 0.2 ms | 0.2 ms |
+
+(A thing appearing still costs more in the biggest worlds, 11 ms at 150,106 things. What in it still reads the
+level was not looked into.)
+
+**3. An edit by operation no longer reads the level again** (`core/commands/operations.ts`, `mutations.ts`).
+Four things did: the index of what is where was built for each answer (it is now kept, and brought up to date
+by what changed: a thing untouched is the very same object as before, so the list is read once and only the
+changed things are worked out); "is this object already drawn here" read every thing through the change
+tracker (asked of the index now); so did the check for a repeated id, finding which level a thing is in, and
+settling new things onto the ground (which also ran when only tiles had been drawn, where there is nothing to
+settle). Before, every edit cost what the first one does.
+
+*Edits by operation (node; before → after).*
+
+| World | Things | The first edit of a level | One tile drawn | 100 tiles drawn | One thing placed | One thing moved |
+|---|---:|---:|---:|---:|---:|---:|
+| run 170 by 21 | 591 | 19.7 ms → 3.5 ms | 19.7 ms → 0.9 ms | 19.7 ms → 6.2 ms | 13.9 ms → 1.1 ms | 1.0 ms → 0.6 ms |
+| city 60 by 34 | 1,028 | 23.2 ms → 11.4 ms | 23.2 ms → 2.2 ms | 14.0 ms → 9.3 ms | 6.3 ms → 1.7 ms | 1.7 ms → 1.1 ms |
+| run 40 by 600 | 1,324 | 36.9 ms → 8.8 ms | 36.9 ms → 1.2 ms | 45.7 ms → 5.2 ms | 35.6 ms → 1.2 ms | 1.9 ms → 0.4 ms |
+| run 600 by 60 | 2,078 | 77.8 ms → 6.3 ms | 77.8 ms → 2.1 ms | 64.6 ms → 6.7 ms | 59.0 ms → 1.8 ms | 2.7 ms → 0.7 ms |
+| city 100 by 60 | 2,759 | 18.8 ms → 8.0 ms | 18.8 ms → 2.6 ms | 19.3 ms → 7.7 ms | 9.2 ms → 6.0 ms | 2.9 ms → 1.0 ms |
+| city 250 by 150 | 17,127 | 131 ms → 65.9 ms | 131 ms → 14.9 ms | 135 ms → 25.8 ms | 73.0 ms → 13.2 ms | 21.4 ms → 3.6 ms |
+| mine 80 by 400 | 31,132 | 1.0 s → 172 ms | 1.0 s → 31.7 ms | 861 ms → 30.7 ms | 817 ms → 27.0 ms | 37.8 ms → 6.6 ms |
+| city 400 by 300 | 53,869 | 542 ms → 240 ms | 542 ms → 53.6 ms | 600 ms → 57.5 ms | 308 ms → 47.4 ms | 85.9 ms → 10.0 ms |
+| mine 120 by 600 | 70,694 | 2.3 s → 286 ms | 2.3 s → 75.4 ms | 2.4 s → 79.8 ms | 2.1 s → 75.2 ms | 108 ms → 14.7 ms |
+| mine 160 by 950 | 150,106 | 4.9 s → 698 ms | 4.9 s → 221 ms | 4.8 s → 206 ms | 4.4 s → 172 ms | 477 ms → 33.8 ms |
+
+Taking things out by an edit (an erase, a replace, a cleared area of a map) still reads the level through the
+change tracker: every thing kept has to stay changeable later in the same change. That one is left.
+
+**The same in the real app** (headless Chromium; W1 → W1.1 where both were measured).
+
+| World | Things | Opens | One tile by hand | The next one | Editor, view dragged right after opening (frames in 3 s; worst) | The check | Memory: editor / play |
+|---|---:|---:|---:|---:|---:|---|---:|
+| run 170 by 21 | 591 | 238 ms → 170 ms | 99.0 ms → 94.0 ms | 50.0 ms | 180; 17 ms → 180; 17 ms | at once | 12 MB / 17 MB |
+| city 60 by 34 | 1,028 | 195 ms → 150 ms | 98.0 ms → 102 ms | 66.0 ms | 179; 33 ms → 180; 17 ms | at once | 12 MB / 17 MB |
+| run 40 by 600 | 1,324 | 236 ms → 175 ms | 109 ms → 84.0 ms | 67.0 ms | 180; 17 ms → 180; 17 ms | at once | 12 MB / 18 MB |
+| run 600 by 60 | 2,078 | 319 ms → 212 ms | 143 ms → 146 ms | 99.0 ms | 180; 17 ms → 180; 17 ms | at once | 13 MB / 21 MB |
+| city 100 by 60 | 2,759 | 333 ms → 242 ms | 153 ms → 176 ms | 117 ms | 181; 17 ms → 180; 17 ms | at once | 13 MB / 21 MB |
+| city 170 by 100 | 7,957 | 570 ms | 132 ms | 118 ms | 179; 33 ms | when left alone (done before the panel was opened) | 15 MB / 35 MB |
+| city 250 by 150 | 17,127 | 850 ms → 665 ms | 239 ms → 222 ms | 168 ms | 135; 767 ms → 180; 17 ms | when asked: 552 ms | 20 MB / 61 MB |
+| mine 80 by 400 | 31,132 | 1.0 s → 883 ms | 272 ms → 280 ms | 208 ms | 84; 1533 ms → 177; 67 ms | when asked: 697 ms | 27 MB / 95 MB |
+| city 400 by 300 | 53,869 | 1.7 s → 1.8 s | 628 ms → 541 ms | 428 ms | 180; 17 ms → 180; 17 ms | when asked: 978 ms | 44 MB / 156 MB |
+| mine 120 by 600 | 70,694 | 5.4 s → 1.7 s | 592 ms → 596 ms | 302 ms | 180; 17 ms → 178; 33 ms | when asked: 1.1 s | 61 MB / 198 MB |
+| mine 160 by 950 | 150,106 | 3.8 s → 3.6 s | 1.3 s → 660 ms | 1.1 s | 136; 50 ms → 141; 50 ms | when asked: 2.0 s | 117 MB / 404 MB |
+
+- *By hand, little changed.* What a hand-drawn tile costs was mostly never the model: at the zoom that shows
+  a whole level every thing is in view, and the editor draws them all each time the picture changes (and saves
+  the game for safekeeping a moment after each edit, which reads all of it: one long frame of up to 180 ms in
+  these runs). That is drawing and saving, not looking things up, and is not solved here.
+- *The check when asked* takes 0.55 s at 17,127 things and 2 s at 150,106, said beforehand on the button's line.
+- *Memory:* about 0.8 KB a thing open in the editor and 2.7 KB a thing while played: 400 MB to play the
+  150,106-thing mine. That is a number to weigh for phones and for the tile-layer decision (§30.12).
+
+**4. Things that act** (`regression/crowds.ts`). One kind of activity in each world, at rising numbers, made
+from the starters' own objects. Each cell is one frame of play (a sixtieth of a second, which is two steps of
+the engine), in node, the player walking. A frame has 16.7 ms for this and the drawing together.
+
+| Kind | 100 | 250 | 500 | 1,000 | 2,000 | 5,000 | 10,000 | Passes a frame at about | Grows |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| walkers | 0.8 ms | 2.7 ms | 5.0 ms | 9.6 ms | 21.1 ms | 63.3 ms | 161 ms | 1,600 | with their number |
+| patrollers | 3.1 ms | 6.9 ms | 16.0 ms | 31.3 ms | 70.3 ms | 240 ms |  | 520 | with their number |
+| hunters | 5.2 ms | 17.8 ms | 59.9 ms | 219 ms |  |  |  | 240 | with the square of their number |
+| hunters, all hunting | 5.0 ms | 16.4 ms | 46.2 ms | 142 ms |  |  |  | 250 | faster than their number |
+| shooters | 2.8 ms | 7.9 ms | 16.2 ms | 90.9 ms | 607 ms |  |  | 510 | with the square of their number |
+| shooters, waiting | 2.8 ms | 16.9 ms | 67.1 ms | 328 ms |  |  |  | 250 | with the square of their number |
+| platforms | 0.7 ms | 3.5 ms | 13.2 ms | 51.3 ms | 181 ms |  |  | 560 | with the square of their number |
+| scripted | 0.3 ms | 0.9 ms | 2.0 ms | 4.2 ms | 9.6 ms | 25.0 ms | 56.6 ms | 3,400 | with their number |
+| crates | 3.6 ms | 17.2 ms | 62.2 ms | 253 ms |  |  |  | 250 | with the square of their number |
+
+| Kind | What the time goes on (profiled at 500, or 2,000 for the two that reach it) |
+|---|---|
+| walkers | What each one touches is looked for each step (by place), and each is filed by place again each step |
+| patrollers | The same, with gravity and the floor under each |
+| hunters | Each one looks through every active thing for the nearest player, each step |
+| hunters, all hunting | The same, and a line of sight to the player for each |
+| shooters | Each turret that is due counts the shots in the air by reading every thing in the level |
+| shooters, waiting | Each turret looks through every thing in the level for a target, each step it has none |
+| platforms | Each platform looks through every active thing for what is riding it |
+| scripted | Reading and running the scripts themselves |
+| crates | Every body that moves is tested against every thing that can be pushed |
+
+*The same worlds in the real app: frames a second while standing.*
+
+| Kind | 300 | 1,000 | 3,000 | Play starts (300 / 1,000 / 3,000) |
+|---|---:|---:|---:|---:|
+| walkers | 60 a second | 60 a second | 6 a second | 248 ms / 495 ms / 1.2 s |
+| patrollers | 57 a second | 6 a second | 1 a second | 87.0 ms / 1.1 s / 210 ms |
+| hunters | 6 a second | 1 a second | under 1 a second | 766 ms / 4.6 s / 35 s |
+| hunters, all hunting | 8 a second | 1 a second | under 1 a second | 541 ms / 3.9 s / 16 s |
+| shooters | 56 a second | 10 a second | 5 a second | 87.0 ms / 288 ms / 502 ms |
+| shooters, waiting | 21 a second | 9 a second | did not finish | 167 ms / 284 ms / ? |
+| platforms | 60 a second | 2 a second | 1 a second | 434 ms / 2.2 s / 290 ms |
+| scripted | 60 a second | 59 a second | 3 a second | 214 ms / 317 ms / 801 ms |
+| crates | 6 a second | 1 a second | under 1 a second | 1.1 s / 8.1 s / 54 s |
+
+What this says:
+
+- **Tiles scale; things that act do not yet.** A level can hold 150,000 tiles, but a few hundred to a few
+  thousand actors, depending on what they do.
+- **Hunters, shooters, platforms and crates are slow for the same reason:** for every actor, something reads
+  through all the others each step (the nearest player, the shots in the air, a target, the riders, the
+  things that can be pushed: five look-ups). Each is a look-up that can be asked by place or kept from the step before, with
+  the same answers. None was changed here: the stage approved was to measure.
+- **It does not slow down gently.** When a frame takes longer than its time the engine makes up for it with
+  more steps in the next, up to twelve, which takes longer still: play falls from sixty frames a second to
+  about seven almost at once, and below that the game runs in slow motion. So the numbers in the last column
+  but one are cliffs, not slopes. Whether to run slower instead of jerkier past that point is a choice, not
+  made here.
+- **Shots are capped at 100 in a level** (`MAX_SHOTS`), a chosen number: a world of thousands of projectiles
+  cannot be made with the Shooter part at all. It belongs in the limits module of W2, with a reason or without
+  the cap.
+- **Starting play** grows the same way for the slow kinds: 8 s for 1,000 crates, 54 s for 3,000.
+- These are the figures W4's activity policies have to be designed from; and the per-actor look-ups are worth
+  fixing before any policy, since a policy would only hide them.
+
+**5. The same answers.**
+
+- 459 of the 464 fingerprints of §30.12 are unchanged after W1.1 (455 of them recorded on the engine before
+  W1). The other five are the capacity tests, whose own script changed (they now dig, spawn and take things
+  out), recorded again. With the tests added here, 477 are compared.
+- Every change made in place is compared, in every test that plays a game, with the same thing made afresh
+  from the whole level: the fixed solids and ladders after each change; the index of what is where at each
+  use; what is kept about the level's list after spent shots are taken out. A difference is an error. The
+  whole unit suite ran with these on and none was raised, which is also the evidence that no game relied on
+  the old whole-level refresh to put right something nobody had marked as changed.
+- One fingerprint did differ while this was built, and it was the harness, not the game: it kept its own
+  index of things for as long as the list was the same one, and the list now stays the same one. It asks the
+  runtime now.
+- Tests added: `runtime/solidsInPlace.test.ts` (the grid after any run of changes against one made afresh; a
+  tile out and back, hidden, opened, moved; things appearing; the digging game with the lists never made
+  afresh after the start), `editor/levelCheck.test.ts` (when a level is checked; never "current" after a
+  change), `regression/crowds.test.ts` (each kind of crowd does act, and a frame of 300 of them is held to a
+  ceiling), and ceilings in the capacity tests for a step in which a solid changes, a thing appears or goes,
+  and for an edit after the first.
+- Suites: 1,302 unit tests pass (4 skipped, 1 to do); the browser suite passes, 1,111 checks. The browser suite has no level big enough to show the check
+  waiting or asked for: that is covered by the unit tests and by the browser measurements above, not by it.
+
+**6. Still limited** (kept on the roadmap).
+
+- Things that act, as measured: the per-actor look-ups, the cliff, the cap on shots, slow starts.
+- Editing by hand in a level shown whole: the editor draws every thing in view at each change, and saves the
+  whole game after each edit.
+- Taking things out by an edit reads the level through the change tracker.
+- A check asked for still runs in one piece: 0.5 to 2 s in the worlds measured.
+- A script that asks what is at a point has its own filing of the solids made again when a solid changes.
+- Memory while played: 2.7 KB a thing.
+- A level flip, or a rule aimed at a tag, still wakes every tile it touches (W1).
+
+**7. Recommended next, for decision (nothing started).** Before V1.5, one more small stage of the same kind
+as this one, "W1.2: things that act": the five per-actor look-ups asked by place or kept from the step before
+(same answers, held by the fingerprints and the crowd tests), the 100-shot cap given a reason or lifted, and
+the crowd table measured again. It is small, it is the same discipline as W1 and W1.1, and it decides whether
+"a city with traffic" is a few hundred things or a few thousand before the AI is ever asked for one. If V1.5
+should come first, nothing in it depends on W1.2; its builds would simply be judged against the limits above.

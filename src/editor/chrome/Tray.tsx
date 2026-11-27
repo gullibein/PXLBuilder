@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { clearAILog, useAILog, type AILogEntry } from '../ai/aiLog';
 import { offerTextFile } from '../persistence';
-import { DebugPanel, useLevelProblems } from './DebugPanel';
+import { DebugPanel } from './DebugPanel';
+import { useLevelCheck } from '../levelCheck';
 
 /** Collapsible utility area: change history (AI and manual) and the console. Closed by default. */
 export function Tray() {
@@ -13,7 +14,12 @@ export function Tray() {
   const exchanges = useAILog((s) => s.entries.length);
   // Bigger, to read long conversations (remembered while the page is open).
   const [big, setBig] = useState(false);
-  const problems = useLevelProblems().filter((p) => p.severity !== 'note').length;
+  const check = useLevelCheck();
+  const problems = check.problems.filter((p) => p.severity !== 'note').length;
+  // (A count from before the level's last change, or no count yet, is marked: it is not the level's as it is.)
+  const stale = check.state !== 'current';
+  const count = stale ? `${check.looked ? problems : ''}?` : problems > 0 ? String(problems) : '';
+  const countTitle = stale ? (check.looked ? 'From before the last change to the level: not checked since' : 'Not checked yet') : undefined;
 
   if (!tray.open) {
     return (
@@ -37,7 +43,7 @@ export function Tray() {
             <path d="M7 4V12M3.8 6.5 1.8 5.5M10.2 6.5l2-1M3.8 9.5l-2 1M10.2 9.5l2 1M5.5 4.3 4.6 2.6M8.5 4.3l.9-1.7" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
           <span className="chip-label">Debug</span>
-          {problems > 0 && <span className="count warn-count" data-testid="problem-count">{problems}</span>}
+          {count && <span className={`count warn-count${stale ? ' stale' : ''}`} data-testid="problem-count" title={countTitle}>{count}</span>}
         </button>
       </div>
     );
@@ -53,7 +59,7 @@ export function Tray() {
             Console{errors > 0 && <span className="error-dot" />}
           </button>
           <button role="tab" aria-selected={tray.tab === 'debug'} className={tray.tab === 'debug' ? 'on' : ''} data-testid="tab-debug" onClick={() => setTray({ tab: 'debug' })}>
-            Debug{problems > 0 && <span className="count warn-count">{problems}</span>}
+            Debug{count && <span className={`count warn-count${stale ? ' stale' : ''}`} title={countTitle}>{count}</span>}
           </button>
         </div>
         <button className="icon-btn" aria-label={big ? 'Make smaller' : 'Make bigger'} title={big ? 'Make smaller' : 'Make bigger'} data-testid="tray-size" onClick={() => setBig(!big)}>

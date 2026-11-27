@@ -11,7 +11,7 @@
  */
 import { resetPanelPositions } from './layout/movable';
 import { DEFAULT_LAYOUT, loadLayout, saveLayout, type EditorLayout } from './layout/settings';
-import { produce } from 'immer';
+import { freeze, produce } from 'immer';
 import { create } from 'zustand';
 import { contextFromSelection, type AIContext } from '../core/ai/context';
 import type { PlayReport } from '../core/debug/playReport';
@@ -245,6 +245,17 @@ export interface EditorState {
 
 let logId = 0;
 
+/**
+ * A game as the editor holds it: never changed in place (every edit makes a new one), and said to be so. A game
+ * that comes in from outside (a file opened, a starter, an answer built elsewhere) is not yet: until the first edit
+ * went through it, every reader that shares work between copies of one object (what an object is made of, worked
+ * out once) had to work each copy out by itself, which made the first check of a big level several times slower
+ * than every later one, and the first edit paid for the whole game.
+ */
+function settled(project: Project): Project {
+  return freeze(project, true);
+}
+
 /** Keeps selection valid after the project changes underneath it. */
 function reconcile(s: EditorState, next: Project): Partial<EditorState> {
   const scene = next.scenes.find((sc) => sc.id === s.activeSceneId) ?? next.scenes[0];
@@ -263,7 +274,7 @@ function reconcile(s: EditorState, next: Project): Partial<EditorState> {
 }
 
 export const useEditor = create<EditorState>()((set, get) => {
-  const initial = createProject(componentRegistry);
+  const initial = settled(createProject(componentRegistry));
   return {
     project: initial,
     activeSceneId: initial.startSceneId,
@@ -353,7 +364,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       return true;
     },
 
-    replaceProject(label, project) {
+    replaceProject(label, given) {
+      const project = settled(given);
       const before = get().project;
       set((s) => ({
         project,
@@ -369,7 +381,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       }));
     },
 
-    loadProject(project) {
+    loadProject(given) {
+      const project = settled(given);
       set({
         project,
         activeSceneId: project.startSceneId,

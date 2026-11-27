@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { componentRegistry } from '../../core/components/builtin';
-import { diagnoseLevel, type Problem } from '../../core/debug/diagnose';
+import type { Problem } from '../../core/debug/diagnose';
 import type { PlayEvent, PlayReport } from '../../core/debug/playReport';
 import { PROBE_LIMITS, probeLines, type ProbeAction, type ProbeReport } from '../../core/debug/probeReport';
 import { controlsOf, keyLabel } from '../../core/model/controls';
@@ -10,40 +10,8 @@ import type { Id } from '../../core/types';
 import { contextKey } from '../../core/ai/context';
 import { setGenerator } from '../../core/model/mutations';
 import { startJob, useJobs } from '../ai/jobs';
+import { checkLevelNow, useLevelCheck } from '../levelCheck';
 import { getActiveScene, useEditor } from '../store';
-
-/** The last level looked at for problems, and what was found (the chip and this panel ask for the same one). */
-let looked: { project: unknown; sceneId: string; problems: Problem[] } | null = null;
-const problemsOf = (project: Parameters<typeof diagnoseLevel>[0], sceneId: string): Problem[] => {
-  if (!looked || looked.project !== project || looked.sceneId !== sceneId) looked = { project, sceneId, problems: diagnoseLevel(project, sceneId, componentRegistry) };
-  return looked.problems;
-};
-/**
- * From this many things in a level, its problems are looked for a moment after the last change, not at every one:
- * the look goes through the whole level (a third of a second with 17,000 things, most of a second with 50,000),
- * and drawing a row of tiles is a change per tile. Smaller levels are looked at at once, as always.
- */
-const LOOK_LATER_FROM = 4000;
-const LOOK_LATER_MS = 400;
-
-/** Problems in the level as set up (errors and warnings; notes are informational). */
-export function useLevelProblems(): Problem[] {
-  const project = useEditor((s) => s.project);
-  const sceneId = useEditor((s) => s.activeSceneId);
-  const big = (project.scenes.find((sc) => sc.id === sceneId)?.entities.length ?? 0) >= LOOK_LATER_FROM;
-  const [, lookedAgain] = useState(0);
-  useEffect(() => {
-    if (!big) return;
-    const t = setTimeout(() => {
-      problemsOf(project, sceneId);
-      lookedAgain((n) => n + 1);
-    }, LOOK_LATER_MS);
-    return () => clearTimeout(t);
-  }, [project, sceneId, big]);
-  // (A big level between changes: what was found last, until the look that follows.)
-  if (big) return looked && looked.sceneId === sceneId ? looked.problems : [];
-  return problemsOf(project, sceneId);
-}
 
 /** Sends a question or a fix request to the AI for the level, and shows its card. */
 function askLevel(request: string): void {
@@ -58,7 +26,10 @@ function askLevel(request: string): void {
  * the AI about it).
  */
 export function DebugPanel() {
-  const problems = useLevelProblems();
+  const check = useLevelCheck();
+  const problems = check.problems;
+  const stale = check.state !== 'current';
+  const seconds = check.expectedMs >= 950 ? `about ${Math.round(check.expectedMs / 1000)} s` : 'under a second';
   const lastPlay = useEditor((s) => s.lastPlay);
   const scene = useEditor(getActiveScene);
   const project = useEditor((s) => s.project);
@@ -73,8 +44,22 @@ export function DebugPanel() {
     <div className="debug" data-testid="debug-panel">
       <section>
         <h4 className="debug-head">Problems in {scene.name}</h4>
-        {problems.length === 0 && <p className="muted">Nothing found that can't work as set up.</p>}
-        <ul className="problems">
+        {stale && (
+          <p className="check-state" data-testid="check-state" data-state={check.state}>
+            {check.state === 'checking'
+              ? 'Checking…'
+              : check.state === 'soon'
+                ? `${check.looked ? 'The level changed since it was checked: what is listed is from before.' : 'Not checked yet.'} It is checked when you pause.`
+                : `${check.looked ? 'The level changed since it was checked: what is listed is from before.' : 'Not checked yet.'} With ${check.things.toLocaleString('en-US')} things a check takes ${seconds}, so it runs when you ask.`}
+            {check.state === 'ask' && (
+              <button className="text-btn" data-testid="check-now" onClick={checkLevelNow}>
+                Check now
+              </button>
+            )}
+          </p>
+        )}
+        {problems.length === 0 && !stale && <p className="muted">Nothing found that can't work as set up.</p>}
+        <ul className={`problems${stale ? ' stale' : ''}`}>
           {problems.map((p) => (
             <li key={p.key} className={`problem ${p.severity}`} data-testid="problem">
               <span className="problem-mark" aria-label={p.severity}>

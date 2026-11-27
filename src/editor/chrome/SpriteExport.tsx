@@ -44,7 +44,10 @@ export function SpriteExport() {
   // The game's pictures: by default only those it uses (not the other sizes after a sprite-size change, nor unused imports).
   const [onlyUsed, setOnlyUsed] = useState(true);
   const assets = useMemo(() => {
-    if (target?.assets) return sheetAssets(target.assets);
+    // (Closed: nothing is shown, so nothing is worked out. Finding the pictures in use reads the whole game, and
+    // this ran at every change to it.)
+    if (!target) return sheetAssets([]);
+    if (target.assets) return sheetAssets(target.assets);
     const used = usedAssetIds(project);
     return sheetAssets(onlyUsed ? projectAssets.filter((a) => used.has(a.id)) : projectAssets);
   }, [target, projectAssets, project, onlyUsed]);

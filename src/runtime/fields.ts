@@ -110,7 +110,7 @@ function writeTransform(rt: Runtime, e: RuntimeEntity, target: FieldTarget, n: n
   if (target.field === 'x' || target.field === 'y') {
     if (target.field === 'x') e.x = n;
     else e.y = n;
-    if (e.collider && e.body !== 'dynamic') rt.markSolidsDirty();
+    if (e.collider && e.body !== 'dynamic') rt.markSolidsDirty(e);
     return null;
   }
   const t = e.base.transform;
@@ -159,7 +159,7 @@ function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: strin
   switch (component) {
     case 'Collider':
       rt.refreshCollider(e);
-      rt.markSolidsDirty();
+      rt.markSolidsDirty(e);
       break;
     case 'PhysicsBody':
       e.body = fresh.body;
@@ -175,7 +175,7 @@ function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: strin
       if (field === null || field === 'mass') e.mass = fresh.mass;
       // Whether it moves by physics decides how a turn collides.
       rt.refreshCollider(e);
-      rt.markSolidsDirty();
+      rt.markSolidsDirty(e);
       break;
     case 'CharacterController':
       e.controller = fresh.controller;
@@ -186,7 +186,7 @@ function rederive(rt: Runtime, e: RuntimeEntity, component: string, field: strin
       break;
     case 'Openable':
       if (field === null) e.open = fresh.open;
-      rt.markSolidsDirty();
+      rt.markSolidsDirty(e);
       break;
     case 'Switch':
       e.switch = fresh.switch && { ...fresh.switch, on: e.switch?.on ?? fresh.switch.on, used: e.switch?.used ?? false };

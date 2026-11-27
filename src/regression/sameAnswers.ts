@@ -13,6 +13,7 @@
 import { createHash, type Hash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect } from 'vitest';
+import { checkCoverIndex } from '../core/commands/operations';
 import { Gameplay } from '../runtime/gameplay';
 import { Runtime, type RuntimeEntity } from '../runtime/runtime';
 import { StateText } from './stateText';
@@ -44,9 +45,11 @@ class Trace {
    * door that opened, shows there at the latest, and its event the step it happened).
    */
   frame(rt: Runtime): void {
-    if (this.state.index.size !== rt.entities.length || this.listed !== rt.entities) {
+    // (Where each thing is in the list, made again when the list is another one or lost things in place: W1.1.)
+    if (this.state.index.size !== rt.entities.length || this.listed !== rt.entities || this.cuts !== rt.listCutCount) {
       this.state.index = new Map(rt.entities.map((e, i) => [e as object, i]));
       this.listed = rt.entities;
+      this.cuts = rt.listCutCount;
     }
     this.frames++;
     const h = this.hash;
@@ -72,6 +75,7 @@ class Trace {
   }
 
   private listed: readonly RuntimeEntity[] | null = null;
+  private cuts = 0;
   private readonly asMade = new WeakMap<RuntimeEntity, string>();
   /** Sleeping tiles found changed (the first few). */
   readonly changedAsleep: string[] = [];
@@ -94,6 +98,10 @@ const traceOf = (rt: Runtime): Trace => {
 };
 
 if (MODE !== 'off') {
+  // (W1.1: every change to the level's fixed solids made in place is compared with the lists made afresh.)
+  Runtime.checkSolids = true;
+  // (And the index of what is where in a level, kept between edits: compared with one made afresh at every use.)
+  checkCoverIndex(true);
   const proto = Runtime.prototype as unknown as { step: (dt: number, input: unknown) => void; __same?: boolean };
   if (!proto.__same) {
     proto.__same = true;

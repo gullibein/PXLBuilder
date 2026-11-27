@@ -26,16 +26,19 @@ const say = (line: string) => {
 };
 
 /**
- * Worlds held to a ceiling on each cost in `npm test`. The ceilings are several times what W1 measured (the suite
- * runs many files at once) and, for the costs W1 changed, below what W0 measured: a change that brings back a
- * cost that grows with the whole level fails here. The last two are worlds the engine could not play before W1.
+ * Worlds held to a ceiling on each cost in `npm test`. The ceilings are several times what was measured (the suite
+ * runs many files at once) and, for the costs W1 and W1.1 changed, below what they were before: a change that
+ * brings back a cost that grows with the whole level fails here (a step in which a solid changes or a thing
+ * appears, an edit after the first). The last two are worlds the engine could not play before W1.
  */
 const HELD: [WorldKind, number, number, Partial<Costs>][] = [
-  ['city', 60, 34, { stepMs: 1, stepWalkingMs: 1, startMs: 150, openMs: 200, saveMs: 100, drawOneMs: 200, moveOneMs: 50, checkMs: 300, contextMs: 800 }],
-  ['run', 170, 21, { stepMs: 1.2, stepWalkingMs: 1, startMs: 150, openMs: 200, saveMs: 100, drawOneMs: 200, moveOneMs: 50, checkMs: 300, contextMs: 800 }],
-  ['city', 100, 60, { stepMs: 2, stepWalkingMs: 2, startMs: 300, openMs: 300, saveMs: 150, drawOneMs: 250, moveOneMs: 100, checkMs: 400, contextMs: 1200 }],
-  ['city', 250, 150, { stepMs: 12, stepWalkingMs: 12, startMs: 600, openMs: 800, saveMs: 400, drawOneMs: 900, moveOneMs: 300, checkMs: 1000, contextMs: 5000 }],
-  ['mine', 80, 400, { stepMs: 8, stepWalkingMs: 8, startMs: 1200, openMs: 1200, saveMs: 800, drawOneMs: 4500, moveOneMs: 500, checkMs: 4000, contextMs: 12000 }],
+  ['city', 60, 34, { stepMs: 1, stepWalkingMs: 1, solidChangeMs: 2, appearMs: 3, startMs: 150, openMs: 200, saveMs: 100, firstEditMs: 200, drawOneMs: 80, moveOneMs: 30, checkMs: 300, contextMs: 800 }],
+  ['run', 170, 21, { stepMs: 1.2, stepWalkingMs: 1, solidChangeMs: 3, appearMs: 4, startMs: 150, openMs: 200, saveMs: 100, firstEditMs: 200, drawOneMs: 60, moveOneMs: 30, checkMs: 300, contextMs: 800 }],
+  ['city', 100, 60, { stepMs: 2, stepWalkingMs: 2, solidChangeMs: 3, appearMs: 4, startMs: 300, openMs: 300, saveMs: 150, firstEditMs: 250, drawOneMs: 100, moveOneMs: 40, checkMs: 400, contextMs: 1200 }],
+  ['city', 250, 150, { stepMs: 12, stepWalkingMs: 12, solidChangeMs: 7, appearMs: 8, goneMs: 11, startMs: 600, openMs: 800, saveMs: 400, firstEditMs: 600, drawOneMs: 150, moveOneMs: 60, checkMs: 1000, contextMs: 5000 }],
+  // (Timed inside the suite, whose own fingerprint reads every thing of the level on some steps: 2 ms a step here
+  // where the engine alone takes 0.3. Before W1.1 a solid changing cost 20 ms here, a thing appearing 21, one gone 45.)
+  ['mine', 80, 400, { stepMs: 8, stepWalkingMs: 8, solidChangeMs: 14, appearMs: 18, goneMs: 25, startMs: 1200, openMs: 1200, saveMs: 800, firstEditMs: 900, drawOneMs: 300, moveOneMs: 80, checkMs: 4000, contextMs: 12000 }],
 ];
 /** Bigger and differently shaped: measured only (CAPACITY=full). */
 const BIG: [WorldKind, number, number][] = [

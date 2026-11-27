@@ -103,7 +103,15 @@ export class ScriptSystem {
   constructor(
     private readonly rt: Runtime,
     private readonly project: Project,
-  ) {}
+  ) {
+    // (The level's list lost things from a place on: what is filed by place in the list from there is taken out,
+    // and what is kept by tag, which went by the list being another one, is made again when next asked for.)
+    rt.onListCut((from) => {
+      this.things.cut(from);
+      this.tagMap = null;
+      this.index = null;
+    });
+  }
 
   /** The level restarted: scripts already running belong to the old run. */
   reset(): void {
@@ -481,7 +489,7 @@ export class ScriptSystem {
         if (!t) break;
         t.x = n(s.x);
         t.y = n(s.y);
-        if (t.body !== 'dynamic') this.rt.markSolidsDirty();
+        if (t.body !== 'dynamic') this.rt.markSolidsDirty(t);
         break;
       }
       case 'jump': {
@@ -538,8 +546,8 @@ export class ScriptSystem {
         for (const o of this.group(s.tag)) {
           o.x += dx;
           o.y += dy;
+          this.rt.markSolidsDirty(o);
         }
-        this.rt.markSolidsDirty();
         break;
       }
       case 'turn_group': {
@@ -550,15 +558,15 @@ export class ScriptSystem {
           const p = turned(o.x, o.y, cx, cy, dir);
           o.x = p.x;
           o.y = p.y;
+          this.rt.markSolidsDirty(o);
         }
-        this.rt.markSolidsDirty();
         break;
       }
       case 'remove': {
         const t = ent(s.target);
         if (t?.alive) {
           t.alive = false;
-          this.rt.markSolidsDirty();
+          this.rt.markSolidsDirty(t);
         }
         break;
       }
@@ -982,7 +990,7 @@ export class ScriptSystem {
   private makeMovable(e: RuntimeEntity): void {
     if (e.body === 'static' || e.body === 'none') {
       e.body = 'kinematic';
-      this.rt.markSolidsDirty();
+      this.rt.markSolidsDirty(e);
     }
   }
 

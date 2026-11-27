@@ -71,7 +71,9 @@ export class Gameplay {
     private readonly rt: Runtime,
     private readonly project: Project,
     private readonly scene: Scene,
-  ) {}
+  ) {
+    rt.onListCut((from) => this.touchGrid.cut(from));
+  }
 
   emit(type: string, subject: RuntimeEntity | null, other: RuntimeEntity | null = null, detail?: Record<string, unknown>): void {
     this.queue.push({ type, subject, other, detail });
@@ -274,7 +276,7 @@ export class Gameplay {
 
   private collect(collector: RuntimeEntity, item: RuntimeEntity): void {
     item.alive = false;
-    this.rt.markSolidsDirty();
+    this.rt.markSolidsDirty(item);
     if (item.collectible!.keep) this.addItem(collector, item.collectible!.item, 1);
     // A heart (or anything that heals): health back, up to the maximum.
     if (item.collectible!.heal > 0 && collector.health) collector.health.current = Math.min(collector.health.max, collector.health.current + item.collectible!.heal);
@@ -368,7 +370,7 @@ export class Gameplay {
   /** A defeated thing leaves play; with a defeated look (SpriteStates.defeated) it is shown in it a moment, fading. */
   private gone(e: RuntimeEntity): void {
     e.alive = false;
-    this.rt.markSolidsDirty();
+    this.rt.markSolidsDirty(e);
     const states = e.base.components.SpriteStates as Record<string, unknown> | undefined;
     if (typeof states?.defeated === 'string' && states.defeated) {
       e.vanishing = DEFEATED_LOOK;
@@ -433,14 +435,14 @@ export class Gameplay {
       e.alive = true;
       e.hiddenBySwitch = false;
     } else return;
-    this.rt.markSolidsDirty();
+    this.rt.markSolidsDirty(e);
   }
 
   setOpen(e: RuntimeEntity, open: boolean, by: RuntimeEntity | null): void {
     this.rt.wake(e);
     if (e.open === open || !e.alive) return;
     e.open = open;
-    this.rt.markSolidsDirty();
+    this.rt.markSolidsDirty(e);
     this.emit(open ? 'opened' : 'closed', e, by);
   }
 
@@ -597,7 +599,7 @@ export class Gameplay {
       case 'remove':
         for (const t of targets()) {
           t.alive = false;
-          this.rt.markSolidsDirty();
+          this.rt.markSolidsDirty(t);
         }
         break;
       case 'spawn': {

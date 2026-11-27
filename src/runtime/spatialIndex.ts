@@ -165,6 +165,18 @@ export class LiveGrid<T> {
     return e;
   }
 
+  /**
+   * The list is about to lose items from place `from` on (those after them move up): what was filed from there on
+   * is taken out, and found again at the next `sync` as new items are, each where it then is in the list.
+   */
+  cut(from: number): void {
+    for (let i = from; i < this.entries.length; i++) {
+      const e = this.entries[i];
+      if (e) this.unfile(e);
+    }
+    if (this.entries.length > from) this.entries.length = from;
+  }
+
   private unfile(e: LiveEntry<T>): void {
     if (!e.keys.length) {
       this.big.splice(this.big.indexOf(e), 1);

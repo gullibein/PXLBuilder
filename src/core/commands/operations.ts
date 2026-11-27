@@ -34,7 +34,7 @@ import { resolveEntity } from '../model/resolve';
 import { isTopDownScene } from '../model/topDown';
 import { BACKGROUND_KINDS, type BackgroundKind } from '../model/backgroundArt';
 import { refreshPixelColliders } from '../model/colliderBoxes';
-import type { Id, ObjectDefinition, Project, Vec2 } from '../types';
+import type { EntityInstance, Id, ObjectDefinition, Project, Vec2 } from '../types';
 import { LENGTHS, STRUCTURES } from '../levelGen/blueprint';
 import { ZodError } from 'zod';
 import { GENRES, THEMES } from '../levelGen/profile';
@@ -518,7 +518,9 @@ function parseProps(text: string, what: string): Record<string, unknown> {
 }
 
 function sceneOfEntity(project: Project, entityId: Id): Id {
-  const scene = project.scenes.find((s) => s.entities.some((e) => e.id === entityId));
+  // (Looked for in the game as it stands, plain: through the draft every thing looked at becomes a draft.)
+  const at = project.scenes.findIndex((s) => m.asIs(s.entities).some((e) => e.id === entityId));
+  const scene = at < 0 ? undefined : project.scenes[at];
   if (!scene) throw new m.ModelError(`There is no placed object with id "${entityId}" (use the ids in targets and otherEntities of this level; to add something, place_instance its object)`);
   return scene.id;
 }
@@ -606,19 +608,104 @@ const isUnder = (c: Record<string, Record<string, unknown>>) => Number(c.Sprite?
  * object in the level each time (an answer drawing thousands of tiles would otherwise take minutes). Made once for
  * an answer's run of placing and drawing, and kept up to date as it adds and removes things.
  */
-class CoverIndex {
-  readonly items = new Map<Id, { box: Rect; definitionId: Id | null; under: boolean; isPlayer: boolean; cells: string[] }>();
-  private readonly cells = new Map<string, Set<Id>>();
+interface CoverItem {
+  box: Rect;
+  definitionId: Id | null;
+  under: boolean;
+  isPlayer: boolean;
+  cells: string[];
+  /** The thing itself as it was read (a thing unchanged since is the same object: nothing to read again). */
+  ref: object;
+  /** Its place in the level's list (things added since: after all of those, in the order added). */
+  order: number;
+  /** Its object and where it is, to the pixel: "is this object already drawn just here". */
+  spot: string;
+}
 
-  constructor(
-    readonly sceneId: Id,
-    project: Project,
-    registry: ComponentRegistry,
-  ) {
+class CoverIndex {
+  readonly items = new Map<Id, CoverItem>();
+  private readonly cells = new Map<string, Set<Id>>();
+  private readonly spots = new Map<string, number>();
+  private next = 0;
+  private definitions: unknown = null;
+  private registry: ComponentRegistry | null = null;
+
+  constructor(readonly sceneId: Id) {}
+
+  /** The index kept from the last answer or edit (one level's: the one last worked on). */
+  private static kept: CoverIndex | null = null;
+  /** Tests set this: an index brought up to date is compared with one made afresh, and a difference is an error. */
+  static check = false;
+
+  /**
+   * The level's index as the level stands now. The one kept from before is brought up to date by what changed
+   * since (things added, gone, moved or changed are other objects than the ones it read; a thing untouched is the
+   * same object), which reads the list once and the changed things only: not every thing's make-up and box again.
+   * Made afresh when it is another level's, or the game's objects themselves changed.
+   */
+  static of(sceneId: Id, project: Project, registry: ComponentRegistry): CoverIndex {
     // (Read from the game as it stands, not through the draft being changed: looking at every thing of a big level
     // through a draft makes a draft of each, which costs far more than the looking.)
     const now = isDraft(project) ? (current(project) as Project) : project;
-    for (const e of m.getScene(now, sceneId).entities) this.add(now, e, registry);
+    const entities = m.getScene(now, sceneId).entities;
+    let index = CoverIndex.kept;
+    // (Kept only for games that are never changed in place: the editor's. A thing changed in place would be the
+    // same object with another box.)
+    const settled = Object.isFrozen(now.definitions) || isDraft(project);
+    if (!index || index.sceneId !== sceneId || index.definitions !== now.definitions || index.registry !== registry || !settled) {
+      index = new CoverIndex(sceneId);
+      index.definitions = now.definitions;
+      index.registry = registry;
+    }
+    index.upToDate(now, entities, registry);
+    if (CoverIndex.check) {
+      const fresh = new CoverIndex(sceneId);
+      fresh.upToDate(now, entities, registry);
+      const differs = index.differsFrom(fresh);
+      if (differs) throw new Error(`The index of what is where, brought up to date, is not what it is made afresh: ${differs}`);
+    }
+    CoverIndex.kept = settled ? index : null;
+    return index;
+  }
+
+  private upToDate(now: Project, entities: readonly EntityInstance[], registry: ComponentRegistry): void {
+    let same = 0;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      const item = this.items.get(e.id);
+      // (An unchanged thing of a game never changed in place: the very object read before.)
+      if (item && item.ref === e && Object.isFrozen(e)) {
+        item.order = i;
+        same++;
+        continue;
+      }
+      if (item) this.remove([e.id]);
+      this.add(now, e, registry, i);
+    }
+    // Things the index still has that the level no longer does.
+    if (this.items.size !== entities.length) {
+      const here = new Set(entities.map((e) => e.id));
+      this.remove([...this.items.keys()].filter((id) => !here.has(id)));
+    }
+    this.next = entities.length;
+    void same;
+  }
+
+  private differsFrom(fresh: CoverIndex): string {
+    if (this.items.size !== fresh.items.size) return `${this.items.size} things kept, ${fresh.items.size} afresh`;
+    for (const [id, f] of fresh.items) {
+      const k = this.items.get(id);
+      if (!k) return `${id} is missing`;
+      if (k.order !== f.order || k.spot !== f.spot || k.definitionId !== f.definitionId || k.under !== f.under || k.isPlayer !== f.isPlayer || JSON.stringify(k.box) !== JSON.stringify(f.box) || k.cells.join(' ') !== f.cells.join(' '))
+        return `${id}: ${JSON.stringify({ ...k, ref: undefined })} kept, ${JSON.stringify({ ...f, ref: undefined })} afresh`;
+    }
+    for (const [key, ids] of fresh.cells) {
+      const mine = this.cells.get(key);
+      if (ids.size !== (mine?.size ?? 0) || [...ids].some((id) => !mine!.has(id))) return `cell ${key} holds other things`;
+    }
+    for (const [key, ids] of this.cells) if (ids.size && !fresh.cells.get(key)?.size) return `cell ${key} holds things it should not`;
+    for (const [spot, n] of fresh.spots) if (this.spots.get(spot) !== n) return `spot ${spot}: ${this.spots.get(spot)} kept, ${n} afresh`;
+    return '';
   }
 
   private static cellsOf(b: Rect): string[] {
@@ -633,11 +720,18 @@ class CoverIndex {
     return out;
   }
 
-  add(project: Project, e: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry): void {
+  static spotOf(definitionId: Id | null, x: number, y: number): string {
+    return `${definitionId}@${Math.round(x)},${Math.round(y)}`;
+  }
+
+  /** `order`: its place in the level's list (left out: it is being added now, after everything there). */
+  add(project: Project, e: ReturnType<typeof instantiateDefinition>, registry: ComponentRegistry, order?: number): void {
     const r = resolveEntity(project, e, registry);
     const box = getWorldBounds(r);
     const cells = CoverIndex.cellsOf(box);
-    this.items.set(e.id, { box, definitionId: e.definitionId, under: isUnder(r.components), isPlayer: !!r.components.CharacterController, cells });
+    const spot = CoverIndex.spotOf(e.definitionId, e.transform.position.x, e.transform.position.y);
+    this.items.set(e.id, { box, definitionId: e.definitionId, under: isUnder(r.components), isPlayer: !!r.components.CharacterController, cells, ref: e, order: order ?? this.next++, spot });
+    this.spots.set(spot, (this.spots.get(spot) ?? 0) + 1);
     for (const k of cells) {
       let set = this.cells.get(k);
       if (!set) this.cells.set(k, (set = new Set()));
@@ -650,18 +744,42 @@ class CoverIndex {
       const item = this.items.get(id);
       if (!item) continue;
       for (const k of item.cells) this.cells.get(k)?.delete(id);
+      const n = (this.spots.get(item.spot) ?? 1) - 1;
+      if (n > 0) this.spots.set(item.spot, n);
+      else this.spots.delete(item.spot);
       this.items.delete(id);
     }
   }
 
-  /** Everything whose box shares a cell with this one (to be checked for real overlap). */
+  /** Whether a copy of this object is already just here (to the pixel). */
+  holds(definitionId: Id | null, x: number, y: number): boolean {
+    return this.spots.has(CoverIndex.spotOf(definitionId, x, y));
+  }
+
+  /**
+   * Everything whose box shares a cell with this one (to be checked for real overlap): cell by cell, each cell's
+   * things in the order of the level's list (as an index made afresh from the list holds them).
+   */
   near(b: Rect): Set<Id> {
-    const out = new Set<Id>(this.cells.get('*') ?? []);
+    const byOrder = (ids: Iterable<Id>) => [...ids].sort((x, y) => this.items.get(x)!.order - this.items.get(y)!.order);
+    const out = new Set<Id>(byOrder(this.cells.get('*') ?? []));
     const keys = CoverIndex.cellsOf(b);
-    if (keys[0] === '*') return new Set(this.items.keys());
-    for (const k of keys) for (const id of this.cells.get(k) ?? []) out.add(id);
+    if (keys[0] === '*') return new Set(byOrder(this.items.keys()));
+    for (const k of keys) {
+      const cell = this.cells.get(k);
+      if (!cell) continue;
+      if (cell.size === 1) for (const id of cell) out.add(id);
+      else for (const id of byOrder(cell)) out.add(id);
+    }
     return out;
   }
+}
+
+/** For tests: every index of what is where that is brought up to date is compared with one made afresh. Returns what it was set to. */
+export function checkCoverIndex(on: boolean): boolean {
+  const was = CoverIndex.check;
+  CoverIndex.check = on;
+  return was;
 }
 
 /**
@@ -733,12 +851,27 @@ export function repairRow(row: string, want: number, around: string[]): string |
 function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRegistry): void {
   if (!created.length) return;
   const fresh = new Set(created);
-  for (const scene of project.scenes) {
-    const mine = scene.entities.filter((e) => fresh.has(e.id));
+  // (Read from the game as it stands now, not through the draft being changed: looking at every thing of a big
+  // level through a draft makes a draft of each. Only the things settled are then changed, through the draft.)
+  const now = isDraft(project) ? (current(project) as Project) : project;
+  const tiles = new Map<Id | null, boolean>();
+  const isTile = (e: { definitionId: Id | null }) => {
+    let t = tiles.get(e.definitionId);
+    if (t === undefined) tiles.set(e.definitionId, (t = now.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile'));
+    return t;
+  };
+  for (let si = 0; si < now.scenes.length; si++) {
+    const sceneNow = now.scenes[si];
+    const at: number[] = [];
+    for (let i = 0; i < sceneNow.entities.length; i++) if (fresh.has(sceneNow.entities[i].id)) at.push(i);
+    // Tiles stay where they are drawn: with nothing else new in the level, there is nothing to settle.
+    if (!at.some((i) => !isTile(sceneNow.entities[i]))) continue;
     // Seen from above nothing stands on anything: things stay where they are put.
-    if (!mine.length || isTopDownScene(project, scene, registry)) continue;
+    if (isTopDownScene(now, sceneNow, registry)) continue;
+    const scene = project.scenes[si];
+    const mine = at.map((i) => scene.entities[i]);
     const box = (e: (typeof scene.entities)[number]) => {
-      const r = resolveEntity(project, e, registry);
+      const r = resolveEntity(now, e, registry);
       const col = r.components.Collider;
       const s = col && typeof col.size === 'object' && col.size ? (col.size as Vec2) : getEntitySize(r);
       const w = s.x * Math.abs(e.transform.scale.x);
@@ -749,13 +882,14 @@ function settleOnSurfaces(project: Project, created: Id[], registry: ComponentRe
       const cy = e.transform.position.y + off.y * e.transform.scale.y;
       return { r, left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2, h };
     };
-    const solids = scene.entities
-      .filter((e) => !fresh.has(e.id) || project.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile')
+    const solids = sceneNow.entities
+      .filter((e) => !fresh.has(e.id) || isTile(e))
       .map(box)
       .filter((b) => b.r.components.Collider && b.r.components.Collider.isTrigger !== true && b.r.components.PhysicsBody?.bodyType !== 'dynamic');
     for (const e of mine) {
-      if (project.definitions.find((d) => d.id === e.definitionId)?.metadata.placement === 'tile') continue;
-      const b = box(e);
+      if (isTile(e)) continue;
+      // (Its own box as it is at its turn, read through the draft: an earlier one settled does not move it.)
+      const b = box(isDraft(e) ? (current(e) as typeof e) : e);
       let lift = 0;
       for (const s of solids) {
         if (s.r.id === e.id || Math.min(b.right, s.right) - Math.max(b.left, s.left) <= 2) continue;
@@ -824,7 +958,7 @@ export function applyOperations(
   const logicJson = (text: string, what: string) => substituteRefs(parseProps(text, what), entityRefs, refs) as Record<string, unknown>;
   // What is where in a level, while placing and drawing (anything else that changes the level drops it).
   let cover: CoverIndex | null = null;
-  const coverOf = (sceneId: Id) => (cover?.sceneId === sceneId ? cover : (cover = new CoverIndex(sceneId, project, registry)));
+  const coverOf = (sceneId: Id) => (cover?.sceneId === sceneId ? cover : (cover = CoverIndex.of(sceneId, project, registry)));
   // Library objects given another name here (with the description each had), and the ones a component was taken from.
   const renamed = new Map<Id, string>();
   const stripped = new Set<Id>();
@@ -1217,11 +1351,12 @@ export function applyOperations(
       case 'draw_tiles': {
         const defId = refs.get(op.definitionRef) ?? op.definitionRef;
         const def = m.getDefinition(project, defId);
-        const scene = m.getScene(project, op.sceneId);
+        m.getScene(project, op.sceneId);
         const size = getEntitySize(resolveEntity(project, instantiateDefinition(def, { x: 0, y: 0 }), registry));
         const cells = op.rects.reduce((n, r) => n + r.width * r.height, 0);
         if (cells > MAX_DRAW_CELLS) throw new m.ModelError(`draw_tiles: ${cells} cells is too many at once (max ${MAX_DRAW_CELLS})`);
-        const taken = new Set(scene.entities.filter((e) => e.definitionId === defId).map((e) => `${Math.round(e.transform.position.x)},${Math.round(e.transform.position.y)}`));
+        // (A cell that already holds this object is left as it is; so is one tried and left out earlier in this drawing.)
+        const leftOut = new Set<string>();
         // An object bigger than a cell (a 64×32 block, a 32×64 door) takes several cells: copies go side by side
         // every `step` cells, not one per cell on top of each other. Each sits on the bottom of its block of cells.
         const step = { x: Math.max(1, Math.round(size.x / LEVEL_CELL)), y: Math.max(1, Math.round(size.y / LEVEL_CELL)) };
@@ -1237,8 +1372,8 @@ export function applyOperations(
               const bottomRow = r.row + r.height - 1 - j * step.y;
               const pos = { x: col * LEVEL_CELL + (step.x * LEVEL_CELL) / 2, y: (bottomRow + 1) * LEVEL_CELL - size.y / 2 };
               const key = `${Math.round(pos.x)},${Math.round(pos.y)}`;
-              if (taken.has(key)) continue;
-              taken.add(key);
+              if (leftOut.has(key) || index.holds(defId, pos.x, pos.y)) continue;
+              leftOut.add(key);
               const entity = instantiateDefinition(def, pos);
               // Over other objects: replaces them, unless onTop; a cell with the player in it is left out (never drawn over).
               if (!op.onTop) {
@@ -1306,11 +1441,16 @@ export function applyOperations(
         const grid = op.rows.map((r) => [...r]);
         const unknown = new Set(grid.flat().filter((ch) => ch !== '.' && ch !== ' ' && !byChar.has(ch)));
         if (unknown.size) throw new m.ModelError(`draw_map: the legend doesn't say what ${[...unknown].map((c) => `"${c}"`).join(', ')} ${unknown.size === 1 ? 'is' : 'are'}`);
-        const player = scene.entities.find((e) => resolveEntity(project, e, registry).components.CharacterController);
+        // (The player, and what is cleared, are found in the level as it stands, plain.)
+        const plainNow = () => (isDraft(project) ? (current(project) as Project) : project);
+        const playerAt = (p: Project) => m.getScene(p, op.sceneId).entities.findIndex((e) => resolveEntity(p, e, registry).components.CharacterController);
         if (op.clear) {
           const x0 = op.col * LEVEL_CELL;
           const y0 = op.row * LEVEL_CELL;
-          const gone = scene.entities
+          const before = plainNow();
+          const list = m.getScene(before, op.sceneId).entities;
+          const player = list[playerAt(before)];
+          const gone = list
             .filter((e) => e !== player && e.transform.position.x >= x0 && e.transform.position.x < x0 + width * LEVEL_CELL && e.transform.position.y >= y0 && e.transform.position.y < y0 + op.rows.length * LEVEL_CELL)
             .map((e) => e.id);
           m.removeEntities(project, op.sceneId, gone);
@@ -1332,7 +1472,7 @@ export function applyOperations(
             for (let a = 0; a < sy; a++) for (let b = 0; b < sx; b++) if (grid[j - a]?.[i + b] === ch) used[j - a][i + b] = true;
             if (isPlayer) {
               const pos = { x: (op.col + i) * LEVEL_CELL + (sx * LEVEL_CELL) / 2, y: (op.row + j + 1) * LEVEL_CELL - size.y / 2 };
-              const p = scene.entities.find((e) => resolveEntity(project, e, registry).components.CharacterController);
+              const p = scene.entities[playerAt(plainNow())];
               if (p) p.transform.position = pos;
               else {
                 const e = instantiateDefinition(d, pos);

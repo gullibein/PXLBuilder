@@ -59,6 +59,15 @@ try {
       await page.getByTestId('open-file-input').setInputFiles({ name: f, mimeType: 'application/json', buffer: Buffer.from(text) });
       await page.waitForFunction((n) => Number(document.querySelector('[data-testid="viewport-canvas"]')?.getAttribute('data-entities')) === n, things, { timeout: 240000 });
       const opened = Date.now() - t;
+      // What the page holds in memory with the level open (after a collection), and later while it is played.
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send('Performance.enable');
+      const heapMB = async () => {
+        await cdp.send('HeapProfiler.collectGarbage');
+        const { metrics } = await cdp.send('Performance.getMetrics');
+        return Math.round((metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 1e6);
+      };
+      const heapOpen = await heapMB();
       // (CAPACITY_SETTLE_MS: wait this long first. The level's check runs once, a moment after a level is opened or
       // changed, in one piece; without the wait it can fall inside the three seconds measured next.)
       if (process.env.CAPACITY_SETTLE_MS) await page.waitForTimeout(Number(process.env.CAPACITY_SETTLE_MS));
@@ -100,10 +109,43 @@ try {
         await page.mouse.up();
         await settled();
         const stroke = Date.now() - t1;
-        drawn = `one click ${one} ms (${n0} -> ${n1} things), a stroke ${stroke} ms (-> ${await count()})`;
+        // (One more click: the first edit of a level pays for some things once.)
+        await page.mouse.move(at.x + 40, at.y + 120);
+        t1 = Date.now();
+        await page.mouse.down();
+        await page.mouse.up();
+        await settled();
+        const again = Date.now() - t1;
+        // What the level's saving for safekeeping costs, a moment after an edit: the worst frame of the next second.
+        await startFrames(page);
+        await page.waitForTimeout(1200);
+        const after = await stopFrames(page);
+        drawn = `one click ${one} ms (${n0} -> ${n1} things), a stroke ${stroke} ms (-> ${await count()}), one more click ${again} ms; the second after it: worst frame ${after.worst.toFixed(0)} ms`;
         await page.getByTestId('tool-select').click().catch(() => {});
       } catch (e) {
         drawn = `failed: ${String(e).slice(0, 80)}`;
+      }
+      // The level's check: how the panel says it stands, and how long it takes when asked for.
+      let check = 'not measured';
+      try {
+        await page.getByTestId('debug-toggle').click();
+        const state = page.getByTestId('check-state');
+        if (await state.isVisible().catch(() => false)) {
+          const how = await state.getAttribute('data-state');
+          if (how === 'ask') {
+            t = Date.now();
+            await page.getByTestId('check-now').click();
+            await state.waitFor({ state: 'detached', timeout: 120000 });
+            check = `on request: ${Date.now() - t} ms`;
+          } else {
+            t = Date.now();
+            await state.waitFor({ state: 'detached', timeout: 120000 });
+            check = `when left alone (${how}): done ${Date.now() - t} ms after the panel was opened`;
+          }
+        } else check = 'at once (current)';
+        await page.getByTestId('tray-close').click();
+      } catch (e) {
+        check = `failed: ${String(e).slice(0, 80)}`;
       }
       t = Date.now();
       await page.getByTestId('play').click();
@@ -128,7 +170,8 @@ try {
       await page.keyboard.up('ArrowRight');
       const camB = await camX();
       const who1 = await play.getAttribute('data-player');
-      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} (view ${view0} -> ${view1}) | drawn by hand: ${drawn} | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)}; the camera scrolled ${(camB - camA).toFixed(0)} px while measured (player ${who0?.split(',').slice(0, 2).join(',')} -> ${who1?.split(',').slice(0, 2).join(',')}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
+      const heapPlay = await heapMB();
+      say(`${f.replace('.pxlproj.json', '')}: ${things} things | opens in ${opened} ms | editor, view dragged: a frame ${show(dragged)} (view ${view0} -> ${view1}) | drawn by hand: ${drawn} | the check: ${check} | memory: ${heapOpen} MB open in the editor, ${heapPlay} MB while played | play starts in ${started} ms | play, standing: a frame ${show(still)} | play, walking: a frame ${show(walking)}; the camera scrolled ${(camB - camA).toFixed(0)} px while measured (player ${who0?.split(',').slice(0, 2).join(',')} -> ${who1?.split(',').slice(0, 2).join(',')}) | errors: ${errors.length ? errors.join('; ') : 'none'}`);
     } catch (e) {
       say(`${f.replace('.pxlproj.json', '')}: ${things} things | FAILED: ${String(e).slice(0, 200)}`);
     }
