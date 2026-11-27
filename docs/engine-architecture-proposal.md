@@ -2538,6 +2538,40 @@ on Gemini), as in §25.6.
 5. New: run all sixteen in the first live run, or a first six (one per family furthest apart: platformer,
    falling blocks, shooter, chess, tactics, the open city) and the rest after seeing what the six show.
 
+
+### 25.11 Decided, and two families added (after the user's pinball and card-game builds, §31)
+
+**Decided by the user:** live runs happen here (with the secure key form) or in the app, whichever suits at
+the time; saved builds and results may all be committed (the repository is public, and a commit stays in its
+history; nothing in them is secret, and each is searched for a key first). The six builds sent so far are in
+`docs/builds/`.
+
+**Two cases added, eighteen in all.** Both are kinds of game no starter stands for:
+
+17. *A table with a ball*: a pinball table (a ball, two flippers, a plunger, bumpers, a drain; a score; three
+    balls). What it must do when played: the plunger sends the ball up; a flipper pressed with the ball on it
+    sends the ball away, and pressed with no ball near does nothing to it; touching a bumper raises the
+    score; the ball leaving through the drain costs a ball; after the last one the game is over.
+18. *A card game against the computer*: cards played one on another by colour or number, with cards that skip
+    a turn, turn the order round and make the next player draw two; a player who cannot or will not play
+    draws; the first with no cards wins. What it must do: the hand is shown; a card that fits can be played
+    and leaves the hand; one that does not is refused and said to be; drawing adds a card, without a limit on
+    the hand; the computer plays in its turn; a hand emptied ends the game. The case is run twice: with the
+    request in English, and with the user's own request in Icelandic, word for word.
+
+**Three things these two builds add to the harness itself:**
+
+- *Reading what is shown.* Neither game uses the kit's menu or cursor, and both keep score in a script's own
+  variables under names the model chose. A play script cannot go by those names. It can go by what the game
+  draws: every text on the screen is known to the engine, so "a number shown went up after the ball touched a
+  bumper" and "a line saying the card cannot be played appeared" can be checked without knowing a name.
+- *A rejected answer is kept, word for word.* The pinball build's first answer (27,498 tokens, $1.11, four
+  minutes) was thrown away as "not in the reply format", and "Save with history" kept the refusal but not the
+  answer, so why it failed cannot be found out. A recording must hold what the model sent, above all when it
+  was refused. Part of V1.5a.
+- *Which game Play starts.* A check under "Shape": the level that Play starts is the game that was asked for.
+  In the card-game file it is not (§31).
+
 ## 26. A tic-tac-toe build (one live run), and "Save with history"
 
 ### 26.1 What the run showed
@@ -3681,3 +3715,100 @@ comes after.
 act in one (W1.2, W4). Neither implies the other, and V1.5 reports them in separate columns (§25.10).
 
 The V1.5 plan as it stands now is §25.10. Nothing of it is built; W1.2 and W2 are not started.
+
+## 31. A pinball table and a card game (two live builds), from their "Save with history" files
+
+The user sent two more builds, as kinds of game the evaluation should include: "a crazy cool pinball game"
+(on f24d215, Claude Opus 5.5) and a card game asked for in Icelandic, played card on card against the computer
+(saved on e30e245; the page had been reloaded, so its record is the shorter one and carries no costs). **Two
+builds, not an evaluation.** Both files open and play on the engine as it is now; with W1's sleeping tiles on
+and off they are the same after every step (900 frames each). Nothing was changed for this section.
+
+### 31.1 The pinball table
+
+| Request | Time | Cost | What happened |
+| --- | --- | --- | --- |
+| The game, first try | 254 s | $1.11 | **Lost whole**: "operations: expected array, received string" |
+| The game, again | 365 s | $0.75 + $0.28 | Applied: a table of 20 by 24 cells, a ball, two flippers, a plunger, three bumpers, slingshots, six drop targets, seven lights, a drain; score, a multiplier, three balls |
+| "The camera needs to be closer to the ball and follow it" | 7 s | $0.60 | Done |
+
+It plays: in the user's last play (65 s) the ball touched things 253 times, three targets dropped, it drained
+three times.
+
+What it shows:
+
+- **The engine has no physics for a ball, and the model wrote one in scripts.** A body stops at a wall; it
+  does not bounce. So the ball's script remembers its speed from the step before and, when it finds itself
+  stopped against something, sets the opposite speed times 0.55. Rolling down the guides is a push applied
+  while a tile tagged "slide" is under it. That it works at all is to the model's credit; it is also why the
+  ball can stick, and why every game of this kind (a ball and a bat, bricks to break, a table with pockets, a
+  marble) would be written from nothing each time.
+- **The flippers do not hit the ball.** A flipper is a still box that turns on the screen. Pressing the key
+  turns the picture and, if the ball is within a box-shaped area above it at that instant, gives the ball a
+  speed. A ball arriving a moment after the press is not struck. The engine has no solid that turns and
+  carries what it meets.
+- **The same lost answer a third time.** The message is the one that lost the dash platformer's first build
+  (§27). Since then an answer whose list of operations arrives as one text is read as the list it is; this
+  one was not readable that way either, and what it was is not known, because the record keeps the refusal
+  and not the answer (§25.11).
+- **A table is treated as a level to get through.** The request went out with "Puzzles for this level: moving
+  platform, swim for it" and the level builder's guidance; the model said it skipped the swim and crate
+  puzzles because they do not fit pinball. The game's profile is still "platformer".
+- **Sixty cents for a seven-second answer.** The camera request came a day later: the whole game and guidance
+  (80,794 tokens) went along again at full price, the earlier copy being long out of the provider's short-term
+  store. A small change to a game costs about what its size costs to send.
+
+### 31.2 The card game
+
+| Request (translated) | What happened |
+| --- | --- |
+| "Make a computer game that is the card game [named], played card on card" | **A haunted platformer in which the cards are things to collect.** The model said so: "the rules of the card game itself are not in it" |
+| "No, what is this!? … It is NOT a platformer!!" | An apology, and: a full card game "cannot be made perfectly here, because the engine has no turn-based card games"; an offer to build a simple one. "Say yes" |
+| "Yes" | A second level holding the card game: four colours, numbers 0 to 9, no special cards. "Open the level in the level list and press Play" |
+| See the whole hand, choose with the arrows, P to pass, D to draw, a message when a card does not fit | Done ("the computer still writes in English") |
+| Special cards (skip, reverse, draw two); choose several cards; Space to choose | The level written again |
+| "I cannot choose a card: Space does nothing" | The game had listened for E only; fixed |
+| No limit on the hand; whoever does not play must draw; a link to the rules | P now draws. "The limit of seven is still there, because the game keeps each card in a variable of its own and there are no lists." It could not open the link, and said so |
+| Start with seven cards; drawing must always be possible | Both start with seven; the hand shows seven and the rest wait as "+N", not choosable until there is room |
+
+Eight requests for a game that still cannot show a hand of more than seven.
+
+What it shows:
+
+- **Asked for a card game, the app made a platformer.** Nothing in the request path stands for "cards": the
+  starters are platformer and top-down, and the model fitted the request to one. The request was in
+  Icelandic and named the game; whether the same request in English fares better is not known, and is a case
+  of its own now (§25.11).
+- **The model then said the engine cannot do turn-based card games.** The engine has turns, a menu and a
+  cursor in its turn-based kit. Of these the game uses a menu and nothing else: it is one thing on the level
+  with a script of 26,314 characters (380 statements, 48 variables of the 120 allowed) that keeps the turn,
+  moves its own highlight and draws the table, the hands and the messages itself.
+- **Scripts have no lists.** A hand is seven variables, a card each; so is the computer's, and so is which
+  of the seven are chosen. Every rule about
+  "any card in the hand" is written out seven times over, one formula of 151 characters twice. The limit the
+  user asked three times to have removed is this. It is the third build to show what the script language
+  lacks for board and card games, after the formulas written four times in chess and twice in tic-tac-toe.
+- **Play starts the wrong game.** The first request's platformer level is still level 1 and the game's start;
+  the card game is level 2. The file counts as "levels to get through" and its profile is "platformer".
+- **The model was straight about what it could not do**: the rules it left out, the link it could not open,
+  the limit it could not lift and why.
+
+### 31.3 What the two say together
+
+Six builds are on record now. The four that fit a starter or the board kit (a platformer, a city seen from
+above, chess, tic-tac-toe) came out as the kind of game asked for. The two that fit neither did not come out
+that way by the engine's help: one was physics written by hand in scripts, the other was first a platformer
+and then a single script drawing everything. That is the "many kinds of games" question in its plainest form,
+and it is not a question of world size or of how many things act.
+
+Kept as findings, for decision after V1.5's first run shows how general they are (none is started):
+
+| Finding | Kind of answer |
+| --- | --- |
+| No bounce, no solid that turns: a ball game is written from nothing | An engine part ("a ball": bounce as a property of a body, and of what it hits), its own proposal |
+| No lists in scripts: a hand, a deck, a pile, a queue are variables counted out | A script-language proposal, with the two already waiting (a way to write a test once; text size) |
+| A request for a kind of game no starter stands for becomes a platformer | The starter choice and its guidance: "a table", "cards" as kinds the app knows are not levels |
+| The turn-based kit goes all but unused by a card game | Guidance: what the kit gives a game that is not on a grid, or what it lacks for one |
+| A new game built into a second level, the old first level left as the start | The app: a game made anew replaces what was there, or the start is moved, said either way |
+| A small change costs the whole game sent again | Cost: what goes along with a small request (its own look, with V1.5's cost figures) |
+| A refused answer is not kept | V1.5a (§25.11) |
