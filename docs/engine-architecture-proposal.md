@@ -3812,3 +3812,37 @@ Kept as findings, for decision after V1.5's first run shows how general they are
 | A new game built into a second level, the old first level left as the start | The app: a game made anew replaces what was there, or the start is moved, said either way |
 | A small change costs the whole game sent again | Cost: what goes along with a small request (its own look, with V1.5's cost figures) |
 | A refused answer is not kept | V1.5a (§25.11) |
+
+## 32. Required by the user: physics for things that fall and bounce, and for liquids (recorded; nothing designed)
+
+Stated by the user after the pinball build (§31): the engine needs **good and fast physics for falling and
+bouncing objects and for liquids**. Part of it was a finding of §31 ("no bounce, no solid that turns", left
+for a proposal of its own); liquids that move had not come up before. It is a requirement now, not a finding.
+
+**What the engine has today** (read from the code, not measured again):
+
+| | Today |
+| --- | --- |
+| Falling | Yes: a body with gravity falls and lands on walls, floors, jump-through platforms and slopes of 45° and gentler |
+| Bouncing | No. A body stops at what it hits. A body has mass, friction and how much gravity pulls it; nothing says how much it bounces. The spring object and the pinball ball bounce by script |
+| Round things | A collider can be called a circle; it collides as the square around it |
+| Things hitting each other | Bodies pass through each other. Only a thing marked pushable blocks, as a wall does: crates rest on crates, nothing knocks anything |
+| Turning | A picture can turn; what is solid about it does not sweep or carry anything (the pinball flippers) |
+| Liquids | A still area to swim in: slower, sinking, a stroke upward. It does not flow, fill, pour, rise or drain |
+| Speed | Bodies meeting the level: by place, cheap (W1). Bodies that can be pushed: each tested against all the others, a frame's time at about 250 (§30.13) |
+
+**What has to be settled before a design** (asked of the user):
+
+1. *Liquids:* liquid that flows (pours, fills a hole, levels out, can be dammed and drained), or still water
+   done better (things float, a current carries them), or both.
+2. *Solid things:* balls and boxes that bounce, slide, roll and stack without tumbling, or bodies that also
+   turn as they fall and topple.
+3. *How many at once:* tens, hundreds, or thousands (rubble, sand, drops).
+
+**Held whatever the answers:** the same game played twice gives the same result (the fingerprints, the level
+checker and the replay of recordings depend on it); the platformer and top-down movement that exist are not
+re-tuned by it (a character is not a physics body unless a game says so); it is measured in the crowd worlds
+of §30.13 before and after; nothing is told to the AI that the engine does not do.
+
+Where it goes on the roadmap is a decision with the answers. It does not wait on the world work (W2 to W4),
+and it meets W1.2 at one point: things that push each other are the slowest kind measured.
