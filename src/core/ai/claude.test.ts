@@ -186,6 +186,8 @@ describe('the Claude call', () => {
     replies = ['{oops', '{still oops'];
     const again = await askClaude(client, body(), undefined, 'claude-sonnet-5-5', (n) => notes.push(n));
     expect(again).toMatchObject({ ok: false, error: expect.stringMatching(/could not be read \(twice/) });
+    // (What came back is kept as it came, for the record of the request.)
+    expect((again as { raw?: string }).raw).toBe('{still oops');
     expect(notes.at(-1)).toMatch(/Still not readable.*It began: \{still oops/);
   });
 

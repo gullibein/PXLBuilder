@@ -2312,7 +2312,7 @@ drawn as before). Known limits, not handled: text running into text beside it on
 asked), text over a box a script drew for it, and a column of lines too tall for the screen. A script function
 giving the real size of text stays a separate proposal.
 
-## 25. V1.5 — real-AI evaluation: implementation proposal (for review; nothing is built)
+## 25. V1.5 — real-AI evaluation: implementation proposal (its first stage, V1.5a, is built: §33)
 
 ### 25.1 What it is for
 
@@ -3813,7 +3813,7 @@ Kept as findings, for decision after V1.5's first run shows how general they are
 | A small change costs the whole game sent again | Cost: what goes along with a small request (its own look, with V1.5's cost figures) |
 | A refused answer is not kept | V1.5a (§25.11) |
 
-## 32. Required by the user: physics for things that fall and bounce, and for liquids (recorded; nothing designed)
+## 32. Required by the user: physics for things that fall and bounce, and for liquids (recorded; the proposal is §34)
 
 Stated by the user after the pinball build (§31): the engine needs **good and fast physics for falling and
 bouncing objects and for liquids**. Part of it was a finding of §31 ("no bounce, no solid that turns", left
@@ -3846,3 +3846,595 @@ of §30.13 before and after; nothing is told to the AI that the engine does not 
 
 Where it goes on the roadmap is a decision with the answers. It does not wait on the world work (W2 to W4),
 and it meets W1.2 at one point: things that push each other are the slowest kind measured.
+
+## 33. V1.5a: the evaluation harness (built; no model was asked, nothing was spent)
+
+What §25 proposed for its first stage, with the conditions of the review that approved it. Everything here runs
+without a network. The first live run (V1.5b) is not started and not built: it waits for the user.
+
+### 33.1 What exists
+
+| Part | Where | What it is |
+| --- | --- | --- |
+| Verdicts and layers | `src/evaluation/verdict.ts` | pass, fail, not judged; five layers; a case's result |
+| The eighteen cases | `cases.ts` | The request, what the game must be, what is expected running, the engine parts it needs, its play script |
+| The play driver | `played.ts`, `watch.ts` | A game played on the real session by keys and time; what is seen; the same game twice to tell cause from chance |
+| Shape, Runs, Size and load | `layers.ts` | The three layers every case shares |
+| Play scripts | `plays.ts` | One per kind of game |
+| Engine parts | `engineParts.ts` | Five experiments on the engine as it is |
+| Recordings and replay | `replay.ts` | A "Save with history" file's answers through the real request flow |
+| The report | `report.ts` | One row a case; the checks under it |
+| Stand-ins | `standIns.ts` | A game per case to prove the checks on (tests only) |
+| Tests | `evaluation.test.ts` (38), `replay.test.ts` (10) | |
+
+### 33.2 How a case is judged
+
+Every check ends as **pass**, **fail** or **not judged** (with the reason). The checks are in five layers,
+reported apart, because each can hold without the next:
+
+| Layer | Asks |
+| --- | --- |
+| Built | Did the request end with the game applied, whole? At the first asking? Was an answer refused, cut off or lost? Was anything the answers held left out? |
+| Shape | Is it the kind of game asked for (who is steered, how it is seen, where its rules are)? Is that the game Play starts? As many levels, as big, as asked? |
+| Runs | The play probe: no fault; its keys do something; what should act by itself does; nothing seen that means a broken game |
+| Plays | The case's own script plays it: does it do what was asked? |
+| Size and load | How big, how much acts in it by kind against the limits measured in §30.13, and a frame of it as timed |
+
+A layer has failed when any of its checks failed; it is uncertain when some were not judged; it is not judged
+when none were (or it has no check). A case is:
+
+- a **success** only when all five layers passed and no engine part it needs is missing;
+- an **approximation** when all five passed but it plays by scripts standing in for engine parts that are
+  missing (they are named);
+- **uncertain** when nothing failed and something was not judged;
+- **failed** when any check failed.
+
+So a game that loads and runs without errors is uncertain at best: Runs is one layer of five.
+
+### 33.3 The cases
+
+Eighteen kinds of game, nineteen cases (the card game twice). Each is asked for by what it does; no request
+names an existing game (a test searches them for such names; chess is nobody's).
+
+| # | Case | Must be | Engine parts it needs |
+| --- | --- | --- | --- |
+| 1 | A classic platformer of two levels (then: "Add a double jump.") | A steered character, from the side, two levels | |
+| 2 | A precision platformer with a dash and a wall jump | The character has the engine's Dash and WallJump | |
+| 3 | A top-down adventure with keys, doors and wandering enemies | A steered character, from above | |
+| 4 | A falling-block puzzle where full rows clear | Its rules in a script | |
+| 5 | A falling-pairs puzzle where four of a colour clear | Its rules in a script | |
+| 6 | A scrolling space shooter | | |
+| 7 | A mining game dug downward | A steered character | |
+| 8 | A digging game with falling boulders and gems | A steered character | |
+| 9 | Chess, in the user's own words | Nothing steered; from above; rules in a script | |
+| 10 | Tic-tac-toe against the computer | Nothing steered; rules in a script | |
+| 11 | A turn-based tactics skirmish | From above | |
+| 12 | A small role-playing game with a map and battles | A steered character; two levels | |
+| 13 | A roguelike with a new dungeon each play | A steered character, from above | |
+| 14 | An isometric room | A steered character; isometric | |
+| 15 | An open city seen from above, with cars and people | A steered character; at least six screens | |
+| 16 | Two edits to a given game ("make the coin gold"; "the player falls through the bridge") | The game given, with a bridge that holds nothing | |
+| 17 | A pinball table | Nothing steered | bounce, round bodies, turning solids, solids that strike |
+| 18 | A card game against the computer, asked in English | Nothing steered; rules in a script | lists in scripts |
+| 18 | The same, asked in Icelandic | The same | The same |
+
+**The two card-game cases** have the same requirements sentence for sentence (eight sentences each, the same
+numbers and keys), and are identical in everything but language and words (a test compares them). The Icelandic
+request is put together from the user's own sentences across the eight requests of the build on record, with the
+game described by its rules where the user named a trade name; the English is its translation. A difference
+between the two results is then the language.
+
+**What each play script asks** (the full wording is in the report, §33.6):
+
+- *Platformers:* left and right move the character and the jump key lifts it; each level passes the engine's own
+  level check; the character on the goal wins the level and the next one starts; the dash key sends it further than
+  running; in the air against a wall the jump key lifts it; a second jump in the air lifts it again.
+- *Adventure:* the four directions move the character; something goes about by itself; a door stays shut without
+  the key and opens with it.
+- *Falling pieces:* a piece falls by itself; left and right move it; a key turns it; a landed piece stays and
+  the next comes; a row (or four of a colour) clears.
+- *Shooter:* the keys move the ship; the fire key sends a shot flying; enemies come by themselves; a shot does
+  away with an enemy or scores.
+- *Digging:* a key takes ground away; the character gets into where it was; a boulder with nothing under it falls;
+  what is collected is counted.
+- *Chess:* through the engine's menu and cursor: a pawn two squares forward; a rook kept from jumping its pawn; a
+  piece taken; against the computer, the other side moves by itself.
+- *Tic-tac-toe:* the action key puts a mark; the computer answers with its own; a taken square cannot be taken
+  again; the game ends and says how.
+- *Tactics:* it is played in turns; a unit acts by the cursor and its menu; the other side then acts by itself and
+  the player's turn comes again.
+- *Role-playing:* walking into a monster starts a battle; a command from the menu hurts the enemy; a battle won
+  leads back to the map.
+- *Roguelike:* another seed builds another level; the same seed the same.
+- *City:* two kinds of thing go about by themselves; beside a vehicle the use key lets the character go faster.
+- *Edits:* the coin is gold and nothing else changed; a player dropped on the bridge stands on it.
+
+**Pinball** (case 17), by what the review asked: player control, ball bouncing, and flipper interaction that is
+physical and not only seen.
+
+| Check | How it is seen |
+| --- | --- |
+| A key sends the ball up into the table | Held a second and let go, a loose thing goes far up that stays put without the key |
+| The ball comes off what it hits with speed | Its speed turns round between one frame and the next while it keeps moving |
+| A key swings a flipper | A thing that is not the ball turns or moves with the key and not without |
+| A ball lying on a flipper is thrown when it swings | The ball is set on the flipper at one end, the middle, the other end; the key; against the same without the key |
+| The flipper throws as a turning arm does | Hardly at the end it turns about, hardest at the tip, the middle between. The same throw all along is a set speed given by a script |
+| The flipper throws only a ball it touches | The ball set 48 px clear above each end: thrown at both means the throw goes by nearness |
+| The score goes up as the ball strikes things | A number shown rises |
+| A ball lost costs a ball; after the last, game over | A count shown goes down; the screen says so |
+
+A flipper that only turns on the screen fails the fourth. A flipper that throws by a script's set kick passes
+the fourth and fails the fifth. And whatever the checks say, the case needs four engine parts that are missing
+(§33.4), so on today's engine it can be an approximation at best, never a success.
+
+**Card game** (case 18), by what the review asked: the hand, turns, the computer, and a hand larger than seven.
+
+| Check | How it is seen |
+| --- | --- |
+| The hand is shown as cards, seven to begin with | The commonest card-shaped thing drawn on the screen (taller than wide), counted |
+| A card that fits can be played and leaves the hand | Each key, pair of keys and choose–to the pile–lay, on each card: one card fewer than the same moment without |
+| A card that does not fit is refused, and the game says so | A card that stays, and the text on the screen changes |
+| Drawing adds a card | A key that leaves one card more |
+| The hand can hold more than seven (drawn up to ten) | Draw after draw, each with time for the computer; with no draw key found, every key in turn |
+| The computer plays in its turn | After the player's go, what is written changes with no key pressed |
+| A hand emptied ends the game | **Not judged**: no script plays a hand out yet |
+| Skip, turn-round and draw-two cards do so | **Not judged**: which card is which is a picture the script does not read yet |
+
+### 33.4 Engine parts, found by experiment
+
+A model can make a ball bounce by a script that turns its speed round. Such a game can pass checks on what it
+does and still be standing in for a part the engine lacks. So each case names the parts it needs, and whether
+the engine has a part is found by an experiment on the engine as it is, each time (not a list kept by hand):
+
+| Part | The experiment | Today |
+| --- | --- | --- |
+| A body that bounces | A body's settings searched for one that makes it bounce; a body dropped seven cells onto a floor | Missing: its settings are bodyType, mass, velocity, gravityScale, friction; it landed and lay still |
+| Round things that collide as circles | A circle set with its middle 12 px past the end of a ledge, where a square rests and a circle rolls off | Missing: it rested, as the square around the circle |
+| Solids that stand turned | Two bodies dropped on the two ends of a bar turned 30 degrees | Missing: both landed at the same height, on the upright box around the bar (turning is exact for quarter turns only) |
+| Moving solids that strike | A solid moved at 240 px/s along a floor without grip into a loose body | Missing: the body is shoved 62 px and takes none of the speed (its own never above 0) |
+| Lists in scripts | The same script accepted with a variable holding a number, refused with it holding a list | Missing: a variable holds one number, text or yes/no |
+
+These five lines are also the first findings for the physics proposal (§34). When a part is added, its
+experiment turns, a test here fails on purpose, and the cases it frees are looked at again.
+
+### 33.5 The three additions the review asked for
+
+**What the game draws is read.** A play script reads every text on the screen (what scripts draw, the engine's
+menu, messages, the level banner), the numbers in them, and the shapes drawn. The card game is judged entirely
+this way: the hand is seven rectangles of 44 by 64 px; "Tölvan: 7 spil" and "Þín umferð" are read as they change.
+
+**A refused answer is kept word for word, before anything is done with it.** An answer that arrived and was
+refused (not in the reply format, unreadable twice, cut off with nothing to salvage) now travels with the
+refusal: `AIUnavailableError.raw`, from the Claude, Gemini and in-page connections; the request's record keeps it
+(`diagnostics.ts`), and "Save with history" writes it. The key search still runs over the saved text: a key-like
+string inside a refused answer is taken out like any other (tested). The pinball build's lost answer cannot be
+got back; the next one will be there.
+
+**Play starts the game that was asked for.** A Shape check on every case. The level Play starts must be the
+kind of game asked for; when it is not and another level is, the check fails and names both. Runs, Plays and
+Size and load are then done on the level that holds the game, and the report says so in a line of its own, so a
+game in the wrong place is still judged for what it is.
+
+### 33.6 Results
+
+Nothing here is a result about a model. These are the harness's checks proven on games whose state is known.
+
+**Every case on a stand-in** (the regression suite's games, and the six saved builds). Written out in full, check
+by check, in `docs/evaluation/v1.5a-stand-ins.md`.
+
+| # | Stand-in | Shape | Runs | Plays | Size and load | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | The level builder's platformer with a second level | pass | pass | pass | pass | uncertain |
+| 2 | The saved dash and wall-jump build | pass | pass | pass | pass | uncertain |
+| 3 | The top-down starter with a key, a door, a wanderer | pass | pass | pass | pass | uncertain |
+| 4 | The regression falling-block game | pass | pass | pass | pass | uncertain |
+| 5 | The regression falling-pairs game | pass | pass | **fail** | pass | failed |
+| 6 | The regression space shooter | pass | pass | pass | pass | uncertain |
+| 7 | The regression mining game | pass | pass | pass | pass | uncertain |
+| 8 | The regression boulder game | pass | pass | uncertain | pass | uncertain |
+| 9 | The saved chess build | pass | pass | uncertain | pass | uncertain |
+| 10 | The saved tic-tac-toe build | pass | pass | pass | pass | uncertain |
+| 11 | The regression tactics board | pass | pass | pass | pass | uncertain |
+| 12 | The regression role-playing game | pass | pass | pass | pass | uncertain |
+| 13 | The roguelike starter | pass | pass | pass | pass | uncertain |
+| 14 | The isometric starter | pass | pass | pass | pass | uncertain |
+| 15 | The saved crime-city build | **fail** | pass | pass | pass | failed |
+| 16 | The bridge game as given, not edited | pass | pass | **fail** | pass | failed |
+| 17 | The saved pinball build | pass | pass | **fail** | pass | failed |
+| 18 | The saved card-game build (both cases) | **fail** | pass | **fail** | pass | failed |
+
+None is a success, and none can be: for a stand-in only the game is known, so Built is not judged, and a case
+with a layer not judged is uncertain. That is the rule working, not a gap.
+
+What each failure is:
+
+- *5:* the regression falling-pairs game has no key that turns the pair. One check fails, nothing else. (A
+  fault of that test game, found by this.)
+- *15:* the crime city is 46 by 36 cells, 3.2 screens; the case asks for six. Everything else passes, the
+  vehicle too (on foot 150 px/s; faster after the use key beside a car). It was not asked for six screens when it
+  was built: as a stand-in it shows "size asked" is its own check.
+- *16:* not edited, the bridge holds nothing and the coin is as it was. Edited by hand, both checks pass.
+- *17, the pinball build:* the ball is launched (434 px up), bounces (its speed turned round 14 times in 12 s),
+  scores (to 1,320), is lost (the count shown went from 3 to 1) and the screen says GAME OVER; a flipper swings
+  and throws a ball lying on it. One check fails: **the flipper throws as a script does, not as a turning arm**
+  (81 px at one end, 148 px in the middle, 148 px at the other: a set speed). Four engine parts are missing.
+- *18, the card-game build, in both cases alike:* **Play starts "Level 1", a leftover platformer; the card game
+  is the level "UNO", which Play does not start.** Played in that level: the hand is shown (7 cards), a card can
+  be played (choose, to the pile, lay), a card that does not fit is refused and the game says so, the computer
+  plays. **No key adds a card to the hand, and after 24 presses of every key the hand never showed more than 7
+  (10 asked)**, while the screen read "Fleiri spil í bið: +7" (more cards waiting: seven). The known limit is
+  found, and the case fails on it. Two requirements are not judged, by name. One engine part is missing.
+
+**Broken variants fail** (nine, each a sound stand-in with one thing taken away): a platformer without its goal;
+with nobody steered; with one level where two were asked; a character without its dash; a shooter that cannot
+shoot; a falling-block game with its rules switched off; a chess game with its rules switched off (every play
+check not judged: "does not use the engine's grid cursor"; not a pass); a game with a fault at run time (Runs
+fails, the case fails); a door that opens for anyone; a table whose flippers do nothing.
+
+**Two recordings replayed through the real request flow**, no network:
+
+| Recording | Requests | Answers | As recorded? | The game that results |
+| --- | --- | --- | --- | --- |
+| Pinball | 3 (one refused, one of two parts, one change) | 4 | Yes: each request ends as it did, the same number of answers used | The same table: one level of 193 things |
+| Crime city | 4 | 7 (a starter chosen, a fix asked for, code asked for) | Yes | The same city: one level of 1,672 things |
+
+Built, for the pinball recording: applied in the end (pass); not at the first asking (fail); one answer refused,
+of which nothing was kept, having been recorded before refused answers were (fail); nothing left out (pass).
+Judged as case 17 with that: Built fail, Shape pass, Runs pass, Plays fail, Size and load pass: failed. As
+recorded it cost $2.73, 313,864 tokens in, 69,156 out, 626 s, one retry. The crime city: $3.79, seven answers,
+966 s; six parts of its first build's second answer did not apply, which Built says.
+
+The other four saved files cannot be replayed: two hold only the game, and two were saved in a later visit to
+the page and hold the cut-short traces only (a test says which).
+
+**Failures no model can be ordered to make**, as recordings made by hand, each through the real flow:
+
+| Recording | What the flow does | Reported as |
+| --- | --- | --- |
+| An answer cut off at the length limit | An error; the game untouched; the cut-off text kept word for word | Built fails; the case failed |
+| A connection lost | An error; nothing arrived to keep, and that is said | Built fails; failed |
+| A script past the limits, sent twice | The rest is applied; the answer's first line is "Part of this could not be applied"; the script is not on the object | Built fails ("left out"); failed |
+| Fewer answers than the flow now asks for | An error at the answer that is not there | "The replay went as the recording did" fails |
+
+None is reported as a finished game.
+
+**Cost in one form.** Requests, retries, tokens in and out, price, time and model are read from each request's
+own note in the recording. A connection that gives no price is reported as unknown, not guessed (tested). The
+Gemini connection gives none today; that is for V1.5c, as planned. The provider interface itself was not changed.
+
+**Whether the providers can be reached from this kind of session:** yes, both, tried with a request that
+carries no key and can cost nothing. Anthropic's address answered 401 ("x-api-key header is required");
+Google's answered 403 from the service itself. Neither was stopped on the way.
+
+**Suites:** unit tests 1,351 passed (49 new); the same-answers harness unchanged for every test that was there
+(473 kept as recorded; of the 40 new tests that step a game, 36 gave the same fingerprint three times and are
+recorded beside them, 509 in all; four, built on a level made anew each run, did not and are not compared); browser tests 1,111 checks, unchanged.
+
+### 33.7 What the harness cannot judge yet, said plainly
+
+| Not judged | Why |
+| --- | --- |
+| A full row (or four of a colour) clears, unless it happens | The stacking script has no skill; one that fills a row in a game it has not seen is not written |
+| Chess: the weakest and the strongest setting play differently | Needs several games played out |
+| Chess: check, mate, castling, promotion | No script yet |
+| Cards: a hand emptied ends the game; the special cards | No script plays a hand out; cards are pictures the script does not read |
+| Tic-tac-toe: three in a row is what wins | Only that the game ends and says how is seen |
+| Whether a level can be got through by playing it | The engine's level check is asked, and several checks set the character in place (each says so) |
+| How a game looks | Nothing looks at pictures. "The coin is gold" is judged from the colours in the answer's drawing |
+| The follow-up "Add a double jump" in a replay | Its check exists; no recording has that request yet |
+
+And three limits of the method:
+
+- **A good enough script is not told from the engine by play alone.** The turning-arm check catches a set kick.
+  A script that scaled its kick along the flipper would pass it. The engine-parts experiments are what keep such a
+  game from counting as a success, and they are a list of five, chosen by hand for two kinds of game.
+- **The hand is found by shape.** A game that draws its cards wider than tall, or as text only, would have its
+  hand "not found" and every hand check not judged (the first one failed). That is a fail of the harness to see,
+  reported as the game's.
+- **A replay tests the engine against old answers, not a model.** It also depends on the flow asking the same
+  number of times; when the flow changes, the recording stops fitting, and the replay says so rather than passing.
+
+### 33.8 The six saved builds: what is published
+
+The repository is public. The files in `docs/builds/` were searched for more than keys. Found: no API key, no
+e-mail address, no person's name, no path on a disk, no account id, no network address. What is in them:
+
+- The user's own requests, word for word, in English and Icelandic (among them "Hey baby. Make me a crazy cool
+  pinball game").
+- One web address the user pasted (the rules of a card game).
+- The browser and operating system named by the browser, and the size of the screen.
+- The app's version, and the time of each save and each request.
+- The AI settings (which model, which speed; never a key), and what was spent: totals up to $49.56 over 200
+  requests since 2026-10-14.
+- The console's lines. The pinball file's console also holds lines from the crime-city session.
+- The last play's report, the AI's answers, and the games' names ("GTA clone", "UNO", "Retro Chess").
+
+Nothing was removed. Taking something out of what is already pushed would mean rewriting the repository's
+history; it can be done if the user wants it.
+
+### 33.9 The first live run (V1.5b), proposed; not started
+
+Nine cases: the platformer, falling blocks, the shooter, chess, tactics, the open city, pinball, and the card
+game in both languages (the eight kinds the review named; the card game twice, since one language alone cannot
+show whether a difference is the language). The other ten stay in the suite.
+
+By the six builds on record a new game cost $1.25 to $3.80 and four to sixteen minutes on Claude Opus 5.5, so
+nine cases come to roughly **$12 to $35 and one to two and a half hours**. That is an estimate, not a limit: the
+runner would stop before any request that could pass the limit the user sets.
+
+What V1.5b still needs built, none of it large: the runner (a case's request through the same flow with the real
+connection, the saved recording, the estimate shown first, the limit held); it refuses to start inside the test
+runner. Decisions asked of the user before it: the model; the spending limit; here with the secure key form, or in
+the app.
+
+## 34. Physics for things that fall and bounce, and for liquids: investigation and proposal (nothing built, nothing approved)
+
+Asked for in §32, with the answers given since: liquids both flowing and still, of several kinds; solids that
+fall, bounce, slide, roll, are pushed, stack and collide, with turning and toppling as a later capability of its
+own; hundreds of bodies acting on each other, thousands of simple particles, thousands or more of liquid cells
+(as targets to measure). It must be deterministic, must not change a game that does not choose it, must be made
+of parts that can be chosen apart, must be measured with real interactions, and must never compare everything
+with everything. This is a proposal for review. It is kept apart from V1.5 and does not hold it up.
+
+### 34.1 What the engine does today (read from the code, and tried)
+
+| What | Today | How it was found |
+| --- | --- | --- |
+| Time | 120 steps a second, fixed; at most 12 steps a frame | `runtime.ts` |
+| A loose body's step | Gravity, then moved one axis at a time and stopped at the first solid it would enter; its speed on that axis set to 0 | `physics.ts` (`moveAndCollide`), the body loop |
+| Bounce | None. A body has bodyType, mass, velocity, gravityScale, friction | §33.4: dropped seven cells, it landed and lay still |
+| Round things | A circle collides as the square around it | §33.4: it rested past a ledge's end |
+| Turned solids | Collide as the upright box around them; exact for quarter turns | §33.4: both ends of a bar turned 30° at one height |
+| Moving solids | Carry what stands on them and shove what is in the way; pass on no speed | §33.4: shoved 62 px, its own speed 0 |
+| Body against body | Loose bodies pass through each other. Only things made Pushable block and are pushed | The body loop; the crowd of crates (§30.13) |
+| Many crates | 250 at a frame's time: each asks about all the others | §30.13 |
+| Liquid | A still zone: swim, slow, sink, stroke. Each moving body is compared with every liquid piece, and the surface is found by going over all of them again | The body loop |
+| Characters | Steered by movement models (arcade, top-down) with their own rules for ground, ramps, ladders, ledges | `movement/` |
+| What games do instead | A script turns the ball's speed round (the pinball build: "bounce 0.55"); a script throws the ball when a key is down and it is on the flipper | §31, §33.6 |
+
+So there is a sound, small, fast mover for characters and crates in a world of boxes, and nothing of what was
+asked: no bounce, no round shapes, no body meeting body, no strike, no flow.
+
+### 34.2 What is proposed, in one table
+
+Four capabilities, each its own module, each chosen by a game (in its profile, as geometry and camera modules
+are) and by a thing (a component). A game that chooses none runs exactly the code it runs today.
+
+| Module | What it gives | A thing takes part by |
+| --- | --- | --- |
+| **Bodies** | Things that fall, bounce, slide, roll, are pushed, stack and collide with each other; round and boxed; moving and turning solids that strike them | A component of its own (working name: Loose body), with bounce, grip, shape |
+| **Particles** | Thousands of simple specks: thrown, falling, bouncing off the level, fading; they do not meet each other | An emitter on a thing; the specks are not things |
+| **Still liquid** | What exists, plus floating and sinking by weight, drag, and currents | Today's Liquid, with a few settings more |
+| **Flowing liquid** | Liquid that pours, falls, fills, spreads, levels, is dammed and drains, in several kinds (water, lava, oil) | A liquid layer of the level, sources and drains |
+| *Later:* **Turning bodies** | Tumbling and toppling | The same component, turned on |
+
+Bodies and particles and liquid do not share one implementation. They share three things: the step, the level's
+solid cells, and the rule of §34.6 for determinism.
+
+### 34.3 Bodies (solids that move by physics)
+
+**The approach.** Positions and speeds, stepped 120 times a second as now. Shapes: a circle, and an upright box.
+Each step: forces (gravity, liquid); find the pairs that may touch from a grid of cells (a body is compared only
+with what shares its cell or a neighbouring one, and with the level's solids in those cells); for each touching
+pair work out where and how deep; then a fixed number of passes over the contacts, each pass pushing the two
+apart along the contact by an impulse (with the bounce of the pair, and grip sideways up to what the pressing
+force allows), and a small correction of position so that a pile does not sink into itself. This is the common
+way games do it ("sequential impulses"); nothing here is new.
+
+**What that gives, and how each asked-for behaviour comes out of it:**
+
+| Asked for | Comes from |
+| --- | --- |
+| Fall | Gravity, as now |
+| Bounce | Each body's bounce (0 to 1); a pair uses the larger; below a small speed there is none, so things come to rest |
+| Slide | Grip (friction) at the contact, of the two surfaces |
+| Roll | A round body in contact turns at the speed it moves (its picture turns; it rolls down a ramp because a circle on a slope has nothing holding it) |
+| Be pushed | A contact with anything that moves: another body, a character, a moving solid |
+| Stack | The position correction and several passes; a body at rest goes to sleep and costs nothing until touched |
+| Collide | Body against body (circle–circle, circle–box, box–box), body against the level (boxes, ramps, jump-through platforms from above) |
+| Flippers, paddles, bumpers | A solid that is moved or turned passes on the speed of the point where it touches: its own speed plus its turning speed times the distance from where it turns. A flipper's tip then strikes harder than its root, by itself |
+
+**Round bodies** are circles for real: against a corner they come off at the angle they struck.
+
+**Turned solids** need one more shape: a box at an angle, for things that are moved by the game and not by
+physics (a flipper, a tilted plank). A circle or an upright box against a box at an angle is a short calculation.
+Bodies themselves stay upright in this module: no body turns by being hit.
+
+**Fast small things** (a ball at top speed covers 12 px a step; a flipper is 16 px thick): a body that moves more
+than its own half-size in a step is moved in shorter pieces for that step. A count, not a clock, decides it.
+
+**Characters are not bodies.** A character keeps its movement model, untouched. To a body, a character is a
+mover that pushes (as a moving solid does). To a character, a body is something solid to stand on and to push,
+which is what a Pushable crate is to it today. Whether a body can knock a character back is a setting on the
+body (a boulder yes, a ball no), using the knock-back that exists.
+
+**What is deliberately not in it:** joints, ropes, springs between bodies, vehicles with wheels, bodies that
+break. Each is its own later proposal if a game needs it.
+
+**Turning bodies (later, separate).** A turning speed and a resistance to turning for each body, boxes at any
+angle against each other, and contact at two points so that a box rests flat. This is where a general solver's
+difficulty lies (stable piles of turned boxes). It is proposed as its own stage after the rest has been played
+with, and it is the one place where taking an existing physics library instead of writing one should be weighed
+again, with the app's size, its sameness on every browser and how it meets the level's cells looked at then.
+
+### 34.4 Particles
+
+Many, simple, short-lived: sparks, dust, splashes, rubble, rain, embers. Each is a place, a speed, an age, a
+size and a colour, held in plain rows of numbers, not as things of the level (a thing costs 2.7 KB and a place in
+every list; a particle costs about 30 bytes). They fall, drift, bounce off the level's solid cells by one look-up
+each, and fade. They never meet each other and nothing collides with them. Thrown by an emitter (a rate, a
+spread, a life) or by a script ("burst"). Drawn together.
+
+By default they are only seen. One option, off unless chosen: an emitter's particles count where they land
+(for rain that fills a bucket, embers that light something), reported per cell per step, never per particle.
+
+### 34.5 Liquids
+
+**Still liquid (what exists, made to act on bodies).** A body in liquid is pushed up by how much of it is under
+the surface against its weight, so light things float, heavy things sink, and a floating thing bobs and comes to
+rest at its line. Drag slows what moves through it. A current is a speed the liquid has (a river, a whirlpool as
+several pieces), added to what is in it. Swimming for characters stays as it is. The look-up of "which liquid is
+this body in" goes through the grid of cells, so it no longer grows with the number of liquid pieces times the
+number of bodies.
+
+**Flowing liquid: amounts in cells.** The level gets a liquid layer: a grid finer than the tiles (proposed: 8 px
+cells, sixteen to a tile), each cell holding how much liquid is in it and of which kind. Each step, for the
+cells that are awake only: liquid goes down if there is room below; what is left spreads sideways toward the
+emptier neighbour; what is squeezed beyond full goes up. A cell that did not change goes to sleep; a cell that
+changed wakes its neighbours. From those three rules come pouring, falling, filling a hole or a vessel, spreading
+on a floor, levelling out, being stopped and turned aside by solids, and rising when more comes in.
+
+| Asked for | Comes from |
+| --- | --- |
+| Pour, fall, fill, spread, level | The three rules |
+| Blocked and redirected by solids | The layer reads the level's solid cells; a thing that becomes solid or stops being so (a door, a dug tile, a moved block) wakes the cells beside it |
+| Dams, drainage | The same: take a block away and what it held runs out; a drain is a cell that takes liquid away, a source one that adds |
+| Rising levels | A source in a closed place |
+| Kinds: water, lava, oil | A kind per cell with: how fast it flows (thick lava creeps), its weight (oil rises through water by the two changing places), what it does to what is in it (lava hurts), and a short table of what two kinds become where they meet (water on lava: stone and steam) |
+| Floating, sinking, currents in flowing liquid | A body asks the cells it covers how much liquid is there and which way it moved this step: the same pushing-up and drag as in still liquid |
+
+**What was weighed and not chosen: liquid as particles** (many small round bodies that press on each other). It
+splashes more prettily. It does not come to rest flat, never goes to sleep, needs its neighbours found every
+step for every particle, and fills a vessel only roughly. For a game, "the water is level and the door holds it"
+matters more than the splash. Splashes are what particles (§34.4) are for: liquid that leaves a surface fast can
+be thrown as particles that are given back to the cells where they land. That joint is an option of a later
+stage, not of the first.
+
+**Limits of the cell approach, said now:** liquid does not carry speed from cell to cell, so there are no waves
+and no jets that arc (a pour falls straight down and spreads); in the first stage bodies do not push liquid
+aside (a boulder dropped in a full pool does not raise it); a very large still lake costs memory (a cell is 5
+bytes: a level of 400 by 300 tiles at sixteen cells a tile is 1.9 million cells, 9.6 MB), so the layer is kept
+in pieces that exist only where liquid has been.
+
+### 34.6 Determinism
+
+The engine plays the same from the same seed today, and 509 recorded fingerprints hold it to that. Physics keeps
+the rule by these means:
+
+1. **The same step.** 1/120 s, as now. No part of physics looks at a clock. Where work must be bounded it is
+   bounded by a count (passes, sub-steps, cells), and when there is too much to do the game slows; it does not
+   skip.
+2. **A fixed order.** Bodies in the order they were made. Pairs in the order (earlier body, later body), found
+   by going through bodies in order and, for each, through its cells in order. Liquid cells in cell order. No
+   order ever comes from a set, a map of objects, or a sort that leaves ties as it finds them.
+3. **A fixed amount of work.** The number of passes is a setting, not "until it is good enough".
+4. **Only arithmetic that is the same everywhere.** Add, subtract, multiply, divide and square root give the
+   same bits in every browser. Sine, cosine and powers need not. So the step uses none of them: an angle is kept
+   as its two numbers and turned by multiplying; where a sine is needed once (a thing placed at 30°) it comes from
+   the engine's own short routine, the same everywhere.
+5. **Chance from the game's seed**, as everywhere else in the engine.
+6. **Sleep by rule.** A body or a cell sleeps when it has moved less than a set amount for a set number of
+   steps: numbers, not timings.
+7. **Proof.** Each physics scene of the test suite is fingerprinted like every other game, three times over;
+   and one test plays the same scenes in the browser and compares the fingerprints with the ones recorded in
+   node. That last test does not exist for anything yet; physics is where it becomes necessary.
+
+### 34.7 How it meets what exists
+
+| Existing part | Meets physics how |
+| --- | --- |
+| The level's fixed solids (boxes in a grid, updated in place since W1.1) | Bodies, particles and liquid all ask it, by cell. Nothing new is kept beside it |
+| Ramps (six shapes) | A ramp is a slanted edge to a body: a ball rolls down it. Characters keep their own ramp rule |
+| Jump-through platforms | Hold a body from above only, as they hold a character |
+| Cells that are dug and refilled (§17) | A dug cell wakes the liquid beside it and the bodies resting on it |
+| Moving platforms, things moved by scripts | Become movers that strike, for bodies; they carry characters as now |
+| Pushable crates | Stay as they are in games that do not choose bodies. In a game that does, a crate can be made a body; it is not made one silently |
+| Awake and asleep things (W1) | The same idea, the same lists: a body at rest is asleep |
+| Scripts | New: read a body's speed, give it a push, hear "struck" (with what and how hard), ask "how much liquid here", pour and drain. Each a proposal with the stage it belongs to, reviewed before it is built (as agreed for script changes) |
+| The editor | A body's settings in the inspector; the liquid layer painted like tiles; a source and a drain to place. A level check line for "liquid that can never be reached" is not proposed |
+| The AI | Told nothing until a part exists and is measured. Then a guidance topic, not the system prompt (which is at its size limit) |
+| The play probe and the evaluation (§24, §33) | The five experiments of §33.4 are the acceptance tests of the first two stages: each must turn from missing to present, and the pinball case judged again |
+
+### 34.8 Speed: what was measured, and what would be held to
+
+**Measured now, in sketches outside the engine** (plain rows of numbers, one core, no drawing, no events, no
+scripts; node on this machine). They show what the approaches cost at their barest and how the cost grows. They
+are not the engine's numbers, which will be several times higher.
+
+| Sketch | Size | A step | A frame (two steps) |
+| --- | ---: | ---: | ---: |
+| Round bodies in a pile, each against its neighbours, four passes | 300 (696 touching pairs) | 0.10 ms | 0.19 ms |
+| | 1,000 (2,611 pairs) | 0.52 ms | 1.0 ms |
+| | 3,000 (8,262 pairs) | 2.1 ms | 4.3 ms |
+| | 10,000 (39,267 pairs) | 9.6 ms | 19 ms |
+| Particles against the level's cells | 5,000 | 0.10 ms | 0.20 ms |
+| | 20,000 | 0.43 ms | 0.87 ms |
+| | 100,000 | 1.9 ms | 3.8 ms |
+| Liquid in cells, six pours into a level of ledges | 120,000 cells, at most 11,439 awake | 0.43 ms | 0.86 ms |
+
+Two things the sketches say beyond their numbers. The cost of bodies grows with their number (ten times the
+bodies, about fifteen times the pairs and eighteen times the time), not with its square: neighbours are found by
+cell. And the liquid sketch **did not come to rest**: 1,500 steps after the pouring stopped, 8,221 cells were
+still awake, passing small amounts back and forth. Making still liquid cost nothing is the part of the liquid
+design that is not solved by the sketch, and it is an acceptance target below, not an assumption.
+
+**Targets proposed** (to be measured in the engine, in the crowd worlds of §30.13 extended, in node and in the
+browser with drawing; a frame is 16.7 ms and physics should leave most of it to the rest of the game):
+
+| Scene | Target for physics in a frame |
+| --- | ---: |
+| 300 bodies in piles, colliding, with four moving solids striking them | 2 ms |
+| 1,000 bodies, the same | 6 ms |
+| 100 bodies that are demanding (fast, small, in a narrow place with turning solids) | 1 ms |
+| 5,000 particles bouncing off the level | 1 ms |
+| 20,000 particles | 4 ms |
+| Flowing liquid, 10,000 cells awake | 2 ms |
+| A pool of 50,000 wet cells at rest | 0.1 ms (asleep) |
+| Mixed: a platformer level, its character, 200 bodies, 5,000 particles, 5,000 liquid cells awake, bodies floating | 8 ms in all |
+| Any existing game that chose no physics | Unchanged: within the noise of the W0 baselines |
+
+With each: the number at which a frame's time is passed (as §30.13 gives for crowds), memory per body, per
+particle and per cell, and one test that counts the comparisons made in a step and fails if doubling the bodies
+more than triples them. That test is the rule "never everything against everything" made checkable.
+
+### 34.9 Protecting the games that exist
+
+- **Off unless chosen, twice over.** The game's profile names the physics modules it uses (none, for every game
+  that exists), and a thing takes part only by its component. Without both, the step runs the lines it runs today.
+- **The fingerprints are the gate.** All 509 recorded plays must be bit for bit the same after every stage. A
+  stage that changes one is not done.
+- **Nothing is reinterpreted.** A circle collider stays a square for a thing that is not a body. A Pushable crate
+  stays a Pushable crate. A turned solid stays the box around it for characters. Old games are not migrated.
+- **The crowd measurements are repeated** before and after each stage, so that a game with no physics does not
+  get slower by the code being there.
+- **Characters do not become bodies**, in any stage.
+- **The AI's instructions do not change** until a part is built and measured, and then by a topic.
+
+### 34.10 Stages, each stopped for review
+
+| Stage | Contents | Proves itself by |
+| --- | --- | --- |
+| PH0 | Scenes and measurements first: the test scenes, the crowd worlds for bodies, the browser-against-node fingerprint test; nothing of physics | The harness exists; baselines recorded |
+| PH1 | Bodies, upright: circle and box, bounce, grip, body against body and against the level, stacking, sleep | §33.4's bounce and round-body experiments turn; a pile of 300 stands still; targets met or the shortfall said |
+| PH2 | Movers that strike: moved and turned solids pass on speed; boxes at an angle for them | §33.4's other two experiments turn; the pinball case's turning-arm check can pass on a table built with it |
+| PH3 | Particles | Targets; a splash, sparks, rain |
+| PH4 | Still liquid acts on bodies: floating, sinking, drag, currents | A raft floats with a crate on it; a stone sinks |
+| PH5 | Flowing liquid: the layer, the three rules, kinds, sources and drains, bodies in it | A vessel fills level; a dam taken away drains; oil rises through water; a pool at rest sleeps |
+| PH6 | Turning bodies | Its own proposal after PH1 to PH5 have been used |
+
+PH1 and PH2 together are what a ball game needs, and are the smallest useful whole. PH3 is independent of all the
+others. PH5 is the largest and the least certain.
+
+### 34.11 Where it sits on the roadmap
+
+- **V1.5** is not held up by any of this. It gains from it: the experiments of §33.4 and the pinball case are
+  ready-made acceptance tests, and the first live run will show how models cope without physics.
+- **W1.2** (things that act: five look-ups per actor, the 100-shot cap) overlaps in two of its five: what a moving
+  platform carries, and things that are pushed. Both are the slowest kinds measured (crates: 250). If bodies are
+  to be built, those two are better done once, in PH1 and PH2, than improved in W1.2 and then replaced. The other
+  three (nearest player, shots, targets) have nothing to do with physics and stay W1.2's.
+- **W2 to W4** (world limits told to the AI, regions, big worlds) are independent. Bodies and liquid sleep when
+  nothing moves, which is what a big world needs of them.
+- **W5a** (a tile layer) would make the liquid layer and body-against-level look-ups cheaper and simpler, since
+  both think in cells. Liquid does not need it: the solid cells can be read from what exists.
+- **Lists in scripts** (the card game's missing part) are unrelated and stay their own proposal.
+
+### 34.12 Decisions asked
+
+1. Is the split right: bodies, particles, still liquid, flowing liquid, and turning later?
+2. The order. Proposed: PH0, PH1, PH2 (a ball game works), then PH3, PH4, PH5. Or liquid first?
+3. Flowing liquid as amounts in cells, with its limits (no waves, no arcing jets, bodies do not displace it at
+   first): acceptable for the games in mind?
+4. May a body knock a character back, by a setting on the body?
+5. When: after V1.5b's first run, or alongside it? And before or after W1.2 and W2?
+6. For PH6 only, later: write it, or weigh a library then.

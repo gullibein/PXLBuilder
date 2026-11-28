@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AIResponse } from '../core/ai/protocol';
+import { AIUnavailableError, rawAnswerText, type AIResponse } from '../core/ai/protocol';
 import type { AIProvider } from '../core/ai/provider';
 import { createBuiltinRegistry } from '../core/components/builtin';
 import { createProject } from '../core/model/factory';
@@ -79,6 +79,31 @@ describe('Save with history', () => {
     expect(r.outcome?.status).toBe('error');
     expect(withoutKeys('key sk-ant-api03-AbCdEf123456_xyz and AIzaSyA1234567890abcdefghijklmnop')).toBe('key [key removed] and [key removed]');
     expect(historyFileText()).not.toMatch(/sk-ant-|AIza[0-9A-Za-z_-]{20,}/);
+  });
+
+  it('an answer that arrived and was refused is kept as the model sent it, word for word (and still without a key)', async () => {
+    const project = createProject(registry, 'T', 'topdown');
+    useEditor.setState({ project, activeSceneId: project.scenes[0].id });
+    // (What the pinball build lost three times: "operations: expected array, received string".)
+    const sent = '{"kind":"preview","message":"A table.","operations":"[{\\"op\\":\\"rename\\"}]","note":"sk-ant-api03-AbCdEf123456_xyz"}';
+    setAIProvider({
+      respond: async () => {
+        throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.", sent);
+      },
+    });
+    const outcome = await runPrompt({ kind: 'project', sceneId: project.scenes[0].id }, 'make a table', undefined, undefined).catch((e: Error) => ({ status: 'error' as const, message: e.message }));
+    expect(outcome.status).toBe('error');
+    const [r] = diagnosticsFor(project.id);
+    expect(r.exchanges.length).toBeGreaterThan(0);
+    for (const x of r.exchanges) expect(x.answer).toEqual({ error: "The AI's answer was not in the expected form. Try again.", raw: sent });
+    const file = JSON.parse(historyFileText()) as { diagnostics: { requests: ReturnType<typeof diagnosticsFor> } };
+    const kept = (file.diagnostics.requests[0].exchanges[0].answer as { raw?: string }).raw!;
+    // Word for word, but for the key-like text, which never reaches a file.
+    expect(kept).toBe(sent.replace('sk-ant-api03-AbCdEf123456_xyz', '[key removed]'));
+    // A refusal without an answer (no connection) has nothing to keep.
+    expect(rawAnswerText({ a: 1 })).toBe('{"a":1}');
+    expect(rawAnswerText('as it came')).toBe('as it came');
+    expect(rawAnswerText(undefined)).toBe('undefined');
   });
 
   it("notes on the scripts: how big each is, and the long formulas written more than once (a tic-tac-toe's three-in-a-row test, twice)", () => {

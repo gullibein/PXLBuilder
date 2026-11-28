@@ -15,8 +15,8 @@ export interface DiagnosticExchange {
   tookMs: number;
   /** What was sent: the request as the AI got it (with the app's notes), the game's data, the guidance and code that went along. */
   sent: { request: string; speed: string; topics: string[]; context: unknown; code: unknown[]; history: unknown[]; referenceChars: number; pictures: { mediaType: string; chars: number }[] };
-  /** The answer as the app read it, or the error. */
-  answer: AIResponse | { error: string };
+  /** The answer as the app read it, or the error (`raw`: a refused answer as the model sent it, word for word). */
+  answer: AIResponse | { error: string; raw?: string };
 }
 
 /** One request the user made (it may take several exchanges: parts, retries, code asked for). */
@@ -33,7 +33,7 @@ export interface DiagnosticRequest {
 
 export interface DiagnosticRecorder {
   step(kind: TraceKind, text: string): void;
-  exchange(body: AIRequestBody, answer: AIResponse | { error: string }, startedAt: number): void;
+  exchange(body: AIRequestBody, answer: AIResponse | { error: string; raw?: string }, startedAt: number): void;
   end(outcome: { status: string; message?: string; changes?: string[] }): void;
 }
 

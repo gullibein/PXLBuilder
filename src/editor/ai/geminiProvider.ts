@@ -11,7 +11,7 @@
  */
 import type { TraceFn } from '../../core/ai/trace';
 import { JSON_ONLY, parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
-import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls } from '../../core/ai/protocol';
+import { AIUnavailableError, aiResponseSchema, type AIRequestBody, type AIResponse, fillMissingNulls, rawAnswerText } from '../../core/ai/protocol';
 import type { AIProvider } from '../../core/ai/provider';
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
@@ -150,10 +150,10 @@ export class GeminiProvider implements AIProvider {
     if (raw === null) try {
       raw = parseJsonReply(text);
     } catch {
-      throw new AIUnavailableError("Gemini's answer could not be read. Try again, or ask for less at once.");
+      throw new AIUnavailableError("Gemini's answer could not be read. Try again, or ask for less at once.", text);
     }
     const parsed = aiResponseSchema.safeParse(fillMissingNulls(raw));
-    if (!parsed.success) throw new AIUnavailableError("Gemini's answer was not in the expected form. Try again.");
+    if (!parsed.success) throw new AIUnavailableError("Gemini's answer was not in the expected form. Try again.", rawAnswerText(raw));
     return parsed.data;
   }
 }

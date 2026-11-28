@@ -369,6 +369,8 @@ describe('V1.1: where abilities are in the code', () => {
       'core/script/examples.ts',
       // ('dash' as a line style of the editor's wires: another word.)
       'editor/viewport/Viewport.tsx',
+      // The evaluation case that asks for a game with them (a case names the abilities the game must have).
+      'evaluation/cases.ts',
       // A regression game made with them.
       'regression/games/precision.ts',
     ]);

@@ -442,7 +442,10 @@ async function runPromptRecorded(ctx: AIContext, request: string, signal: AbortS
       try {
         answered = await provider.respond(b, sig, tr, timed);
       } catch (e) {
-        record.exchange(b, { error: (e as Error).message }, sentAt);
+        // (An answer that arrived and was refused is kept as it came, word for word: without it, why it was
+        // refused cannot be found out. A game's worth of answer was once lost this way three times over.)
+        const raw = (e as { raw?: unknown }).raw;
+        record.exchange(b, { error: (e as Error).message, ...(typeof raw === 'string' ? { raw } : {}) }, sentAt);
         throw e;
       }
       record.exchange(b, answered, sentAt);

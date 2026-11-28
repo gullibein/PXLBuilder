@@ -160,8 +160,24 @@ export function readReply(raw: unknown): { ok: true; response: AIResponse; dropp
 }
 
 export class AIUnavailableError extends Error {
-  constructor(message: string) {
+  /**
+   * What the model sent, word for word, when its answer arrived and was refused (not readable, not in the reply
+   * format): kept with the record of the request, so that why it was refused can be found out afterwards.
+   */
+  raw?: string;
+  constructor(message: string, raw?: string) {
     super(message);
     this.name = 'AIUnavailableError';
+    if (raw !== undefined) this.raw = raw;
+  }
+}
+
+/** A refused answer as text, for the record: the text itself, or the reply object written out. */
+export function rawAnswerText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
   }
 }

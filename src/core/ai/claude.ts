@@ -12,7 +12,7 @@ import { readCutOff } from './cutOff';
 import { componentRegistry } from '../components/builtin';
 import { buildSystemPrompt } from './capabilities';
 import { parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessageParts } from './prompt';
-import { aiResponseSchema, type AIRequestBody, type AIResponse, readReply } from './protocol';
+import { aiResponseSchema, type AIRequestBody, type AIResponse, rawAnswerText, readReply } from './protocol';
 
 export const MODEL = 'claude-opus-5-5';
 
@@ -55,7 +55,8 @@ export function usageCost(model: string, u: { input_tokens: number; output_token
 
 let systemPrompt: string | null = null;
 
-export type ClaudeResult = ({ ok: true; response: AIResponse } | { ok: false; status: number; error: string; kind: 'auth' | 'rate' | 'other' }) & { usage?: ClaudeUsage };
+/** `raw`: what the model sent, word for word, when an answer arrived and was refused (for the record of the request). */
+export type ClaudeResult = ({ ok: true; response: AIResponse } | { ok: false; status: number; error: string; kind: 'auth' | 'rate' | 'other'; raw?: string }) & { usage?: ClaudeUsage };
 
 /** What happened along the way that the user (or a bug report) should be able to see: told to the console. */
 export type ClaudeNote = (message: string) => void;
@@ -238,12 +239,12 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     if (response.stop_reason === 'refusal') return withUsage(declined);
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
       note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
-      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response), (v) => expandReply(v, fullFormat())) : null) ?? incomplete);
+      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response), (v) => expandReply(v, fullFormat())) : null) ?? { ...incomplete, raw: replyText(response) });
     }
     const parsed = readReply(expandReply(response.parsed_output, fullFormat()));
     if (!parsed.ok) {
       note(`${CLAUDE_MODELS[model].name}'s answer (compact format) did not read back into the reply format: ${parsed.issues}`);
-      return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
+      return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other', raw: rawAnswerText(response.parsed_output) });
     }
     if (parsed.dropped.length) note(`Left out of ${CLAUDE_MODELS[model].name}'s answer, not in the reply format: ${parsed.dropped.join('; ')}`);
     return withUsage({ ok: true, response: parsed.response });
@@ -260,7 +261,7 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
     if (response.stop_reason === 'refusal') return withUsage(declined);
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
       note(`${CLAUDE_MODELS[model].name}'s answer ${response.stop_reason === 'max_tokens' ? `reached the length limit (${common.max_tokens} tokens)` : 'did not fit the reply format'}. It began: ${replyText(response).slice(0, 600)}`);
-      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response)) : null) ?? incomplete);
+      return withUsage((response.stop_reason === 'max_tokens' ? salvaged(replyText(response)) : null) ?? { ...incomplete, raw: replyText(response) });
     }
     return withUsage({ ok: true, response: response.parsed_output });
   }
@@ -278,7 +279,8 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
   const cutOff = () => {
     const inTool = response.content.some((b) => b.type === 'tool_use');
     note(`${CLAUDE_MODELS[model].name}'s answer reached the length limit (${common.max_tokens} tokens${inTool ? ', written into the reply tool' : ''}). It began: ${replyText(response).slice(0, 600) || '(no text)'}`);
-    return withUsage(salvaged(inTool ? arriving.tool : replyText(response)) ?? incomplete);
+    const came = inTool ? arriving.tool : replyText(response);
+    return withUsage(salvaged(came) ?? { ...incomplete, raw: came });
   };
   if (response.stop_reason === 'max_tokens') return cutOff();
   if (response.stop_reason === 'stop_sequence') note(`${CLAUDE_MODELS[model].name} began writing a tool call as text; stopped it there.`);
@@ -305,13 +307,13 @@ async function callClaude(client: Anthropic, body: AIRequestBody, model: ClaudeM
       raw = toolReply(response) ?? parseJsonReply(text);
     } catch (e2) {
       note(`Still not readable (${(e2 as Error).message}). It began: ${text.slice(0, 600)}`);
-      return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read (twice; the Console shows what came back). Try again, or ask for less at once.", kind: 'other' });
+      return withUsage({ ok: false, status: 502, error: "The AI's answer could not be read (twice; the Console shows what came back). Try again, or ask for less at once.", kind: 'other', raw: text });
     }
   }
   const parsed = readReply(raw);
   if (!parsed.ok) {
     note(`${CLAUDE_MODELS[model].name}'s answer was read, but not in the reply format: ${parsed.issues}`);
-    return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other' });
+    return withUsage({ ok: false, status: 502, error: "The AI's answer was not in the expected form. Try again.", kind: 'other', raw: rawAnswerText(raw) });
   }
   if (parsed.dropped.length) note(`Left out of ${CLAUDE_MODELS[model].name}'s answer, not in the reply format: ${parsed.dropped.join('; ')}`);
   return withUsage({ ok: true, response: parsed.response });

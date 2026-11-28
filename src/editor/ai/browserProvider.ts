@@ -65,7 +65,7 @@ export class BrowserClaudeProvider implements AIProvider {
     }
     trace?.('reply', result.ok ? JSON.stringify(result.response) : `Failed (${result.kind}): ${result.error}`);
     if (result.ok) return result.response;
-    throw new AIUnavailableError(result.kind === 'auth' ? 'Your Anthropic API key was not accepted. Check it in ⋯ → AI connection.' : result.error);
+    throw new AIUnavailableError(result.kind === 'auth' ? 'Your Anthropic API key was not accepted. Check it in ⋯ → AI connection.' : result.error, result.raw);
   }
 }
 

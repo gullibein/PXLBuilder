@@ -9,7 +9,7 @@
  * operation is applied.
  */
 import { JSON_ONLY, parseJsonReply, proseReply, systemPromptWithReplyFormat, userMessage } from '../../core/ai/prompt';
-import { AIUnavailableError, type AIPicture, type AIRequestBody, type AIResponse, readReply } from '../../core/ai/protocol';
+import { AIUnavailableError, type AIPicture, type AIRequestBody, type AIResponse, rawAnswerText, readReply } from '../../core/ai/protocol';
 import type { AIProvider, DraftFn } from '../../core/ai/provider';
 import { claudeCapability } from '../claudeViewer';
 import type { TraceFn } from '../../core/ai/trace';
@@ -254,7 +254,7 @@ export class SampleAIProvider implements AIProvider {
     const parsed = readReply(raw);
     if (!parsed.ok) {
       trace?.('error', `Read, but not in the reply format: ${parsed.issues}`);
-      throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.");
+      throw new AIUnavailableError("The AI's answer was not in the expected form. Try again.", rawAnswerText(raw));
     }
     if (parsed.dropped.length) trace?.('error', `Left out, not in the reply format (the rest is applied): ${parsed.dropped.join('; ')}`);
     return parsed.response;
